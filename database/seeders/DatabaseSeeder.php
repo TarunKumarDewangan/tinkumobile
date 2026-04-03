@@ -159,8 +159,10 @@ class DatabaseSeeder extends Seeder
 
         $this->call(RetailerSeeder::class);
         $this->call(RetailerBulkSeeder::class);
+        $this->call(AdminSeeder::class);
 
         $this->command->info('✅ Seeding complete!');
+        $this->command->info('   Admin:    admin@tinkumobile.in / admin123');
         $this->command->info('   Owner:   owner@tinkumobiles.com / password');
         $this->command->info('   Manager: manager@tinkumobiles.com / password');
         $this->command->info('   Cashier: cashier@tinkumobiles.com / password');
