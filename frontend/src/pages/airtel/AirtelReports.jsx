@@ -88,23 +88,25 @@ export default function AirtelReports() {
                       <div className="table-responsive" style={{maxHeight:'600px'}}>
                           <table className="table table-hover align-middle mb-0">
                               <thead className="table-light text-uppercase shadow-sm sticky-top">
-                                  <tr className="x-small">
-                                      <th className="ps-3">Retailer</th>
-                                      <th className="text-end pe-3">Pending Bal.</th>
-                                  </tr>
-                              </thead>
-                              <tbody>
-                                  {reportData.retailer_summary.map(r => (
-                                      <tr key={r.id}>
-                                          <td className="ps-3 py-2">
-                                              <div className="fw-bold small">{r.name || 'Unknown'}</div>
-                                              <div className="x-small text-muted">{r.msisdn}</div>
-                                          </td>
-                                          <td className="text-end pe-3">
-                                              <span className="fw-bold text-danger">₹{parseFloat(r.pending_amount).toLocaleString()}</span>
-                                          </td>
-                                      </tr>
-                                  ))}
+                                   <tr className="x-small">
+                                       <th className="ps-3">Retailer</th>
+                                       <th className="text-end">Opening Bal.</th>
+                                       <th className="text-end pe-3">Pending Bal.</th>
+                                   </tr>
+                               </thead>
+                               <tbody>
+                                   {reportData.retailer_summary.map(r => (
+                                       <tr key={r.id}>
+                                           <td className="ps-3 py-2">
+                                               <div className="fw-bold small">{r.name || 'Unknown'}</div>
+                                               <div className="x-small text-muted">{r.msisdn}</div>
+                                           </td>
+                                           <td className="text-end x-small text-muted">₹{parseFloat(r.balance || 0).toLocaleString()}</td>
+                                           <td className="text-end pe-3">
+                                               <span className="fw-bold text-danger">₹{parseFloat(r.pending_amount).toLocaleString()}</span>
+                                           </td>
+                                       </tr>
+                                   ))}
                               </tbody>
                           </table>
                       </div>

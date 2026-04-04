@@ -286,33 +286,41 @@ export default function AirtelDrops() {
           </div>
       </div>
 
-      <div className="row g-3 mb-4 text-center">
-        <div className="col-md-3 col-6">
-          <div className="card border-0 shadow-sm bg-primary text-white">
+      <div className="row g-2 mb-4 text-center">
+        <div className="col-md col-6">
+          <div className="card border-0 shadow-sm bg-white h-100 border-start border-4 border-primary">
+            <div className="card-body py-3">
+              <div className="x-small text-uppercase mb-1 text-muted fw-bold">Opening Balance</div>
+              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.opening_balance || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md col-6">
+          <div className="card border-0 shadow-sm bg-primary text-white h-100">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Filtered Total' : 'Dropped Today'}</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_dropped).toLocaleString()}</div>
             </div>
           </div>
         </div>
-        <div className="col-md-3 col-6">
-          <div className="card border-0 shadow-sm bg-success text-white">
+        <div className="col-md col-6">
+          <div className="card border-0 shadow-sm bg-success text-white h-100">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Filtered Rec.' : 'Recovered Today'}</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_recovered).toLocaleString()}</div>
             </div>
           </div>
         </div>
-        <div className="col-md-3 col-6">
-          <div className="card border-0 shadow-sm bg-warning text-dark">
+        <div className="col-md col-6">
+          <div className="card border-0 shadow-sm bg-warning text-dark h-100">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Filtered Pen.' : 'Total Pending'}</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.pending_recovery).toLocaleString()}</div>
             </div>
           </div>
         </div>
-        <div className="col-md-3 col-6">
-          <div className="card border-0 shadow-sm bg-danger text-white">
+        <div className="col-md col-12">
+          <div className="card border-0 shadow-sm bg-danger text-white h-100">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">Grand Pending Total</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.grand_total_pending).toLocaleString()}</div>

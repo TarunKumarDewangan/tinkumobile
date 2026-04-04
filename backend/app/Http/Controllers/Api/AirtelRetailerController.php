@@ -122,29 +122,25 @@ class AirtelRetailerController extends Controller
             'notes' => $validated['notes'] ?? null
         ]);
 
-        // FIFO: Mark oldest pending drops as 'recovered'
-        $remainingPayment = (float)$validated['amount'];
-        $pendingDrops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
-            ->where('status', 'pending')
+        // FIFO: Re-evaluate all drops for this retailer based on current cumulative credit
+        $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
+        $availableCredit = (float)$totalRecovered - (float)$retailer->balance;
+
+        $allDrops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
             ->orderBy('refill_date')
             ->orderBy('created_at')
             ->get();
 
-        foreach ($pendingDrops as $drop) {
-            if ($remainingPayment <= 0) break;
-
-            if ($remainingPayment >= (float)$drop->amount) {
+        foreach ($allDrops as $drop) {
+            if ($availableCredit >= (float)$drop->amount) {
                 $drop->update([
                     'status' => 'recovered',
-                    'recovered_at' => $recoveredAt,
-                    'recovery_user_id' => $request->user()->id
+                    'recovered_at' => $drop->status === 'recovered' ? $drop->recovered_at : $recoveredAt,
+                    'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id
                 ]);
-                $remainingPayment -= (float)$drop->amount;
+                $availableCredit -= (float)$drop->amount;
             } else {
-                // Partial payment for a single drop
-                // Since we don't have partial_paid column, we just leave it pending 
-                // but it's conceptually covered by the ledger.
-                break;
+                $drop->update(['status' => 'pending', 'recovered_at' => null, 'recovery_user_id' => null]);
             }
         }
 

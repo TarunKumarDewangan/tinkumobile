@@ -229,12 +229,28 @@ class AirtelDropController extends Controller
             });
         }
 
+        // Filtered Opening Balance: sum of 'balance' for retailers who have drops in this query
+        $retailerIds = (clone $query)->distinct()->pluck('retailer_id');
+        $opening_balance = (float)\App\Models\Retailer::whereIn('id', $retailerIds)->sum('balance');
+
+        $total_recovered_ledger = (float)\App\Models\AirtelRecovery::whereIn('retailer_id', $retailerIds)
+            ->when($request->from_date && $request->to_date, function($q) use ($request) {
+                $q->whereBetween('recovered_at', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+            })
+            ->when($request->date, function($q) use ($request) {
+                $q->whereDate('recovered_at', $request->date);
+            })
+            ->sum('amount');
+
+        $total_dropped = (float)$query->sum('amount');
+        
         // Stats reflect the *filtered* query
         return response()->json([
-            'total_dropped' => (float)$query->sum('amount'),
-            'total_recovered' => (float)(clone $query)->where('status', 'recovered')->sum('amount'), // This still shows drops marked recovered for compatibility
-            'pending_recovery' => (float)(clone $query)->where('status', 'pending')->sum('amount'),
-            'grand_total_pending' => (float)AirtelDrop::sum('amount') + (float)Retailer::sum('balance') - (float)\App\Models\AirtelRecovery::sum('amount'),
+            'total_dropped' => $total_dropped,
+            'total_recovered' => $total_recovered_ledger, 
+            'opening_balance' => $opening_balance,
+            'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_ledger,
+            'grand_total_pending' => (float)AirtelDrop::sum('amount') + (float)\App\Models\Retailer::sum('balance') - (float)\App\Models\AirtelRecovery::sum('amount'),
         ]);
     }
 
@@ -301,12 +317,11 @@ class AirtelDropController extends Controller
             ->get();
 
         // 2. Collections Received (Cash-Flow Centric)
-        // Shows how much cash was actually collected on each day between these dates
-        $collections = AirtelDrop::selectRaw("
+        // Fixed: Use AirtelRecovery model to ensure every rupee received is counted
+        $collections = \App\Models\AirtelRecovery::selectRaw("
                 DATE(recovered_at) as collection_date, 
                 SUM(amount) as amount_collected
             ")
-            ->where('status', 'recovered')
             ->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
             ->groupBy('collection_date')
             ->orderBy('collection_date', 'DESC')
@@ -316,13 +331,18 @@ class AirtelDropController extends Controller
         // Syncs with the dashboard grouping logic for 100% accuracy
         $retailerSummary = Retailer::whereHas('drops', function($q) {
             $q->where('status', 'pending');
+        })->orWhere('balance', '>', 0)
+        ->get()
+        ->map(function($r) {
+            $totalDropped = (float)$r->balance + \App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
+            $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            $r->pending_amount = $totalDropped - $totalRecovered;
+            return $r;
         })
-        ->withSum(['drops as pending_amount' => function($q) {
-            $q->where('status', 'pending');
-        }], 'amount')
-        ->orderByDesc('pending_amount')
-        ->limit(100) // Show top 100 debtors in summary
-        ->get();
+        ->filter(fn($r) => $r->pending_amount > 0)
+        ->sortByDesc('pending_amount')
+        ->take(100)
+        ->values();
 
         return response()->json([
             'daily_report' => $report,

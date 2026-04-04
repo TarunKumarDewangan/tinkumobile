@@ -200,19 +200,25 @@ export default function AirtelRetailers() {
           ) : historyData ? (
               <div>
                   <div className="row g-2 mb-4">
-                      <div className="col-4">
+                      <div className="col-3">
+                          <div className="bg-light p-2 rounded text-center border-start border-3 border-primary">
+                              <div className="x-small text-uppercase opacity-75">Opening</div>
+                              <div className="fw-bold">₹{(parseFloat(historyData.retailer?.balance) || 0).toLocaleString()}</div>
+                          </div>
+                      </div>
+                      <div className="col-3">
                           <div className="bg-light p-2 rounded text-center">
-                              <div className="x-small text-uppercase opacity-75">Total</div>
+                              <div className="x-small text-uppercase opacity-75">Dropped</div>
                               <div className="fw-bold">₹{historyData.stats.total_dropped.toLocaleString()}</div>
                           </div>
                       </div>
-                      <div className="col-4">
+                      <div className="col-3">
                           <div className="bg-success-subtle p-2 rounded text-center">
                               <div className="x-small text-uppercase opacity-75 text-success">Recovered</div>
                               <div className="fw-bold text-success">₹{historyData.stats.total_recovered.toLocaleString()}</div>
                           </div>
                       </div>
-                      <div className="col-4">
+                      <div className="col-3">
                           <div className="bg-danger-subtle p-2 rounded text-center">
                               <div className="x-small text-uppercase opacity-75 text-danger">Pending</div>
                               <div className="fw-bold text-danger">₹{historyData.stats.total_pending.toLocaleString()}</div>

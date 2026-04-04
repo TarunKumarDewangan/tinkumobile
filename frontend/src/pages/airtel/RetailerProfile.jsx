@@ -126,7 +126,15 @@ export default function RetailerProfile() {
             </div>
 
             <div className="row g-3 mb-4">
-                <div className="col-md-4">
+                <div className="col-md-3">
+                    <div className="card border-0 shadow-sm bg-white h-100 border-start border-4 border-primary">
+                        <div className="card-body">
+                            <div className="x-small text-uppercase text-muted mb-1 fw-bold">Opening Balance</div>
+                            <div className="h4 mb-0 fw-bold">₹{(parseFloat(retailer.balance) || 0).toLocaleString()}</div>
+                        </div>
+                    </div>
+                </div>
+                <div className="col-md-3">
                     <div className="card border-0 shadow-sm bg-white h-100">
                         <div className="card-body">
                             <div className="x-small text-uppercase text-muted mb-1 fw-bold">Total Dropped</div>
@@ -134,7 +142,7 @@ export default function RetailerProfile() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
                     <div className="card border-0 shadow-sm bg-success text-white h-100">
                         <div className="card-body">
                             <div className="x-small text-uppercase opacity-75 mb-1 fw-bold">Total Recovered</div>
@@ -142,7 +150,7 @@ export default function RetailerProfile() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
                     <div className="card border-0 shadow-sm bg-danger text-white h-100">
                         <div className="card-body">
                             <div className="x-small text-uppercase opacity-75 mb-1 fw-bold">Remaining Debt</div>
