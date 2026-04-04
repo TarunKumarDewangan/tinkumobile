@@ -92,14 +92,14 @@ class DatabaseSeeder extends Seeder
             [
                 'address' => '123 Main Street, City',
                 'phone'   => '9876543210',
-                'email'   => 'main@tinkumobiles.com',
+                'email'   => 'main@tinkumobile.in',
                 'is_main' => true,
             ]
         );
 
         // ── 4. Owner account ─────────────────────────────────────────────────
         User::firstOrCreate(
-            ['email' => 'owner@tinkumobiles.com'],
+            ['email' => 'owner@tinkumobile.in'],
             [
                 'name'     => 'Tinku (Owner)',
                 'password' => Hash::make('password'),
@@ -110,7 +110,7 @@ class DatabaseSeeder extends Seeder
 
         // ── 5. Manager account ───────────────────────────────────────────────
         $manager = User::firstOrCreate(
-            ['email' => 'manager@tinkumobiles.com'],
+            ['email' => 'manager@tinkumobile.in'],
             [
                 'name'     => 'Raju Manager',
                 'password' => Hash::make('password'),
@@ -122,7 +122,7 @@ class DatabaseSeeder extends Seeder
 
         // ── 6. Sample Cashier ─────────────────────────────────────────────────
         $cashier = User::firstOrCreate(
-            ['email' => 'cashier@tinkumobiles.com'],
+            ['email' => 'cashier@tinkumobile.in'],
             [
                 'name'     => 'Priya Cashier',
                 'password' => Hash::make('password'),
@@ -147,7 +147,7 @@ class DatabaseSeeder extends Seeder
 
         // ── 8. Recovery Man ──────────────────────────────────────────────────
         $recoveryUser = User::firstOrCreate(
-            ['email' => 'recovery@tinkumobiles.com'],
+            ['email' => 'recovery@tinkumobile.in'],
             [
                 'name'     => 'Airtel Recovery Man',
                 'password' => Hash::make('password'),
@@ -163,9 +163,9 @@ class DatabaseSeeder extends Seeder
 
         $this->command->info('✅ Seeding complete!');
         $this->command->info('   Admin:    admin@tinkumobile.in / admin123');
-        $this->command->info('   Owner:   owner@tinkumobiles.com / password');
-        $this->command->info('   Manager: manager@tinkumobiles.com / password');
-        $this->command->info('   Cashier: cashier@tinkumobiles.com / password');
-        $this->command->info('   Recovery: recovery@tinkumobiles.com / password');
+        $this->command->info('   Owner:   owner@tinkumobile.in / password');
+        $this->command->info('   Manager: manager@tinkumobile.in / password');
+        $this->command->info('   Cashier: cashier@tinkumobile.in / password');
+        $this->command->info('   Recovery: recovery@tinkumobile.in / password');
     }
 }
