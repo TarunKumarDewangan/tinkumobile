@@ -1,24 +1,16 @@
 
-# Laravel
+# Exclude frontend from backend repo
+frontend/
+
+# PHP
+backend/vendor/
+backend/.env
 backend/storage/*.key
 backend/storage/framework/cache/data/*
 backend/storage/framework/sessions/*
 backend/storage/framework/testing/*
 backend/storage/framework/views/*
 backend/storage/logs/*
-backend/.env
-
-# Node
-**/node_modules/
-**/dist/
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-
-# PHP
-**/vendor/
-backend/.phpunit.result.cache
 
 # OS
 .DS_Store

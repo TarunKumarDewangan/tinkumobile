@@ -1,0 +1,1 @@
+{"version":2,"defects":{"Tests\\Feature\\PurchaseReturnTest::test_mark_received_with_damages":7},"times":{"Tests\\Unit\\ExampleTest::test_that_true_is_true":0.454,"Tests\\Feature\\ExampleTest::test_the_application_returns_a_successful_response":2.494,"Tests\\Feature\\PurchaseReturnTest::test_mark_received_with_damages":0.08}}
