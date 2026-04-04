@@ -307,15 +307,15 @@ export default function AirtelDrops() {
           <div className="card border-0 shadow-sm bg-success text-white h-100">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Total Receivable' : 'Total Receivable'}</div>
-              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_recovered).toLocaleString()}</div>
+              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_receivable || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
         <div className="col-md col-6">
           <div className="card border-0 shadow-sm bg-warning text-dark h-100">
             <div className="card-body py-3">
-              <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Filtered Pen.' : 'Total Pending'}</div>
-              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.pending_recovery).toLocaleString()}</div>
+              <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Total Recovered' : 'Total Recovered'}</div>
+              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_recovered || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>

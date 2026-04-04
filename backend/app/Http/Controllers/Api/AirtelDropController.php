@@ -248,7 +248,8 @@ class AirtelDropController extends Controller
         // Stats reflect the *filtered* query
         return response()->json([
             'total_dropped' => $total_dropped, 
-            'total_recovered' => $total_dropped + $opening_balance, // User requested: show total (Drops + OB) here
+            'total_receivable' => $total_dropped + $opening_balance, // New field name
+            'total_recovered' => $total_recovered_ledger, // Actual recovered amount
             'opening_balance' => $opening_balance,
             'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_ledger,
             'grand_total_pending' => (float)AirtelDrop::sum('amount') + (float)\App\Models\Retailer::sum('balance') - (float)\App\Models\AirtelRecovery::sum('amount'),
