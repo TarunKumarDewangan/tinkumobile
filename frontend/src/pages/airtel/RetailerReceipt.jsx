@@ -21,9 +21,6 @@ const RetailerReceipt = ({ recovery, retailer }) => {
                     <h2 className="mb-0 fw-bold text-primary" style={{ letterSpacing: '2px' }}>TINKU MOBILE</h2>
                     <div className="x-small fw-bold">NEHRU GARDEN COMPEX DHAMTARI</div>
                     <div className="x-small fw-bold">9630830999, 7869974002</div>
-                    <div className="mt-1">
-                         <img src="https://upload.wikimedia.org/wikipedia/commons/a/af/Airtel_logo.svg" alt="Airtel" style={{height:'15px'}} />
-                    </div>
                 </div>
 
                 <div className="d-flex justify-content-between x-small fw-bold mb-1">
@@ -67,9 +64,9 @@ const RetailerReceipt = ({ recovery, retailer }) => {
                     </tfoot>
                 </table>
 
-                <div className="text-end mt-4">
-                    <div className="d-inline-block text-center" style={{ minWidth: '100px' }}>
-                        <div className="border-top border-primary pt-1 x-small fw-bold">SIG.</div>
+                <div className="text-center mt-4">
+                    <div className="x-small fw-bold opacity-75 border-top border-primary pt-2">
+                        This is a system generated bill authorised by Tinku Mobiles
                     </div>
                 </div>
             </div>
