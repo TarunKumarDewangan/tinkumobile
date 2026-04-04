@@ -13,12 +13,14 @@ return new class extends Migration
     {
         Schema::create('airtel_drops', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('retailer_id')->constrained()->onDelete('cascade');
+            $table->foreignId('retailer_id')->index()->constrained()->onDelete('cascade');
             $table->decimal('amount', 12, 2);
-            $table->timestamp('refill_date');
+            $table->dateTime('refill_date')->index();
             $table->enum('status', ['pending', 'recovered'])->default('pending');
             $table->foreignId('recovery_user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamp('recovered_at')->nullable();
+            $table->string('reason')->nullable();
+            $table->date('next_recovery_date')->nullable();
             $table->timestamps();
         });
     }
