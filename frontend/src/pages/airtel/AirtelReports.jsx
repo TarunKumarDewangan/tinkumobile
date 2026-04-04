@@ -89,25 +89,29 @@ export default function AirtelReports() {
                           <table className="table table-hover align-middle mb-0">
                               <thead className="table-light text-uppercase shadow-sm sticky-top">
                                    <tr className="x-small">
-                                       <th className="ps-3">Retailer</th>
-                                       <th className="text-end">Opening Bal.</th>
-                                       <th className="text-end pe-3">Pending Bal.</th>
+                                       <th className="ps-3" style={{minWidth:'140px'}}>Retailer</th>
+                                       <th className="text-end">OB</th>
+                                       <th className="text-end">Drops</th>
+                                       <th className="text-end">Rec.</th>
+                                       <th className="text-end pe-3">Pending</th>
                                    </tr>
                                </thead>
                                <tbody>
                                    {reportData.retailer_summary.map(r => (
                                        <tr key={r.id}>
                                            <td className="ps-3 py-2">
-                                               <div className="fw-bold small">{r.name || 'Unknown'}</div>
-                                               <div className="x-small text-muted">{r.msisdn}</div>
+                                               <div className="fw-bold x-small text-uppercase">{r.name || 'Unknown'}</div>
+                                               <div className="x-small text-muted" style={{fontSize:'0.65rem'}}>{r.msisdn}</div>
                                            </td>
-                                           <td className="text-end x-small text-muted">₹{parseFloat(r.balance || 0).toLocaleString()}</td>
-                                           <td className="text-end pe-3">
-                                               <span className="fw-bold text-danger">₹{parseFloat(r.pending_amount).toLocaleString()}</span>
+                                           <td className="text-end x-small text-muted">₹{parseFloat(r.opening_bal || 0).toLocaleString()}</td>
+                                           <td className="text-end x-small text-muted">₹{parseFloat(r.airdrop_total || 0).toLocaleString()}</td>
+                                           <td className="text-end x-small text-success fw-bold">₹{parseFloat(r.received_total || 0).toLocaleString()}</td>
+                                           <td className="text-end pe-3 x-small">
+                                               <span className="fw-bold text-danger">₹{parseFloat(r.pending_total).toLocaleString()}</span>
                                            </td>
                                        </tr>
                                    ))}
-                              </tbody>
+                               </tbody>
                           </table>
                       </div>
                   </div>

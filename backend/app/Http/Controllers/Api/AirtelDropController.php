@@ -371,19 +371,18 @@ class AirtelDropController extends Controller
         })->orWhere('balance', '>', 0)
         ->get()
         ->map(function($r) {
-            $r->total_dropped_calc = (float)$r->balance + \App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
-            $r->total_recovered_calc = \App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
-            $r->pending_amount = $r->total_dropped_calc - $r->total_recovered_calc;
+            $r->opening_bal = (float)$r->balance;
+            $r->airdrop_total = (float)\App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
+            $r->received_total = (float)\App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            $r->pending_total = ($r->opening_bal + $r->airdrop_total) - $r->received_total;
             return $r;
         })
-        ->filter(fn($r) => $r->pending_amount > 0)
-        // User requested: "if someone paid make then top to show"
-        // So we sort by total recovered amount first, then by pending amount
+        ->filter(fn($r) => $r->pending_total > 0)
         ->sort(function($a, $b) {
-            if ($a->total_recovered_calc != $b->total_recovered_calc) {
-                return $b->total_recovered_calc <=> $a->total_recovered_calc;
+            if ($a->received_total != $b->received_total) {
+                return $b->received_total <=> $a->received_total;
             }
-            return $b->pending_amount <=> $a->pending_amount;
+            return $b->pending_total <=> $a->pending_total;
         })
         ->take(100)
         ->values();
