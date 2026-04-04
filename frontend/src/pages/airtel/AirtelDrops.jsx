@@ -306,7 +306,7 @@ export default function AirtelDrops() {
         <div className="col-md col-6">
           <div className="card border-0 shadow-sm bg-success text-white h-100">
             <div className="card-body py-3">
-              <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Filtered Rec.' : 'Recovered Today'}</div>
+              <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Total Receivable' : 'Total Receivable'}</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_recovered).toLocaleString()}</div>
             </div>
           </div>
