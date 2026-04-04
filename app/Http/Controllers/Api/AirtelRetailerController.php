@@ -23,9 +23,20 @@ class AirtelRetailerController extends Controller
         $retailers = $query->orderBy('name')->paginate(20);
         
         $retailers->getCollection()->transform(function($r) {
-            $r->pending_balance = (float)\App\Models\AirtelDrop::where('retailer_id', $r->id)
-                ->where('status', 'pending')
-                ->sum('amount');
+            $totalDropped = (float)$r->balance + \App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
+            $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            $r->pending_balance = $totalDropped - $totalRecovered;
+            
+            // Simplified status for the list
+            if ($r->pending_balance <= 0) {
+                $r->status = 'FULL RECOVERED';
+            } else {
+                $hasFollowUp = \App\Models\AirtelDrop::where('retailer_id', $r->id)
+                    ->where('status', 'pending')
+                    ->whereNotNull('next_recovery_date')
+                    ->exists();
+                $r->status = $hasFollowUp ? 'FOLLOW UP' : 'PENDING';
+            }
             return $r;
         });
 
@@ -38,8 +49,13 @@ class AirtelRetailerController extends Controller
             'name' => 'required|string|max:191',
             'msisdn' => 'required|string|max:15|unique:retailers,msisdn',
             'address' => 'nullable|string',
-            'shop_id' => 'required|integer'
+            'shop_id' => 'required|integer',
+            'balance' => 'nullable|numeric'
         ]);
+
+        if (isset($validated['balance']) && !$request->user()->is_owner) {
+            $validated['balance'] = 0;
+        }
 
         $retailer = Retailer::create($validated);
         return response()->json($retailer, 201);
@@ -47,22 +63,37 @@ class AirtelRetailerController extends Controller
 
     public function show($id)
     {
-        $retailer = Retailer::findOrFail($id);
+        $retailer = Retailer::with(['recoveries' => function($q) {
+            $q->orderByDesc('recovered_at')->orderByDesc('created_at');
+        }, 'recoveries.recoveryUser'])->findOrFail($id);
 
-        // Explicitly load drops to ensure zero-blank issues are resolved
         $drops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
             ->with('recoveryUser')
             ->orderByDesc('refill_date')
             ->orderByDesc('created_at')
             ->get();
         
+        $totalDropAmt = (float)$retailer->drops()->sum('amount');
+        $totalRecAmt = (float)$retailer->recoveries()->sum('amount');
+        
         $stats = [
-            'total_dropped' => (float)\App\Models\AirtelDrop::where('retailer_id', $retailer->id)->sum('amount'),
-            'total_recovered' => (float)\App\Models\AirtelDrop::where('retailer_id', $retailer->id)->where('status', 'recovered')->sum('amount'),
-            'total_pending' => (float)\App\Models\AirtelDrop::where('retailer_id', $retailer->id)->where('status', 'pending')->sum('amount'),
+            'opening_balance' => (float)$retailer->balance,
+            'total_dropped' => $totalDropAmt,
+            'total_recovered' => $totalRecAmt,
+            'total_pending' => ((float)$retailer->balance + $totalDropAmt) - $totalRecAmt,
         ];
         
-        // Append current pending balance for the profile view
+        // Simplified status logic
+        if ($stats['total_pending'] <= 0) {
+            $retailer->status = 'FULL RECOVERED';
+        } else {
+            $hasFollowUp = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
+                ->where('status', 'pending')
+                ->whereNotNull('next_recovery_date')
+                ->exists();
+            $retailer->status = $hasFollowUp ? 'FOLLOW UP' : 'PENDING';
+        }
+
         $retailer->pending_balance = $stats['total_pending'];
         $retailer->drops = $drops;
 
@@ -72,6 +103,54 @@ class AirtelRetailerController extends Controller
         ]);
     }
 
+    public function recordRecovery(Request $request, $id)
+    {
+        $retailer = Retailer::findOrFail($id);
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'recovered_at' => 'nullable|date',
+            'notes' => 'nullable|string|max:191'
+        ]);
+
+        $recoveredAt = $validated['recovered_at'] ?? now();
+
+        $recovery = \App\Models\AirtelRecovery::create([
+            'retailer_id' => $retailer->id,
+            'amount' => $validated['amount'],
+            'recovered_at' => $recoveredAt,
+            'recovery_user_id' => $request->user()->id,
+            'notes' => $validated['notes'] ?? null
+        ]);
+
+        // FIFO: Mark oldest pending drops as 'recovered'
+        $remainingPayment = (float)$validated['amount'];
+        $pendingDrops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
+            ->where('status', 'pending')
+            ->orderBy('refill_date')
+            ->orderBy('created_at')
+            ->get();
+
+        foreach ($pendingDrops as $drop) {
+            if ($remainingPayment <= 0) break;
+
+            if ($remainingPayment >= (float)$drop->amount) {
+                $drop->update([
+                    'status' => 'recovered',
+                    'recovered_at' => $recoveredAt,
+                    'recovery_user_id' => $request->user()->id
+                ]);
+                $remainingPayment -= (float)$drop->amount;
+            } else {
+                // Partial payment for a single drop
+                // Since we don't have partial_paid column, we just leave it pending 
+                // but it's conceptually covered by the ledger.
+                break;
+            }
+        }
+
+        return response()->json($recovery, 201);
+    }
+
     public function update(Request $request, $id)
     {
         $retailer = Retailer::findOrFail($id);
@@ -79,7 +158,12 @@ class AirtelRetailerController extends Controller
             'name' => 'sometimes|required|string|max:191',
             'msisdn' => 'sometimes|required|string|max:15|unique:retailers,msisdn,' . $retailer->id,
             'address' => 'nullable|string',
+            'balance' => 'nullable|numeric'
         ]);
+
+        if (isset($validated['balance']) && !$request->user()->is_owner) {
+            unset($validated['balance']);
+        }
 
         $retailer->update($validated);
         return response()->json($retailer);
@@ -116,6 +200,35 @@ class AirtelRetailerController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    public function deleteRecovery($id)
+    {
+        $recovery = \App\Models\AirtelRecovery::findOrFail($id);
+        
+        // Mark drops that were covered by this recovery date back to pending
+        \App\Models\AirtelDrop::where('retailer_id', $recovery->retailer_id)
+            ->where('status', 'recovered')
+            ->where('recovered_at', $recovery->recovered_at)
+            ->update(['status' => 'pending', 'recovered_at' => null, 'recovery_user_id' => null]);
+
+        $recovery->delete();
+        return response()->json(null, 204);
+    }
+
+    public function bulkDeleteRecoveries(Request $request)
+    {
+        // Delete all recovery records
+        \App\Models\AirtelRecovery::truncate();
+        
+        // Reset ALL drops to pending status
+        \App\Models\AirtelDrop::query()->update([
+            'status' => 'pending',
+            'recovered_at' => null,
+            'recovery_user_id' => null
+        ]);
+
+        return response()->json(['message' => 'All recovery records have been cleared system-wide.']);
     }
 
     public function destroy($id)

@@ -141,6 +141,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('airtel-drops/import', [AirtelDropController::class, 'import']);
     Route::post('airtel-drops/bulk-delete', [AirtelDropController::class, 'bulkDeleteByDate']);
     Route::post('airtel-drops/mark-recovered', [AirtelDropController::class, 'markAsRecovered']);
+    Route::post('airtel-recoveries/bulk-delete', [AirtelRetailerController::class, 'bulkDeleteRecoveries']);
+    Route::post('airtel-retailers/{id}/record-recovery', [AirtelRetailerController::class, 'recordRecovery']);
+    Route::delete('airtel-recoveries/{id}', [AirtelRetailerController::class, 'deleteRecovery']);
     Route::post('airtel-drops/update-follow-up', [AirtelDropController::class, 'updateFollowUp']);
     Route::get('airtel-drops/summary', [AirtelDropController::class, 'summary']);
     Route::get('airtel-drops/report', [AirtelDropController::class, 'report']);

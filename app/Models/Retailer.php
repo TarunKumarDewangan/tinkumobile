@@ -17,4 +17,9 @@ class Retailer extends Model
     {
         return $this->hasMany(AirtelDrop::class);
     }
+
+    public function recoveries()
+    {
+        return $this->hasMany(AirtelRecovery::class);
+    }
 }
