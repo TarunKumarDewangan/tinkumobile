@@ -99,8 +99,9 @@ class AirtelDropController extends Controller
                 'retailer_id' => $r->id,
                 'retailer_name' => $r->name,
                 'msisdn' => $r->msisdn,
-                'total_amount' => $filtered_drops, // User requested: drops only
+                'filtered_drops' => $filtered_drops,
                 'opening_balance' => $opening_bal,
+                'total_amount' => $filtered_drops + $opening_bal, 
                 'paid_sum' => $total_recovered,
                 'has_pending' => $grand_pending > 0,
                 'grand_pending' => $grand_pending,

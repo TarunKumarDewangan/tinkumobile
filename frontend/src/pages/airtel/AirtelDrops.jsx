@@ -358,7 +358,10 @@ export default function AirtelDrops() {
                             <div className="x-small text-muted">{g.msisdn}</div>
                         </td>
                         <td>
-                            <div className="fw-bold">₹{(g.total_amount || 0).toLocaleString()}</div>
+                            <div className="fw-bold">
+                                ₹{(g.filtered_drops || 0).toLocaleString()} 
+                                {g.opening_balance > 0 && <span className="text-muted small"> + ₹{g.opening_balance.toLocaleString()}</span>}
+                            </div>
                             <div className="x-small text-muted mt-1 opacity-75 fw-bold text-uppercase">
                                 <span className="text-success">₹{(g.paid_sum || 0).toLocaleString()} Paid</span> / <span className="text-danger">₹{(g.total_amount - g.paid_sum).toLocaleString()} Pending</span>
                             </div>
