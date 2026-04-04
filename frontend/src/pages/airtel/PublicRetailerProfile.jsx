@@ -8,7 +8,9 @@ const PublicRetailerProfile = () => {
     const { msisdn } = useParams();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState('recoveries');
     const [selectedRecovery, setSelectedRecovery] = useState(null);
+    const [showReceipt, setShowReceipt] = useState(false);
 
     useEffect(() => {
         fetchProfile();
@@ -53,37 +55,49 @@ const PublicRetailerProfile = () => {
                     </div>
 
                     <div className="row g-3 mb-4">
-                         <div className="col-md-4">
+                         <div className="col-md-3 col-6">
                              <div className="card border-0 shadow-sm p-3 text-center rounded-3 bg-white h-100">
-                                 <div className="x-small text-uppercase text-muted fw-bold">Total Drops</div>
-                                 <div className="h4 fw-bold mb-0">₹{parseFloat(stats.total_dropped + stats.opening_balance).toLocaleString()}</div>
+                                 <div className="x-small text-uppercase text-muted fw-bold">Opening Bal.</div>
+                                 <div className="h5 fw-bold mb-0">₹{parseFloat(stats.opening_balance || 0).toLocaleString()}</div>
                              </div>
                          </div>
-                         <div className="col-md-4">
+                         <div className="col-md-3 col-6">
+                             <div className="card border-0 shadow-sm p-3 text-center rounded-3 bg-white h-100">
+                                 <div className="x-small text-uppercase text-muted fw-bold">Air Drops</div>
+                                 <div className="h5 fw-bold mb-0">₹{parseFloat(stats.total_dropped || 0).toLocaleString()}</div>
+                             </div>
+                         </div>
+                         <div className="col-md-3 col-6">
                              <div className="card border-0 shadow-sm p-3 text-center rounded-3 bg-white h-100">
                                  <div className="x-small text-uppercase text-muted fw-bold">Total Paid</div>
-                                 <div className="h4 fw-bold mb-0 text-success">₹{parseFloat(stats.total_recovered).toLocaleString()}</div>
+                                 <div className="h5 fw-bold mb-0 text-success">₹{parseFloat(stats.total_recovered).toLocaleString()}</div>
                              </div>
                          </div>
-                         <div className="col-md-4">
-                             <div className="card border-0 shadow-sm p-3 text-center rounded-3 bg-white h-100">
-                                 <div className="x-small text-uppercase text-muted fw-bold">Current Pending</div>
-                                 <div className="h4 fw-bold mb-0 text-danger">₹{parseFloat(stats.total_pending).toLocaleString()}</div>
+                         <div className="col-md-3 col-6">
+                             <div className="card border-0 shadow-sm p-3 text-center rounded-3 bg-white h-100 border-bottom border-4 border-danger">
+                                 <div className="x-small text-uppercase text-muted fw-bold">Pending</div>
+                                 <div className="h5 fw-bold mb-0 text-danger">₹{parseFloat(stats.total_pending).toLocaleString()}</div>
                              </div>
                          </div>
                     </div>
 
-                    <ul className="nav nav-pills mb-3 gap-2" id="pills-tab" role="tablist">
-                      <li className="nav-item" role="presentation">
-                        <button className="nav-link active rounded-pill px-4 fw-bold" id="pills-recoveries-tab" data-bs-toggle="pill" data-bs-target="#pills-recoveries" type="button" role="tab">Receipts</button>
+                    <ul className="nav nav-pills mb-3 gap-2">
+                      <li className="nav-item">
+                        <button 
+                            className={`nav-link rounded-pill px-4 fw-bold ${activeTab === 'recoveries' ? 'active' : ''}`} 
+                            onClick={() => setActiveTab('recoveries')}
+                        >Receipts</button>
                       </li>
-                      <li className="nav-item" role="presentation">
-                        <button className="nav-link rounded-pill px-4 fw-bold" id="pills-drops-tab" data-bs-toggle="pill" data-bs-target="#pills-drops" type="button" role="tab">Drop History</button>
+                      <li className="nav-item">
+                        <button 
+                            className={`nav-link rounded-pill px-4 fw-bold ${activeTab === 'drops' ? 'active' : ''}`} 
+                            onClick={() => setActiveTab('drops')}
+                        >Drop History</button>
                       </li>
                     </ul>
 
-                    <div className="tab-content" id="pills-tabContent">
-                      <div className="tab-pane fade show active" id="pills-recoveries" role="tabpanel">
+                    <div className="tab-content">
+                      {activeTab === 'recoveries' && (
                           <div className="card shadow-sm border-0 rounded-4 overflow-hidden">
                               <div className="table-responsive">
                                   <table className="table table-hover align-middle mb-0">
@@ -101,23 +115,22 @@ const PublicRetailerProfile = () => {
                                                   <td className="text-end fw-bold text-success">₹{parseFloat(r.amount).toLocaleString()}</td>
                                                   <td className="text-end pe-4">
                                                       <button 
-                                                        onClick={() => setSelectedRecovery(r)}
+                                                        onClick={() => { setSelectedRecovery(r); setShowReceipt(true); }}
                                                         className="btn btn-outline-primary btn-sm rounded-pill"
-                                                        data-bs-toggle="modal"
-                                                        data-bs-target="#receiptModal"
                                                       >
                                                           <i className="bi bi-file-earmark-text me-1"></i> Receipt
                                                       </button>
                                                   </td>
                                               </tr>
                                           ))}
-                                          {recoveries.length === 0 && <tr><td colSpan="3" className="text-center py-4 text-muted">No payment history found</td></tr>}
+                                          {recoveries.length === 0 && <tr><td colSpan="3" className="text-center py-4 text-muted small fw-bold">NO RECEIPTS FOUND</td></tr>}
                                       </tbody>
                                   </table>
                               </div>
                           </div>
-                      </div>
-                      <div className="tab-pane fade" id="pills-drops" role="tabpanel">
+                      )}
+                      
+                      {activeTab === 'drops' && (
                           <div className="card shadow-sm border-0 rounded-4 overflow-hidden">
                                <div className="table-responsive">
                                    <table className="table table-hover align-middle mb-0">
@@ -140,29 +153,31 @@ const PublicRetailerProfile = () => {
                                                    </td>
                                                </tr>
                                            ))}
-                                            {drops.length === 0 && <tr><td colSpan="3" className="text-center py-4 text-muted">No drop history found</td></tr>}
+                                            {drops.length === 0 && <tr><td colSpan="3" className="text-center py-4 text-muted small fw-bold">NO DROP HISTORY FOUND</td></tr>}
                                        </tbody>
                                    </table>
                                </div>
                           </div>
-                      </div>
+                      )}
                     </div>
                 </div>
             </div>
 
-            {/* Receipt Modal */}
-            <div className="modal fade" id="receiptModal" tabIndex="-1" aria-hidden="true">
-                <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content border-0 rounded-4 shadow-lg">
-                        <div className="modal-header border-0 pb-0">
-                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div className="modal-body pt-0">
-                            {selectedRecovery && <RetailerReceipt recovery={selectedRecovery} retailer={retailer} />}
+            {/* Receipt Modal (React Controlled) */}
+            {showReceipt && (
+                <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content border-0 rounded-4 shadow-lg">
+                            <div className="modal-header border-0 pb-0">
+                                <button type="button" className="btn-close" onClick={() => setShowReceipt(false)}></button>
+                            </div>
+                            <div className="modal-body pt-0 mb-4">
+                                {selectedRecovery && <RetailerReceipt recovery={selectedRecovery} retailer={retailer} />}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
