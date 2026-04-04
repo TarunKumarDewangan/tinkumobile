@@ -13,6 +13,7 @@ return new class extends Migration
             $table->string('name', 150);
             $table->string('phone', 20);
             $table->text('address');
+            $table->boolean('is_online_shop')->default(false);
             $table->timestamps();
         });
     }

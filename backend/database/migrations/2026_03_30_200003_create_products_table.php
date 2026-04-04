@@ -18,6 +18,7 @@ return new class extends Migration
             $table->decimal('selling_price', 10, 2);
             $table->enum('condition', ['new', 'used'])->default('new');
             $table->json('attributes')->nullable();
+            $table->string('location', 200)->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
