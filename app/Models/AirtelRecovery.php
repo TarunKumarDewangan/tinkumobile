@@ -1,0 +1,26 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class AirtelRecovery extends Model
+{
+    protected $fillable = [
+        'retailer_id', 'amount', 'recovered_at', 'recovery_user_id', 'notes'
+    ];
+
+    protected $casts = [
+        'recovered_at' => 'datetime',
+    ];
+
+    public function retailer()
+    {
+        return $this->belongsTo(Retailer::class);
+    }
+
+    public function recoveryUser()
+    {
+        return $this->belongsTo(User::class, 'recovery_user_id');
+    }
+}
