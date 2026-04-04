@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('retailer_id')->index()->constrained()->onDelete('cascade');
             $table->decimal('amount', 12, 2);
+            $table->decimal('paid_amount', 12, 2)->default(0);
             $table->dateTime('refill_date')->index();
             $table->enum('status', ['pending', 'recovered'])->default('pending');
             $table->foreignId('recovery_user_id')->nullable()->constrained('users')->onDelete('set null');

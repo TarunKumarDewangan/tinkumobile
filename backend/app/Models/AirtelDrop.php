@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class AirtelDrop extends Model
 {
     protected $fillable = [
-        'retailer_id', 'amount', 'refill_date', 'status', 
+        'retailer_id', 'amount', 'paid_amount', 'refill_date', 'status', 
         'recovery_user_id', 'recovered_at', 'reason', 'next_recovery_date'
     ];
 

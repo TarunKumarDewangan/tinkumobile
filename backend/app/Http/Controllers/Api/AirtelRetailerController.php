@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 
 use App\Models\Retailer;
+use App\Models\AirtelDrop;
+use App\Models\AirtelRecovery;
+use App\Models\User;
 
 class AirtelRetailerController extends Controller
 {
@@ -31,7 +34,7 @@ class AirtelRetailerController extends Controller
             if ($r->pending_balance <= 0) {
                 $r->status = 'FULL RECOVERED';
             } else {
-                $hasFollowUp = \App\Models\AirtelDrop::where('retailer_id', $r->id)
+                $hasFollowUp = AirtelDrop::where('retailer_id', $r->id)
                     ->where('status', 'pending')
                     ->whereNotNull('next_recovery_date')
                     ->exists();
@@ -114,7 +117,7 @@ class AirtelRetailerController extends Controller
 
         $recoveredAt = $validated['recovered_at'] ?? now();
 
-        $recovery = \App\Models\AirtelRecovery::create([
+        $recovery = AirtelRecovery::create([
             'retailer_id' => $retailer->id,
             'amount' => $validated['amount'],
             'recovered_at' => $recoveredAt,
@@ -123,24 +126,41 @@ class AirtelRetailerController extends Controller
         ]);
 
         // FIFO: Re-evaluate all drops for this retailer based on current cumulative credit
-        $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
+        $totalRecovered = AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
         $availableCredit = (float)$totalRecovered - (float)$retailer->balance;
 
-        $allDrops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
+        $allDrops = AirtelDrop::where('retailer_id', $retailer->id)
             ->orderBy('refill_date')
             ->orderBy('created_at')
             ->get();
 
         foreach ($allDrops as $drop) {
-            if ($availableCredit >= (float)$drop->amount) {
-                $drop->update([
-                    'status' => 'recovered',
-                    'recovered_at' => $drop->status === 'recovered' ? $drop->recovered_at : $recoveredAt,
-                    'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id
-                ]);
-                $availableCredit -= (float)$drop->amount;
+            $dropAmt = (float)$drop->amount;
+            if ($availableCredit > 0) {
+                if ($availableCredit >= $dropAmt) {
+                    $drop->update([
+                        'paid_amount' => $dropAmt,
+                        'status' => 'recovered',
+                        'recovered_at' => $drop->status === 'recovered' ? $drop->recovered_at : $recoveredAt,
+                        'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id
+                    ]);
+                    $availableCredit -= $dropAmt;
+                } else {
+                    $drop->update([
+                        'paid_amount' => $availableCredit,
+                        'status' => 'pending', // Partial recovery still counts as pending
+                        'recovered_at' => null,
+                        'recovery_user_id' => null
+                    ]);
+                    $availableCredit = 0;
+                }
             } else {
-                $drop->update(['status' => 'pending', 'recovered_at' => null, 'recovery_user_id' => null]);
+                $drop->update([
+                    'paid_amount' => 0,
+                    'status' => 'pending', 
+                    'recovered_at' => null, 
+                    'recovery_user_id' => null
+                ]);
             }
         }
 
@@ -198,27 +218,61 @@ class AirtelRetailerController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
-    public function deleteRecovery($id)
+    public function deleteRecovery(Request $request, $id)
     {
         $recovery = \App\Models\AirtelRecovery::findOrFail($id);
-        
-        // Mark drops that were covered by this recovery date back to pending
-        \App\Models\AirtelDrop::where('retailer_id', $recovery->retailer_id)
-            ->where('status', 'recovered')
-            ->where('recovered_at', $recovery->recovered_at)
-            ->update(['status' => 'pending', 'recovered_at' => null, 'recovery_user_id' => null]);
-
+        $retailerId = $recovery->retailer_id;
         $recovery->delete();
+
+        // Re-evaluate FIFO after deletion
+        $retailer = Retailer::find($retailerId);
+        $totalRecovered = AirtelRecovery::where('retailer_id', $retailerId)->sum('amount');
+        $availableCredit = (float)$totalRecovered - (float)$retailer->balance;
+
+        $allDrops = AirtelDrop::where('retailer_id', $retailerId)
+            ->orderBy('refill_date')
+            ->orderBy('created_at')
+            ->get();
+
+        foreach ($allDrops as $drop) {
+            $dropAmt = (float)$drop->amount;
+            if ($availableCredit > 0) {
+                if ($availableCredit >= $dropAmt) {
+                    $drop->update([
+                        'paid_amount' => $dropAmt,
+                        'status' => 'recovered'
+                    ]);
+                    $availableCredit -= $dropAmt;
+                } else {
+                    $drop->update([
+                        'paid_amount' => $availableCredit,
+                        'status' => 'pending',
+                        'recovered_at' => null,
+                        'recovery_user_id' => null
+                    ]);
+                    $availableCredit = 0;
+                }
+            } else {
+                $drop->update([
+                    'paid_amount' => 0,
+                    'status' => 'pending',
+                    'recovered_at' => null,
+                    'recovery_user_id' => null
+                ]);
+            }
+        }
+
         return response()->json(null, 204);
     }
 
     public function bulkDeleteRecoveries(Request $request)
     {
         // Delete all recovery records
-        \App\Models\AirtelRecovery::truncate();
+        AirtelRecovery::truncate();
         
         // Reset ALL drops to pending status
-        \App\Models\AirtelDrop::query()->update([
+        AirtelDrop::query()->update([
+            'paid_amount' => 0,
             'status' => 'pending',
             'recovered_at' => null,
             'recovery_user_id' => null

@@ -72,13 +72,13 @@ class AirtelDropController extends Controller
 
         // 6. Transform into a flat structure that the frontend expects
         $retailers->getCollection()->transform(function($r) {
-            $filtered_total = 0;
+            $filtered_drops = 0;
             $dates = [];
             $latest_reason = null;
             $latest_follow_up = null;
 
             foreach ($r->drops as $d) {
-                $filtered_total += (float)$d->amount;
+                $filtered_drops += (float)$d->amount;
                 
                 $dStr = $d->refill_date->format('d m Y');
                 if (!in_array($dStr, $dates)) $dates[] = $dStr;
@@ -90,7 +90,8 @@ class AirtelDropController extends Controller
             }
 
             $total_recovered = (float)\App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
-            $grand_total_debt = (float)$r->drops_sum_amount + (float)$r->balance;
+            $opening_bal = (float)$r->balance;
+            $grand_total_debt = (float)$r->drops_sum_amount + $opening_bal;
             $grand_pending = $grand_total_debt - $total_recovered;
 
             return [
@@ -98,9 +99,9 @@ class AirtelDropController extends Controller
                 'retailer_id' => $r->id,
                 'retailer_name' => $r->name,
                 'msisdn' => $r->msisdn,
-                'total_amount' => $filtered_total,
-                'paid_sum' => min($filtered_total, max(0, $total_recovered - ($grand_total_debt - $filtered_total))), // This is tricky, maybe just show grand stats?
-                // Let's simplify: Show filtered total and whether the retailer is overall pending
+                'total_amount' => $filtered_drops + $opening_bal, // Total is Drops + Opening
+                'opening_balance' => $opening_bal,
+                'paid_sum' => $total_recovered,
                 'has_pending' => $grand_pending > 0,
                 'grand_pending' => $grand_pending,
                 'dates' => implode(', ', $dates),
@@ -246,7 +247,7 @@ class AirtelDropController extends Controller
         
         // Stats reflect the *filtered* query
         return response()->json([
-            'total_dropped' => $total_dropped,
+            'total_dropped' => $total_dropped + $opening_balance,
             'total_recovered' => $total_recovered_ledger, 
             'opening_balance' => $opening_balance,
             'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_ledger,
@@ -306,15 +307,34 @@ class AirtelDropController extends Controller
 
         // 1. Daily Performance (Drop-Centric)
         // Shows the status of all drops made between these dates
-        $report = AirtelDrop::selectRaw("
+        $reportQuery = AirtelDrop::selectRaw("
                 DATE(refill_date) as date, 
                 SUM(amount) as total_dropped,
-                SUM(CASE WHEN status = 'recovered' THEN amount ELSE 0 END) as total_recovered
+                SUM(paid_amount) as total_recovered
             ")
             ->whereBetween('refill_date', [$from . ' 00:00:00', $to . ' 23:59:59'])
             ->groupBy('date')
-            ->orderBy('date', 'DESC')
-            ->get();
+            ->orderBy('date', 'DESC');
+
+        $report = $reportQuery->get();
+
+        // Calculate Global Opening Balance Stats for the top row
+        $totalOpeningBal = (float)\App\Models\Retailer::sum('balance');
+        // Correctly calculate how much recovery went to opening balances across all retailers
+        $openingRecovered = 0;
+        $retailersWithBal = \App\Models\Retailer::where('balance', '>', 0)->get();
+        foreach ($retailersWithBal as $ret) {
+            $retRec = (float)\App\Models\AirtelRecovery::where('retailer_id', $ret->id)->sum('amount');
+            $openingRecovered += min((float)$ret->balance, $retRec);
+        }
+
+        if ($totalOpeningBal > 0) {
+            $report->prepend((object)[
+                'date' => 'OPENING',
+                'total_dropped' => $totalOpeningBal,
+                'total_recovered' => $openingRecovered
+            ]);
+        }
 
         // 2. Collections Received (Cash-Flow Centric)
         // Fixed: Use AirtelRecovery model to ensure every rupee received is counted
