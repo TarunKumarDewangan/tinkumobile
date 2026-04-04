@@ -1,7 +1,3 @@
-
-# Exclude frontend from backend repo
-frontend/
-
 # PHP
 backend/vendor/
 backend/.env
