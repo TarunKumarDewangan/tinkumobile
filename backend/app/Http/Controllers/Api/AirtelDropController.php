@@ -99,7 +99,7 @@ class AirtelDropController extends Controller
                 'retailer_id' => $r->id,
                 'retailer_name' => $r->name,
                 'msisdn' => $r->msisdn,
-                'total_amount' => $filtered_drops + $opening_bal, // Total is Drops + Opening
+                'total_amount' => $filtered_drops, // User requested: drops only
                 'opening_balance' => $opening_bal,
                 'paid_sum' => $total_recovered,
                 'has_pending' => $grand_pending > 0,
@@ -247,7 +247,7 @@ class AirtelDropController extends Controller
         
         // Stats reflect the *filtered* query
         return response()->json([
-            'total_dropped' => $total_dropped + $opening_balance,
+            'total_dropped' => $total_dropped, // User requested: drops only
             'total_recovered' => $total_recovered_ledger, 
             'opening_balance' => $opening_balance,
             'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_ledger,
@@ -316,7 +316,13 @@ class AirtelDropController extends Controller
             ->groupBy('date')
             ->orderBy('date', 'DESC');
 
-        $report = $reportQuery->get();
+        $report = $reportQuery->get()->map(function($item) {
+            return [
+                'date' => $item->date,
+                'total_dropped' => (float)$item->total_dropped,
+                'total_recovered' => (float)$item->total_recovered
+            ];
+        });
 
         // Calculate Global Opening Balance Stats for the top row
         $totalOpeningBal = (float)\App\Models\Retailer::sum('balance');
@@ -329,7 +335,7 @@ class AirtelDropController extends Controller
         }
 
         if ($totalOpeningBal > 0) {
-            $report->prepend((object)[
+            $report->prepend([
                 'date' => 'OPENING',
                 'total_dropped' => $totalOpeningBal,
                 'total_recovered' => $openingRecovered
