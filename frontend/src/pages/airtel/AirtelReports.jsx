@@ -97,6 +97,14 @@ export default function AirtelReports() {
                                    </tr>
                                </thead>
                                <tbody>
+                                   {/* Grand Total Row */}
+                                   <tr className="bg-light fw-bold shadow-sm" style={{position:'sticky', top:'31px', zIndex:10}}>
+                                       <td className="ps-3 py-2 text-uppercase small">Total ({reportData.retailer_summary.length})</td>
+                                       <td className="text-end x-small">₹{reportData.retailer_summary.reduce((acc, r) => acc + (r.opening_bal || 0), 0).toLocaleString()}</td>
+                                       <td className="text-end x-small">₹{reportData.retailer_summary.reduce((acc, r) => acc + (r.airdrop_total || 0), 0).toLocaleString()}</td>
+                                       <td className="text-end x-small text-success">₹{reportData.retailer_summary.reduce((acc, r) => acc + (r.received_total || 0), 0).toLocaleString()}</td>
+                                       <td className="text-end pe-3 x-small text-danger">₹{reportData.retailer_summary.reduce((acc, r) => acc + (r.pending_total || 0), 0).toLocaleString()}</td>
+                                   </tr>
                                    {reportData.retailer_summary.map(r => (
                                        <tr key={r.id}>
                                            <td className="ps-3 py-2">
