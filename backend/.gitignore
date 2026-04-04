@@ -1,17 +1,24 @@
-
-# Exclude frontend from backend repo
-frontend/
-
-# PHP
-backend/vendor/
-backend/.env
-backend/storage/*.key
-backend/storage/framework/cache/data/*
-backend/storage/framework/sessions/*
-backend/storage/framework/testing/*
-backend/storage/framework/views/*
-backend/storage/logs/*
-
-# OS
+/vendor/
+/node_modules/
+/.env
+/.env.backup
+/.env.production
+/storage/*.key
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/testing/*
+/storage/framework/views/*
+/storage/logs/*
+.phpunit.result.cache
+/public/hot
+/public/storage
+/public/build
+composer.phar
+/auth_*.php
+/check_*.php
+/debug_*.php
+/find_*.php
+/count_*.php
+/simulate_*.php
 .DS_Store
 Thumbs.db
