@@ -317,16 +317,15 @@ class AirtelDropController extends Controller
             ->orderBy('date', 'DESC');
 
         $report = $reportQuery->get()->map(function($item) {
-            return [
+            return (object)[
                 'date' => $item->date,
                 'total_dropped' => (float)$item->total_dropped,
                 'total_recovered' => (float)$item->total_recovered
             ];
         });
 
-        // Calculate Global Opening Balance Stats for the top row
+        // Calculate Global Opening Balance Stats
         $totalOpeningBal = (float)\App\Models\Retailer::sum('balance');
-        // Correctly calculate how much recovery went to opening balances across all retailers
         $openingRecovered = 0;
         $retailersWithBal = \App\Models\Retailer::where('balance', '>', 0)->get();
         foreach ($retailersWithBal as $ret) {
@@ -335,11 +334,21 @@ class AirtelDropController extends Controller
         }
 
         if ($totalOpeningBal > 0) {
-            $report->prepend([
-                'date' => 'OPENING',
-                'total_dropped' => $totalOpeningBal,
-                'total_recovered' => $openingRecovered
-            ]);
+            if ($report->isNotEmpty()) {
+                // Merge into the first (newest) row as requested: "85500 + 1000"
+                $first = $report->first();
+                $first->total_dropped += $totalOpeningBal;
+                $first->total_recovered += $openingRecovered;
+                // Add a flag so frontend can show "Inc. Opening Balance" if needed, 
+                // but user just wants the total.
+                $first->is_merged = true;
+            } else {
+                $report->push((object)[
+                    'date' => 'OPENING',
+                    'total_dropped' => $totalOpeningBal,
+                    'total_recovered' => $openingRecovered
+                ]);
+            }
         }
 
         // 2. Collections Received (Cash-Flow Centric)
@@ -360,13 +369,20 @@ class AirtelDropController extends Controller
         })->orWhere('balance', '>', 0)
         ->get()
         ->map(function($r) {
-            $totalDropped = (float)$r->balance + \App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
-            $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
-            $r->pending_amount = $totalDropped - $totalRecovered;
+            $r->total_dropped_calc = (float)$r->balance + \App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
+            $r->total_recovered_calc = \App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            $r->pending_amount = $r->total_dropped_calc - $r->total_recovered_calc;
             return $r;
         })
         ->filter(fn($r) => $r->pending_amount > 0)
-        ->sortByDesc('pending_amount')
+        // User requested: "if someone paid make then top to show"
+        // So we sort by total recovered amount first, then by pending amount
+        ->sort(function($a, $b) {
+            if ($a->total_recovered_calc != $b->total_recovered_calc) {
+                return $b->total_recovered_calc <=> $a->total_recovered_calc;
+            }
+            return $b->pending_amount <=> $a->pending_amount;
+        })
         ->take(100)
         ->values();
 
