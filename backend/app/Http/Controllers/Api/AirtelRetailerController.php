@@ -287,4 +287,41 @@ class AirtelRetailerController extends Controller
         $retailer->delete();
         return response()->json(null, 204);
     }
+
+    public function publicProfile($msisdn)
+    {
+        $retailer = Retailer::where('msisdn', $msisdn)->firstOrFail();
+
+        $drops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
+            ->orderByDesc('refill_date')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $recoveries = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)
+            ->orderByDesc('recovered_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $totalDropAmt = (float)$retailer->drops()->sum('amount');
+        $totalRecAmt = (float)$retailer->recoveries()->sum('amount');
+        $openingBalance = (float)$retailer->balance;
+
+        $stats = [
+            'opening_balance' => $openingBalance,
+            'total_dropped' => $totalDropAmt,
+            'total_recovered' => $totalRecAmt,
+            'total_pending' => ($openingBalance + $totalDropAmt) - $totalRecAmt,
+        ];
+
+        return response()->json([
+            'retailer' => [
+                'name' => $retailer->name,
+                'msisdn' => $retailer->msisdn,
+                'address' => $retailer->address,
+            ],
+            'drops' => $drops,
+            'recoveries' => $recoveries,
+            'stats' => $stats
+        ]);
+    }
 }

@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Route;
 // ── Public Routes ──────────────────────────────────────────────────────────
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/repair-request', [RepairController::class, 'publicStore']); // Customer submits repair
+Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile']);
 
 // ── Authenticated Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->group(function () {

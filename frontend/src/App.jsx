@@ -40,6 +40,7 @@ import AirtelDrops from './pages/airtel/AirtelDrops';
 import RecoveryDashboard from './pages/airtel/RecoveryDashboard';
 import AirtelReports from './pages/airtel/AirtelReports';
 import RetailerProfile from './pages/airtel/RetailerProfile';
+import PublicRetailerProfile from './pages/airtel/PublicRetailerProfile';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/repair" element={<PublicRepair />} />
+      <Route path="/r/:msisdn" element={<PublicRetailerProfile />} />
 
       {/* Protected */}
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
