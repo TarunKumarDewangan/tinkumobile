@@ -32,7 +32,9 @@ const NAV = [
   { to: '/airtel/reports',   icon: '📈', label: 'Reports',    perm: 'view_reports' },
   { section: 'Admin' },
   { to: '/admin/users', icon: '👤', label: 'Users',      perm: 'manage_users' },
-  { to: '/admin/shops', icon: '🏪', label: 'Shops',      owner: true },
+  { to: '/admin/shops', icon: '🏪', label: 'Shops',      perm: 'manage_shops' },
+  { to: '/admin/activity-logs', icon: '📝', label: 'Activity Logs', owner: true },
+  { to: '/admin/trash', icon: '🗑️', label: 'Trash Manager', owner: true },
 ];
 
 const BOTTOM_TABS = [
@@ -44,7 +46,7 @@ const BOTTOM_TABS = [
 ];
 
 export default function Layout() {
-  const { user, logout, can, isOwner, isAdmin, hasFullAccess } = useAuth();
+  const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -74,6 +76,8 @@ export default function Layout() {
   const isVisible = (item) => {
     if (item.owner && !hasFullAccess()) return false;
     if (item.perm && !can(item.perm)) return false;
+    // Hide reports for Managers
+    if (item.label === 'Reports' && isManager()) return false;
     return true;
   };
 

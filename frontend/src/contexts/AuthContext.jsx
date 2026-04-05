@@ -53,11 +53,12 @@ export function AuthProvider({ children }) {
 
   const isOwner = () => user?.is_owner || false;
   const isAdmin = () => user?.is_admin || false;
+  const isManager = () => user?.roles?.includes('manager') || false;
   const hasFullAccess = () => user?.is_owner || user?.is_admin || false;
   const hasRole = (role) => user?.roles?.includes(role) || false;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, can, isOwner, isAdmin, hasFullAccess, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, can, isOwner, isAdmin, isManager, hasFullAccess, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

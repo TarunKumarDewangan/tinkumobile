@@ -18,7 +18,7 @@ class ProductController extends Controller
         if ($user->hasFullAccess() && !$shopId) $shopId = 1;
 
         // If user wants ungrouped "every single product" view
-        if ($request->group_by_config === 'false') {
+        if ($request->group_by_config === 'false' || $request->group_by_config === 'true') {
             $query = \App\Models\PurchaseItem::with(['product.category', 'invoice.supplier'])
                 ->whereHas('invoice', function($q) use ($shopId, $request) {
                     $q->where('status', 'received');
@@ -29,6 +29,7 @@ class ProductController extends Controller
                 })
                 ->whereHas('product', function($q) use ($request) {
                     if ($request->category_id) $q->where('category_id', $request->category_id);
+                    if ($request->model) $q->where('name', 'like', "%{$request->model}%");
                 });
 
             if ($request->search) {
@@ -46,19 +47,61 @@ class ProductController extends Controller
                 $query->whereHas('product', fn($q) => $q->where('name', 'like', "%{$request->model}%"));
             }
 
+            if ($request->color)   $query->where('color', 'like', "%{$request->color}%");
+            if ($request->imei)    $query->where('imei', 'like', "%{$request->imei}%");
             if ($request->ram)     $query->where('ram', 'like', "%{$request->ram}%");
             if ($request->storage) $query->where('storage', 'like', "%{$request->storage}%");
-            if ($request->color)   $query->where('color', 'like', "%{$request->color}%");
             
             $items = $query->get();
-            $expanded = [];
 
+            if ($request->group_by_config === 'true') {
+                $grouped = [];
+                foreach ($items as $item) {
+                    $key = $item->product_id . '_' . ($item->ram ?? '-') . '_' . ($item->storage ?? '-') . '_' . ($item->color ?? '-');
+                    if (!isset($grouped[$key])) {
+                        $grouped[$key] = [
+                            'id' => 'group_' . $key,
+                            'product_id' => $item->product_id,
+                            'name' => $item->product->name,
+                            'attributes' => [
+                                'color' => $item->color,
+                                'ram' => $item->ram,
+                                'storage' => $item->storage,
+                                'imei' => null // Grouped view doesn't show single IMEI
+                            ],
+                            'current_stock' => 0,
+                            'selling_price' => $item->selling_price,
+                            'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                            'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                            'location' => $item->location ?? $item->product->location,
+                            'category' => $item->product->category,
+                            'is_grouped' => true
+                        ];
+                    }
+                    
+                    $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
+                    $count = count($imeis);
+                    if ($count === 0 && $item->received_quantity > 0) {
+                        $count = $item->received_quantity;
+                    } else if ($count === 0) {
+                        $count = $item->quantity;
+                    }
+
+                    $grouped[$key]['current_stock'] += $count;
+                    // Keep the latest price
+                    $grouped[$key]['selling_price'] = $item->selling_price;
+                }
+                return response()->json(array_values($grouped));
+            }
+
+            $expanded = [];
             foreach ($items as $item) {
                 $imeis = $item->imei ? array_map('trim', explode(',', $item->imei)) : [null];
                 
                 foreach ($imeis as $index => $imei) {
                     $expanded[] = [
                         'id' => 'item_' . $item->id . '_' . $index,
+                        'product_id' => $item->product_id,
                         'name' => $item->product->name,
                         'attributes' => [
                             'color' => $item->color,
@@ -68,6 +111,8 @@ class ProductController extends Controller
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
+                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                         'location' => $item->location ?? $item->product->location, // Fallback
                         'category' => $item->product->category
                     ];
@@ -92,6 +137,12 @@ class ProductController extends Controller
         if ($request->color) $query->where('attributes->color', 'like', "%{$request->color}%");
         if ($request->ram) $query->where('attributes->ram', 'like', "%{$request->ram}%");
         if ($request->storage) $query->where('attributes->storage', 'like', "%{$request->storage}%");
+        if ($request->imei) {
+            $query->where(function($q) use ($request) {
+                $q->where('attributes->imei', 'like', "%{$request->imei}%")
+                  ->orWhereHas('purchaseItems', fn($pq) => $pq->where('imei', 'like', "%{$request->imei}%"));
+            });
+        }
 
         $products = $query->get();
 

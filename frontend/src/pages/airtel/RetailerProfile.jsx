@@ -10,6 +10,9 @@ export default function RetailerProfile() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const [showEdit, setShowEdit] = useState(false);
+    const [editData, setEditData] = useState({ name: '', msisdn: '', address: '', balance: '', shop_id: 1 });
+
     // Recovery / Follow-up States
     const [showRecovery, setShowRecovery] = useState(false);
     const [showFollowUp, setShowFollowUp] = useState(false);
@@ -57,22 +60,32 @@ export default function RetailerProfile() {
     };
 
     const handleRecordFollowUp = async (e) => {
+        // ... (existing code)
+    };
+
+    const handleUpdateRetailer = async (e) => {
         e.preventDefault();
-        if (!selectedDrop || !followUpReason || !followUpDate) return;
         setSubmitting(true);
         try {
-            await axios.post('/airtel-drops/update-follow-up', {
-                drop_ids: [selectedDrop.id],
-                reason: followUpReason,
-                next_recovery_date: followUpDate
-            });
-            toast.success('Follow-up recorded');
-            setShowFollowUp(false);
+            await axios.put(`/airtel-retailers/${id}`, editData);
+            toast.success('Retailer updated');
+            setShowEdit(false);
             fetchProfile();
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Follow-up failed');
+            toast.error(error.response?.data?.message || 'Update failed');
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleDeleteRetailer = async () => {
+        if (!window.confirm(`DELETE RETAILER "${retailer.name}"? This will hide all their records.`)) return;
+        try {
+            await axios.delete(`/airtel-retailers/${id}`);
+            toast.success('Retailer deleted');
+            navigate('/airtel/retailers');
+        } catch (error) {
+            toast.error('Delete failed');
         }
     };
 
@@ -81,7 +94,7 @@ export default function RetailerProfile() {
         try {
             await axios.delete(`/airtel-recoveries/${recoveryId}`);
             toast.success('Recovery deleted');
-            fetchRetailer();
+            fetchProfile();
         } catch (err) {
             toast.error('Failed to delete recovery');
         }
@@ -113,15 +126,32 @@ export default function RetailerProfile() {
                 <div className="text-end">
                     <div className="x-small text-uppercase text-muted fw-bold">Current Pending</div>
                     <div className="h3 mb-0 fw-bold text-danger">₹{(parseFloat(stats.total_pending) || 0).toLocaleString()}</div>
-                    <button 
-                        className="btn btn-success btn-sm text-uppercase fw-bold mt-2 px-3 shadow-sm"
-                        onClick={() => {
-                            setRecoveryAmount(stats.total_pending > 0 ? stats.total_pending : '');
-                            setShowRecovery(true);
-                        }}
-                    >
-                        + Record Recovery
-                    </button>
+                    <div className="d-flex gap-2 justify-content-end mt-2">
+                        <button 
+                            className="btn btn-outline-secondary btn-sm text-uppercase fw-bold px-3 shadow-sm"
+                            onClick={() => {
+                                setEditData({
+                                    name: retailer.name,
+                                    msisdn: retailer.msisdn,
+                                    address: retailer.address || '',
+                                    balance: retailer.balance,
+                                    shop_id: retailer.shop_id || 1
+                                });
+                                setShowEdit(true);
+                            }}
+                        >
+                            Edit Retailer
+                        </button>
+                        <button 
+                            className="btn btn-success btn-sm text-uppercase fw-bold px-3 shadow-sm"
+                            onClick={() => {
+                                setRecoveryAmount(stats.total_pending > 0 ? stats.total_pending : '');
+                                setShowRecovery(true);
+                            }}
+                        >
+                            + Record Recovery
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -332,6 +362,7 @@ export default function RetailerProfile() {
             </Modal>
 
             <Modal show={showFollowUp} onClose={() => setShowFollowUp(false)} title="NOT PAID / FOLLOW-UP">
+                {/* ... (existing follow-up form) */}
                 <form onSubmit={handleRecordFollowUp}>
                     <div className="mb-3">
                         <label className="form-label x-small text-uppercase fw-bold">Reason for Non-payment</label>
@@ -358,6 +389,43 @@ export default function RetailerProfile() {
                     <button type="submit" className="btn btn-primary w-100 text-uppercase fw-bold py-2" disabled={submitting}>
                         {submitting ? 'Saving...' : 'Save Follow-up'}
                     </button>
+                </form>
+            </Modal>
+
+            <Modal show={showEdit} onClose={() => setShowEdit(false)} title="EDIT RETAILER DETAILS">
+                <form onSubmit={handleUpdateRetailer}>
+                    <div className="row g-3 mb-4">
+                        <div className="col-md-6">
+                            <label className="form-label x-small text-uppercase fw-bold">Retailer Name</label>
+                            <input type="text" className="form-control text-uppercase" value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} required />
+                        </div>
+                        <div className="col-md-6">
+                            <label className="form-label x-small text-uppercase fw-bold">MSISDN (Airtel Number)</label>
+                            <input type="text" className="form-control" value={editData.msisdn} onChange={e => setEditData({...editData, msisdn: e.target.value})} required />
+                        </div>
+                        <div className="col-md-12">
+                            <label className="form-label x-small text-uppercase fw-bold">Shop Address (Optional)</label>
+                            <textarea className="form-control text-uppercase" rows="2" value={editData.address} onChange={e => setEditData({...editData, address: e.target.value})} />
+                        </div>
+                        <div className="col-md-6">
+                            <label className="form-label x-small text-uppercase fw-bold text-danger">Opening balance</label>
+                            <input type="number" step="0.01" className="form-control fw-bold border-danger" value={editData.balance} onChange={e => setEditData({...editData, balance: e.target.value})} required />
+                            <div className="form-text x-small text-danger fw-bold">!! Use this to adjust the initial debt !!</div>
+                        </div>
+                        <div className="col-md-6">
+                            <label className="form-label x-small text-uppercase fw-bold">Shop ID</label>
+                            <input type="number" className="form-control" value={editData.shop_id} onChange={e => setEditData({...editData, shop_id: e.target.value})} required />
+                        </div>
+                    </div>
+                    
+                    <div className="d-flex gap-2">
+                        <button type="submit" className="btn btn-primary flex-grow-1 text-uppercase fw-bold py-2" disabled={submitting}>
+                            {submitting ? 'Updating...' : 'Update Retailer'}
+                        </button>
+                        <button type="button" className="btn btn-outline-danger px-4 text-uppercase fw-bold" onClick={handleDeleteRetailer}>
+                            Delete
+                        </button>
+                    </div>
                 </form>
             </Modal>
         </div>

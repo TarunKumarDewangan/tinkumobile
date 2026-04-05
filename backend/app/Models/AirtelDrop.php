@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class AirtelDrop extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'retailer_id', 'amount', 'paid_amount', 'refill_date', 'status', 
         'recovery_user_id', 'recovered_at', 'reason', 'next_recovery_date'

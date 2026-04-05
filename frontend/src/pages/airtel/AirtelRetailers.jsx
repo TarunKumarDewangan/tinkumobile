@@ -6,7 +6,7 @@ import Modal from '../../components/Modal';
 
 import { useAuth } from '../../contexts/AuthContext';
 export default function AirtelRetailers() {
-  const { can, isOwner } = useAuth();
+  const { can, isOwner, isManager } = useAuth();
   const navigate = useNavigate();
   const [retailers, setRetailers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -176,7 +176,7 @@ export default function AirtelRetailers() {
                     {can('manage_airtel_recovery') && (
                       <>
                         <button className="btn btn-outline-primary btn-sm me-2" onClick={() => openModal(r)}>EDIT</button>
-                        <button className="btn btn-outline-danger btn-sm" onClick={() => handleDelete(r.id)}>DEL</button>
+                        {!isManager() && <button className="btn btn-outline-danger btn-sm" onClick={() => handleDelete(r.id)}>DEL</button>}
                       </>
                     )}
                   </td>
@@ -308,11 +308,11 @@ export default function AirtelRetailers() {
                     className="form-control text-danger fw-bold" 
                     value={form.balance} 
                     onChange={e => setForm({...form, balance: e.target.value})}
-                    disabled={!isOwner()}
+                    disabled={!isOwner() && !isManager()}
                     placeholder="0.00"
                 />
             </div>
-            {!isOwner() && <div className="form-text x-small text-muted">Only Owner can modify opening balance.</div>}
+            {!isOwner() && !isManager() && <div className="form-text x-small text-muted">Only Owner can modify opening balance.</div>}
           </div>
           <div className="d-grid mt-4">
             <button type="submit" className="btn btn-primary text-uppercase fw-bold">

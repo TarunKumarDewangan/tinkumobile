@@ -24,7 +24,8 @@ export default function Purchases() {
     ram: '',
     storage: '',
     color: '',
-    model: ''
+    model: '',
+    imei: ''
   });
 
   const [activeTab, setActiveTab] = useState('purchases');
@@ -33,9 +34,11 @@ export default function Purchases() {
   const [loadingStocks, setLoadingStocks] = useState(false);
   const [groupStocks, setGroupStocks] = useState(true);
   const [groupPending, setGroupPending] = useState(true);
+  const [imeiList, setImeiList] = useState([]);
 
   useEffect(() => {
     loadSuppliers();
+    loadUniqueImeis();
   }, []);
 
   useEffect(() => {
@@ -52,6 +55,13 @@ export default function Purchases() {
     try {
       const r = await api.get('/suppliers');
       setSuppliers(r.data);
+    } catch(e) {}
+  };
+
+  const loadUniqueImeis = async () => {
+    try {
+      const { data } = await api.get('/purchase-invoices/unique-imeis');
+      setImeiList(data);
     } catch(e) {}
   };
 
@@ -106,7 +116,8 @@ export default function Purchases() {
       ram: '',
       storage: '',
       color: '',
-      model: ''
+      model: '',
+      imei: ''
     });
   };
 
@@ -308,6 +319,20 @@ export default function Purchases() {
                 onChange={e => handleFilterChange('storage', e.target.value.toUpperCase())}
               />
            </div>
+           <div className="col-6 col-md-2">
+              <label className="small text-muted mb-1 px-1 fw-bold">🆔 IMEI NUMBER</label>
+              <input 
+                list="imeiOptions"
+                type="text" 
+                className="form-control form-control-sm border-light bg-light text-uppercase"
+                placeholder="TYPE OR SELECT IMEI..." 
+                value={filters.imei}
+                onChange={e => handleFilterChange('imei', e.target.value.toUpperCase())}
+              />
+              <datalist id="imeiOptions">
+                {imeiList.map((imei, idx) => <option key={idx} value={imei} />)}
+              </datalist>
+           </div>
         </div>
       </div>
 
@@ -370,6 +395,11 @@ export default function Purchases() {
                             {p.items?.map((item, idx) => (
                               <div key={idx} className="mb-1 border-bottom border-light pb-1">
                                 {item.ram || '-'}/{item.storage || '-'}/{item.color || '-'}
+                                {item.imei && (
+                                  <div className="text-primary fw-bold mt-1" style={{fontSize: '0.65rem'}}>
+                                    🆔 {item.imei}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </td>

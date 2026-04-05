@@ -18,6 +18,8 @@ const REMOVE_REASONS = ['correction_remove','damage_write_off','return_to_suppli
 
 export default function StockEntry() {
   const [products, setProducts] = useState([]);
+  const [baseProducts, setBaseProducts] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [currentStock, setCurrentStock] = useState({});  // productId → stock
   const [form, setForm] = useState({
     product_id: '', quantity: 1, reason: 'opening_stock',
@@ -30,16 +32,33 @@ export default function StockEntry() {
   const [tab, setTab] = useState('stocks'); // 'stocks' | 'entry' | 'history'
   const [loading, setLoading] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Filter States
+  const [filters, setFilters] = useState({
+    search: '',
+    supplier_id: '',
+    from: '',
+    to: '',
+    ram: '',
+    storage: '',
+    color: '',
+    model: '',
+    imei: '',
+    group_by_config: true
+  });
+  const [imeiList, setImeiList] = useState([]);
 
   // Load products and current stock levels
   const loadData = useCallback(async () => {
+    setLoading(true);
     try {
-        const [prodRes, stockRes] = await Promise.all([
+        const [prodRes, baseProdRes, stockRes] = await Promise.all([
+            api.get('/products', { params: filters }),
             api.get('/products'),
             api.get('/stock-levels')
         ]);
         setProducts(prodRes.data);
+        setBaseProducts(baseProdRes.data);
         const map = {};
         stockRes.data.forEach(inv => { map[inv.product_id] = inv.stock; });
         setCurrentStock(map);
@@ -54,10 +73,50 @@ export default function StockEntry() {
         }
     } catch(e) {
         toast.error("Failed to load inventory data");
+    } finally {
+        setLoading(false);
     }
-  }, [isOwner, form.shop_id]);
+  }, [isOwner, form.shop_id, filters]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const loadSuppliers = async () => {
+    try {
+      const r = await api.get('/suppliers');
+      setSuppliers(r.data);
+    } catch(e) {}
+  };
+
+  const loadUniqueImeis = async () => {
+    try {
+      const { data } = await api.get('/purchase-invoices/unique-imeis');
+      setImeiList(data);
+    } catch(e) {}
+  };
+
+  useEffect(() => {
+    loadSuppliers();
+    loadUniqueImeis();
+  }, []);
+
+  const handleFilterChange = (name, value) => {
+    setFilters(prev => ({ ...prev, [name]: value }));
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      supplier_id: '',
+      from: '',
+      to: '',
+      ram: '',
+      storage: '',
+      color: '',
+      model: '',
+      imei: '',
+      group_by_config: true
+    });
+  };
 
   const loadHistory = useCallback(() => {
     setHistLoading(true);
@@ -66,14 +125,6 @@ export default function StockEntry() {
 
   useEffect(() => { if (tab === 'history') loadHistory(); }, [tab]);
 
-  // Filtered products for "All Stocks" view
-  const filteredStocks = products.filter(p => {
-    const s = searchTerm.toLowerCase();
-    return p.name.toLowerCase().includes(s) || 
-           p.sku.toLowerCase().includes(s) || 
-           p.category?.name.toLowerCase().includes(s) ||
-           (p.attributes?.model && p.attributes.model.toLowerCase().includes(s));
-  });
 
   // Auto-set type based on chosen reason
   const isAdd = ADD_REASONS.includes(form.reason);
@@ -95,7 +146,7 @@ export default function StockEntry() {
     } finally { setLoading(false); }
   };
 
-  const selectedProduct = products.find(p => p.id == form.product_id);
+   const selectedProduct = baseProducts.find(p => p.id == form.product_id);
   const selectedStock   = form.product_id ? (currentStock[form.product_id] ?? 0) : null;
 
   return (
@@ -128,60 +179,182 @@ export default function StockEntry() {
       {/* ── All Stocks Tab ── */}
       {tab === 'stocks' && (
         <div className="fade-in">
-           <div className="form-card mb-3 p-3">
-              <div className="input-group">
-                 <span className="input-group-text bg-white border-end-0">🔍</span>
-                 <input 
-                    type="text" 
-                    className="form-control border-start-0 ps-0" 
-                    placeholder="SEARCH STOCKS BY NAME, SKU, MODEL..." 
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value.toUpperCase())}
-                 />
-                 {searchTerm && (
-                    <button className="btn btn-outline-secondary border-start-0" onClick={() => setSearchTerm('')}>✕</button>
-                 )}
+          <div className="card border-0 shadow-sm p-3 mb-4 bg-white rounded-3">
+            <div className="row g-2 align-items-end text-uppercase">
+              <div className="col-12 col-md-3">
+                <label className="small text-muted mb-1 px-1 fw-bold">🔍 SEARCH PRODUCT / SKU</label>
+                <input 
+                  type="text" 
+                  className="form-control form-control-sm border-light bg-light text-uppercase"
+                  placeholder="TYPE TO SEARCH..." 
+                  value={filters.search}
+                  onChange={e => handleFilterChange('search', e.target.value.toUpperCase())}
+                />
               </div>
-           </div>
+              <div className="col-6 col-md-2">
+                <label className="small text-muted mb-1 px-1 fw-bold">👩‍💼 SUPPLIER</label>
+                <select 
+                  className="form-control form-control-sm border-light bg-light text-uppercase"
+                  value={filters.supplier_id}
+                  onChange={e => handleFilterChange('supplier_id', e.target.value)}
+                >
+                  <option value="">ALL SUPPLIERS</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
+                </select>
+              </div>
+              <div className="col-6 col-md-1">
+                <label className="small text-muted mb-1 px-1 fw-bold">📅 FROM</label>
+                <input 
+                  type="date" 
+                  className="form-control form-control-sm border-light bg-light"
+                  value={filters.from}
+                  onChange={e => handleFilterChange('from', e.target.value)}
+                />
+              </div>
+              <div className="col-6 col-md-1">
+                <label className="small text-muted mb-1 px-1 fw-bold">📅 TO</label>
+                <input 
+                  type="date" 
+                  className="form-control form-control-sm border-light bg-light"
+                  value={filters.to}
+                  onChange={e => handleFilterChange('to', e.target.value)}
+                />
+              </div>
+              <div className="col-auto">
+                 <button className="btn btn-sm btn-light border-0 text-uppercase fw-bold" onClick={clearFilters}>Clear</button>
+              </div>
+              <div className="col-auto">
+                 <div className="form-check form-switch mb-1">
+                    <input 
+                      className="form-check-input" 
+                      type="checkbox" 
+                      id="groupByConfig" 
+                      checked={filters.group_by_config}
+                      onChange={e => handleFilterChange('group_by_config', e.target.checked)}
+                    />
+                    <label className="form-check-label small fw-bold text-primary" htmlFor="groupByConfig">GROUP BY CONFIG</label>
+                 </div>
+              </div>
+            </div>
+
+            <div className="row g-2 align-items-end mt-2 pt-2 border-top border-light text-uppercase">
+               <div className="col-6 col-md-3">
+                  <label className="small text-muted mb-1 px-1 fw-bold">📱 MODEL/BRAND</label>
+                  <input 
+                    type="text" 
+                    className="form-control form-control-sm border-light bg-light text-uppercase"
+                    placeholder="E.G. VIVO V70" 
+                    value={filters.model}
+                    onChange={e => handleFilterChange('model', e.target.value.toUpperCase())}
+                  />
+               </div>
+               <div className="col-6 col-md-2">
+                  <label className="small text-muted mb-1 px-1 fw-bold">🎨 COLOR</label>
+                  <input 
+                    type="text" 
+                    className="form-control form-control-sm border-light bg-light text-uppercase"
+                    placeholder="E.G. BLACK" 
+                    value={filters.color}
+                    onChange={e => handleFilterChange('color', e.target.value.toUpperCase())}
+                  />
+               </div>
+               <div className="col-6 col-md-2">
+                  <label className="small text-muted mb-1 px-1 fw-bold">🚀 RAM</label>
+                  <input 
+                    type="text" 
+                    className="form-control form-control-sm border-light bg-light text-uppercase"
+                    placeholder="E.G. 8GB" 
+                    value={filters.ram}
+                    onChange={e => handleFilterChange('ram', e.target.value.toUpperCase())}
+                  />
+               </div>
+               <div className="col-6 col-md-2">
+                  <label className="small text-muted mb-1 px-1 fw-bold">💾 STORAGE</label>
+                  <input 
+                    type="text" 
+                    className="form-control form-control-sm border-light bg-light text-uppercase"
+                    placeholder="E.G. 128GB" 
+                    value={filters.storage}
+                    onChange={e => handleFilterChange('storage', e.target.value.toUpperCase())}
+                  />
+               </div>
+               <div className="col-6 col-md-2">
+                  <label className="small text-muted mb-1 px-1 fw-bold">🆔 IMEI NUMBER</label>
+                  <input 
+                    list="stockImeiOptions"
+                    type="text" 
+                    className="form-control form-control-sm border-light bg-light text-uppercase"
+                    placeholder="E.G. 3546..." 
+                    value={filters.imei}
+                    onChange={e => handleFilterChange('imei', e.target.value.toUpperCase())}
+                  />
+                  <datalist id="stockImeiOptions">
+                    {imeiList.map((i, idx) => <option key={idx} value={i} />)}
+                  </datalist>
+               </div>
+            </div>
+          </div>
 
            <div className="table-card">
               <div className="table-responsive">
-                 <table className="table table-hover align-middle mb-0">
+                 <table className="table table-hover align-middle mb-0 text-uppercase">
                     <thead className="table-light">
                        <tr>
-                          <th>PRODUCT NAME</th>
-                          <th>CATEGORY</th>
-                          <th className="text-center">CURRENT STOCK</th>
-                          <th className="text-end">UNIT PRICE</th>
+                          <th>PRODUCT & CONFIG</th>
+                          <th>{filters.group_by_config ? 'QTY' : 'IMEI'}</th>
+                          <th className="text-center">MIN SELL</th>
+                          <th className="text-center">MAX SELL</th>
+                          <th className="text-center">CURR PRICE</th>
                           <th>LOCATION</th>
                           <th className="text-end">ACTIONS</th>
                        </tr>
                     </thead>
                     <tbody>
-                       {filteredStocks.map(p => (
+                       {loading ? (
+                          <tr><td colSpan={7} className="text-center py-4"><div className="spinner-border spinner-border-sm"/></td></tr>
+                       ) : products.map(p => (
                           <tr key={p.id}>
                              <td>
                                 <div className="fw-bold text-primary">{p.name}</div>
-                                <div className="text-muted small">SKU: {p.sku}</div>
-                                {p.attributes?.model && <div className="text-muted small">MODEL: {p.attributes.model}</div>}
+                                <div className="text-muted x-small">
+                                   {p.attributes?.ram || '-'}/{p.attributes?.storage || '-'}/{p.attributes?.color || '-'}
+                                </div>
                              </td>
-                             <td><span className="badge bg-light text-dark border">{p.category?.name}</span></td>
-                             <td className="text-center">
-                                <span className={`badge rounded-pill px-3 py-2 ${ (currentStock[p.id] ?? 0) > 0 ? 'bg-success' : 'bg-danger' }`}>
-                                   {currentStock[p.id] ?? 0} UNITS
-                                </span>
+                             <td>
+                                {filters.group_by_config ? (
+                                   <span className="badge bg-primary text-white border">{p.current_stock} UNITS</span>
+                                ) : (
+                                   p.attributes?.imei ? (
+                                      <span className="badge bg-light text-dark border">🆔 {p.attributes.imei}</span>
+                                   ) : (
+                                      <span className="text-muted small">—</span>
+                                   )
+                                )}
                              </td>
-                             <td className="text-end fw-bold">₹{p.selling_price}</td>
+                             <td className="text-center fw-bold text-danger">₹{parseFloat(p.min_selling_price || 0).toLocaleString('en-IN')}</td>
+                             <td className="text-center fw-bold text-success">₹{parseFloat(p.max_selling_price || 0).toLocaleString('en-IN')}</td>
+                             <td className="text-center fw-bold">₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}</td>
                              <td>{p.location ? `📍 ${p.location}` : '—'}</td>
                              <td className="text-end">
-                                <button className="btn btn-sm btn-outline-primary" onClick={() => { setForm({...form, product_id: p.id}); setTab('entry'); }}>
+                                <button 
+                                   className="btn btn-sm btn-success fw-bold px-3 shadow-xs" 
+                                   onClick={() => {
+                                      window.location.href = `/sales/new?imei=${p.attributes?.imei || ''}`;
+                                    }}
+                                >
+                                   SELL
+                                </button>
+                                <button 
+                                   className="btn btn-sm btn-link text-decoration-none small ms-1"
+                                   onClick={() => { setForm({...form, product_id: p.product_id || p.id}); setTab('entry'); }}
+                                >
                                    ADJUST
                                 </button>
                              </td>
                           </tr>
                        ))}
-                       {filteredStocks.length === 0 && (
-                          <tr><td colSpan={6} className="text-center py-5 text-muted">No matching stocks found</td></tr>
+                       {products.length === 0 && !loading && (
+                          <tr><td colSpan={7} className="text-center py-5 text-muted">No matching stocks found</td></tr>
                        )}
                     </tbody>
                  </table>
@@ -205,7 +378,7 @@ export default function StockEntry() {
                     <label className="form-label fw-semibold">Product <span className="text-danger">*</span></label>
                     <select className="form-select" required value={form.product_id} onChange={e => setForm({...form, product_id: e.target.value})}>
                       <option value="">— Select product —</option>
-                      {products.map(p => (
+                      {baseProducts.map(p => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.sku}) — Current: {currentStock[p.id] ?? 0} units
                         </option>

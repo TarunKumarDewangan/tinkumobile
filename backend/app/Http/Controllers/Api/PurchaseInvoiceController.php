@@ -41,6 +41,9 @@ class PurchaseInvoiceController extends Controller
         if ($request->model) {
             $query->whereHas('items', fn($q) => $q->whereHas('product', fn($pq) => $pq->where('name', 'like', "%{$request->model}%")));
         }
+        if ($request->imei) {
+            $query->whereHas('items', fn($q) => $q->where('imei', 'like', "%{$request->imei}%"));
+        }
 
         if ($request->search) {
             $search = $request->search;
@@ -452,6 +455,9 @@ class PurchaseInvoiceController extends Controller
                 if ($request->search) {
                     $q->where('invoice_no', 'like', "%{$request->search}%");
                 }
+                if ($request->imei) {
+                    $q->where('imei', 'like', "%{$request->imei}%");
+                }
             })
             ->whereHas('product', function ($q) use ($request) {
                 $q->where('category_id', 1); // Mobile
@@ -510,5 +516,23 @@ class PurchaseInvoiceController extends Controller
         }
 
         return response()->json($items);
+    }
+
+    public function getUniqueImeis(Request $request)
+    {
+        $user = $request->user();
+        $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
+        
+        $query = PurchaseItem::whereNotNull('imei')->where('imei', '!=', '');
+        
+        if ($shopId) {
+            $query->whereHas('invoice', fn($q) => $q->where('shop_id', $shopId));
+        }
+
+        $imeis = $query->pluck('imei')->flatMap(function($item) {
+            return array_map('trim', explode(',', $item));
+        })->unique()->sort()->values();
+
+        return response()->json($imeis);
     }
 }

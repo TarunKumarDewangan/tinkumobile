@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PurchaseInvoice extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'invoice_no', 'bill_type', 'shop_id', 'supplier_id', 'user_id', 'purchase_date', 'expected_delivery_date',
         'total_amount', 'cgst_rate', 'sgst_rate', 'cgst_amount', 'sgst_amount',

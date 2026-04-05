@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Supplier extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = ['name', 'phone', 'address', 'is_online_shop'];
     protected $casts = ['is_online_shop' => 'boolean'];
 

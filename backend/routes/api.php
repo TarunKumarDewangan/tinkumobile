@@ -25,6 +25,8 @@ use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\SalaryPaymentController;
 use App\Http\Controllers\Api\AirtelRetailerController;
+use App\Http\Controllers\Api\ActivityLogController;
+use App\Http\Controllers\Api\TrashController;
 use App\Http\Controllers\Api\AirtelDropController;
 use Illuminate\Support\Facades\Route;
 
@@ -65,6 +67,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::apiResource('salary-payments', SalaryPaymentController::class);
 
     // Purchases
+    Route::get('purchase-invoices/unique-imeis', [PurchaseInvoiceController::class, 'getUniqueImeis']);
     Route::get('purchase-invoices/pending-stocks', [PurchaseInvoiceController::class, 'pendingStocks']);
     Route::apiResource('purchase-invoices', PurchaseInvoiceController::class)->parameters([
         'purchase-invoices' => 'purchaseInvoice'
@@ -83,6 +86,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Follow-ups
     Route::apiResource('follow-ups', FollowUpController::class);
+
+    // Users
+    Route::get('/users', [UserController::class, 'index']);
+    Route::post('/users', [UserController::class, 'store']);
+    Route::put('/users/{id}', [UserController::class, 'update']);
+    Route::delete('/users/{id}', [UserController::class, 'destroy']);
+
+    // Activity Logs
+    Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+
+    // Trash Management
+    Route::get('/trash', [TrashController::class, 'index']);
+    Route::post('/trash/restore', [TrashController::class, 'restore']);
 
     // Loans
     Route::get('/loans', [LoanController::class, 'index']);

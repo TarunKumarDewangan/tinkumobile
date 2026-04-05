@@ -3,10 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Retailer extends Model
 {
-    protected $fillable = ['msisdn', 'name', 'address', 'balance', 'shop_id'];
+    use SoftDeletes;
+
+    protected $fillable = ['name', 'msisdn', 'shop_id', 'balance', 'status'];
 
     public function shop()
     {

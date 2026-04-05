@@ -60,6 +60,35 @@ export default function SaleForm() {
     } catch (e) { toast.error('Error loading data'); }
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const imei = params.get('imei');
+    if (imei && products.length > 0) {
+      handleImeiPreFill(imei);
+    }
+  }, [products]);
+
+  const handleImeiPreFill = async (imei) => {
+    try {
+      const { data } = await api.get(`/products?imei=${imei}&group_by_config=false`);
+      if (data && data.length > 0) {
+        const p = data[0];
+        setItems([{
+          product_id: p.product_id || p.id,
+          imei: p.attributes?.imei || imei,
+          ram: p.attributes?.ram || '',
+          storage: p.attributes?.storage || '',
+          color: p.attributes?.color || '',
+          quantity: 1,
+          unit_price: p.selling_price,
+          base_price: p.purchase_price || 0,
+          min_selling_price: p.min_selling_price || 0,
+          max_selling_price: p.max_selling_price || 0
+        }]);
+      }
+    } catch (e) {}
+  };
+
   const loadSale = async () => {
     setLoading(true);
     try {

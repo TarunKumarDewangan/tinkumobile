@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Models\ActivityLog;
 
 class AuthController extends Controller
 {
@@ -27,6 +28,8 @@ class AuthController extends Controller
 
         $token = $user->createToken('api-token')->plainTextToken;
 
+        ActivityLog::log('LOGIN', $user, 'User logged in: ' . $user->name);
+
         return response()->json([
             'token' => $token,
             'user' => [
@@ -45,7 +48,9 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        $user->currentAccessToken()->delete();
+        ActivityLog::log('LOGOUT', $user, 'User logged out: ' . $user->name);
         return response()->json(['message' => 'Logged out successfully']);
     }
 

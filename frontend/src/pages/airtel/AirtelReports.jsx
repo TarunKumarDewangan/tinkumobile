@@ -1,12 +1,26 @@
 import { useState, useEffect } from 'react';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function AirtelReports() {
+  const { isManager } = useAuth();
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+
+  if (isManager()) {
+    return (
+      <div className="container-fluid py-5">
+        <div className="alert alert-danger text-center py-5 shadow-sm">
+          <h1 className="display-1 mb-4">🚫</h1>
+          <h2 className="fw-bold text-uppercase">Access Denied</h2>
+          <p className="lead">Managers are not authorized to view recovery reports.</p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     fetchReport();

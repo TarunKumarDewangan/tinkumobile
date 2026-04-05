@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 
 use App\Models\AirtelDrop;
 use App\Models\Retailer;
+use App\Models\ActivityLog;
 use Carbon\Carbon;
 
 class AirtelDropController extends Controller
@@ -19,16 +20,19 @@ class AirtelDropController extends Controller
             'date' => 'nullable|date'
         ]);
 
-        // 1. Start with Retailers that have at least one drop matching the filters
-        $query = Retailer::whereHas('drops', function($q) use ($request) {
-            if ($request->from_date && $request->to_date) {
-                $q->whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
-            } elseif ($request->date) {
-                $q->whereDate('refill_date', $request->date);
-            }
-            if ($request->min_amount) $q->where('amount', '>=', $request->min_amount);
-            if ($request->max_amount) $q->where('amount', '<=', $request->max_amount);
-            if ($request->follow_up) $q->where(function($qf) { $qf->whereNotNull('reason')->orWhereNotNull('next_recovery_date'); });
+        // 1. Start with Retailers that have at least one drop matching the filters OR have a non-zero balance
+        $query = Retailer::where(function($q) use ($request) {
+            $q->whereHas('drops', function($sq) use ($request) {
+                if ($request->from_date && $request->to_date) {
+                    $sq->whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+                } elseif ($request->date) {
+                    $sq->whereDate('refill_date', $request->date);
+                }
+                if ($request->min_amount) $sq->where('amount', '>=', $request->min_amount);
+                if ($request->max_amount) $sq->where('amount', '<=', $request->max_amount);
+                if ($request->follow_up) $sq->where(function($qf) { $qf->whereNotNull('reason')->orWhereNotNull('next_recovery_date'); });
+            })
+            ->orWhere('balance', '>', 0);
         });
 
         // 2. Search by name or MSISDN
@@ -40,14 +44,15 @@ class AirtelDropController extends Controller
         }
 
         // 3. Apply status filters at the retailer level (using grouping subquery)
+        // 3. Apply status filters at the retailer level
         if ($request->status && in_array($request->status, ['pending_only', 'recovered_only'])) {
-            $query->whereIn('id', function($sub) use ($request) {
-                $sub->select('retailer_id')->from('airtel_drops')->groupBy('retailer_id');
-                // We use a subquery to compare total drops vs total recoveries for these retailers
+            $query->where(function($q) use ($request) {
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id)";
                 if ($request->status === 'pending_only') {
-                    $sub->havingRaw("(SUM(amount) + (SELECT balance FROM retailers WHERE retailers.id = airtel_drops.retailer_id)) > (SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = airtel_drops.retailer_id)");
-                } elseif ($request->status === 'recovered_only') {
-                    $sub->havingRaw("(SUM(amount) + (SELECT balance FROM retailers WHERE retailers.id = airtel_drops.retailer_id)) <= (SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = airtel_drops.retailer_id)");
+                    $q->whereRaw("$debtSql > $paidSql");
+                } else {
+                    $q->whereRaw("$debtSql <= $paidSql");
                 }
             });
         }
@@ -219,21 +224,46 @@ class AirtelDropController extends Controller
             $query->where('retailer_id', $request->retailer_id);
         }
 
-        // Apply status filters in SQL using retailer-level grouping for the specified period
+        // Apply status filters at the retailer level for the summary
         if ($request->status && in_array($request->status, ['pending_only', 'recovered_only'])) {
             $query->whereIn('retailer_id', function($sub) use ($request) {
-                $sub->select('retailer_id')->from('airtel_drops')->groupBy('retailer_id');
+                $sub->select('id')->from('retailers');
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id)";
                 if ($request->status === 'pending_only') {
-                    $sub->havingRaw("(SUM(amount) + (SELECT balance FROM retailers WHERE retailers.id = airtel_drops.retailer_id)) > (SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = airtel_drops.retailer_id)");
-                } elseif ($request->status === 'recovered_only') {
-                    $sub->havingRaw("(SUM(amount) + (SELECT balance FROM retailers WHERE retailers.id = airtel_drops.retailer_id)) <= (SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = airtel_drops.retailer_id)");
+                    $sub->whereRaw("$debtSql > $paidSql");
+                } else {
+                    $sub->whereRaw("$debtSql <= $paidSql");
                 }
             });
         }
 
-        // Filtered Opening Balance: sum of 'balance' for retailers who have drops in this query
-        $retailerIds = (clone $query)->distinct()->pluck('retailer_id');
-        $opening_balance = (float)\App\Models\Retailer::whereIn('id', $retailerIds)->sum('balance');
+        // Filtered Opening Balance: sum of 'balance' for retailers who match the filters
+        $retailerIdsByDrops = AirtelDrop::query()
+            ->when($request->from_date && $request->to_date, function($q) use ($request) {
+                $q->whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+            })
+            ->when($request->date, function($q) use ($request) {
+                $q->whereDate('refill_date', $request->date);
+            })
+            ->distinct()
+            ->pluck('retailer_id');
+
+        $retailerQuery = \App\Models\Retailer::query();
+        if ($request->retailer_name) {
+            $retailerQuery->where(function($q) use ($request) {
+                $q->where('name', 'like', '%' . $request->retailer_name . '%')
+                  ->orWhere('msisdn', 'like', '%' . $request->retailer_name . '%');
+            });
+        }
+
+        // Get union of IDs: those with drops in range + those with balance > 0
+        $allMatchingRetailerIds = $retailerQuery->where(function($q) use ($retailerIdsByDrops) {
+            $q->whereIn('id', $retailerIdsByDrops)->orWhere('balance', '>', 0);
+        })->pluck('id');
+
+        $opening_balance = (float)\App\Models\Retailer::whereIn('id', $allMatchingRetailerIds)->sum('balance');
+        $retailerIds = $allMatchingRetailerIds;
 
         $total_recovered_ledger = (float)\App\Models\AirtelRecovery::whereIn('retailer_id', $retailerIds)
             ->when($request->from_date && $request->to_date, function($q) use ($request) {
@@ -259,22 +289,35 @@ class AirtelDropController extends Controller
 
     public function bulkDeleteByDate(Request $request)
     {
+        if ($request->user()->isManager()) {
+            return response()->json(['message' => 'Managers cannot delete drops'], 403);
+        }
+
         if ($request->from_date && $request->to_date) {
             AirtelDrop::whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59'])->delete();
+            ActivityLog::log('BULK_DELETE_DROPS', null, 'Deleted drops from ' . $request->from_date . ' to ' . $request->to_date);
         } else {
             $request->validate(['date' => 'required|date']);
             AirtelDrop::whereDate('refill_date', $request->date)->delete();
+            ActivityLog::log('BULK_DELETE_DROPS', null, 'Deleted drops for date: ' . $request->date);
         }
 
         return response()->json(['message' => 'Selected drops have been cleared']);
     }
 
-    public function destroy(AirtelDrop $drop)
+    public function destroy(Request $request, AirtelDrop $drop)
     {
+        if ($request->user()->isManager()) {
+            return response()->json(['message' => 'Managers cannot delete drops'], 403);
+        }
+
         if ($drop->status === 'recovered') {
             return response()->json(['message' => 'Cannot delete recovered drops'], 422);
         }
+        $retailer = $drop->retailer;
+        $amount = $drop->amount;
         $drop->delete();
+        ActivityLog::log('DELETE_DROP', $retailer, 'Deleted drop of ₹' . number_format($amount) . ' for ' . ($retailer->name ?? 'Unknown'));
         return response()->json(null, 204);
     }
 
@@ -299,6 +342,10 @@ class AirtelDropController extends Controller
 
     public function report(Request $request)
     {
+        if ($request->user()->isManager()) {
+            return response()->json(['message' => 'Managers cannot view reports'], 403);
+        }
+
         $request->validate([
             'from_date' => 'nullable|date',
             'to_date' => 'nullable|date'

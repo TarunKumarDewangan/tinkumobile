@@ -29,6 +29,8 @@ import Incentives from './pages/Incentives';
 import CompanyOffers from './pages/CompanyOffers';
 import Users from './pages/admin/Users';
 import Shops from './pages/admin/Shops';
+import ActivityLogs from './pages/admin/ActivityLogs';
+import TrashManager from './pages/admin/TrashManager';
 import Reports from './pages/reports/Reports';
 import SalesReport from './pages/reports/SalesReport';
 import ProfitReport from './pages/reports/ProfitReport';
@@ -87,6 +89,8 @@ function AppRoutes() {
         <Route path="offers" element={<CompanyOffers />} />
         <Route path="admin/users" element={<Users />} />
         <Route path="admin/shops" element={<Shops />} />
+        <Route path="admin/activity-logs" element={<ActivityLogs />} />
+        <Route path="admin/trash" element={<TrashManager />} />
         <Route path="reports" element={<Reports />} />
         <Route path="reports/sales" element={<SalesReport />} />
         <Route path="reports/profit" element={<ProfitReport />} />

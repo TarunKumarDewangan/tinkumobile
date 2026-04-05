@@ -9,11 +9,12 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasApiTokens, HasRoles;
+    use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes;
 
     protected $fillable = [
         'name', 'email', 'password', 'shop_id', 'is_owner',
@@ -52,6 +53,12 @@ class User extends Authenticatable
     public function hasFullAccess(): bool
     {
         return $this->isOwner() || $this->isAdmin();
+    }
+
+    /** Manager role check */
+    public function isManager(): bool
+    {
+        return $this->hasRole('manager');
     }
 
     /** Shop scope helper for controllers */

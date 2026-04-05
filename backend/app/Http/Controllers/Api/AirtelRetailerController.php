@@ -9,6 +9,7 @@ use App\Models\Retailer;
 use App\Models\AirtelDrop;
 use App\Models\AirtelRecovery;
 use App\Models\User;
+use App\Models\ActivityLog;
 
 class AirtelRetailerController extends Controller
 {
@@ -56,11 +57,13 @@ class AirtelRetailerController extends Controller
             'balance' => 'nullable|numeric'
         ]);
 
-        if (isset($validated['balance']) && !$request->user()->is_owner) {
+        if (isset($validated['balance']) && !($request->user()->isOwner() || $request->user()->isManager())) {
             $validated['balance'] = 0;
         }
 
         $retailer = Retailer::create($validated);
+        ActivityLog::log('CREATE_RETAILER', $retailer, 'Added retailer: ' . $retailer->name . ' (MSISDN: ' . $retailer->msisdn . ')');
+
         return response()->json($retailer, 201);
     }
 
@@ -125,6 +128,8 @@ class AirtelRetailerController extends Controller
             'notes' => $validated['notes'] ?? null
         ]);
 
+        ActivityLog::log('RECORD_RECOVERY', $retailer, 'Recorded recovery of ₹' . number_format($validated['amount']) . ' for ' . $retailer->name);
+
         // FIFO: Re-evaluate all drops for this retailer based on current cumulative credit
         $totalRecovered = AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
         $availableCredit = (float)$totalRecovered - (float)$retailer->balance;
@@ -177,11 +182,13 @@ class AirtelRetailerController extends Controller
             'balance' => 'nullable|numeric'
         ]);
 
-        if (isset($validated['balance']) && !$request->user()->is_owner) {
+        if (isset($validated['balance']) && !($request->user()->isOwner() || $request->user()->isManager())) {
             unset($validated['balance']);
         }
 
         $retailer->update($validated);
+        ActivityLog::log('UPDATE_RETAILER', $retailer, 'Updated retailer: ' . $retailer->name . ' (MSISDN: ' . $retailer->msisdn . ')');
+
         return response()->json($retailer);
     }
 
@@ -220,9 +227,17 @@ class AirtelRetailerController extends Controller
 
     public function deleteRecovery(Request $request, $id)
     {
+        if ($request->user()->isManager()) {
+            return response()->json(['message' => 'Managers cannot delete recovery records'], 403);
+        }
+
         $recovery = \App\Models\AirtelRecovery::findOrFail($id);
         $retailerId = $recovery->retailer_id;
+        $retailer = Retailer::find($retailerId);
+        $amount = $recovery->amount;
         $recovery->delete();
+        
+        ActivityLog::log('DELETE_RECOVERY', $retailer, 'Deleted recovery payment of ₹' . number_format($amount) . ' for ' . ($retailer->name ?? 'Unknown'));
 
         // Re-evaluate FIFO after deletion
         $retailer = Retailer::find($retailerId);
@@ -267,8 +282,14 @@ class AirtelRetailerController extends Controller
 
     public function bulkDeleteRecoveries(Request $request)
     {
+        if ($request->user()->isManager()) {
+            return response()->json(['message' => 'Managers cannot delete recovery records'], 403);
+        }
+
         // Delete all recovery records
-        AirtelRecovery::truncate();
+        \App\Models\AirtelRecovery::truncate();
+        
+        ActivityLog::log('BULK_DELETE_RECOVERIES', null, 'Cleared ALL recovery payments from the system');
         
         // Reset ALL drops to pending status
         AirtelDrop::query()->update([
@@ -281,10 +302,16 @@ class AirtelRetailerController extends Controller
         return response()->json(['message' => 'All recovery records have been cleared system-wide.']);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
+        if ($request->user()->isManager()) {
+            return response()->json(['message' => 'Managers cannot delete retailers'], 403);
+        }
+
         $retailer = Retailer::findOrFail($id);
+        $name = $retailer->name;
         $retailer->delete();
+        ActivityLog::log('DELETE_RETAILER', null, 'Deleted retailer: ' . $name);
         return response()->json(null, 204);
     }
 

@@ -7,7 +7,7 @@ import Modal from '../../components/Modal';
 
 import { useAuth } from '../../contexts/AuthContext';
 export default function AirtelDrops() {
-  const { can } = useAuth();
+  const { can, isManager } = useAuth();
   const navigate = useNavigate();
   const [drops, setDrops] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -176,42 +176,46 @@ export default function AirtelDrops() {
 
           {can('manage_airtel_recovery') && (
             <>
-              <button 
-                className="btn btn-outline-danger btn-sm text-uppercase px-3" 
-                onClick={async () => {
-                  const confirmDate = useRange ? `${fromDate} to ${toDate}` : date;
-                  if (window.confirm(`DELETE ALL DROPS FOR ${confirmDate}?`)) {
-                    try {
-                      const params = useRange ? { from_date: fromDate, to_date: toDate } : { date };
-                      await axios.post('/airtel-drops/bulk-delete', params);
-                      toast.success('Cleared drops for the selected period');
-                      fetchDrops();
-                      fetchSummary();
-                    } catch (err) {
-                      toast.error('Clear failed');
-                    }
-                  }
-                }}
-              >
-                Clear Drops
-              </button>
-              <button 
-                className="btn btn-danger btn-sm text-uppercase px-3" 
-                onClick={async () => {
-                  if (window.confirm('WARNING: DELETE ALL RECOVERY PAYMENTS FROM THE ENTIRE SYSTEM? This cannot be undone.')) {
-                    try {
-                      await axios.post('/airtel-recoveries/bulk-delete');
-                      toast.success('All system recoveries have been cleared');
-                      fetchDrops();
-                      fetchSummary();
-                    } catch (err) {
-                      toast.error('Clear failed');
-                    }
-                  }
-                }}
-              >
-                Clear All Payments
-              </button>
+              {!isManager() && (
+                <>
+                  <button 
+                    className="btn btn-outline-danger btn-sm text-uppercase px-3" 
+                    onClick={async () => {
+                      const confirmDate = useRange ? `${fromDate} to ${toDate}` : date;
+                      if (window.confirm(`DELETE ALL DROPS FOR ${confirmDate}?`)) {
+                        try {
+                          const params = useRange ? { from_date: fromDate, to_date: toDate } : { date };
+                          await axios.post('/airtel-drops/bulk-delete', params);
+                          toast.success('Cleared drops for the selected period');
+                          fetchDrops();
+                          fetchSummary();
+                        } catch (err) {
+                          toast.error('Clear failed');
+                        }
+                      }
+                    }}
+                  >
+                    Clear Drops
+                  </button>
+                  <button 
+                    className="btn btn-danger btn-sm text-uppercase px-3" 
+                    onClick={async () => {
+                      if (window.confirm('WARNING: DELETE ALL RECOVERY PAYMENTS FROM THE ENTIRE SYSTEM? This cannot be undone.')) {
+                        try {
+                          await axios.post('/airtel-recoveries/bulk-delete');
+                          toast.success('All system recoveries have been cleared');
+                          fetchDrops();
+                          fetchSummary();
+                        } catch (err) {
+                          toast.error('Clear failed');
+                        }
+                      }
+                    }}
+                  >
+                    Clear All Payments
+                  </button>
+                </>
+              )}
               <button className="btn btn-primary btn-sm text-uppercase px-4" onClick={() => {
                   setImportDate(date);
                   setShowImport(true);
@@ -367,7 +371,7 @@ export default function AirtelDrops() {
                             </div>
                         </td>
                         <td className="small fw-bold text-muted">
-                            {g.dates}
+                            {g.dates || <span className="text-primary x-small">OPENING BALANCE</span>}
                         </td>
                         <td className="small">
                             {g.latest_reason ? <span className="badge bg-danger-subtle text-danger text-uppercase x-small">{g.latest_reason}</span> : '-'}
@@ -391,7 +395,7 @@ export default function AirtelDrops() {
                                 >
                                     Profile/History
                                 </button>
-                                {can('manage_airtel_recovery') && !g.paid_sum && (
+                                {can('manage_airtel_recovery') && !isManager() && !g.paid_sum && (
                                     <button className="btn btn-link btn-sm text-danger text-decoration-none text-uppercase fw-bold px-1" onClick={() => handleDelete(g.id)}>Delete</button>
                                 )}
                             </div>
