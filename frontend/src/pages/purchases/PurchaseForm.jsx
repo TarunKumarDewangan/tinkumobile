@@ -78,7 +78,9 @@ export default function PurchaseForm() {
           color: i.color || '',
           quantity: i.quantity,
           unit_price: i.unit_price,
-          selling_price: i.selling_price || ''
+          selling_price: i.selling_price || '',
+          min_selling_price: i.min_selling_price || '',
+          max_selling_price: i.max_selling_price || ''
         })));
       }).finally(() => setLoading(false));
     }
@@ -137,6 +139,8 @@ export default function PurchaseForm() {
       if (p) {
         a[i].unit_price = p.purchase_price;
         a[i].selling_price = p.selling_price;
+        a[i].min_selling_price = p.min_selling_price || '';
+        a[i].max_selling_price = p.max_selling_price || '';
         // Search attributes if available (assuming Product model has them)
         if (p.attributes) {
           a[i].ram = p.attributes.ram || '';
@@ -299,7 +303,7 @@ export default function PurchaseForm() {
               <div className="fs-1 opacity-25 mb-2">🛒</div>
               <h6 className="text-muted text-uppercase fw-bold">No items added yet</h6>
               <p className="small text-muted mb-3 text-uppercase">Start by adding a product below or use bulk scan</p>
-              <button type="button" className="btn btn-outline-primary btn-sm fw-bold text-uppercase" onClick={() => setItems([{product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0}])}>
+              <button type="button" className="btn btn-outline-primary btn-sm fw-bold text-uppercase" onClick={() => setItems([{product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0, min_selling_price: 0, max_selling_price: 0}])}>
                 + Add Item Manually
               </button>
             </div>
@@ -380,6 +384,14 @@ export default function PurchaseForm() {
                             <label className="small text-muted mb-0 fw-bold text-uppercase text-success">Sell Price (₹)</label>
                             <input type="number" className="form-control form-control-sm border-success fw-bold text-success" step="0.01" value={item.selling_price} onChange={e => updateItem(i, 'selling_price', parseFloat(e.target.value))} />
                         </div>
+                        <div className="col-6 col-md-2">
+                            <label className="small text-muted mb-0 fw-bold text-uppercase text-danger">Min Price (₹)</label>
+                            <input type="number" className="form-control form-control-sm border-danger fw-bold text-danger" step="0.01" value={item.min_selling_price} onChange={e => updateItem(i, 'min_selling_price', parseFloat(e.target.value))} />
+                        </div>
+                        <div className="col-6 col-md-2">
+                            <label className="small text-muted mb-0 fw-bold text-uppercase text-info">Max Price (₹)</label>
+                            <input type="number" className="form-control form-control-sm border-info fw-bold text-info" step="0.01" value={item.max_selling_price} onChange={e => updateItem(i, 'max_selling_price', parseFloat(e.target.value))} />
+                        </div>
                         <div className="col-6 col-md-3">
                             <div className="d-flex align-items-end h-100 pb-1">
                                 <div className="bg-light p-2 rounded w-100">
@@ -407,7 +419,7 @@ export default function PurchaseForm() {
                 );
               })}
               <div className="col-12 text-center mt-2">
-                 <button type="button" className="btn btn-outline-primary btn-sm fw-bold text-uppercase shadow-sm px-4" onClick={() => setItems([{product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0}])}>
+                 <button type="button" className="btn btn-outline-primary btn-sm fw-bold text-uppercase shadow-sm px-4" onClick={() => setItems([...items, {product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0, min_selling_price: 0, max_selling_price: 0}])}>
                     + Add More Items
                  </button>
               </div>

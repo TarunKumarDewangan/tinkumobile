@@ -15,6 +15,8 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
   const [color, setColor] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
+  const [minSellingPrice, setMinSellingPrice] = useState('');
+  const [maxSellingPrice, setMaxSellingPrice] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -50,7 +52,9 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
       color: color, 
       quantity: 1, 
       unit_price: unitPrice || product?.purchase_price || 0,
-      selling_price: sellingPrice || product?.selling_price || 0
+      selling_price: sellingPrice || product?.selling_price || 0,
+      min_selling_price: minSellingPrice || product?.min_selling_price || 0,
+      max_selling_price: maxSellingPrice || product?.max_selling_price || 0
     }));
 
     onAddItems(items);
@@ -67,6 +71,8 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
     setUnitPrice('');
     setSellingPrice('');
     setSearchTerm('');
+    setMinSellingPrice('');
+    setMaxSellingPrice('');
     setShowDropdown(false);
     onHide();
   };
@@ -78,6 +84,8 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
       if (p) {
         setUnitPrice(p.purchase_price || '');
         setSellingPrice(p.selling_price || '');
+        setMinSellingPrice(p.min_selling_price || '');
+        setMaxSellingPrice(p.max_selling_price || '');
         if (p.attributes) {
           setRam(p.attributes.ram || '');
           setStorage(p.attributes.storage || '');
@@ -87,6 +95,8 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
     } else {
       setUnitPrice('');
       setSellingPrice('');
+      setMinSellingPrice('');
+      setMaxSellingPrice('');
       setRam('');
       setStorage('');
       setColor('');
@@ -181,7 +191,24 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
                 <label className="small text-success mb-1 px-1">Selling Price</label>
                 <div className="input-group input-group-sm">
                   <span className="input-group-text p-1 text-success">₹</span>
-                  <input type="number" className="form-control border-success text-success" step="0.01" placeholder="Sell Price" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} />
+                  <input type="number" className="form-control border-success text-success fw-bold" step="0.01" placeholder="Sell Price" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div className="row g-2 mb-2">
+              <div className="col-6">
+                <label className="small text-danger mb-1 px-1">Min Selling Price</label>
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text p-1 text-danger">₹</span>
+                  <input type="number" className="form-control border-danger text-danger" step="0.01" placeholder="Min Price" value={minSellingPrice} onChange={e => setMinSellingPrice(e.target.value)} />
+                </div>
+              </div>
+              <div className="col-6">
+                <label className="small text-info mb-1 px-1">Max Selling Price</label>
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text p-1 text-info">₹</span>
+                  <input type="number" className="form-control border-info text-info" step="0.01" placeholder="Max Price" value={maxSellingPrice} onChange={e => setMaxSellingPrice(e.target.value)} />
                 </div>
               </div>
             </div>

@@ -30,7 +30,7 @@ export default function SaleForm() {
     round_off: 0,
     notes: '' 
   });
-  const [items, setItems] = useState([{ product_id: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0 }]);
+  const [items, setItems] = useState([{ product_id: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
   
   // Internal state to track if round_off is manually overridden
   const [isManualRound, setIsManualRound] = useState(false);
@@ -87,7 +87,9 @@ export default function SaleForm() {
         color: i.color || '',
         quantity: i.quantity,
         unit_price: i.unit_price,
-        base_price: i.product?.base_price || 0
+        base_price: i.product?.purchase_price || 0,
+        min_selling_price: i.product?.min_selling_price || 0,
+        max_selling_price: i.product?.max_selling_price || 0
       })));
       setCustomerSearch(data.customer?.name || '');
       loadProducts(data.shop_id);
@@ -113,7 +115,9 @@ export default function SaleForm() {
       const p = products.find(p => p.id == val);
       if (p) {
           arr[i].unit_price = p.selling_price;
-          arr[i].base_price = p.base_price || 0;
+          arr[i].base_price = p.purchase_price || 0;
+          arr[i].min_selling_price = p.min_selling_price || 0;
+          arr[i].max_selling_price = p.max_selling_price || 0;
           if (p.attributes) {
               arr[i].ram = p.attributes.ram || '';
               arr[i].storage = p.attributes.storage || '';
@@ -305,9 +309,12 @@ export default function SaleForm() {
                                             <input type="number" className="form-control form-control-sm fw-bold border-2" min="1" required value={item.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value))} />
                                         </td>
                                         <td>
-                                            <div className="input-group input-group-sm">
+                                            <div className="input-group input-group-sm mb-1">
                                                 <span className="input-group-text">₹</span>
                                                 <input type="number" step="0.01" className="form-control text-end fw-bold" required value={item.unit_price} onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value))} />
+                                            </div>
+                                            <div className="x-small fw-bold text-muted text-center border rounded bg-light px-1" style={{ fontSize: '10px' }}>
+                                                RANGE: <span className="text-danger">₹{item.min_selling_price}</span> - <span className="text-info">₹{item.max_selling_price}</span>
                                             </div>
                                         </td>
                                         <td className="text-end fw-bold text-primary">₹{((item.quantity * item.unit_price) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>

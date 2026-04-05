@@ -85,6 +85,8 @@ class PurchaseInvoiceController extends Controller
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
+            'items.*.min_selling_price' => 'nullable|numeric|min:0',
+            'items.*.max_selling_price' => 'nullable|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data, $shopId, $user) {
@@ -147,6 +149,8 @@ class PurchaseInvoiceController extends Controller
                                 'storage' => $item['storage'] ?? null,
                                 'color'   => $item['color'] ?? null,
                             ],
+                            'min_selling_price' => $item['min_selling_price'] ?? null,
+                            'max_selling_price' => $item['max_selling_price'] ?? null,
                         ]);
                         $productId = $product->id;
                         $createdProducts[$item['new_product_name']] = $productId;
@@ -159,6 +163,8 @@ class PurchaseInvoiceController extends Controller
                         if (!empty($item['selling_price'])) {
                             $p->selling_price = $item['selling_price'];
                         }
+                        if (isset($item['min_selling_price'])) $p->min_selling_price = $item['min_selling_price'];
+                        if (isset($item['max_selling_price'])) $p->max_selling_price = $item['max_selling_price'];
                         $p->save();
                     }
                 }
@@ -175,6 +181,8 @@ class PurchaseInvoiceController extends Controller
                     'damaged_quantity'    => 0,
                     'unit_price'          => $item['unit_price'],
                     'selling_price'       => $item['selling_price'] ?? null,
+                    'min_selling_price'   => $item['min_selling_price'] ?? null,
+                    'max_selling_price'   => $item['max_selling_price'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
                 ]);
 
@@ -219,6 +227,8 @@ class PurchaseInvoiceController extends Controller
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
+            'items.*.min_selling_price' => 'nullable|numeric|min:0',
+            'items.*.max_selling_price' => 'nullable|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data, $purchaseInvoice) {
@@ -289,6 +299,8 @@ class PurchaseInvoiceController extends Controller
                                 'storage' => $item['storage'] ?? null,
                                 'color'   => $item['color'] ?? null,
                             ],
+                            'min_selling_price' => $item['min_selling_price'] ?? null,
+                            'max_selling_price' => $item['max_selling_price'] ?? null,
                         ]);
                         $productId = $product->id;
                         $createdProducts[$item['new_product_name']] = $productId;
@@ -300,6 +312,8 @@ class PurchaseInvoiceController extends Controller
                         if (!empty($item['selling_price'])) {
                             $p->selling_price = $item['selling_price'];
                         }
+                        if (isset($item['min_selling_price'])) $p->min_selling_price = $item['min_selling_price'];
+                        if (isset($item['max_selling_price'])) $p->max_selling_price = $item['max_selling_price'];
                         $p->save();
                     }
                 }
@@ -316,6 +330,8 @@ class PurchaseInvoiceController extends Controller
                     'damaged_quantity'    => 0,
                     'unit_price'          => $item['unit_price'],
                     'selling_price'       => $item['selling_price'] ?? null,
+                    'min_selling_price'   => $item['min_selling_price'] ?? null,
+                    'max_selling_price'   => $item['max_selling_price'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
                 ]);
 
