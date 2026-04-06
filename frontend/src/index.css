@@ -99,6 +99,27 @@ input, select, textarea, button {
   color: #fff;
   font-weight: 600;
 }
+.sidebar-dropdown { margin-bottom: 0.2rem; }
+.sidebar-dropdown-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.7rem 1.1rem;
+  color: var(--sidebar-text);
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.sidebar-dropdown-toggle:hover { color: #fff; }
+.sidebar-dropdown-toggle .dropdown-arrow { font-size: 0.6rem; opacity: 0.5; }
+.sidebar-dropdown-content { overflow: hidden; }
+
 .sidebar-section {
   padding: 0.55rem 1.1rem 0.2rem;
   font-size: 0.68rem;

@@ -6,14 +6,28 @@ import { toast } from 'react-toastify';
 const NAV = [
   { section: 'Main' },
   { to: '/', icon: '📊', label: 'Dashboard', perm: 'view_dashboard', end: true },
-  { section: 'Inventory' },
-  { to: '/products',    icon: '📱', label: 'Products',   perm: 'view_products' },
-  { to: '/stock-entry', icon: '📦', label: 'STOCKS',       perm: 'create_purchases' },
-  { to: '/purchases',   icon: '🛒', label: 'Purchases',  perm: 'view_purchases' },
-  { to: '/sales',       icon: '🧾', label: 'Sales',      perm: 'view_sales' },
-  { to: '/sim-cards',   icon: '📶', label: 'SIM Cards',  perm: 'view_sims' },
-  { to: '/old-mobiles', icon: '📲', label: 'Old Mobiles',perm: 'view_old_mobile_purchases' },
-  { to: '/gifts',       icon: '🎁', label: 'Gifts',      perm: 'view_gifts' },
+  
+  { 
+    section: 'New Mobile', 
+    dropdown: true,
+    children: [
+        { to: '/purchases',   icon: '🛒', label: 'Purchases',  perm: 'view_purchases' },
+        { to: '/stock-entry', icon: '📦', label: 'Stocks',       perm: 'create_purchases' },
+        { to: '/sales',       icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+    ]
+  },
+  
+  { 
+    section: 'Other Inventory', 
+    dropdown: true,
+    children: [
+        { to: '/products',    icon: '📱', label: 'Products',   perm: 'view_products' },
+        { to: '/sim-cards',   icon: '📶', label: 'SIM Cards',  perm: 'view_sims' },
+        { to: '/old-mobiles', icon: '📲', label: 'Old Mobiles',perm: 'view_old_mobile_purchases' },
+        { to: '/gifts',       icon: '🎁', label: 'Gifts',      perm: 'view_gifts' },
+    ]
+  },
+
   { section: 'Services' },
   { to: '/recharge',    icon: '⚡', label: 'Recharge',   perm: 'view_recharge_sales' },
   { to: '/repairs',     icon: '🔧', label: 'Repairs',    perm: 'view_repairs' },
@@ -49,6 +63,11 @@ export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': true });
+  
+  const toggleSection = (section) => {
+    setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
+  };
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -96,7 +115,35 @@ export default function Layout() {
 
         <nav className="sidebar-nav">
           {NAV.map((item, i) => {
-            if (item.section) return <div key={i} className="sidebar-section">{item.section}</div>;
+            if (item.section && !item.dropdown) return <div key={i} className="sidebar-section">{item.section}</div>;
+            
+            if (item.section && item.dropdown) {
+                const isExpanded = expanded[item.section];
+                const visibleChildren = (item.children || []).filter(isVisible);
+                if (visibleChildren.length === 0) return null;
+
+                return (
+                    <div key={i} className="sidebar-dropdown">
+                        <button className="sidebar-dropdown-toggle" onClick={() => toggleSection(item.section)}>
+                            <div className="d-flex align-items-center gap-2">
+                                <span style={{fontSize:'0.9rem'}}>{item.section === 'New Mobile' ? '📱' : '📦'}</span>
+                                {item.section}
+                            </div>
+                            <span className="dropdown-arrow" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
+                        </button>
+                        {isExpanded && (
+                            <div className="sidebar-dropdown-content" style={{ paddingLeft: '0.5rem', borderLeft: '1px solid rgba(255,255,255,0.05)', marginLeft: '1.25rem' }}>
+                                {visibleChildren.map(child => (
+                                    <NavLink key={child.to} to={child.to} end={child.end} onClick={closeSidebar}>
+                                        {child.icon} {child.label}
+                                    </NavLink>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
             if (!isVisible(item)) return null;
             return (
               <NavLink key={item.to} to={item.to} end={item.end} onClick={closeSidebar}>
