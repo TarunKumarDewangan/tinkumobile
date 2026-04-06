@@ -514,10 +514,24 @@ class AirtelDropController extends Controller
         ->take(100)
         ->values();
 
+        // 4. Grand Totals for ALL Retailers (to ensure header summary is 100% accurate)
+        $totalRetailersWithPending = Retailer::whereHas('drops', function($q) {
+            $q->where('status', 'pending');
+        })->orWhere('balance', '>', 0)->count();
+
+        $summaryTotals = [
+            'count' => $totalRetailersWithPending,
+            'opening_bal' => (float)\App\Models\Retailer::sum('balance'),
+            'airdrop' => (float)\App\Models\AirtelDrop::sum('amount'),
+            'received' => (float)\App\Models\AirtelRecovery::sum('amount'),
+        ];
+        $summaryTotals['pending'] = ($summaryTotals['opening_bal'] + $summaryTotals['airdrop']) - $summaryTotals['received'];
+
         return response()->json([
             'daily_report' => $report,
             'collections_received' => $collections,
-            'retailer_summary' => $retailerSummary
+            'retailer_summary' => $retailerSummary,
+            'summary_aggregate' => $summaryTotals
         ]);
     }
 }
