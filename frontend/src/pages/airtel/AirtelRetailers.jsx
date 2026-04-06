@@ -6,7 +6,7 @@ import Modal from '../../components/Modal';
 
 import { useAuth } from '../../contexts/AuthContext';
 export default function AirtelRetailers() {
-  const { can, isOwner, isManager } = useAuth();
+  const { can, isOwner, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [retailers, setRetailers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -176,7 +176,7 @@ export default function AirtelRetailers() {
                     {can('manage_airtel_recovery') && (
                       <>
                         <button className="btn btn-outline-primary btn-sm me-2" onClick={() => openModal(r)}>EDIT</button>
-                        {!isManager() && <button className="btn btn-outline-danger btn-sm" onClick={() => handleDelete(r.id)}>DEL</button>}
+                        {hasFullAccess() && <button className="btn btn-outline-danger btn-sm" onClick={() => handleDelete(r.id)}>DEL</button>}
                       </>
                     )}
                   </td>

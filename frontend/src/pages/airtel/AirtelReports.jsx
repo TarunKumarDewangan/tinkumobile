@@ -7,7 +7,7 @@ export default function AirtelReports() {
   const { isManager } = useAuth();
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [fromDate, setFromDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [fromDate, setFromDate] = useState('2025-01-01');
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
   if (isManager()) {
@@ -42,9 +42,33 @@ export default function AirtelReports() {
     <div className="container-fluid py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="h4 mb-0 text-uppercase fw-bold">Airtel Recovery Reports</h2>
-        <div className="d-flex gap-2">
-            <input type="date" className="form-control form-control-sm" value={fromDate} onChange={e => setFromDate(e.target.value)} />
-            <input type="date" className="form-control form-control-sm" value={toDate} onChange={e => setToDate(e.target.value)} />
+        <div className="d-flex align-items-center gap-2">
+            <div className="btn-group me-2" role="group">
+                <button 
+                    className={`btn btn-sm ${fromDate === '2025-01-01' ? 'btn-primary' : 'btn-outline-primary'} text-uppercase fw-bold`}
+                    onClick={() => {
+                        setFromDate('2025-01-01');
+                        setToDate(new Date().toISOString().split('T')[0]);
+                    }}
+                >
+                    All Time
+                </button>
+                <button 
+                    className={`btn btn-sm ${fromDate === new Date().toISOString().split('T')[0] ? 'btn-primary' : 'btn-outline-primary'} text-uppercase fw-bold`}
+                    onClick={() => {
+                        const today = new Date().toISOString().split('T')[0];
+                        setFromDate(today);
+                        setToDate(today);
+                    }}
+                >
+                    Today
+                </button>
+            </div>
+            <div className="d-flex gap-1 align-items-center bg-white p-1 rounded border shadow-sm">
+                <input type="date" className="form-control form-control-sm border-0" style={{width:'130px'}} value={fromDate} onChange={e => setFromDate(e.target.value)} />
+                <span className="text-muted text-uppercase x-small font-monospace">to</span>
+                <input type="date" className="form-control form-control-sm border-0" style={{width:'130px'}} value={toDate} onChange={e => setToDate(e.target.value)} />
+            </div>
         </div>
       </div>
 
@@ -69,6 +93,23 @@ export default function AirtelReports() {
                                   </tr>
                               </thead>
                               <tbody>
+                                  {/* Totals Row */}
+                                  <tr className="bg-light fw-bold shadow-sm sticky-top" style={{top:'31px', zIndex:10}}>
+                                      <td className="ps-4 py-2 text-uppercase small">Total ({reportData.daily_report.length})</td>
+                                      <td className="small text-dark">₹{reportData.daily_report.reduce((acc, r) => acc + (r.total_dropped || 0), 0).toLocaleString()}</td>
+                                      <td className="small text-success fw-bold">₹{reportData.daily_report.reduce((acc, r) => acc + (r.total_recovered || 0), 0).toLocaleString()}</td>
+                                      <td className="text-end pe-4">
+                                          <div className="d-flex align-items-center justify-content-end gap-2">
+                                              <span className="x-small fw-bold">
+                                                  {(() => {
+                                                      const totalDropped = reportData.daily_report.reduce((acc, r) => acc + (r.total_dropped || 0), 0);
+                                                      const totalRecovered = reportData.daily_report.reduce((acc, r) => acc + (r.total_recovered || 0), 0);
+                                                      return totalDropped > 0 ? ((totalRecovered / totalDropped) * 100).toFixed(0) : 0;
+                                                  })()}%
+                                              </span>
+                                          </div>
+                                      </td>
+                                  </tr>
                                   {reportData.daily_report.map(r => {
                                       const percent = r.total_dropped > 0 ? (r.total_recovered / r.total_dropped) * 100 : 0;
                                       return (
@@ -148,17 +189,26 @@ export default function AirtelReports() {
                               Total Received: ₹{reportData.collections_received?.reduce((acc, curr) => acc + parseFloat(curr.amount_collected), 0).toLocaleString()}
                           </div>
                       </div>
-                      <div className="row g-0 p-3">
+                      <div className="row g-0 p-2">
                         {reportData.collections_received?.map(c => (
-                            <div key={c.collection_date} className="col-6 col-md-4 col-lg-3 p-2">
-                                <div className="bg-light rounded p-3 text-center border-bottom border-3 border-success">
-                                    <div className="x-small text-uppercase text-muted fw-bold mb-1">{new Date(c.collection_date).toLocaleDateString('en-GB').replace(/\//g, ' ')}</div>
-                                    <div className="h5 mb-0 fw-bold text-success">₹{parseFloat(c.amount_collected).toLocaleString()}</div>
+                            <div key={c.collection_date} className="col-12 col-md-6 col-lg-4 p-2">
+                                <div className="bg-white rounded p-3 border shadow-sm h-100">
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <div className="fw-bold small text-uppercase text-muted border-bottom">{new Date(c.collection_date).toLocaleDateString('en-GB').replace(/\//g, ' ')}</div>
+                                        <div className="h6 mb-0 fw-bold text-success">₹{parseFloat(c.amount_collected).toLocaleString()}</div>
+                                    </div>
+                                    <div className="d-flex flex-wrap gap-1 mt-2">
+                                        {Object.entries(c.modes || {}).map(([mode, amount]) => (
+                                            <div key={mode} className="x-small fw-bold px-2 py-1 rounded bg-light border border-secondary-subtle">
+                                                <span className="opacity-50">{mode}:</span> <span className="text-primary">₹{parseFloat(amount).toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         ))}
                         {(!reportData.collections_received || reportData.collections_received.length === 0) && (
-                            <div className="col-12 py-4 text-center text-muted text-uppercase small">No collections received for this period</div>
+                            <div className="col-12 py-5 text-center text-muted text-uppercase small">No collections received for this period</div>
                         )}
                       </div>
                   </div>

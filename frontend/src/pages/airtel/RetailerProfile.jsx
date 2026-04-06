@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import Modal from '../../components/Modal';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function RetailerProfile() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { hasFullAccess } = useAuth();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -18,9 +20,24 @@ export default function RetailerProfile() {
     const [showFollowUp, setShowFollowUp] = useState(false);
     const [selectedDrop, setSelectedDrop] = useState(null);
     const [recoveryAmount, setRecoveryAmount] = useState('');
+    const [recoveryNotes, setRecoveryNotes] = useState('');
     const [followUpReason, setFollowUpReason] = useState('');
     const [followUpDate, setFollowUpDate] = useState('');
     const [submitting, setSubmitting] = useState(false);
+
+    const formatSystemDate = (dateStr) => {
+        if (!dateStr) return '-';
+        const d = dateStr.split(/[T ]/)[0].split('-');
+        if (d.length < 3) return dateStr;
+        return `${d[2]} ${d[1]} ${d[0]}`;
+    };
+
+    const formatSystemTime = (dateStr) => {
+        if (!dateStr) return '';
+        const parts = dateStr.split(/[T ]/);
+        if (parts.length < 2) return '';
+        return parts[1].substring(0, 5);
+    };
 
     useEffect(() => {
         fetchProfile();
@@ -46,11 +63,12 @@ export default function RetailerProfile() {
         try {
             await axios.post(`/airtel-retailers/${id}/record-recovery`, {
                 amount: parseFloat(recoveryAmount),
-                notes: followUpReason // reuse this for notes if needed, or add new state
+                notes: recoveryNotes
             });
             toast.success('Recovery recorded');
             setShowRecovery(false);
             setRecoveryAmount('');
+            setRecoveryNotes('');
             fetchProfile();
         } catch (error) {
             toast.error(error.response?.data?.message || 'Recovery failed');
@@ -126,9 +144,9 @@ export default function RetailerProfile() {
                 <div className="text-end">
                     <div className="x-small text-uppercase text-muted fw-bold">Current Pending</div>
                     <div className="h3 mb-0 fw-bold text-danger">₹{(parseFloat(stats.total_pending) || 0).toLocaleString()}</div>
-                    <div className="d-flex gap-2 justify-content-end mt-2">
+                    <div className="d-flex gap-2 justify-content-end mt-2 text-uppercase fw-bold">
                         <button 
-                            className="btn btn-outline-secondary btn-sm text-uppercase fw-bold px-3 shadow-sm"
+                            className="btn btn-outline-secondary btn-sm px-3 shadow-sm"
                             onClick={() => {
                                 setEditData({
                                     name: retailer.name,
@@ -140,10 +158,21 @@ export default function RetailerProfile() {
                                 setShowEdit(true);
                             }}
                         >
-                            Edit Retailer
+                            Edit
                         </button>
                         <button 
-                            className="btn btn-success btn-sm text-uppercase fw-bold px-3 shadow-sm"
+                            className="btn btn-warning btn-sm px-3 shadow-sm"
+                            onClick={() => {
+                                setSelectedDrop(null); // General follow-up
+                                setFollowUpReason('');
+                                setFollowUpDate('');
+                                setShowFollowUp(true);
+                            }}
+                        >
+                            Not Paid
+                        </button>
+                        <button 
+                            className="btn btn-success btn-sm px-3 shadow-sm"
                             onClick={() => {
                                 setRecoveryAmount(stats.total_pending > 0 ? stats.total_pending : '');
                                 setShowRecovery(true);
@@ -265,9 +294,9 @@ export default function RetailerProfile() {
                                         {item.entryType === 'DROP' ? (
                                             <>
                                                 <div className="fw-bold small">
-                                                    {new Date(item.refill_date).toLocaleDateString('en-GB').replace(/\//g, ' ')}
+                                                    {formatSystemDate(item.refill_date)}
                                                 </div>
-                                                <div className="x-small text-muted">{new Date(item.created_at).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'})}</div>
+                                                <div className="x-small text-muted">{formatSystemTime(item.refill_date)}</div>
                                             </>
                                         ) : (
                                             <span className="text-muted small">-</span>
@@ -285,7 +314,7 @@ export default function RetailerProfile() {
                                         {item.reason || item.notes ? <span className="badge bg-light text-dark text-uppercase x-small border">{item.reason || item.notes}</span> : '-'}
                                     </td>
                                     <td className="small fw-bold">
-                                        {item.next_recovery_date ? new Date(item.next_recovery_date).toLocaleDateString('en-GB').replace(/\//g, ' ') : '-'}
+                                        {formatSystemDate(item.next_recovery_date)}
                                     </td>
                                     <td>
                                         <span className={`badge rounded-pill text-uppercase x-small ${item.status === 'recovered' || item.entryType === 'RECOVERY' ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning'}`}>
@@ -296,7 +325,7 @@ export default function RetailerProfile() {
                                         <div className="small font-monospace fw-bold">
                                             {item.entryType === 'RECOVERY' || item.status === 'recovered' ? (
                                                 <>
-                                                    <div className="text-success">{new Date(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at).toLocaleDateString('en-GB').replace(/\//g, ' ')}</div>
+                                                    <div className="text-success">{formatSystemDate(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at)}</div>
                                                     <div className="x-small text-muted">{item.recovery_user?.name || 'Staff'}</div>
                                                 </>
                                             ) : '-'}
@@ -304,26 +333,15 @@ export default function RetailerProfile() {
                                     </td>
                                     <td className="text-end pe-4">
                                         {item.entryType === 'DROP' && item.status === 'pending' && (
-                                            <button 
-                                                className="btn btn-warning btn-sm text-uppercase fw-bold p-1 px-2 me-1" 
-                                                style={{fontSize:'0.65rem'}}
-                                                onClick={() => {
-                                                    setSelectedDrop(item);
-                                                    setFollowUpReason(item.reason || '');
-                                                    setFollowUpDate(item.next_recovery_date || '');
-                                                    setShowFollowUp(true);
-                                                }}
-                                            >
-                                                Not Paid
-                                            </button>
+                                            <span className="text-muted small">-</span>
                                         )}
-                                        {item.entryType === 'RECOVERY' && (
+                                        {item.entryType === 'RECOVERY' && hasFullAccess() && (
                                              <button 
                                                 className="btn btn-link text-danger p-0 text-decoration-none x-small fw-bold text-uppercase"
                                                 onClick={() => handleDeleteRecovery(item.id)}
-                                            >
-                                                Delete
-                                            </button>
+                                             >
+                                                 DEL
+                                             </button>
                                         )}
                                     </td>
                                 </tr>
@@ -354,6 +372,39 @@ export default function RetailerProfile() {
                             <button type="button" className="btn btn-outline-secondary" onClick={() => setRecoveryAmount(stats.total_pending)}>FULL PAY</button>
                         </div>
                         <div className="form-text x-small">Current Pending: ₹{stats.total_pending.toLocaleString()}</div>
+                    </div>
+                    <div className="mb-3">
+                        <label className="form-label x-small text-uppercase fw-bold">Payment Mode / Notes</label>
+                        <div className="input-group">
+                            <select 
+                                className="form-select form-select-sm text-uppercase fw-bold" 
+                                style={{maxWidth:'120px'}}
+                                value={recoveryNotes.split(' - ')[0]}
+                                onChange={e => {
+                                    const mode = e.target.value;
+                                    const currentNote = recoveryNotes.includes(' - ') ? recoveryNotes.split(' - ')[1] : '';
+                                    setRecoveryNotes(mode + (currentNote ? ` - ${currentNote}` : ''));
+                                }}
+                            >
+                                <option value="">SELECT</option>
+                                <option value="CASH">CASH</option>
+                                <option value="PHONE PE">PHONE PE</option>
+                                <option value="GPAY">GPAY</option>
+                                <option value="DIGITAL">DIGITAL</option>
+                                <option value="OTHER">OTHER</option>
+                            </select>
+                            <input 
+                                type="text" 
+                                className="form-control form-control-sm text-uppercase" 
+                                placeholder="ANY EXTRA DETAILS..." 
+                                value={recoveryNotes.includes(' - ') ? recoveryNotes.split(' - ')[1] : (['CASH','PHONE PE','GPAY','DIGITAL','OTHER'].includes(recoveryNotes) ? '' : recoveryNotes)}
+                                onChange={e => {
+                                    const details = e.target.value;
+                                    const mode = ['CASH','PHONE PE','GPAY','DIGITAL','OTHER'].find(m => recoveryNotes.startsWith(m)) || '';
+                                    setRecoveryNotes(mode ? `${mode} - ${details}` : details);
+                                }}
+                            />
+                        </div>
                     </div>
                     <button type="submit" className="btn btn-success w-100 text-uppercase fw-bold py-2" disabled={submitting}>
                         {submitting ? 'Saving...' : 'Record Payment'}
@@ -422,9 +473,11 @@ export default function RetailerProfile() {
                         <button type="submit" className="btn btn-primary flex-grow-1 text-uppercase fw-bold py-2" disabled={submitting}>
                             {submitting ? 'Updating...' : 'Update Retailer'}
                         </button>
-                        <button type="button" className="btn btn-outline-danger px-4 text-uppercase fw-bold" onClick={handleDeleteRetailer}>
-                            Delete
-                        </button>
+                        {hasFullAccess() && (
+                            <button type="button" className="btn btn-outline-danger px-4 text-uppercase fw-bold" onClick={handleDeleteRetailer}>
+                                Delete
+                            </button>
+                        )}
                     </div>
                 </form>
             </Modal>

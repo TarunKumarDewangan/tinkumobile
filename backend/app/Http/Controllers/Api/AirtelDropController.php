@@ -57,7 +57,14 @@ class AirtelDropController extends Controller
             });
         }
 
-        // 4. Eager load only the matching drops for these retailers, 
+        // 4. Filter by Payment Mode (Search in notes)
+        if ($request->payment_mode) {
+            $query->whereHas('recoveries', function($q) use ($request) {
+                $q->where('notes', 'like', $request->payment_mode . '%');
+            });
+        }
+
+        // 5. Eager load only the matching drops for these retailers, 
         // PLUS use withSum to get global totals for status calculation
         $query->withSum('drops', 'amount');
         $query->with(['drops' => function($q) use ($request) {
@@ -82,11 +89,14 @@ class AirtelDropController extends Controller
             $latest_reason = null;
             $latest_follow_up = null;
 
-            foreach ($r->drops as $d) {
+            // Sort drops by date desc to get latest first
+            $sorted_drops = $r->drops->sortByDesc('refill_date');
+
+            foreach ($sorted_drops as $d) {
                 $filtered_drops += (float)$d->amount;
                 
                 $dStr = $d->refill_date->format('d m Y');
-                if (!in_array($dStr, $dates)) $dates[] = $dStr;
+                if (count($dates) < 2 && !in_array($dStr, $dates)) $dates[] = $dStr;
                 
                 if ($d->next_recovery_date && (!$latest_follow_up || $d->next_recovery_date > $latest_follow_up)) {
                     $latest_follow_up = $d->next_recovery_date;
@@ -94,10 +104,29 @@ class AirtelDropController extends Controller
                 }
             }
 
-            $total_recovered = (float)\App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            $total_recovered_all = (float)\App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            
             $opening_bal = (float)$r->balance;
             $grand_total_debt = (float)$r->drops_sum_amount + $opening_bal;
-            $grand_pending = $grand_total_debt - $total_recovered;
+            $grand_pending = $grand_total_debt - $total_recovered_all;
+            
+            // Generate breakdown (Filtered by the SAME range as the report)
+            $range_query = \App\Models\AirtelRecovery::where('retailer_id', $r->id);
+            if (request('from_date') && request('to_date')) {
+                $range_query->whereBetween('recovered_at', [request('from_date') . ' 00:00:00', request('to_date') . ' 23:59:59']);
+            } elseif (request('date')) {
+                $range_query->whereDate('recovered_at', request('date'));
+            }
+
+            $breakdown = $range_query->selectRaw('notes, SUM(amount) as total')
+                ->groupBy('notes')
+                ->get()
+                ->map(function($rc) {
+                    $mode = explode(' - ', $rc->notes)[0]; 
+                    return "$mode: " . number_format($rc->total);
+                })
+                ->unique() 
+                ->implode(', ');
 
             return [
                 'id' => $r->drops->first()?->id,
@@ -107,11 +136,12 @@ class AirtelDropController extends Controller
                 'filtered_drops' => $filtered_drops,
                 'opening_balance' => $opening_bal,
                 'total_amount' => $filtered_drops + $opening_bal, 
-                'paid_sum' => $total_recovered,
-                'has_pending' => $grand_pending > 0,
+                'paid_sum' => $total_recovered_all, // Changed to overall total for consistency
+                'has_pending' => $grand_pending > 0.01, // Use epsilon for float safety
                 'grand_pending' => $grand_pending,
                 'dates' => implode(', ', $dates),
                 'latest_reason' => $latest_reason,
+                'recovery_breakdown' => $breakdown,
                 'latest_follow_up' => $latest_follow_up ? $latest_follow_up->toDateString() : null
             ];
         });
@@ -130,6 +160,7 @@ class AirtelDropController extends Controller
 
         $success = 0;
         $failed = 0;
+        $duplicates = 0;
         $errors = [];
 
         foreach ($validated['drops'] as $dropData) {
@@ -138,6 +169,17 @@ class AirtelDropController extends Controller
             if (!$retailer) {
                 $failed++;
                 $errors[] = "MSISDN: " . $dropData['msisdn'] . " not found.";
+                continue;
+            }
+
+            // Duplicate Check: Same retailer, same amount, same exact refill_date
+            $exists = AirtelDrop::where('retailer_id', $retailer->id)
+                ->where('amount', $dropData['amount'])
+                ->where('refill_date', $dropData['refill_date'])
+                ->exists();
+
+            if ($exists) {
+                $duplicates++;
                 continue;
             }
 
@@ -154,8 +196,9 @@ class AirtelDropController extends Controller
         return response()->json([
             'success' => $success,
             'failed' => $failed,
+            'duplicates' => $duplicates,
             'errors' => $errors,
-            'message' => "Processed $success drops successfully. $failed failed."
+            'message' => "Successfully imported $success new drops. $duplicates duplicates skipped. $failed failed."
         ]);
     }
 
@@ -224,6 +267,8 @@ class AirtelDropController extends Controller
             $query->where('retailer_id', $request->retailer_id);
         }
 
+        // Payment mode filter is handled at the retailer/recovery level below for summary stats
+
         // Apply status filters at the retailer level for the summary
         if ($request->status && in_array($request->status, ['pending_only', 'recovered_only'])) {
             $query->whereIn('retailer_id', function($sub) use ($request) {
@@ -257,6 +302,12 @@ class AirtelDropController extends Controller
             });
         }
 
+        if ($request->payment_mode) {
+            $retailerQuery->whereHas('recoveries', function($q) use ($request) {
+                $q->where('notes', 'like', $request->payment_mode . '%');
+            });
+        }
+
         // Get union of IDs: those with drops in range + those with balance > 0
         $allMatchingRetailerIds = $retailerQuery->where(function($q) use ($retailerIdsByDrops) {
             $q->whereIn('id', $retailerIdsByDrops)->orWhere('balance', '>', 0);
@@ -265,7 +316,19 @@ class AirtelDropController extends Controller
         $opening_balance = (float)\App\Models\Retailer::whereIn('id', $allMatchingRetailerIds)->sum('balance');
         $retailerIds = $allMatchingRetailerIds;
 
-        $total_recovered_ledger = (float)\App\Models\AirtelRecovery::whereIn('retailer_id', $retailerIds)
+        $total_recovered_filtered = (float)\App\Models\AirtelRecovery::whereIn('retailer_id', $retailerIds)
+            ->when($request->from_date && $request->to_date, function($q) use ($request) {
+                $q->whereBetween('recovered_at', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+            })
+            ->when($request->date, function($q) use ($request) {
+                $q->whereDate('recovered_at', $request->date);
+            })
+            ->when($request->payment_mode, function($q) use ($request) {
+                $q->where('notes', 'like', $request->payment_mode . '%');
+            })
+            ->sum('amount');
+
+        $total_recovered_all = (float)\App\Models\AirtelRecovery::whereIn('retailer_id', $retailerIds)
             ->when($request->from_date && $request->to_date, function($q) use ($request) {
                 $q->whereBetween('recovered_at', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
             })
@@ -279,10 +342,10 @@ class AirtelDropController extends Controller
         // Stats reflect the *filtered* query
         return response()->json([
             'total_dropped' => $total_dropped, 
-            'total_receivable' => $total_dropped + $opening_balance, // New field name
-            'total_recovered' => $total_recovered_ledger, // Actual recovered amount
+            'total_receivable' => $total_dropped + $opening_balance, 
+            'total_recovered' => $total_recovered_filtered, 
             'opening_balance' => $opening_balance,
-            'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_ledger,
+            'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_all,
             'grand_total_pending' => (float)AirtelDrop::sum('amount') + (float)\App\Models\Retailer::sum('balance') - (float)\App\Models\AirtelRecovery::sum('amount'),
         ]);
     }
@@ -402,14 +465,29 @@ class AirtelDropController extends Controller
 
         // 2. Collections Received (Cash-Flow Centric)
         // Fixed: Use AirtelRecovery model to ensure every rupee received is counted
-        $collections = \App\Models\AirtelRecovery::selectRaw("
-                DATE(recovered_at) as collection_date, 
-                SUM(amount) as amount_collected
-            ")
-            ->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
-            ->groupBy('collection_date')
-            ->orderBy('collection_date', 'DESC')
-            ->get();
+        $recoveries = \App\Models\AirtelRecovery::whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
+            ->orderBy('recovered_at', 'DESC')
+            ->get()
+            ->groupBy(function($item) {
+                return $item->recovered_at->toDateString();
+            });
+
+        $collections = $recoveries->map(function($dayRecoveries, $date) {
+            $modes = $dayRecoveries->groupBy(function($item) {
+                // Safely extract mode, default to "OTHER" if empty
+                $parts = explode(' - ', $item->notes);
+                $mode = strtoupper(trim($parts[0]));
+                return $mode ?: 'OTHER';
+            })->map(function($modeRecoveries) {
+                return $modeRecoveries->sum('amount');
+            });
+
+            return [
+                'collection_date' => $date,
+                'amount_collected' => $dayRecoveries->sum('amount'),
+                'modes' => $modes
+            ];
+        })->values();
 
         // 3. Retailer Pending Summary (Aggregated)
         // Syncs with the dashboard grouping logic for 100% accuracy
@@ -417,10 +495,12 @@ class AirtelDropController extends Controller
             $q->where('status', 'pending');
         })->orWhere('balance', '>', 0)
         ->get()
-        ->map(function($r) {
+        ->map(function($r) use ($request) {
             $r->opening_bal = (float)$r->balance;
             $r->airdrop_total = (float)\App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
-            $r->received_total = (float)\App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
+            $r->received_total = (float)\App\Models\AirtelRecovery::where('retailer_id', $r->id)
+                ->when($request->payment_mode, fn($q) => $q->where('notes', 'like', $request->payment_mode . '%'))
+                ->sum('amount');
             $r->pending_total = ($r->opening_bal + $r->airdrop_total) - $r->received_total;
             return $r;
         })

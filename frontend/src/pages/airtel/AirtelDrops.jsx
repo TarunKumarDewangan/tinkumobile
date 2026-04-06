@@ -7,7 +7,7 @@ import Modal from '../../components/Modal';
 
 import { useAuth } from '../../contexts/AuthContext';
 export default function AirtelDrops() {
-  const { can, isManager } = useAuth();
+  const { can, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [drops, setDrops] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,13 +17,13 @@ export default function AirtelDrops() {
   const [retailerName, setRetailerName] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
   const [status, setStatus] = useState('all');
   const [followUpOnly, setFollowUpOnly] = useState(false);
   const [useRange, setUseRange] = useState(true);
 
    const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
-  const [importDate, setImportDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [submitting, setSubmitting] = useState(false);
 
@@ -38,10 +38,10 @@ export default function AirtelDrops() {
   useEffect(() => {
     fetchDrops();
     fetchSummary();
-  }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly]);
+  }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, paymentMode]);
 
   const getParams = () => {
-    let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}`;
+    let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}&payment_mode=${paymentMode}`;
     if (status !== 'all') params += `&status=${status}`;
     if (followUpOnly) params += `&follow_up=1`;
     if (useRange) {
@@ -79,19 +79,44 @@ export default function AirtelDrops() {
     const parsedDrops = lines.map(line => {
       const trimmed = line.trim();
       if (!trimmed) return null;
-      const parts = trimmed.split(/[\s_]+/);
+      
+      // Split by TAB first (standard Excel behavior), then falling back to multiple spaces
+      let parts = trimmed.split('\t');
+      if (parts.length < 2) parts = trimmed.split(/\s{2,}/);
+      if (parts.length < 2) parts = trimmed.split(/[\s_]+/); // Fallback to single spaces or underscores
+      
       if (parts.length < 2) return null;
       
       const msisdn = parts[0].trim();
-      const amountStr = parts[1].trim();
+      if (/[a-zA-Z]/.test(msisdn)) return null; // Skip header rows
       
-      // Skip if msisdn contains alpha characters (probably a header)
-      if (/[a-zA-Z]/.test(msisdn)) return null;
+      let amount = 0;
+      let refill_date = new Date().toISOString().split('T')[0]; // Default to today if nothing found
+
+      // Robust parsing
+      if (parts.length >= 4 && parts[1].includes('-') && parts[2].includes(':')) {
+          // Case 1: MSISDN YYYY-MM-DD HH:MM:SS.SSS AMOUNT
+          // Truncate milliseconds (.SSS) to match DB dateTime precision
+          refill_date = `${parts[1].trim()} ${parts[2].trim()}`.split('.')[0];
+          amount = parseFloat(parts[3].trim());
+      } else if (parts.length >= 3) {
+          // Case 2: MSISDN TIMESTAMP AMOUNT (timestamp is one part, e.g. from TAB)
+          if (parts[1].includes('-') || parts[1].includes(':')) {
+              refill_date = parts[1].trim().split('.')[0];
+              amount = parseFloat(parts[2].trim());
+          } else {
+              // Maybe MSISDN AMOUNT TIMESTAMP
+              amount = parseFloat(parts[1].trim());
+              refill_date = parts[2].trim().split('.')[0];
+          }
+      } else {
+          // Case 3: MSISDN AMOUNT (fallback to manual date)
+          amount = parseFloat(parts[1].trim());
+      }
       
-      const amount = parseFloat(amountStr);
       if (!msisdn || isNaN(amount)) return null;
       
-      return { msisdn, amount, refill_date: importDate };
+      return { msisdn, amount, refill_date };
     }).filter(d => d !== null);
 
     console.log('Importing Drops:', parsedDrops);
@@ -112,10 +137,11 @@ export default function AirtelDrops() {
       setFailedMsisdns(failures);
 
       if (failures.length > 0) {
-          toast.warning(`Imported ${data.success}, but ${data.failed} failed.`);
-          // Keep modal open to show failed MSISDNS
+          toast.warning(`Imported ${data.success}, skipped ${data.duplicates || 0} duplicates, but ${data.failed} failed.`);
       } else {
-          toast.success(`Successfully imported all ${data.success} drops`);
+          let msg = `Imported ${data.success} new drops.`;
+          if (data.duplicates > 0) msg += ` (Skipped ${data.duplicates} duplicates)`;
+          toast.success(msg);
           setShowImport(false);
           setImportText('');
       }
@@ -176,7 +202,7 @@ export default function AirtelDrops() {
 
           {can('manage_airtel_recovery') && (
             <>
-              {!isManager() && (
+              {hasFullAccess() && (
                 <>
                   <button 
                     className="btn btn-outline-danger btn-sm text-uppercase px-3" 
@@ -217,7 +243,6 @@ export default function AirtelDrops() {
                 </>
               )}
               <button className="btn btn-primary btn-sm text-uppercase px-4" onClick={() => {
-                  setImportDate(date);
                   setShowImport(true);
               }}>
                 Import
@@ -260,7 +285,18 @@ export default function AirtelDrops() {
                         onChange={e => setMaxAmount(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-3">
+                  <div className="col-md-2">
+                      <label className="x-small text-uppercase fw-bold mb-1 d-block">Payment Mode</label>
+                      <select className="form-select form-select-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
+                          <option value="">ALL MODES</option>
+                          <option value="CASH">CASH</option>
+                          <option value="PHONE PE">PHONE PE</option>
+                          <option value="GPAY">GPAY</option>
+                          <option value="DIGITAL">DIGITAL</option>
+                          <option value="OTHER">OTHER</option>
+                      </select>
+                  </div>
+                  <div className="col-md-2">
                       <div className="form-check form-switch mt-2">
                           <input className="form-check-input" type="checkbox" id="followUpSwitch" checked={followUpOnly} onChange={e => setFollowUpOnly(e.target.checked)} />
                           <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="followUpSwitch">Follow-up Only</label>
@@ -270,7 +306,7 @@ export default function AirtelDrops() {
                       <button 
                         className="btn btn-link btn-sm text-decoration-none text-muted p-0" 
                         onClick={() => {
-                            setRetailerName(''); setMinAmount(''); setMaxAmount(''); setStatus('all'); setFollowUpOnly(false); setUseRange(true);
+                            setRetailerName(''); setMinAmount(''); setMaxAmount(''); setStatus('all'); setPaymentMode(''); setFollowUpOnly(false); setUseRange(true);
                             setFromDate('2025-01-01'); setToDate(new Date().toISOString().split('T')[0]);
                         }}
                       >
@@ -367,14 +403,16 @@ export default function AirtelDrops() {
                                 {g.opening_balance > 0 && <span className="text-muted small"> + ₹{g.opening_balance.toLocaleString()}</span>}
                             </div>
                             <div className="x-small text-muted mt-1 opacity-75 fw-bold text-uppercase">
-                                <span className="text-success">₹{(g.paid_sum || 0).toLocaleString()} Paid</span> / <span className="text-danger">₹{(g.total_amount - g.paid_sum).toLocaleString()} Pending</span>
+                                <span className="text-success">₹{(g.paid_sum || 0).toLocaleString()} Paid</span> / <span className="text-danger">₹{(g.grand_pending || 0).toLocaleString()} Pending</span>
                             </div>
                         </td>
                         <td className="small fw-bold text-muted">
                             {g.dates || <span className="text-primary x-small">OPENING BALANCE</span>}
                         </td>
                         <td className="small">
-                            {g.latest_reason ? <span className="badge bg-danger-subtle text-danger text-uppercase x-small">{g.latest_reason}</span> : '-'}
+                            {g.latest_reason && <div className="badge bg-danger-subtle text-danger text-uppercase x-small mb-1 d-block">{g.latest_reason}</div>}
+                            {g.recovery_breakdown && <div className="badge bg-success-subtle text-success text-uppercase x-small d-block border-success-subtle">{g.recovery_breakdown}</div>}
+                            {!g.latest_reason && !g.recovery_breakdown && '-'}
                         </td>
                         <td className="small fw-bold">
                             {g.latest_follow_up ? new Date(g.latest_follow_up).toLocaleDateString('en-GB').replace(/\//g, ' ') : '-'}
@@ -395,7 +433,7 @@ export default function AirtelDrops() {
                                 >
                                     Profile/History
                                 </button>
-                                {can('manage_airtel_recovery') && !isManager() && !g.paid_sum && (
+                                {can('manage_airtel_recovery') && hasFullAccess() && !g.paid_sum && (
                                     <button className="btn btn-link btn-sm text-danger text-decoration-none text-uppercase fw-bold px-1" onClick={() => handleDelete(g.id)}>Delete</button>
                                 )}
                             </div>
@@ -411,11 +449,6 @@ export default function AirtelDrops() {
 
       <Modal show={showImport} onClose={() => setShowImport(false)} title="IMPORT AIRTEL DROPS">
         <form onSubmit={handleImport}>
-          <div className="mb-3">
-            <label className="form-label text-uppercase small fw-bold">Refill Date</label>
-            <input type="date" className="form-control" value={importDate} onChange={e => setImportDate(e.target.value)} />
-            <div className="form-text x-small text-info fw-bold text-uppercase mt-1">!! This date will be assigned to all imported numbers !!</div>
-          </div>
           <div className="mb-3">
             <label className="form-label text-uppercase small fw-bold">Paste Data (MSISDN AMOUNT)</label>
             <textarea 
