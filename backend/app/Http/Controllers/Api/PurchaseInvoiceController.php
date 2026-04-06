@@ -7,11 +7,13 @@ use App\Models\PurchaseInvoice;
 use App\Models\PurchaseItem;
 use App\Models\Inventory;
 use App\Models\Product;
+use App\Traits\RecordsTransactions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class PurchaseInvoiceController extends Controller
 {
+    use RecordsTransactions;
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -128,6 +130,19 @@ class PurchaseInvoiceController extends Controller
                 'notes'         => $data['notes'] ?? null,
             ]);
             $invoice->updatePaymentStatus();
+
+            // Record Transaction if there's an initial payment
+            if ($invoice->total_paid > 0) {
+                $invoice->recordTransaction([
+                    'type'             => 'OUT',
+                    'category'         => 'PURCHASE',
+                    'amount'           => $invoice->total_paid,
+                    'payment_mode'     => 'CASH', // Assuming cash for now
+                    'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}",
+                    'ref_id'           => $invoice->id,
+                    'transaction_date' => $invoice->purchase_date,
+                ]);
+            }
             
             $createdProducts = []; // Track products created in this request
             foreach ($data['items'] as $item) {
@@ -405,6 +420,17 @@ class PurchaseInvoiceController extends Controller
 
         $purchaseInvoice->total_paid += $data['amount'];
         $purchaseInvoice->updatePaymentStatus();
+
+        // Record Transaction
+        $purchaseInvoice->recordTransaction([
+            'type'             => 'OUT',
+            'category'         => 'PURCHASE',
+            'amount'           => $data['amount'],
+            'payment_mode'     => 'CASH',
+            'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+            'ref_id'           => $purchaseInvoice->id,
+            'transaction_date' => now()->toDateString(),
+        ]);
 
         return response()->json([
             'message' => 'Payment recorded successfully',

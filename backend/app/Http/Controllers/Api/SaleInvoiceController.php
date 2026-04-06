@@ -10,11 +10,13 @@ use App\Models\Inventory;
 use App\Models\GiftInventory;
 use App\Models\EmployeeIncentive;
 use App\Models\Category;
+use App\Traits\RecordsTransactions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class SaleInvoiceController extends Controller
 {
+    use RecordsTransactions;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -121,6 +123,19 @@ class SaleInvoiceController extends Controller
 
             $invoice->updatePaymentStatus();
 
+            // Record Transaction if there's an initial payment
+            if ($invoice->total_paid > 0) {
+                $invoice->recordTransaction([
+                    'type'             => 'IN',
+                    'category'         => 'SALE',
+                    'amount'           => $invoice->total_paid,
+                    'payment_mode'     => strtoupper($invoice->payment_method),
+                    'description'      => "Initial payment for Invoice #{$invoice->invoice_no}",
+                    'ref_id'           => $invoice->id,
+                    'transaction_date' => $invoice->sale_date,
+                ]);
+            }
+
             $mobileCatId = Category::where('slug', 'mobile-new')->value('id');
 
             foreach ($data['items'] as $item) {
@@ -193,6 +208,17 @@ class SaleInvoiceController extends Controller
 
         $saleInvoice->total_paid += $data['amount'];
         $saleInvoice->updatePaymentStatus();
+
+        // Record Transaction
+        $saleInvoice->recordTransaction([
+            'type'             => 'IN',
+            'category'         => 'SALE',
+            'amount'           => $data['amount'],
+            'payment_mode'     => 'CASH', // Default for addPayment for now
+            'description'      => "Partial payment for Invoice #{$saleInvoice->invoice_no}",
+            'ref_id'           => $saleInvoice->id,
+            'transaction_date' => now()->toDateString(),
+        ]);
 
         return response()->json([
             'message' => 'Payment added successfully',

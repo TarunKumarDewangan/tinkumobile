@@ -28,6 +28,8 @@ use App\Http\Controllers\Api\AirtelRetailerController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\TrashController;
 use App\Http\Controllers\Api\AirtelDropController;
+use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\ExpenseCategoryController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
@@ -165,4 +167,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('airtel-drops/summary', [AirtelDropController::class, 'summary']);
     Route::get('airtel-drops/report', [AirtelDropController::class, 'report']);
     Route::delete('airtel-drops/{drop}', [AirtelDropController::class, 'destroy']);
+
+    // Accounting & Transactions
+    Route::get('/transactions/categories', [TransactionController::class, 'categories']);
+    Route::apiResource('transactions', TransactionController::class);
+    Route::apiResource('expense-categories', ExpenseCategoryController::class);
 });

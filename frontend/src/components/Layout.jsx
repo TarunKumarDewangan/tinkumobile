@@ -40,6 +40,15 @@ const NAV = [
   { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
   { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
   { to: '/reports',     icon: '📈', label: 'Reports',    perm: 'view_reports' },
+  { 
+    section: 'Accounts', 
+    dropdown: true,
+    children: [
+        { to: '/accounts/cashbook', icon: '📖', label: 'Cashbook', perm: 'view_reports' },
+        { to: '/accounts/expenses',  icon: '💸', label: 'Overheads', perm: 'view_reports' },
+        { to: '/accounts/categories', icon: '📁', label: 'Categories', perm: 'view_reports' },
+    ]
+  },
   { section: 'Airtel Recovery' },
   { to: '/airtel/retailers', icon: '🏪', label: 'Retailers', perm: 'view_airtel_recovery' },
   { to: '/airtel/drops',     icon: '📉', label: 'Daily Drops', perm: 'view_airtel_recovery' },
@@ -63,7 +72,7 @@ export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': true });
+  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': true, 'Accounts': true });
   
   const toggleSection = (section) => {
     setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
@@ -126,7 +135,9 @@ export default function Layout() {
                     <div key={i} className="sidebar-dropdown">
                         <button className="sidebar-dropdown-toggle" onClick={() => toggleSection(item.section)}>
                             <div className="d-flex align-items-center gap-2">
-                                <span style={{fontSize:'0.9rem'}}>{item.section === 'New Mobile' ? '📱' : '📦'}</span>
+                                <span style={{fontSize:'0.9rem'}}>
+                                    {item.section === 'New Mobile' ? '📱' : (item.section === 'Accounts' ? '🏦' : '📦')}
+                                </span>
                                 {item.section}
                             </div>
                             <span className="dropdown-arrow" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>

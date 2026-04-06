@@ -8,9 +8,11 @@ use App\Models\LoanPayment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Traits\RecordsTransactions;
 
 class LoanController extends Controller
 {
+    use RecordsTransactions;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -73,6 +75,17 @@ class LoanController extends Controller
                 ]);
             }
 
+            // Record Transaction (Disbursement)
+            $this->recordTransaction([
+                'type'             => 'OUT',
+                'category'         => 'LOAN_DISBURSEMENT',
+                'amount'           => $loan->principal,
+                'payment_mode'     => 'CASH',
+                'description'      => "Loan disbursed to {$loan->customer->name}",
+                'ref_id'           => $loan->id,
+                'transaction_date' => $loan->start_date->toDateString(),
+            ]);
+
             DB::commit();
             return response()->json($loan->load('customer', 'payments'), 201);
         } catch (\Exception $e) {
@@ -97,6 +110,17 @@ class LoanController extends Controller
         ]);
 
         $loanPayment->update(array_merge($data, ['status' => 'paid']));
+
+        // Record Transaction (Repayment)
+        $this->recordTransaction([
+            'type'             => 'IN',
+            'category'         => 'LOAN_REPAYMENT',
+            'amount'           => $loanPayment->amount + ($data['penalty'] ?? 0),
+            'payment_mode'     => 'CASH',
+            'description'      => "Loan repayment from {$loanPayment->loan->customer->name} (EMI)",
+            'ref_id'           => $loanPayment->id,
+            'transaction_date' => $loanPayment->paid_date->toDateString(),
+        ]);
 
         // Check if all paid → close loan
         $loan = $loanPayment->loan;

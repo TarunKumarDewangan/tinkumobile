@@ -43,6 +43,9 @@ import RecoveryDashboard from './pages/airtel/RecoveryDashboard';
 import AirtelReports from './pages/airtel/AirtelReports';
 import RetailerProfile from './pages/airtel/RetailerProfile';
 import PublicRetailerProfile from './pages/airtel/PublicRetailerProfile';
+import Cashbook from './pages/accounts/Cashbook';
+import Overheads from './pages/accounts/Overheads';
+import ExpenseCategories from './pages/accounts/ExpenseCategories';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -102,6 +105,10 @@ function AppRoutes() {
         <Route path="airtel/drops" element={<AirtelDrops />} />
         <Route path="airtel/recovery" element={<RecoveryDashboard />} />
         <Route path="airtel/reports" element={<AirtelReports />} />
+        {/* Accounts */}
+        <Route path="accounts/cashbook" element={<Cashbook />} />
+        <Route path="accounts/expenses" element={<Overheads />} />
+        <Route path="accounts/categories" element={<ExpenseCategories />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

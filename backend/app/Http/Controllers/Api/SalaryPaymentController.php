@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\SalaryPayment;
 use App\Models\Employee;
 use Illuminate\Http\Request;
+use App\Traits\RecordsTransactions;
 use Illuminate\Support\Facades\DB;
 
 class SalaryPaymentController extends Controller
 {
+    use RecordsTransactions;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -52,6 +54,17 @@ class SalaryPaymentController extends Controller
         }
 
         $payment = SalaryPayment::create($data);
+
+        // Record Transaction
+        $this->recordTransaction([
+            'type'             => 'OUT',
+            'category'         => 'SALARY',
+            'amount'           => $payment->amount,
+            'payment_mode'     => 'CASH', // Default for now
+            'description'      => "{$data['type']} payment for {$employee->name} (" . ($data['for_month'] ?? 'N/A') . ")",
+            'ref_id'           => $payment->id,
+            'transaction_date' => $payment->payment_date,
+        ]);
 
         return response()->json($payment, 201);
     }

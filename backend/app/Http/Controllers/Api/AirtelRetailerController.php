@@ -10,9 +10,11 @@ use App\Models\AirtelDrop;
 use App\Models\AirtelRecovery;
 use App\Models\User;
 use App\Models\ActivityLog;
+use App\Traits\RecordsTransactions;
 
 class AirtelRetailerController extends Controller
 {
+    use RecordsTransactions;
     public function index(Request $request)
     {
         $query = Retailer::query();
@@ -126,6 +128,17 @@ class AirtelRetailerController extends Controller
             'recovered_at' => $recoveredAt,
             'recovery_user_id' => $request->user()->id,
             'notes' => $validated['notes'] ?? null
+        ]);
+
+        // Record Transaction
+        $this->recordTransaction([
+            'type'             => 'IN',
+            'category'         => 'AIRTEL_RECOVERY',
+            'amount'           => $recovery->amount,
+            'payment_mode'     => 'CASH', // Default for now
+            'description'      => "Recovery payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
+            'ref_id'           => $recovery->id,
+            'transaction_date' => $recovery->recovered_at->toDateString(),
         ]);
 
         ActivityLog::log('RECORD_RECOVERY', $retailer, 'Recorded recovery of ₹' . number_format($validated['amount']) . ' for ' . $retailer->name);
