@@ -1,12 +1,14 @@
 <?php
 
 namespace App\Models;
+use App\Traits\RecordsTransactions;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class SalaryPayment extends Model
 {
+    use RecordsTransactions;
     use HasFactory;
 
     protected $fillable = [

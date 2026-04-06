@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Models;
+use App\Traits\RecordsTransactions;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -8,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Loan extends Model
 {
+    use RecordsTransactions;
     protected $fillable = [
         'customer_id', 'principal', 'interest_rate', 'total_months',
         'monthly_installment', 'start_date', 'status', 'notes'
