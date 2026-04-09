@@ -58,7 +58,10 @@ class SaleInvoiceController extends Controller
             'total_paid'       => 'nullable|numeric|min:0',
             'cgst_rate'        => 'nullable|numeric|min:0',
             'sgst_rate'        => 'nullable|numeric|min:0',
-            'rounding_mode'    => 'nullable|in:auto,up,down',
+            'calculate_gst'    => 'nullable|boolean',
+            'cash_discount'    => 'nullable|numeric|min:0',
+            'is_cash_discount_on_bill' => 'nullable|boolean',
+            'rounding_mode'    => 'nullable|in:auto,up,down,manual',
             'round_off'        => 'nullable|numeric',
             'notes'            => 'nullable|string',
             'items'            => 'required|array|min:1',
@@ -78,13 +81,26 @@ class SaleInvoiceController extends Controller
         try {
             $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
             $discount    = (float) ($data['discount'] ?? 0);
+            $cashDiscount = (float) ($data['cash_discount'] ?? 0);
+            $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
+            $calculateGst = (bool) ($data['calculate_gst'] ?? true);
             
-            $cgstRate = (float) ($data['cgst_rate'] ?? 9);
-            $sgstRate = (float) ($data['sgst_rate'] ?? 9);
-            $cgstAmount = ($totalAmount * $cgstRate) / 100;
-            $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            if ($calculateGst) {
+                $cgstRate = (float) ($data['cgst_rate'] ?? 9);
+                $sgstRate = (float) ($data['sgst_rate'] ?? 9);
+                $cgstAmount = ($totalAmount * $cgstRate) / 100;
+                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            } else {
+                $cgstRate = 0;
+                $sgstRate = 0;
+                $cgstAmount = 0;
+                $sgstAmount = 0;
+            }
 
             $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
+            if ($isCashDiscOnBill) {
+                $rawGrandTotal -= $cashDiscount;
+            }
             $roundingMode = $data['rounding_mode'] ?? 'auto';
             $roundOff     = (float) ($data['round_off'] ?? 0);
 
@@ -111,7 +127,10 @@ class SaleInvoiceController extends Controller
                 'sgst_rate'      => $sgstRate,
                 'cgst_amount'    => $cgstAmount,
                 'sgst_amount'    => $sgstAmount,
+                'calculate_gst'  => $calculateGst,
                 'discount'       => $discount,
+                'cash_discount'  => $cashDiscount,
+                'is_cash_discount_on_bill' => $isCashDiscOnBill,
                 'grand_total'    => $grandTotal,
                 'rounding_mode'  => $roundingMode,
                 'round_off'      => $roundOff,
@@ -242,6 +261,9 @@ class SaleInvoiceController extends Controller
             'customer_id'    => 'required|exists:customers,id',
             'sale_date'      => 'required|date',
             'discount'       => 'nullable|numeric|min:0',
+            'calculate_gst'  => 'nullable|boolean',
+            'cash_discount'  => 'nullable|numeric|min:0',
+            'is_cash_discount_on_bill' => 'nullable|boolean',
             'cgst_rate'      => 'nullable|numeric|min:0',
             'sgst_rate'      => 'nullable|numeric|min:0',
             'rounding_mode'  => 'nullable|in:auto,up,down,manual',
@@ -269,13 +291,26 @@ class SaleInvoiceController extends Controller
 
             $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
             $discount    = (float) ($data['discount'] ?? 0);
+            $cashDiscount = (float) ($data['cash_discount'] ?? 0);
+            $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
+            $calculateGst = (bool) ($data['calculate_gst'] ?? true);
 
-            $cgstRate = (float) ($data['cgst_rate'] ?? 9);
-            $sgstRate = (float) ($data['sgst_rate'] ?? 9);
-            $cgstAmount = ($totalAmount * $cgstRate) / 100;
-            $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            if ($calculateGst) {
+                $cgstRate = (float) ($data['cgst_rate'] ?? 9);
+                $sgstRate = (float) ($data['sgst_rate'] ?? 9);
+                $cgstAmount = ($totalAmount * $cgstRate) / 100;
+                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            } else {
+                $cgstRate = 0;
+                $sgstRate = 0;
+                $cgstAmount = 0;
+                $sgstAmount = 0;
+            }
 
             $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
+            if ($isCashDiscOnBill) {
+                $rawGrandTotal -= $cashDiscount;
+            }
             $roundingMode = $data['rounding_mode'] ?? 'auto';
             $roundOff     = (float) ($data['round_off'] ?? 0);
 
@@ -296,7 +331,10 @@ class SaleInvoiceController extends Controller
                 'sgst_rate'      => $sgstRate,
                 'cgst_amount'    => $cgstAmount,
                 'sgst_amount'    => $sgstAmount,
+                'calculate_gst'  => $calculateGst,
                 'discount'       => $discount,
+                'cash_discount'  => $cashDiscount,
+                'is_cash_discount_on_bill' => $isCashDiscOnBill,
                 'grand_total'    => $grandTotal,
                 'rounding_mode'  => $roundingMode,
                 'round_off'      => $roundOff,

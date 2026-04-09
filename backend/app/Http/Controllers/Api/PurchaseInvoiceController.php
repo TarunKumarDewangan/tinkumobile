@@ -77,6 +77,9 @@ class PurchaseInvoiceController extends Controller
             'total_paid'         => 'nullable|numeric|min:0',
             'cgst_rate'          => 'nullable|numeric|min:0|max:100',
             'sgst_rate'          => 'nullable|numeric|min:0|max:100',
+            'calculate_gst'      => 'nullable|boolean',
+            'cash_discount'      => 'nullable|numeric|min:0',
+            'is_cash_discount_on_bill' => 'nullable|boolean',
             'rounding_mode'      => 'nullable|in:auto,up,down',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
@@ -97,12 +100,27 @@ class PurchaseInvoiceController extends Controller
         return DB::transaction(function () use ($data, $shopId, $user) {
             $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
             $discount    = $data['discount'] ?? 0;
-            $cgstRate    = $data['cgst_rate'] ?? 9;
-            $sgstRate    = $data['sgst_rate'] ?? 9;
-            $cgstAmount  = ($totalAmount * $cgstRate) / 100;
-            $sgstAmount  = ($totalAmount * $sgstRate) / 100;
+            $cashDiscount = (float) ($data['cash_discount'] ?? 0);
+            $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
+            $calculateGst = (bool) ($data['calculate_gst'] ?? true);
+            
+            if ($calculateGst) {
+                $cgstRate = $data['cgst_rate'] ?? 9;
+                $sgstRate = $data['sgst_rate'] ?? 9;
+                $cgstAmount = ($totalAmount * $cgstRate) / 100;
+                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            } else {
+                $cgstRate = 0;
+                $sgstRate = 0;
+                $cgstAmount = 0;
+                $sgstAmount = 0;
+            }
+
             $roundingMode = $data['rounding_mode'] ?? 'auto';
             $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
+            if ($isCashDiscOnBill) {
+                $rawGrandTotal -= $cashDiscount;
+            }
             if ($roundingMode === 'up') $grandTotal = ceil($rawGrandTotal);
             else if ($roundingMode === 'down') $grandTotal = floor($rawGrandTotal);
             else $grandTotal = round($rawGrandTotal);
@@ -123,7 +141,10 @@ class PurchaseInvoiceController extends Controller
                 'sgst_rate'     => $sgstRate,
                 'cgst_amount'   => $cgstAmount,
                 'sgst_amount'   => $sgstAmount,
+                'calculate_gst' => $calculateGst,
                 'discount'      => $discount,
+                'cash_discount' => $cashDiscount,
+                'is_cash_discount_on_bill' => $isCashDiscOnBill,
                 'grand_total'   => $grandTotal,
                 'total_paid'    => $data['total_paid'] ?? 0,
                 'rounding_mode' => $roundingMode,
@@ -139,6 +160,19 @@ class PurchaseInvoiceController extends Controller
                     'amount'           => $invoice->total_paid,
                     'payment_mode'     => 'CASH', // Assuming cash for now
                     'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}",
+                    'ref_id'           => $invoice->id,
+                    'transaction_date' => $invoice->purchase_date,
+                ]);
+            }
+
+            // Record separate Transaction for Cash Discount if not on bill
+            if ($cashDiscount > 0 && !$isCashDiscOnBill) {
+                $invoice->recordTransaction([
+                    'type'             => 'IN', // Discount received is an incoming gain
+                    'category'         => 'CASH_DISCOUNT',
+                    'amount'           => $cashDiscount,
+                    'payment_mode'     => 'CASH',
+                    'description'      => "Cash discount (not on bill) for Purchase Invoice #{$invoice->invoice_no}",
                     'ref_id'           => $invoice->id,
                     'transaction_date' => $invoice->purchase_date,
                 ]);
@@ -232,6 +266,9 @@ class PurchaseInvoiceController extends Controller
             'total_paid'         => 'nullable|numeric|min:0',
             'cgst_rate'          => 'nullable|numeric|min:0|max:100',
             'sgst_rate'          => 'nullable|numeric|min:0|max:100',
+            'calculate_gst'      => 'nullable|boolean',
+            'cash_discount'      => 'nullable|numeric|min:0',
+            'is_cash_discount_on_bill' => 'nullable|boolean',
             'rounding_mode'      => 'nullable|in:auto,up,down',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
@@ -265,12 +302,27 @@ class PurchaseInvoiceController extends Controller
             // 3. Update Invoice Header
             $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
             $discount    = $data['discount'] ?? 0;
-            $cgstRate    = $data['cgst_rate'] ?? 9;
-            $sgstRate    = $data['sgst_rate'] ?? 9;
-            $cgstAmount  = ($totalAmount * $cgstRate) / 100;
-            $sgstAmount  = ($totalAmount * $sgstRate) / 100;
+            $cashDiscount = (float) ($data['cash_discount'] ?? 0);
+            $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
+            $calculateGst = (bool) ($data['calculate_gst'] ?? true);
+
+            if ($calculateGst) {
+                $cgstRate = $data['cgst_rate'] ?? 9;
+                $sgstRate = $data['sgst_rate'] ?? 9;
+                $cgstAmount = ($totalAmount * $cgstRate) / 100;
+                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            } else {
+                $cgstRate = 0;
+                $sgstRate = 0;
+                $cgstAmount = 0;
+                $sgstAmount = 0;
+            }
+
             $roundingMode = $data['rounding_mode'] ?? 'auto';
             $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
+            if ($isCashDiscOnBill) {
+                $rawGrandTotal -= $cashDiscount;
+            }
             if ($roundingMode === 'up') $grandTotal = ceil($rawGrandTotal);
             else if ($roundingMode === 'down') $grandTotal = floor($rawGrandTotal);
             else $grandTotal = round($rawGrandTotal);
@@ -287,7 +339,10 @@ class PurchaseInvoiceController extends Controller
                 'sgst_rate'     => $sgstRate,
                 'cgst_amount'   => $cgstAmount,
                 'sgst_amount'   => $sgstAmount,
+                'calculate_gst' => $calculateGst,
                 'discount'      => $discount,
+                'cash_discount' => $cashDiscount,
+                'is_cash_discount_on_bill' => $isCashDiscOnBill,
                 'grand_total'   => $grandTotal,
                 'total_paid'    => $data['total_paid'] ?? $purchaseInvoice->total_paid,
                 'rounding_mode' => $roundingMode,

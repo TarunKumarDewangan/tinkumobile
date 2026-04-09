@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
@@ -32,6 +32,12 @@ export default function StockEntry() {
   const [tab, setTab] = useState('stocks'); // 'stocks' | 'entry' | 'history'
   const [loading, setLoading] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
+
+  // Bulk Opening Stock State
+  const [openingStockItems, setOpeningStockItems] = useState([
+    { product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', selling_price: '' }
+  ]);
   
   // Filter States
   const [filters, setFilters] = useState({
@@ -47,6 +53,10 @@ export default function StockEntry() {
     group_by_config: true
   });
   const [imeiList, setImeiList] = useState([]);
+  const [editingAdj, setEditingAdj] = useState(null);
+  const [editForm, setEditForm] = useState({ quantity: 1, purchase_price: '', notes: '', adjustment_date: '' });
+
+  const initialShopSet = useRef(false);
 
   // Load products and current stock levels
   const loadData = useCallback(async () => {
@@ -66,7 +76,8 @@ export default function StockEntry() {
         if (isOwner()) {
             api.get('/shops').then(r => {
                 setShops(r.data);
-                if (r.data.length > 0 && !form.shop_id) {
+                if (r.data.length > 0 && !form.shop_id && !initialShopSet.current) {
+                    initialShopSet.current = true;
                     setForm(f => ({ ...f, shop_id: r.data[0].id }));
                 }
             });
@@ -76,7 +87,7 @@ export default function StockEntry() {
     } finally {
         setLoading(false);
     }
-  }, [isOwner, form.shop_id, filters]);
+  }, [filters, form.shop_id, isOwner]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -97,6 +108,7 @@ export default function StockEntry() {
   useEffect(() => {
     loadSuppliers();
     loadUniqueImeis();
+    api.get('/categories').then(r => setCategories(r.data));
   }, []);
 
   const handleFilterChange = (name, value) => {
@@ -128,6 +140,95 @@ export default function StockEntry() {
 
   // Auto-set type based on chosen reason
   const isAdd = ADD_REASONS.includes(form.reason);
+
+  const handleBulkSubmit = async (e) => {
+    e.preventDefault();
+    if (openingStockItems.length === 0) return;
+    
+    // Validation
+    const invalid = openingStockItems.some(item => !item.is_new && !item.product_id);
+    const invalidNew = openingStockItems.some(item => item.is_new && !item.new_product_name);
+    if (invalid || invalidNew) {
+        toast.error('Please complete all product selections');
+        return;
+    }
+
+    setLoading(true);
+    try {
+        const payload = {
+            items: openingStockItems,
+            adjustment_date: form.adjustment_date,
+            shop_id: form.shop_id,
+            notes: form.notes
+        };
+        await api.post('/stock-adjustments/bulk', payload);
+        toast.success(`✅ Successfully added items to stock!`);
+        setOpeningStockItems([{ product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', selling_price: '' }]);
+        loadData();
+    } catch (e) {
+        toast.error(e.response?.data?.message || 'Error saving stock');
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+        await api.put(`/stock-adjustments/${editingAdj.id}`, editForm);
+        toast.success('Adjustment updated successfully!');
+        setEditingAdj(null);
+        loadHistory();
+        loadData();
+    } catch (e) {
+        toast.error(e.response?.data?.message || 'Error updating adjustment');
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this adjustment? Inventory will be reverted.')) return;
+    setLoading(true);
+    try {
+        await api.delete(`/stock-adjustments/${id}`);
+        toast.success('Adjustment deleted and stock reverted!');
+        loadHistory();
+        loadData();
+    } catch (e) {
+        toast.error(e.response?.data?.message || 'Error deleting adjustment');
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const updateOpeningItem = (i, field, val) => {
+    const newItems = [...openingStockItems];
+    newItems[i][field] = val;
+    
+    if (field === 'product_id' && val) {
+        const p = baseProducts.find(x => x.id == val);
+        if (p) {
+            newItems[i].unit_price = p.purchase_price;
+            newItems[i].selling_price = p.selling_price;
+            if (p.attributes) {
+                newItems[i].ram = p.attributes.ram || '';
+                newItems[i].storage = p.attributes.storage || '';
+                newItems[i].color = p.attributes.color || '';
+            }
+        }
+    }
+    setOpeningStockItems(newItems);
+  };
+
+  const addOpeningItem = () => {
+    setOpeningStockItems([...openingStockItems, { product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', selling_price: '' }]);
+  };
+
+  const removeOpeningItem = (i) => {
+    setOpeningStockItems(openingStockItems.filter((_, idx) => idx !== i));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -169,7 +270,7 @@ export default function StockEntry() {
             <button className={`nav-link fw-bold px-4 ${tab==='stocks'?'active':''}`} onClick={() => setTab('stocks')}>📦 ALL STOCKS</button>
         </li>
         <li className="nav-item">
-            <button className={`nav-link fw-bold px-4 ${tab==='entry'?'active':''}`} onClick={() => setTab('entry')}>📥 MANUAL ENTRY</button>
+            <button className={`nav-link fw-bold px-4 ${tab==='entry'?'active':''}`} onClick={() => setTab('entry')}>📥 ENTRY BEFORE SYSTEM STARTED</button>
         </li>
         <li className="nav-item">
             <button className={`nav-link fw-bold px-4 ${tab==='history'?'active':''}`} onClick={() => setTab('history')}>🕓 HISTORY</button>
@@ -295,245 +396,274 @@ export default function StockEntry() {
             </div>
           </div>
 
-           <div className="table-card">
-              <div className="table-responsive">
-                 <table className="table table-hover align-middle mb-0 text-uppercase">
-                    <thead className="table-light">
-                       <tr>
-                          <th>PRODUCT & CONFIG</th>
-                          <th>{filters.group_by_config ? 'QTY' : 'IMEI'}</th>
-                          <th className="text-center">MIN SELL</th>
-                          <th className="text-center">MAX SELL</th>
-                          <th className="text-center">CURR PRICE</th>
-                          <th>LOCATION</th>
-                          <th className="text-end">ACTIONS</th>
-                       </tr>
-                    </thead>
-                    <tbody>
-                       {loading ? (
-                          <tr><td colSpan={7} className="text-center py-4"><div className="spinner-border spinner-border-sm"/></td></tr>
-                       ) : products.map(p => (
-                          <tr key={p.id}>
-                             <td>
-                                <div className="fw-bold text-primary">{p.name}</div>
-                                <div className="text-muted x-small">
-                                   {p.attributes?.ram || '-'}/{p.attributes?.storage || '-'}/{p.attributes?.color || '-'}
-                                </div>
-                             </td>
-                             <td>
-                                {filters.group_by_config ? (
-                                   <span className="badge bg-primary text-white border">{p.current_stock} UNITS</span>
-                                ) : (
-                                   p.attributes?.imei ? (
-                                      <span className="badge bg-light text-dark border">🆔 {p.attributes.imei}</span>
-                                   ) : (
-                                      <span className="text-muted small">—</span>
-                                   )
-                                )}
-                             </td>
-                             <td className="text-center fw-bold text-danger">₹{parseFloat(p.min_selling_price || 0).toLocaleString('en-IN')}</td>
-                             <td className="text-center fw-bold text-success">₹{parseFloat(p.max_selling_price || 0).toLocaleString('en-IN')}</td>
-                             <td className="text-center fw-bold">₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}</td>
-                             <td>{p.location ? `📍 ${p.location}` : '—'}</td>
-                             <td className="text-end">
-                                <button 
-                                   className="btn btn-sm btn-success fw-bold px-3 shadow-xs" 
-                                   onClick={() => {
-                                      window.location.href = `/sales/new?imei=${p.attributes?.imei || ''}`;
+            <div className="d-flex justify-content-between align-items-center mb-3">
+               <div className="form-check form-switch bg-white border rounded-pill px-5 py-2 shadow-sm d-flex align-items-center">
+                  <input 
+                    className="form-check-input me-2" 
+                    type="checkbox" 
+                    id="groupByConfig" 
+                    style={{ cursor: 'pointer', width: '2.5em', height: '1.25em' }}
+                    checked={filters.group_by_config}
+                    onChange={e => handleFilterChange('group_by_config', e.target.checked)}
+                  />
+                  <label className="form-check-label small fw-bold text-primary mb-0" htmlFor="groupByConfig" style={{ cursor: 'pointer', textTransform: 'uppercase' }}>
+                    GROUP BY SAME CONFIGURATION
+                  </label>
+               </div>
+               <button className="btn btn-outline-primary btn-sm fw-bold px-3 py-2 rounded shadow-sm d-flex align-items-center gap-2" style={{ border: '1.5px solid' }}>
+                  📊 VIEW FULL REPORT
+               </button>
+            </div>
+
+            <div className="table-card border-0 shadow-sm overflow-hidden" style={{ borderRadius: '12px' }}>
+               <div className="table-responsive">
+                  <table className="table table-hover align-middle mb-0" style={{ borderCollapse: 'separate', borderSpacing: '0' }}>
+                     <thead className="bg-light border-bottom">
+                        <tr className="text-uppercase small fw-bold text-muted" style={{ letterSpacing: '0.5px' }}>
+                           <th className="ps-4 py-3 border-0">PRODUCT NAME</th>
+                           <th className="py-3 border-0">CONFIGURATION</th>
+                           <th className="py-3 border-0">IMEI / SN</th>
+                           <th className="py-3 border-0">LOCATION</th>
+                           <th className="py-3 border-0 text-center">AVAILABLE STOCK</th>
+                           <th className="py-3 border-0 text-end pe-5">PRICE</th>
+                           <th className="py-3 border-0 text-end pe-4">ACTIONS</th>
+                        </tr>
+                     </thead>
+                     <tbody className="bg-white">
+                        {loading ? (
+                           <tr><td colSpan={8} className="text-center py-5"><div className="spinner-border text-primary"/></td></tr>
+                        ) : products.map(p => (
+                           <tr key={p.id} className="border-bottom-0">
+                              <td className="ps-4 py-3">
+                                 <div style={{ color: '#6f42c1', fontWeight: '800', fontSize: '1.05rem', letterSpacing: '0.2px' }}>
+                                    {p.name.toUpperCase()}
+                                 </div>
+                              </td>
+                              <td className="py-3">
+                                 <div className="d-flex align-items-center gap-2 flex-wrap">
+                                    <span className="badge border px-2 py-1 x-small fw-800" style={{ backgroundColor: '#f8f9fa', color: '#495057', borderRadius: '4px' }}>
+                                       {p.attributes?.color?.toUpperCase() || '-'}
+                                    </span>
+                                    <span className="fw-700 text-muted small" style={{ letterSpacing: '0.5px' }}>
+                                       {p.attributes?.ram || '-' } / {p.attributes?.storage || '-'}
+                                    </span>
+                                 </div>
+                              </td>
+                              <td className="py-3">
+                                 <div className="d-flex flex-wrap gap-1">
+                                    {filters.group_by_config ? (
+                                       p.attributes?.imeis?.length > 0 ? (
+                                          p.attributes.imeis.map((imei, idx) => (
+                                             <span key={idx} className="badge bg-light text-primary border px-2 py-1 x-small fw-bold">
+                                                {imei}
+                                             </span>
+                                          ))
+                                       ) : (
+                                          <span className="text-muted small">—</span>
+                                       )
+                                    ) : (
+                                       p.attributes?.imei ? (
+                                          <span className="badge bg-primary-soft text-primary border border-primary border-opacity-10 px-2 py-1 x-small fw-bold" style={{ backgroundColor: '#e7f1ff' }}>
+                                             {p.attributes.imei}
+                                          </span>
+                                       ) : (
+                                          <span className="text-muted small">—</span>
+                                       )
+                                    )}
+                                 </div>
+                              </td>
+                              <td className="py-3">
+                                 <div 
+                                    className="d-flex align-items-center text-muted small clickable-location" 
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={async () => {
+                                       const loc = window.prompt("Enter Location for " + p.name, p.location || '');
+                                       if (loc !== null) {
+                                          try {
+                                             await api.put(`/products/${p.product_id || p.id}`, { location: loc });
+                                             loadData();
+                                             toast.success("Location updated!");
+                                          } catch(e) { toast.error("Failed to update location"); }
+                                       }
                                     }}
-                                >
-                                   SELL
-                                </button>
-                                <button 
-                                   className="btn btn-sm btn-link text-decoration-none small ms-1"
-                                   onClick={() => { setForm({...form, product_id: p.product_id || p.id}); setTab('entry'); }}
-                                >
-                                   ADJUST
-                                </button>
-                             </td>
-                          </tr>
-                       ))}
-                       {products.length === 0 && !loading && (
-                          <tr><td colSpan={7} className="text-center py-5 text-muted">No matching stocks found</td></tr>
-                       )}
-                    </tbody>
-                 </table>
-              </div>
-           </div>
+                                 >
+                                    <span className="me-1">📍</span>
+                                    <span className={p.location ? 'text-dark fw-bold' : 'text-primary'}>
+                                       {p.location ? p.location.toUpperCase() : 'SET LOCATION'}
+                                    </span>
+                                 </div>
+                              </td>
+                              <td className="py-3 text-center">
+                                 <span className="badge rounded-pill bg-success-soft text-success border-success border-opacity-25 px-3 py-1 fw-bold" style={{ backgroundColor: '#e6f4ea' }}>
+                                    {p.current_stock} {parseFloat(p.current_stock) > 1 ? 'PCS' : 'PCS'}
+                                 </span>
+                              </td>
+                              <td className="py-3 text-end pe-5 fw-800" style={{ fontSize: '1rem' }}>
+                                 ₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-3 text-end pe-4">
+                                 <div className="d-flex justify-content-end gap-1">
+                                    {!filters.group_by_config && p.attributes?.imei && (
+                                       <button 
+                                          className="btn btn-success btn-sm fw-bold px-2 py-1 x-small shadow-sm"
+                                          onClick={() => window.location.href = `/sales/new?imei=${p.attributes.imei}`}
+                                       >
+                                          SELL
+                                       </button>
+                                    )}
+                                    <button 
+                                       className="btn btn-outline-info btn-sm rounded border-2 d-inline-flex align-items-center justify-content-center"
+                                       style={{ width: '32px', height: '32px', borderColor: '#d1ecf1' }}
+                                       onClick={() => {
+                                          setForm({...form, product_id: p.product_id || p.id});
+                                          setTab('entry');
+                                       }}
+                                       title="Quick Adjust"
+                                    >
+                                       <span style={{ fontSize: '1.1rem' }}>⚙️</span>
+                                    </button>
+                                 </div>
+                              </td>
+                           </tr>
+                        ))}
+                        {products.length === 0 && !loading && (
+                           <tr><td colSpan={6} className="text-center py-5 text-muted fw-bold">No matching stocks found</td></tr>
+                        ) || null}
+                     </tbody>
+                  </table>
+               </div>
+            </div>
         </div>
       )}
 
       {/* ── Entry Tab ── */}
       {tab === 'entry' && (
-        <form onSubmit={handleSubmit}>
-          <div className="row g-3">
-            {/* Left: Form */}
-            <div className="col-12 col-lg-7">
-              <div className="form-card">
-                <div className="form-card-title">📋 Entry Details</div>
-                <div className="row g-3">
-
-                  {/* Product picker */}
-                  <div className="col-12">
-                    <label className="form-label fw-semibold">Product <span className="text-danger">*</span></label>
-                    <select className="form-select" required value={form.product_id} onChange={e => setForm({...form, product_id: e.target.value})}>
-                      <option value="">— Select product —</option>
-                      {baseProducts.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.sku}) — Current: {currentStock[p.id] ?? 0} units
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Shop picker (Owner only) */}
-                  {isOwner() && (
-                    <div className="col-12">
-                        <label className="form-label fw-semibold text-primary">Target Shop <span className="text-danger">*</span></label>
-                        <select className="form-select border-primary" required value={form.shop_id} onChange={e => setForm({...form, shop_id: e.target.value})}>
+        <form onSubmit={handleBulkSubmit}>
+          <div className="card shadow-sm border-0 bg-white rounded-3 p-4 mb-4">
+             <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+                 <div className="text-uppercase">
+                     <h4 className="mb-0 fw-bold">All mobiles entry Before This system Started</h4>
+                     <p className="text-muted small mb-0">Record opening stock that you have in hand before starting with this system</p>
+                 </div>
+                 {isOwner() && (
+                    <div style={{ minWidth: '300px' }}>
+                        <label className="form-label small fw-bold text-primary text-uppercase">Target Shop / Branch</label>
+                        <select className="form-select form-select-sm border-primary" required value={form.shop_id} onChange={e => setForm({...form, shop_id: e.target.value})}>
                             {shops.map(s => (
-                                <option key={s.id} value={s.id}>{s.name} {s.is_main ? '⭐' : ''}</option>
+                                <option key={s.id} value={s.id}>{s.name.toUpperCase()} {s.is_main ? '⭐' : ''}</option>
                             ))}
                         </select>
-                        <div className="form-text">As Owner, you must specify which shop's inventory to adjust.</div>
                     </div>
-                  )}
+                 )}
+             </div>
 
-                  {/* Reason */}
-                  <div className="col-12">
-                    <label className="form-label fw-semibold">Reason <span className="text-danger">*</span></label>
-                    <select className="form-select" value={form.reason} onChange={e => setForm({...form, reason: e.target.value})}>
-                      <optgroup label="— Add Stock">
-                        {REASONS.filter(r => ADD_REASONS.includes(r.value)).map(r => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
+             <div className="row g-3 mb-4 text-uppercase">
+                 <div className="col-md-4">
+                    <label className="form-label small fw-bold">Stock Entry Date</label>
+                    <input type="date" className="form-control form-control-sm" required value={form.adjustment_date} onChange={e => setForm({...form, adjustment_date: e.target.value})} />
+                 </div>
+                 <div className="col-md-8">
+                    <label className="form-label small fw-bold">General Notes (Applied to all items)</label>
+                    <input type="text" className="form-control form-control-sm" placeholder="E.G. OPENING STOCK AS PER PHYSICAL VERIFICATION..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value.toUpperCase()})} />
+                 </div>
+             </div>
+
+             <div className="table-responsive">
+                <table className="table table-bordered align-middle text-uppercase">
+                    <thead className="bg-light fw-bold small text-muted">
+                        <tr>
+                            <th style={{ minWidth: '280px' }}>Product</th>
+                            <th style={{ width: '100px' }}>RAM</th>
+                            <th style={{ width: '100px' }}>Storage</th>
+                            <th style={{ width: '120px' }}>Color</th>
+                            <th style={{ width: '80px' }} className="text-center">Qty</th>
+                            <th style={{ minWidth: '250px' }}>IMEI / SN</th>
+                            <th style={{ width: '120px' }}>Buy Price</th>
+                            <th style={{ width: '120px' }}>Sell Price</th>
+                            <th style={{ width: '50px' }}></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {openingStockItems.map((item, i) => (
+                            <tr key={i}>
+                                <td>
+                                    <div className="d-flex flex-column gap-1">
+                                        <div className="form-check form-switch p-0 m-0 mb-1">
+                                            <input className="form-check-input ms-0 me-2" type="checkbox" id={`is_new_${i}`} checked={item.is_new} onChange={e => updateOpeningItem(i, 'is_new', e.target.checked)} />
+                                            <label className="form-check-label small text-muted fw-bold" htmlFor={`is_new_${i}`} style={{ fontSize: '0.65rem' }}>NEW PRODUCT?</label>
+                                        </div>
+                                        {item.is_new ? (
+                                            <input type="text" className="form-control form-control-sm" placeholder="PRODUCT NAME" required value={item.new_product_name} onChange={e => updateOpeningItem(i, 'new_product_name', e.target.value.toUpperCase())} />
+                                        ) : (
+                                            <select className="form-select form-select-sm" required value={item.product_id} onChange={e => updateOpeningItem(i, 'product_id', e.target.value)}>
+                                                <option value="">— CHOOSE PRODUCT —</option>
+                                                {baseProducts.map(p => <option key={p.id} value={p.id}>{p.name.toUpperCase()}</option>)}
+                                            </select>
+                                        )}
+                                    </div>
+                                </td>
+                                <td>
+                                    <input type="text" className="form-control form-control-sm" placeholder="8GB" value={item.ram} onChange={e => updateOpeningItem(i, 'ram', e.target.value.toUpperCase())} />
+                                </td>
+                                <td>
+                                    <input type="text" className="form-control form-control-sm" placeholder="128GB" value={item.storage} onChange={e => updateOpeningItem(i, 'storage', e.target.value.toUpperCase())} />
+                                </td>
+                                <td>
+                                    <input type="text" className="form-control form-control-sm" placeholder="BLACK" value={item.color} onChange={e => updateOpeningItem(i, 'color', e.target.value.toUpperCase())} />
+                                </td>
+                                <td>
+                                    <input type="number" className="form-control form-control-sm text-center fw-bold" min="1" value={item.quantity} onChange={e => {
+                                        const qty = parseInt(e.target.value) || 1;
+                                        updateOpeningItem(i, 'quantity', qty);
+                                    }} />
+                                </td>
+                                <td>
+                                    <div className="d-flex flex-column gap-1">
+                                        {[...Array(item.quantity || 1)].map((_, idx) => {
+                                            const imeis = item.imei ? item.imei.split(/[\s,]+/).filter(Boolean) : [];
+                                            return (
+                                                <input 
+                                                    key={idx}
+                                                    type="text" 
+                                                    className="form-control form-control-sm" 
+                                                    placeholder={`IMEI ${idx + 1}`} 
+                                                    value={imeis[idx] || ''} 
+                                                    onChange={e => {
+                                                        const currentImeis = [...imeis];
+                                                        currentImeis[idx] = e.target.value.toUpperCase();
+                                                        updateOpeningItem(i, 'imei', currentImeis.join(' '));
+                                                    }} 
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                </td>
+                                <td>
+                                    <input type="number" className="form-control form-control-sm fw-bold" step="0.01" placeholder="0.00" value={item.unit_price} onChange={e => updateOpeningItem(i, 'unit_price', e.target.value)} />
+                                </td>
+                                <td>
+                                    <input type="number" className="form-control form-control-sm fw-bold border-success text-success" step="0.01" placeholder="0.00" value={item.selling_price} onChange={e => updateOpeningItem(i, 'selling_price', e.target.value)} />
+                                </td>
+                                <td className="text-center">
+                                    <button type="button" className="btn btn-link text-danger p-0" onClick={() => removeOpeningItem(i)} disabled={openingStockItems.length === 1}>🗑️</button>
+                                </td>
+                            </tr>
                         ))}
-                      </optgroup>
-                      <optgroup label="— Remove Stock">
-                        {REASONS.filter(r => REMOVE_REASONS.includes(r.value)).map(r => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                      </optgroup>
-                    </select>
-                    <div className={`mt-2 p-2 rounded border ${isAdd ? 'border-success' : 'border-danger'}`}
-                      style={{ background: isAdd ? '#f0fdf4' : '#fff1f2', fontSize:'0.8rem', color: isAdd ? '#15803d' : '#b91c1c' }}>
-                      {isAdd ? '➕ This will ADD stock to inventory' : '➖ This will REMOVE stock from inventory'}
-                    </div>
-                  </div>
+                    </tbody>
+                </table>
+             </div>
 
-                  {/* Quantity + Date */}
-                  <div className="col-6">
-                    <label className="form-label fw-semibold">Quantity <span className="text-danger">*</span></label>
-                    <input type="number" className="form-control" min="1" required
-                      value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} />
-                  </div>
-                  <div className="col-6">
-                    <label className="form-label fw-semibold">Date of Stock</label>
-                    <input type="date" className="form-control"
-                      value={form.adjustment_date} onChange={e => setForm({...form, adjustment_date: e.target.value})} />
-                    <div className="form-text">Use actual purchase date if backdating</div>
-                  </div>
-
-                  {/* Purchase price (optional, for add reasons) */}
-                  {isAdd && (
-                    <div className="col-12 col-sm-6">
-                      <label className="form-label fw-semibold">Purchase Price ₹ <span className="text-muted fw-normal" style={{ fontSize:'0.76rem' }}>(optional — for cost tracking)</span></label>
-                      <div className="input-group">
-                        <span className="input-group-text">₹</span>
-                        <input type="number" className="form-control" step="0.01" min="0" placeholder="0.00"
-                          value={form.purchase_price} onChange={e => setForm({...form, purchase_price: e.target.value})} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notes */}
-                  <div className="col-12">
-                    <label className="form-label fw-semibold">Notes <span className="text-muted fw-normal" style={{ fontSize:'0.76rem' }}>(optional)</span></label>
-                    <textarea className="form-control" rows={2} placeholder="e.g. Purchased from Samsung showroom on 15 Jan, invoice #INV-2024-112"
-                      value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} />
-                  </div>
-                </div>
-
-                <div className="mt-4 d-flex gap-2">
-                  <button type="submit" disabled={loading}
-                    className={`btn fw-semibold px-4 ${isAdd ? 'btn-success' : 'btn-danger'}`}>
-                    {loading ? <span className="spinner-border spinner-border-sm me-2" /> : null}
-                    {isAdd ? '➕ Add to Stock' : '➖ Remove from Stock'}
-                  </button>
-                  <button type="button" className="btn btn-outline-secondary"
-                    onClick={() => setForm({ product_id:'', quantity:1, reason:'opening_stock', purchase_price:'', notes:'', adjustment_date: new Date().toISOString().slice(0,10) })}>
-                    Clear
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Product Summary */}
-            <div className="col-12 col-lg-5">
-              {selectedProduct ? (
-                <div className="form-card h-100">
-                  <div className="form-card-title">📱 Selected Product</div>
-
-                  <div className="fw-bold fs-6 mb-1">{selectedProduct.name}</div>
-                  <div className="text-muted mb-3" style={{ fontSize:'0.8rem' }}>
-                    SKU: <code>{selectedProduct.sku}</code> · {selectedProduct.category?.name}
-                  </div>
-
-                  <div className="row g-2">
-                    <div className="col-6">
-                      <div style={{ background:'#f8f6ff', borderRadius:10, padding:'0.75rem', textAlign:'center' }}>
-                        <div style={{ fontSize:'0.72rem', color:'#777', marginBottom:'2px' }}>CURRENT STOCK</div>
-                        <div className={`fw-bold fs-4 ${selectedStock === 0 ? 'text-danger' : selectedStock <= 3 ? 'text-warning' : 'text-success'}`}>{selectedStock}</div>
-                        <div style={{ fontSize:'0.72rem', color:'#999' }}>units</div>
-                      </div>
-                    </div>
-                    <div className="col-6">
-                      <div style={{ background:'#f0fdf4', borderRadius:10, padding:'0.75rem', textAlign:'center' }}>
-                        <div style={{ fontSize:'0.72rem', color:'#777', marginBottom:'2px' }}>AFTER {isAdd ? 'ADDING' : 'REMOVING'}</div>
-                        <div className="fw-bold fs-4 text-primary">
-                          {Math.max(0, selectedStock + (isAdd ? parseInt(form.quantity||0) : -parseInt(form.quantity||0)))}
-                        </div>
-                        <div style={{ fontSize:'0.72rem', color:'#999' }}>units</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Product Attributes Preview */}
-                  {selectedProduct.attributes && Object.keys(selectedProduct.attributes).length > 0 && (
-                    <div className="mt-3">
-                      <div className="fw-semibold mb-2" style={{ fontSize:'0.78rem', color:'#555' }}>PRODUCT SPECS</div>
-                      <div className="row g-1">
-                        {Object.entries(selectedProduct.attributes).map(([k,v]) => (
-                          <div key={k} className="col-6" style={{ fontSize:'0.76rem' }}>
-                            <span className="text-muted text-capitalize">{k.replace(/_/g,' ')}: </span>
-                            <span className="fw-semibold">{v}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-3 pt-3 border-top row g-1" style={{ fontSize:'0.78rem' }}>
-                    <div className="col-6 text-muted">Purchase Price:</div>
-                    <div className="col-6 fw-semibold">₹{selectedProduct.purchase_price}</div>
-                    <div className="col-6 text-muted">Selling Price:</div>
-                    <div className="col-6 fw-semibold text-success">₹{selectedProduct.selling_price}</div>
-                    <div className="col-6 text-muted">Condition:</div>
-                    <div className="col-6">{selectedProduct.condition === 'new' ? '🆕 New' : '🔄 Used'}</div>
-                    {selectedProduct.location && (
-                      <>
-                        <div className="col-6 text-muted">Location:</div>
-                        <div className="col-6">📍 {selectedProduct.location}</div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="form-card h-100 d-flex flex-column align-items-center justify-content-center text-center text-muted" style={{ minHeight:200 }}>
-                  <div style={{ fontSize:'2.5rem' }}>📱</div>
-                  <div className="mt-2">Select a product to see its details and current stock</div>
-                </div>
-              )}
-            </div>
+             <div className="mt-3">
+                 <button type="button" className="btn btn-outline-primary btn-sm fw-bold px-4 text-uppercase shadow-sm" onClick={addOpeningItem}>+ Add More Items</button>
+             </div>
+             
+             <div className="mt-4 pt-3 border-top d-flex gap-2">
+                 <button type="submit" disabled={loading} className="btn btn-success btn-lg fw-bold px-5 text-uppercase shadow">
+                     {loading ? <span className="spinner-border spinner-border-sm me-2" /> : null}
+                     Add to Stock
+                 </button>
+                 <button type="button" className="btn btn-outline-secondary btn-lg fw-bold px-4 text-uppercase" onClick={() => setTab('stocks')}>Cancel</button>
+             </div>
           </div>
         </form>
       )}
@@ -550,6 +680,7 @@ export default function StockEntry() {
                   <tr>
                     <th>Date</th><th>Product</th><th>Type</th><th>Qty</th>
                     <th>Reason</th><th>Buy Price</th><th>Notes</th><th>By</th>
+                    <th className="text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -574,16 +705,74 @@ export default function StockEntry() {
                         {adj.notes || '—'}
                       </td>
                       <td style={{ fontSize:'0.78rem' }}>{adj.user?.name}</td>
+                      <td className="text-end">
+                        <div className="d-flex gap-2 justify-content-end">
+                          <button className="btn btn-sm btn-outline-primary border-0" onClick={() => {
+                            setEditingAdj(adj);
+                            setEditForm({
+                              quantity: adj.quantity,
+                              purchase_price: adj.purchase_price || '',
+                              notes: adj.notes || '',
+                              adjustment_date: adj.adjustment_date
+                            });
+                          }}>✏️</button>
+                          <button className="btn btn-sm btn-outline-danger border-0" onClick={() => handleDelete(adj.id)}>🗑️</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {history.length === 0 && (
-                    <tr><td colSpan={8} className="text-center py-4 text-muted">No stock adjustments recorded yet</td></tr>
+                    <tr><td colSpan={9} className="text-center py-4 text-muted">No stock adjustments recorded yet</td></tr>
                   )}
                 </tbody>
               </table>
             )}
           </div>
         </div>
+      )}
+
+        {/* Edit Modal */}
+        {editingAdj && (
+          <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
+              <div className="modal-dialog modal-dialog-centered">
+                  <form className="modal-content border-0 shadow-lg" onSubmit={handleUpdate}>
+                      <div className="modal-header bg-primary text-white border-0 py-3">
+                          <h6 className="modal-title text-uppercase fw-bold m-0">Edit Stock Adjustment</h6>
+                          <button type="button" className="btn-close btn-close-white" onClick={() => setEditingAdj(null)}></button>
+                      </div>
+                      <div className="modal-body p-4 text-uppercase">
+                          <div className="mb-3">
+                              <label className="form-label small fw-bold text-muted text-uppercase mb-1">Product</label>
+                              <div className="form-control bg-light border-0 fw-bold">{editingAdj.product?.name}</div>
+                          </div>
+                          <div className="row g-3 mb-3 text-uppercase">
+                              <div className="col-6">
+                                  <label className="form-label small fw-bold">Quantity</label>
+                                  <input type="number" className="form-control shadow-sm" required value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: parseInt(e.target.value) || 1})} />
+                              </div>
+                              <div className="col-6">
+                                  <label className="form-label small fw-bold">Date</label>
+                                  <input type="date" className="form-control shadow-sm" required value={editForm.adjustment_date} onChange={e => setEditForm({...editForm, adjustment_date: e.target.value})} />
+                              </div>
+                          </div>
+                          <div className="mb-3">
+                              <label className="form-label small fw-bold text-uppercase">Buy Price (₹)</label>
+                              <input type="number" step="0.01" className="form-control shadow-sm" value={editForm.purchase_price} onChange={e => setEditForm({...editForm, purchase_price: e.target.value})} />
+                          </div>
+                          <div className="mb-0">
+                              <label className="form-label small fw-bold text-uppercase">Notes</label>
+                              <textarea className="form-control shadow-sm" rows={3} value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value.toUpperCase()})} />
+                          </div>
+                      </div>
+                      <div className="modal-footer border-0 p-3 bg-light">
+                          <button type="button" className="btn btn-outline-secondary px-4 fw-bold text-uppercase" onClick={() => setEditingAdj(null)}>Cancel</button>
+                          <button type="submit" disabled={loading} className="btn btn-primary px-4 fw-bold text-uppercase">
+                              {loading ? <span className="spinner-border spinner-border-sm me-2" /> : 'Save Changes'}
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
       )}
     </div>
   );

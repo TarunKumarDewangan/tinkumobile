@@ -36,4 +36,12 @@ class Product extends Model
         $inv = $this->inventory()->where('shop_id', $shopId)->first();
         return $inv ? $inv->stock : 0;
     }
+
+    /** Helper to generate a unique SKU based on name */
+    public static function generateSku(string $name): string
+    {
+        $base = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $name), 0, 4));
+        $unique = substr(uniqid(), -4);
+        return "{$base}-{$unique}";
+    }
 }

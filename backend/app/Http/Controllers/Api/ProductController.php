@@ -15,7 +15,7 @@ class ProductController extends Controller
     {
         $user = $request->user();
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
-        if ($user->hasFullAccess() && !$shopId) $shopId = 1;
+        // If owner and no shop_id, show all shops (stay as null)
 
         // If user wants ungrouped "every single product" view
         if ($request->group_by_config === 'false' || $request->group_by_config === 'true') {
@@ -54,20 +54,58 @@ class ProductController extends Controller
             
             $items = $query->get();
 
+            // ── Subtract Sold Items Logically ──
+            // For Mobiles (Category 1), we match by IMEI or (Product + Config)
+            $saleItems = \App\Models\SaleItem::all(); // Simplified for now, or filter by shop
+            $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
+            $soldCounts = []; // name_ram_storage_color => quantity
+            foreach ($saleItems as $si) {
+                if ($si->imei) continue; // Tracked by IMEI separately
+                $normName = strtoupper(trim($si->product->name));
+                $normRam  = strtoupper(trim($si->ram ?? '-'));
+                $normStor = strtoupper(trim($si->storage ?? '-'));
+                $normCol  = strtoupper(trim($si->color ?? '-'));
+                $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
+                $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
+            }
+
             if ($request->group_by_config === 'true') {
                 $grouped = [];
                 foreach ($items as $item) {
-                    $key = $item->product_id . '_' . ($item->ram ?? '-') . '_' . ($item->storage ?? '-') . '_' . ($item->color ?? '-');
+                    $normName = strtoupper(trim($item->product->name));
+                    $normRam  = strtoupper(trim($item->ram ?? '-'));
+                    $normStor = strtoupper(trim($item->storage ?? '-'));
+                    $normCol  = strtoupper(trim($item->color ?? '-'));
+                    $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
+                    
+                    // Subtract sold count from available items in this group
+                    $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
+                    $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
+                    $availableImeiCount = count($unsoldImeis);
+                    
+                    $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
+                    $nonImeiQty = ($item->imei) ? 0 : $totalQty;
+                    
+                    // Net Non-IMEI available
+                    if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
+                        $diff = min($nonImeiQty, $soldCounts[$key]);
+                        $nonImeiQty -= $diff;
+                        $soldCounts[$key] -= $diff;
+                    }
+
+                    $currentStock = $availableImeiCount + $nonImeiQty;
+                    if ($currentStock <= 0) continue;
+
                     if (!isset($grouped[$key])) {
                         $grouped[$key] = [
-                            'id' => 'group_' . $key,
+                            'id' => 'group_' . md5($key),
                             'product_id' => $item->product_id,
                             'name' => $item->product->name,
                             'attributes' => [
                                 'color' => $item->color,
                                 'ram' => $item->ram,
                                 'storage' => $item->storage,
-                                'imei' => null // Grouped view doesn't show single IMEI
+                                'imeis' => [] // Will store all IMEIs for this group
                             ],
                             'current_stock' => 0,
                             'selling_price' => $item->selling_price,
@@ -79,26 +117,23 @@ class ProductController extends Controller
                         ];
                     }
                     
-                    $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
-                    $count = count($imeis);
-                    if ($count === 0 && $item->received_quantity > 0) {
-                        $count = $item->received_quantity;
-                    } else if ($count === 0) {
-                        $count = $item->quantity;
+                    $grouped[$key]['current_stock'] += $currentStock;
+                    $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
+                    // Take the latest/highest selling price if mismatch
+                    if ($item->selling_price > $grouped[$key]['selling_price']) {
+                        $grouped[$key]['selling_price'] = $item->selling_price;
                     }
-
-                    $grouped[$key]['current_stock'] += $count;
-                    // Keep the latest price
-                    $grouped[$key]['selling_price'] = $item->selling_price;
                 }
                 return response()->json(array_values($grouped));
             }
 
             $expanded = [];
             foreach ($items as $item) {
-                $imeis = $item->imei ? array_map('trim', explode(',', $item->imei)) : [null];
+                $itemImeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
+                $unsoldImeis = array_values(array_filter($itemImeis, fn($id) => !in_array($id, $soldImeis)));
                 
-                foreach ($imeis as $index => $imei) {
+                // Show IMEI items
+                foreach ($unsoldImeis as $index => $imei) {
                     $expanded[] = [
                         'id' => 'item_' . $item->id . '_' . $index,
                         'product_id' => $item->product_id,
@@ -111,9 +146,47 @@ class ProductController extends Controller
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
+                        'purchase_price' => $item->unit_price, // Added for margin calc
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
-                        'location' => $item->location ?? $item->product->location, // Fallback
+                        'location' => $item->location ?? $item->product->location,
+                        'category' => $item->product->category
+                    ];
+                }
+
+                // Show Non-IMEI items
+                $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
+                $nonImeiQty = ($item->imei) ? 0 : $totalQty;
+                
+                $normName = strtoupper(trim($item->product->name));
+                $normRam  = strtoupper(trim($item->ram ?? '-'));
+                $normStor = strtoupper(trim($item->storage ?? '-'));
+                $normCol  = strtoupper(trim($item->color ?? '-'));
+                $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
+
+                if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
+                    $diff = min($nonImeiQty, $soldCounts[$key]);
+                    $nonImeiQty -= $diff;
+                    $soldCounts[$key] -= $diff;
+                }
+
+                for ($i = 0; $i < $nonImeiQty; $i++) {
+                    $expanded[] = [
+                        'id' => 'item_ni_' . $item->id . '_' . $i,
+                        'product_id' => $item->product_id,
+                        'name' => $item->product->name,
+                        'attributes' => [
+                            'color' => $item->color,
+                            'ram' => $item->ram,
+                            'storage' => $item->storage,
+                            'imei' => null
+                        ],
+                        'current_stock' => 1,
+                        'selling_price' => $item->selling_price,
+                        'purchase_price' => $item->unit_price,
+                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                        'location' => $item->location ?? $item->product->location,
                         'category' => $item->product->category
                     ];
                 }

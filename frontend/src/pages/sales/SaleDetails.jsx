@@ -73,7 +73,6 @@ export default function SaleDetails() {
                               <h4 className="fw-bold mb-0">INVOICE</h4>
                               <div className="fw-bold text-primary">#{invoice.invoice_no}</div>
                               <div className="small text-muted fw-bold mt-1">DATE: {formatDate(invoice.sale_date)}</div>
-                              <div className="small text-muted fw-bold">TYPE: {invoice.bill_type}</div>
                           </div>
                       </div>
 
@@ -84,10 +83,6 @@ export default function SaleDetails() {
                               <div className="h5 fw-black mb-0 text-dark mt-1">{invoice.customer?.name}</div>
                               <div className="small fw-bold">📞 {invoice.customer?.phone}</div>
                               <div className="small text-muted">{invoice.customer?.address || 'No Address Provided'}</div>
-                          </div>
-                          <div className="col-6 text-end">
-                              <div className="small text-muted fw-bold mb-1 border-bottom d-inline-block">ISSUED BY:</div>
-                              <div className="fw-bold text-dark mt-1">{invoice.user?.name.toUpperCase()}</div>
                           </div>
                       </div>
 
@@ -162,10 +157,18 @@ export default function SaleDetails() {
                                   <span className="fw-bold text-muted small">ROUND OFF:</span>
                                   <span className="fw-bold">₹{parseFloat(invoice.round_off || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                               </div>
-                              <div className="d-flex justify-content-between mb-2">
-                                  <span className="fw-bold text-muted small">DISCOUNT:</span>
-                                  <span className="fw-bold text-danger">- ₹{parseFloat(invoice.discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
+                              {parseFloat(invoice.cash_discount) > 0 && (
+                                  <div className="d-flex justify-content-between mb-2">
+                                      <span className="fw-bold text-muted small">CASH DISCOUNT:</span>
+                                      <span className="fw-bold text-success">- ₹{parseFloat(invoice.cash_discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                              )}
+                              {parseFloat(invoice.discount) > 0 && (
+                                  <div className="d-flex justify-content-between mb-2">
+                                      <span className="fw-bold text-muted small">DISCOUNT:</span>
+                                      <span className="fw-bold text-danger">- ₹{parseFloat(invoice.discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                              )}
                               <div className="d-flex justify-content-between py-2 border-top border-bottom border-dark mb-3 bg-light px-2 rounded-1">
                                   <span className="h5 mb-0 fw-black">GRAND TOTAL:</span>
                                   <span className="h5 mb-0 fw-black text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>

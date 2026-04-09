@@ -26,11 +26,14 @@ export default function SaleForm() {
     total_paid: 0,
     cgst_rate: 9,
     sgst_rate: 9,
+    calculate_gst: true,
+    cash_discount: 0,
+    is_cash_discount_on_bill: true,
     rounding_mode: 'auto',
     round_off: 0,
     notes: '' 
   });
-  const [items, setItems] = useState([{ product_id: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
+  const [items, setItems] = useState([]);
   
   // Internal state to track if round_off is manually overridden
   const [isManualRound, setIsManualRound] = useState(false);
@@ -39,6 +42,10 @@ export default function SaleForm() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustModal, setShowCustModal] = useState(false);
   const [newCust, setNewCust] = useState({ name: '', phone: '', address: '' });
+  // IMEI Scan Search
+  const [scanProductId, setScanProductId] = useState('');
+  const [imeiScanner, setImeiScanner] = useState('');
+  const [scanResult, setScanResult] = useState(null);
 
   useEffect(() => {
     fetchInitialData();
@@ -103,12 +110,16 @@ export default function SaleForm() {
         total_paid: data.total_paid,
         cgst_rate: data.cgst_rate,
         sgst_rate: data.sgst_rate,
+        calculate_gst: data.calculate_gst ?? true,
+        cash_discount: data.cash_discount || 0,
+        is_cash_discount_on_bill: data.is_cash_discount_on_bill ?? true,
         rounding_mode: data.rounding_mode,
         round_off: data.round_off,
         notes: data.notes || ''
       });
       setIsManualRound(true); 
       setItems(data.items.map(i => ({
+        selection_id: i.product_id,
         product_id: i.product_id,
         imei: i.imei || '',
         ram: i.ram || '',
@@ -129,20 +140,91 @@ export default function SaleForm() {
   const loadProducts = async (shopId) => {
     if (!shopId) return;
     try {
-      const { data } = await api.get(`/products?shop_id=${shopId}`);
+      // Fetch expanded items for the SCAN dropdown to show configs/IMEIs
+      const { data } = await api.get('/products', { params: { shop_id: shopId, group_by_config: 'false' } });
       setProducts(data);
     } catch (e) { toast.error('Error loading products'); }
   };
 
-  const addItem = () => setItems([...items, { product_id: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0 }]);
+  const handleImeiScan = async (val) => {
+    setImeiScanner(val);
+    if (val.length >= 4) { // Faster search threshold
+        try {
+            const params = { imei: val, group_by_config: 'false', shop_id: form.shop_id };
+            if (scanProductId) params.product_id = scanProductId;
+            
+            const { data } = await api.get('/products', { params });
+            if (data && data.length > 0) {
+                setScanResult(data[0]);
+            } else { setScanResult(null); }
+        } catch (e) { setScanResult(null); }
+    } else { setScanResult(null); }
+  };
+
+  const addScannedItem = (existing = null) => {
+    const p = existing || scanResult;
+    if (!p) return;
+    const newItem = {
+        selection_id: p.id,
+        product_id: p.product_id,
+        imei: p.attributes?.imei || '',
+        ram: p.attributes?.ram || '',
+        storage: p.attributes?.storage || '',
+        color: p.attributes?.color || '',
+        quantity: 1,
+        unit_price: p.selling_price || 0,
+        base_price: p.purchase_price || 0,
+        min_selling_price: p.min_selling_price || 0,
+        max_selling_price: p.max_selling_price || 0
+    };
+    
+    // Always append to list
+    if (!items.find(it => it.imei && it.imei === newItem.imei)) {
+       setItems([...items, newItem]);
+    } else {
+        toast.info(newItem.imei ? 'IMEI already in list' : 'Item already in list');
+    }
+    setImeiScanner('');
+    setScanResult(null);
+    toast.success('✅ Item added');
+  };
+
+  const handleScanAction = async () => {
+    if (scanResult) {
+        addScannedItem();
+    } else if (imeiScanner.length >= 4) {
+        // Immediate search if Enter pressed before auto-search finished
+        try {
+            const params = { imei: imeiScanner, group_by_config: 'false', shop_id: form.shop_id };
+            if (scanProductId) params.product_id = scanProductId;
+            const { data } = await api.get('/products', { params });
+            if (data && data.length > 0) {
+                addScannedItem(data[0]);
+            } else {
+                toast.error('No item found with this IMEI');
+            }
+        } catch (e) {}
+    }
+  };
+
+  const addItem = () => setItems([...items, { selection_id: '', product_id: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
   
   const updateItem = (i, field, val) => {
     const arr = [...items];
     arr[i][field] = val;
-    if (field === 'product_id') {
-      const p = products.find(p => p.id == val);
+    
+    // If it's the product selection field (can be ID or Name from datalist)
+    if (field === 'product_id' || field === 'selection_id') {
+      // Find product by ID or by generated Name string
+      const p = products.find(p => 
+        p.id == val || 
+        (p.name + " (" + (p.attributes?.ram || '') + "/" + (p.attributes?.storage || '') + "/" + (p.attributes?.color || '') + ") / IMEI: " + (p.attributes?.imei || '')).toUpperCase() === val.toUpperCase()
+      );
+
       if (p) {
+          arr[i].selection_id = p.id;
+          arr[i].product_id = p.product_id || p.id;
           arr[i].unit_price = p.selling_price;
           arr[i].base_price = p.purchase_price || 0;
           arr[i].min_selling_price = p.min_selling_price || 0;
@@ -151,6 +233,7 @@ export default function SaleForm() {
               arr[i].ram = p.attributes.ram || '';
               arr[i].storage = p.attributes.storage || '';
               arr[i].color = p.attributes.color || '';
+              arr[i].imei = p.attributes.imei || '';
           }
       }
     }
@@ -159,9 +242,9 @@ export default function SaleForm() {
 
   // Calculations
   const subtotal = items.reduce((s, i) => s + (i.quantity * i.unit_price || 0), 0);
-  const cgstAmount = (subtotal * (parseFloat(form.cgst_rate) || 0)) / 100;
-  const sgstAmount = (subtotal * (parseFloat(form.sgst_rate) || 0)) / 100;
-  const rawTotal = subtotal + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0);
+  const cgstAmount = form.calculate_gst ? (subtotal * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
+  const sgstAmount = form.calculate_gst ? (subtotal * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+  const rawTotal = subtotal + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0) - (form.is_cash_discount_on_bill ? (parseFloat(form.cash_discount) || 0) : 0);
   
   // Rounding Logic
   useEffect(() => {
@@ -286,9 +369,73 @@ export default function SaleForm() {
              </div>
 
              <div className="card shadow-sm border-0 bg-white rounded-3 mb-3">
-                <div className="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                <div className="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <h5 className="mb-0 fw-bold text-uppercase">🛒 Items for Sale</h5>
-                    <button type="button" className="btn btn-sm btn-primary rounded-pill px-3 fw-bold" onClick={addItem}>+ ADD ITEM</button>
+                    <div className="d-flex flex-column align-items-end flex-grow-1">
+                        <div className="d-flex gap-2 align-items-center">
+                            <div className="d-flex flex-column align-items-end">
+                                {scanResult && (
+                                    <div className="text-info x-small fw-bold border border-info rounded px-2 py-1 bg-info bg-opacity-10 mb-1 animate-fade-in shadow-sm">
+                                        <i className="bi bi-check-circle-fill me-1"></i>
+                                        {scanResult.name} ({scanResult.attributes?.ram || '-'}/{scanResult.attributes?.storage || '-'}/{scanResult.attributes?.color || '-'}) | IMEI: {scanResult.attributes?.imei}
+                                    </div>
+                                )}
+                                <div className="input-group input-group-sm" style={{ width: '500px' }}>
+                                    <select 
+                                        className="form-select border-info fw-bold bg-info bg-opacity-10" 
+                                        style={{ width: '40%' }}
+                                        value={scanProductId}
+                                        onChange={e => setScanProductId(e.target.value)}
+                                    >
+                                        <option value="">— SELECT ITEM —</option>
+                                        {products.map(p => {
+                                            const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color) 
+                                                ? `(${p.attributes.ram || '-'}/${p.attributes.storage || '-'}/${p.attributes.color || '-'})`
+                                                : '';
+                                            const imeiSuffix = p.attributes?.imei ? ` / IMEI: ${p.attributes.imei}` : '';
+                                            return (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.name.toUpperCase()} {configStr}{imeiSuffix}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                    {scanProductId && (
+                                        <button 
+                                            type="button" 
+                                            className="btn btn-warning fw-bold text-dark border-info"
+                                            onClick={() => {
+                                                const p = products.find(px => px.id == scanProductId);
+                                                if (p) {
+                                                    addScannedItem(p);
+                                                    setScanProductId('');
+                                                }
+                                            }}
+                                        >
+                                            + ADD
+                                        </button>
+                                    )}
+                                    <span className="input-group-text bg-info border-info text-white border-start-0"><i className="bi bi-upc-scan"></i></span>
+                                    <input 
+                                        type="text" 
+                                        className="form-control border-info fw-bold" 
+                                        placeholder="SCAN IMEI..." 
+                                        value={imeiScanner}
+                                        autoFocus
+                                        onChange={e => handleImeiScan(e.target.value.toUpperCase())}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                handleScanAction();
+                                            }
+                                        }}
+                                    />
+                                    {(scanResult || imeiScanner.length >= 4) && <button type="button" className="btn btn-info text-white fw-bold px-3" onClick={handleScanAction}>+ ADD</button>}
+                                </div>
+                            </div>
+                            <button type="button" className="btn btn-sm btn-primary rounded-pill px-3 fw-bold" onClick={addItem}>+ MANUAL</button>
+                        </div>
+                    </div>
                 </div>
                 <div className="table-responsive">
                     <table className="table table-hover mb-0 align-middle">
@@ -307,12 +454,19 @@ export default function SaleForm() {
                                 return (
                                     <tr key={i}>
                                         <td className="ps-4 py-3">
-                                            <select className="form-select form-select-sm text-uppercase fw-bold mb-2 shadow-sm border-primary" required value={item.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)}>
-                                                <option value="">— SELECT PRODUCT —</option>
+                                            <input 
+                                                list={`productOptions-${i}`}
+                                                className="form-control form-control-sm text-uppercase fw-bold mb-1 shadow-sm border-primary" 
+                                                placeholder="🔍 TYPE PRODUCT NAME OR IMEI..."
+                                                required 
+                                                value={products.find(px => px.id == item.selection_id)?.name ? (products.find(px => px.id == item.selection_id).name + " (" + (products.find(px => px.id == item.selection_id).attributes?.ram || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.storage || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.color || '') + ") / IMEI: " + (products.find(px => px.id == item.selection_id).attributes?.imei || '')) : item.selection_id || ''} 
+                                                onChange={e => updateItem(i, 'selection_id', e.target.value)}
+                                            />
+                                            <datalist id={`productOptions-${i}`}>
                                                 {products.map(p => (
-                                                    <option key={p.id} value={p.id}>{p.name.toUpperCase()} (STOCK: {p.current_stock ?? '0'})</option>
+                                                    <option key={p.id} value={`${p.name.toUpperCase()} (${(p.attributes?.ram || '')}/${(p.attributes?.storage || '')}/${(p.attributes?.color || '')}) / IMEI: ${p.attributes?.imei || ''}`} />
                                                 ))}
-                                            </select>
+                                            </datalist>
                                             
                                             <div className="row g-1 text-uppercase">
                                                 <div className="col-12 mb-1">
@@ -379,14 +533,24 @@ export default function SaleForm() {
                         </div>
                     </div>
 
+                    <div className="row g-2 mb-3 bg-light p-2 rounded">
+                         <div className="col-12 d-flex justify-content-between align-items-center">
+                            <span className="small fw-bold text-muted text-uppercase">Calculate GST?</span>
+                            <div className="form-check form-switch p-0 m-0">
+                                <input className="form-check-input ms-0" type="checkbox" 
+                                    checked={form.calculate_gst} onChange={e => setForm({...form, calculate_gst: e.target.checked})} />
+                            </div>
+                         </div>
+                    </div>
+
                     <div className="row g-2 mb-3">
                          <div className="col-6">
                             <label className="form-label x-small fw-bold text-muted">CGST %</label>
-                            <input type="number" step="0.01" className="form-control form-control-sm fw-bold" value={form.cgst_rate} onChange={e => setForm({...form, cgst_rate: e.target.value})} />
+                            <input type="number" step="0.01" className="form-control form-control-sm fw-bold" value={form.cgst_rate} onChange={e => setForm({...form, cgst_rate: e.target.value})} disabled={!form.calculate_gst} />
                         </div>
                         <div className="col-6">
                             <label className="form-label x-small fw-bold text-muted">SGST %</label>
-                            <input type="number" step="0.01" className="form-control form-control-sm fw-bold" value={form.sgst_rate} onChange={e => setForm({...form, sgst_rate: e.target.value})} />
+                            <input type="number" step="0.01" className="form-control form-control-sm fw-bold" value={form.sgst_rate} onChange={e => setForm({...form, sgst_rate: e.target.value})} disabled={!form.calculate_gst} />
                         </div>
                     </div>
 
@@ -426,8 +590,29 @@ export default function SaleForm() {
                             <span className="small text-muted fw-bold">SGST ({form.sgst_rate}%):</span>
                             <span className="fw-bold">₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                         </div>
+                        <div className="d-flex justify-content-between mb-3 align-items-center mt-2 border-bottom pb-2">
+                            <div className="w-100">
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                    <span className="small text-muted fw-bold">CASH DISCOUNT:</span>
+                                    <div className="form-check form-switch p-0 m-0 d-flex align-items-center gap-2">
+                                        <label className="form-check-label x-small text-muted" htmlFor="saleOnBill">ON BILL?</label>
+                                        <input className="form-check-input ms-0" type="checkbox" id="saleOnBill" 
+                                            checked={form.is_cash_discount_on_bill} onChange={e => setForm({...form, is_cash_discount_on_bill: e.target.checked})} />
+                                    </div>
+                                </div>
+                                <input type="number" className="form-control form-control-sm text-end fw-black text-info border-info"
+                                    value={form.cash_discount === 0 ? '' : form.cash_discount} 
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => setForm({...form, cash_discount: e.target.value})} 
+                                />
+                                <div className="x-small text-muted mt-1" style={{fontSize:'0.6rem'}}>
+                                    {form.is_cash_discount_on_bill ? '✅ DEDUCTED FROM BILL' : 'ℹ️ SEPARATE LEDGER ENTRY'}
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="d-flex justify-content-between mb-1 align-items-center mt-2">
-                            <span className="small text-muted fw-bold">DISCOUNT (₹):</span>
+                            <span className="small text-muted fw-bold">DISCOUNT (ADDITIONAL):</span>
                             <input type="number" className="form-control form-control-sm text-end fw-bold text-danger border-danger" style={{ width: '120px' }} 
                                 value={form.discount === 0 ? '' : form.discount} 
                                 onFocus={e => e.target.select()}

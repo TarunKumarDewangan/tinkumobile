@@ -56,6 +56,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/stock-levels', [StockAdjustmentController::class, 'stockLevels']);
     Route::get('/stock-adjustments', [StockAdjustmentController::class, 'index']);
     Route::post('/stock-adjustments', [StockAdjustmentController::class, 'store']);
+    Route::post('/stock-adjustments/bulk', [StockAdjustmentController::class, 'bulkStore']);
+    Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
+    Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);
 
     // Shops – owner only

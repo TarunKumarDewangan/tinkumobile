@@ -24,6 +24,9 @@ export default function PurchaseForm() {
     total_paid: 0,
     cgst_rate: 9,
     sgst_rate: 9,
+    calculate_gst: true,
+    cash_discount: 0,
+    is_cash_discount_on_bill: true,
     notes: '',
     expected_delivery_date: '',
     rounding_mode: 'auto',
@@ -63,6 +66,9 @@ export default function PurchaseForm() {
           total_paid: p.total_paid || 0,
           cgst_rate: p.cgst_rate || 9,
           sgst_rate: p.sgst_rate || 9,
+          calculate_gst: p.calculate_gst ?? true,
+          cash_discount: p.cash_discount || 0,
+          is_cash_discount_on_bill: p.is_cash_discount_on_bill ?? true,
           notes: p.notes || '',
           expected_delivery_date: p.expected_delivery_date || '',
           rounding_mode: p.rounding_mode || 'auto',
@@ -177,9 +183,9 @@ export default function PurchaseForm() {
   };
 
   const total      = items.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)), 0);
-  const cgstAmount = (total * (parseFloat(form.cgst_rate) || 0)) / 100;
-  const sgstAmount = (total * (parseFloat(form.sgst_rate) || 0)) / 100;
-  const rawGrandTotal = total + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0);
+  const cgstAmount = form.calculate_gst ? (total * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
+  const sgstAmount = form.calculate_gst ? (total * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+  const rawGrandTotal = total + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0) - (form.is_cash_discount_on_bill ? (parseFloat(form.cash_discount) || 0) : 0);
   let grandTotal = Math.round(rawGrandTotal);
   if (form.rounding_mode === 'up') grandTotal = Math.ceil(rawGrandTotal);
   if (form.rounding_mode === 'down') grandTotal = Math.floor(rawGrandTotal);
@@ -473,35 +479,55 @@ export default function PurchaseForm() {
            </div>
            <div className="col-12 col-lg-5">
               <div className="form-card shadow-sm border-0 bg-white rounded-3 p-4 h-100">
-                <div className="d-flex justify-content-between mb-2">
+                <div className="d-flex justify-content-between align-items-center mb-2">
                     <span className="text-muted text-uppercase fw-bold">Subtotal:</span>
                     <span className="fw-bold">₹{total.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="d-flex justify-content-between align-items-center mb-2 bg-light p-2 rounded">
+                    <div className="form-check form-switch p-0 m-0 d-flex align-items-center gap-2">
+                        <input className="form-check-input ms-0" type="checkbox" id="calcGst" 
+                            checked={form.calculate_gst} onChange={e => setForm({...form, calculate_gst: e.target.checked})} />
+                        <label className="form-check-label small fw-bold text-uppercase" htmlFor="calcGst">Calculate GST</label>
+                    </div>
+                    {!form.calculate_gst && <span className="badge bg-secondary text-uppercase">Disabled</span>}
                 </div>
                 <div className="d-flex justify-content-between align-items-center mb-2">
                     <div className="d-flex align-items-center gap-2">
                         <span className="text-muted text-uppercase fw-bold">CGST:</span>
-                        <input type="number" className="form-control form-control-sm px-1 text-center" style={{width:'50px'}} value={form.cgst_rate} onChange={e => setForm({...form, cgst_rate: e.target.value})} />
+                        <input type="number" className="form-control form-control-sm px-1 text-center" style={{width:'50px'}} value={form.cgst_rate} onChange={e => setForm({...form, cgst_rate: e.target.value})} disabled={!form.calculate_gst} />
                         <span className="text-muted">%</span>
                     </div>
-                    <span className="fw-semibold">₹{cgstAmount.toLocaleString('en-IN')}</span>
+                    <span className={`fw-semibold ${!form.calculate_gst ? 'text-muted text-decoration-line-through' : ''}`}>₹{cgstAmount.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
                     <div className="d-flex align-items-center gap-2">
                         <span className="text-muted text-uppercase fw-bold">SGST:</span>
-                        <input type="number" className="form-control form-control-sm px-1 text-center" style={{width:'50px'}} value={form.sgst_rate} onChange={e => setForm({...form, sgst_rate: e.target.value})} />
+                        <input type="number" className="form-control form-control-sm px-1 text-center" style={{width:'50px'}} value={form.sgst_rate} onChange={e => setForm({...form, sgst_rate: e.target.value})} disabled={!form.calculate_gst} />
                         <span className="text-muted">%</span>
                     </div>
-                    <span className="fw-semibold">₹{sgstAmount.toLocaleString('en-IN')}</span>
+                    <span className={`fw-semibold ${!form.calculate_gst ? 'text-muted text-decoration-line-through' : ''}`}>₹{sgstAmount.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                    <span className="text-muted text-uppercase fw-bold">Discount:</span>
-                    <div className="input-group input-group-sm w-50">
-                        <span className="input-group-text">₹</span>
-                        <input type="number" className="form-control text-end"
-                            value={form.discount === 0 ? '' : form.discount}
-                            onFocus={e => e.target.select()}
-                            onChange={e => setForm({...form, discount: parseFloat(e.target.value) || 0})} 
-                        />
+                <div className="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
+                    <div className="w-100">
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                            <span className="text-muted text-uppercase fw-bold">Cash Discount:</span>
+                            <div className="form-check form-switch p-0 m-0 d-flex align-items-center gap-2">
+                                <label className="form-check-label small text-muted" htmlFor="onBill">On Bill?</label>
+                                <input className="form-check-input ms-0" type="checkbox" id="onBill" 
+                                    checked={form.is_cash_discount_on_bill} onChange={e => setForm({...form, is_cash_discount_on_bill: e.target.checked})} />
+                            </div>
+                        </div>
+                        <div className="input-group input-group-sm">
+                            <span className="input-group-text bg-info text-white border-info">₹</span>
+                            <input type="number" className="form-control border-info text-end fw-bold text-info"
+                                value={form.cash_discount === 0 ? '' : form.cash_discount}
+                                onFocus={e => e.target.select()}
+                                onChange={e => setForm({...form, cash_discount: parseFloat(e.target.value) || 0})} 
+                            />
+                        </div>
+                        <div className="small text-muted mt-1" style={{fontSize:'0.65rem'}}>
+                            {form.is_cash_discount_on_bill ? '✅ DEDUCTED FROM GRAND TOTAL' : 'ℹ️ RECORDED SEPARATELY IN ACCOUNTS'}
+                        </div>
                     </div>
                 </div>
                 <div className="d-flex justify-content-between align-items-center mb-3">
