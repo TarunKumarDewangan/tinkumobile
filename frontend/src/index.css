@@ -435,4 +435,6 @@ label.fw-semibold { color: #334155; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(108,63,197,0.6); }
 
 /* Safe area for notched phones */
-.main-content { padding-top: env(safe-area-inset-top); }
+/* Cursor utils */
+.cursor-pointer { cursor: pointer; }
+.cursor-pointer:hover { opacity: 0.8; }

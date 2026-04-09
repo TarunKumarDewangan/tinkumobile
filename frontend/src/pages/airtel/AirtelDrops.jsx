@@ -21,6 +21,8 @@ export default function AirtelDrops() {
   const [status, setStatus] = useState('all');
   const [followUpOnly, setFollowUpOnly] = useState(false);
   const [useRange, setUseRange] = useState(true);
+  const [sortBy, setSortBy] = useState('name');
+  const [order, setOrder] = useState('asc');
 
    const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
@@ -38,10 +40,10 @@ export default function AirtelDrops() {
   useEffect(() => {
     fetchDrops();
     fetchSummary();
-  }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, paymentMode]);
+  }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, paymentMode, sortBy, order]);
 
   const getParams = () => {
-    let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}&payment_mode=${paymentMode}`;
+    let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}&payment_mode=${paymentMode}&sort_by=${sortBy}&order=${order}`;
     if (status !== 'all') params += `&status=${status}`;
     if (followUpOnly) params += `&follow_up=1`;
     if (useRange) {
@@ -178,6 +180,15 @@ export default function AirtelDrops() {
         toast.error('Failed to load history');
     } finally {
         setLoadingHistory(false);
+    }
+  };
+
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setOrder('asc');
     }
   };
 
@@ -377,8 +388,12 @@ export default function AirtelDrops() {
                 <table className="table table-hover align-middle mb-0">
                     <thead className="table-light text-uppercase">
                     <tr>
-                        <th className="ps-4">Retailer</th>
-                        <th>Amount Information</th>
+                        <th className="ps-4 cursor-pointer" onClick={() => handleSort('name')}>
+                          Retailer {sortBy === 'name' && (order === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th className="cursor-pointer" onClick={() => handleSort('pending')}>
+                          Amount Information {sortBy === 'pending' && (order === 'asc' ? '↑' : '↓')}
+                        </th>
                         <th>Refill Dates</th>
                         <th>Reason</th>
                         <th>Follow-up Date</th>

@@ -14,26 +14,28 @@ class AirtelDropController extends Controller
 {
     public function index(Request $request)
     {
-        $request->validate([
-            'from_date' => 'nullable|date',
-            'to_date' => 'nullable|date',
-            'date' => 'nullable|date'
-        ]);
-
         // 1. Start with Retailers that have at least one drop matching the filters OR have a non-zero balance
-        $query = Retailer::where(function($q) use ($request) {
-            $q->whereHas('drops', function($sq) use ($request) {
-                if ($request->from_date && $request->to_date) {
-                    $sq->whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
-                } elseif ($request->date) {
-                    $sq->whereDate('refill_date', $request->date);
-                }
-                if ($request->min_amount) $sq->where('amount', '>=', $request->min_amount);
-                if ($request->max_amount) $sq->where('amount', '<=', $request->max_amount);
-                if ($request->follow_up) $sq->where(function($qf) { $qf->whereNotNull('reason')->orWhereNotNull('next_recovery_date'); });
-            })
-            ->orWhere('balance', '>', 0);
-        });
+        $sortBy = $request->get('sort_by', 'name');
+        $order = $request->get('order', 'asc');
+
+        $query = Retailer::query()
+            ->select('retailers.*')
+            ->selectRaw('(COALESCE(retailers.balance, 0) + 
+                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id), 0) - 
+                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id), 0)) as grand_pending_calculated')
+            ->where(function($q) use ($request) {
+                $q->whereHas('drops', function($sq) use ($request) {
+                    if ($request->from_date && $request->to_date) {
+                        $sq->whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+                    } elseif ($request->date) {
+                        $sq->whereDate('refill_date', $request->date);
+                    }
+                    if ($request->min_amount) $sq->where('amount', '>=', $request->min_amount);
+                    if ($request->max_amount) $sq->where('amount', '<=', $request->max_amount);
+                    if ($request->follow_up) $sq->where(function($qf) { $qf->whereNotNull('reason')->orWhereNotNull('next_recovery_date'); });
+                })
+                ->orWhere('balance', '>', 0);
+            });
 
         // 2. Search by name or MSISDN
         if ($request->retailer_name) {
@@ -41,6 +43,13 @@ class AirtelDropController extends Controller
                 $q->where('name', 'like', '%' . $request->retailer_name . '%')
                   ->orWhere('msisdn', 'like', '%' . $request->retailer_name . '%');
             });
+        }
+
+        // Apply Sorting
+        if ($sortBy === 'pending') {
+            $query->orderBy('grand_pending_calculated', $order);
+        } else {
+            $query->orderBy('name', $order);
         }
 
         // 3. Apply status filters at the retailer level (using grouping subquery)

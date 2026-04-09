@@ -17,7 +17,14 @@ class AirtelRetailerController extends Controller
     use RecordsTransactions;
     public function index(Request $request)
     {
-        $query = Retailer::query();
+        $sortBy = $request->get('sort_by', 'name');
+        $order = $request->get('order', 'asc');
+
+        $query = Retailer::query()
+            ->select('retailers.*')
+            ->selectRaw('(COALESCE(retailers.balance, 0) + 
+                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id), 0) - 
+                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id), 0)) as pending_balance_calculated');
 
         if ($request->search) {
             $query->where(function($q) use ($request) {
@@ -26,12 +33,16 @@ class AirtelRetailerController extends Controller
             });
         }
 
-        $retailers = $query->orderBy('name')->paginate(20);
+        if ($sortBy === 'balance') {
+            $query->orderBy('pending_balance_calculated', $order);
+        } else {
+            $query->orderBy($sortBy === 'name' ? 'name' : 'name', $order);
+        }
+
+        $retailers = $query->paginate(20);
         
         $retailers->getCollection()->transform(function($r) {
-            $totalDropped = (float)$r->balance + \App\Models\AirtelDrop::where('retailer_id', $r->id)->sum('amount');
-            $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $r->id)->sum('amount');
-            $r->pending_balance = $totalDropped - $totalRecovered;
+            $r->pending_balance = $r->pending_balance_calculated;
             
             // Simplified status for the list
             if ($r->pending_balance <= 0) {

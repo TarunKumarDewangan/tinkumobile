@@ -20,16 +20,18 @@ export default function AirtelRetailers() {
   const [historyData, setHistoryData] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [sortBy, setSortBy] = useState('name');
+  const [order, setOrder] = useState('asc');
   const [form, setForm] = useState({ name: '', msisdn: '', address: '', balance: 0, shop_id: 1 });
 
   useEffect(() => {
     fetchRetailers();
-  }, [page, search]);
+  }, [page, search, sortBy, order]);
 
   const fetchRetailers = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`/airtel-retailers?page=${page}&search=${search}`);
+      const { data } = await axios.get(`/airtel-retailers?page=${page}&search=${search}&sort_by=${sortBy}&order=${order}`);
       setRetailers(data.data);
       setLastPage(data.last_page);
     } catch (error) {
@@ -37,6 +39,16 @@ export default function AirtelRetailers() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSort = (field) => {
+    if (sortBy === field) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setOrder('asc');
+    }
+    setPage(1);
   };
 
   const handleSubmit = async (e) => {
@@ -136,11 +148,15 @@ export default function AirtelRetailers() {
           <table className="table table-hover align-middle mb-0">
             <thead className="table-light text-uppercase shadow-sm">
               <tr>
-                <th className="ps-4">Retailer Name</th>
+                <th className="ps-4 cursor-pointer" onClick={() => handleSort('name')}>
+                  Retailer Name {sortBy === 'name' && (order === 'asc' ? '↑' : '↓')}
+                </th>
                 <th>MSISDN (Mobile)</th>
                 <th>Status</th>
                 <th>Address</th>
-                <th>Balance</th>
+                <th className="cursor-pointer" onClick={() => handleSort('balance')}>
+                  Balance {sortBy === 'balance' && (order === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="text-end pe-4">Actions</th>
               </tr>
             </thead>
