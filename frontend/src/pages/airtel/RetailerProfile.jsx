@@ -35,9 +35,13 @@ export default function RetailerProfile() {
 
     const formatSystemTime = (dateStr) => {
         if (!dateStr) return '';
-        const parts = dateStr.split(/[T ]/);
-        if (parts.length < 2) return '';
-        return parts[1].substring(0, 5);
+        const date = new Date(dateStr);
+        if (isNaN(date)) return '';
+        return date.toLocaleTimeString('en-IN', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: true 
+        }).toUpperCase();
     };
 
     useEffect(() => {
@@ -334,7 +338,10 @@ export default function RetailerProfile() {
                                         <div className="small font-monospace fw-bold">
                                             {item.entryType === 'RECOVERY' || item.status === 'recovered' ? (
                                                 <>
-                                                    <div className="text-success">{formatSystemDate(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at)}</div>
+                                                    <div className="text-success fw-bold">
+                                                        {formatSystemDate(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at)}
+                                                        <span className="ms-1 x-small text-muted font-monospace">@{formatSystemTime(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at)}</span>
+                                                    </div>
                                                     <div className="x-small text-muted">{item.recovery_user?.name || 'Staff'}</div>
                                                 </>
                                             ) : '-'}

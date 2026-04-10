@@ -16,6 +16,17 @@ export default function QuickRecovery() {
     const [saving, setSaving] = useState(false);
     const [isConfirming, setIsConfirming] = useState(false);
 
+    const formatTime = (dateStr) => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        if (isNaN(date)) return '';
+        return date.toLocaleTimeString('en-IN', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: true 
+        }).toUpperCase();
+    };
+
     // Auto-fetch when query is 10 digits, otherwise search by name
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -199,7 +210,10 @@ export default function QuickRecovery() {
                                     }).slice(0, 10).map((item, idx) => (
                                         <tr key={idx} className={item.entryType === 'RECOVERY' ? 'bg-success-light' : ''}>
                                             <td className="ps-4">
-                                                <div className="fw-bold small">{new Date(item.entryType === 'DROP' ? item.refill_date : item.recovered_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short'})}</div>
+                                                <div className="fw-bold small">
+                                                    {new Date(item.entryType === 'DROP' ? item.refill_date : item.recovered_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short'})}
+                                                    <span className="ms-1 x-small text-muted font-monospace opacity-75">@{formatTime(item.entryType === 'DROP' ? item.refill_date : item.recovered_at)}</span>
+                                                </div>
                                                 <div className="x-small text-muted text-uppercase">{item.entryType}</div>
                                             </td>
                                             <td className={`fw-bold ${item.entryType === 'RECOVERY' ? 'text-success' : 'text-primary'}`}>
