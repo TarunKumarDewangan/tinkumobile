@@ -23,8 +23,8 @@ class AirtelRetailerController extends Controller
         $query = Retailer::query()
             ->select('retailers.*')
             ->selectRaw('(COALESCE(retailers.balance, 0) + 
-                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id), 0) - 
-                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id), 0)) as pending_balance_calculated');
+                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0) - 
+                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0)) as pending_balance_calculated');
 
         if ($request->search) {
             $query->where(function($q) use ($request) {

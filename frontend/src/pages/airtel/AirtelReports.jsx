@@ -9,6 +9,8 @@ export default function AirtelReports() {
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState('2025-01-01');
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sortField, setSortField] = useState('pending_total');
+  const [sortOrder, setSortOrder] = useState('desc');
 
   if (isManager()) {
     return (
@@ -36,6 +38,33 @@ export default function AirtelReports() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('desc'); // Default to descending for numbers
+    }
+  };
+
+  const sortedRetailers = reportData ? [...(reportData.retailer_summary || [])].sort((a, b) => {
+    let aVal = parseFloat(a[sortField] || 0);
+    let bVal = parseFloat(b[sortField] || 0);
+    
+    if (sortField === 'name') {
+      aVal = (a.name || '').toLowerCase();
+      bVal = (b.name || '').toLowerCase();
+      return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    }
+
+    return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+  }) : [];
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <span className="ms-1 text-secondary opacity-50">↕</span>;
+    return <span className="ms-1 text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
   };
 
   return (
@@ -114,7 +143,7 @@ export default function AirtelReports() {
                                       const percent = r.total_dropped > 0 ? (r.total_recovered / r.total_dropped) * 100 : 0;
                                       return (
                                           <tr key={r.date}>
-                                              <td className="ps-4 fw-bold small">{new Date(r.date).toLocaleDateString('en-GB').replace(/\//g, ' ')}</td>
+                                              <td className="ps-4 fw-bold small">{r.date === 'OPENING' ? 'OPENING BALANCE' : new Date(r.date).toLocaleDateString('en-GB').replace(/\//g, ' ')}</td>
                                               <td className="small text-muted">₹{parseFloat(r.total_dropped).toLocaleString()}</td>
                                               <td className="small text-success fw-bold">₹{parseFloat(r.total_recovered).toLocaleString()}</td>
                                               <td className="text-end pe-4">
@@ -144,11 +173,11 @@ export default function AirtelReports() {
                           <table className="table table-hover align-middle mb-0">
                               <thead className="table-light text-uppercase shadow-sm sticky-top">
                                    <tr className="x-small">
-                                       <th className="ps-3" style={{minWidth:'140px'}}>Retailer</th>
-                                       <th className="text-end">OB</th>
-                                       <th className="text-end">Drops</th>
-                                       <th className="text-end">Rec.</th>
-                                       <th className="text-end pe-3">Pending</th>
+                                       <th className="ps-3 cursor-pointer" style={{minWidth:'140px'}} onClick={() => handleSort('name')}>Retailer <SortIcon field="name" /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('opening_bal')}>OB <SortIcon field="opening_bal" /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('airdrop_total')}>Drops <SortIcon field="airdrop_total" /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('received_total')}>Rec. <SortIcon field="received_total" /></th>
+                                       <th className="text-end pe-3 cursor-pointer" onClick={() => handleSort('pending_total')}>Pending <SortIcon field="pending_total" /></th>
                                    </tr>
                                </thead>
                                <tbody>
@@ -160,11 +189,11 @@ export default function AirtelReports() {
                                        <td className="text-end x-small text-success">₹{(reportData.summary_aggregate?.received || 0).toLocaleString()}</td>
                                        <td className="text-end pe-3 x-small text-danger">₹{(reportData.summary_aggregate?.pending || 0).toLocaleString()}</td>
                                    </tr>
-                                   {reportData.retailer_summary.map(r => (
+                                   {sortedRetailers.map(r => (
                                        <tr key={r.id}>
                                            <td className="ps-3 py-2">
-                                               <div className="fw-bold x-small text-uppercase">{r.name || 'Unknown'}</div>
-                                               <div className="x-small text-muted" style={{fontSize:'0.65rem'}}>{r.msisdn}</div>
+                                               <div className="fw-bold small text-uppercase" style={{lineHeight:'1.2'}}>{r.name || 'Unknown'}</div>
+                                               <div className="text-muted" style={{fontSize:'0.6rem', letterSpacing:'0.5px'}}>{r.msisdn}</div>
                                            </td>
                                            <td className="text-end x-small text-muted">₹{parseFloat(r.opening_bal || 0).toLocaleString()}</td>
                                            <td className="text-end x-small text-muted">₹{parseFloat(r.airdrop_total || 0).toLocaleString()}</td>
@@ -215,6 +244,10 @@ export default function AirtelReports() {
               </div>
           </div>
       ) : null}
+      <style>{`
+        .cursor-pointer { cursor: pointer; user-select: none; }
+        .cursor-pointer:hover { background-color: rgba(0,0,0,0.02); }
+      `}</style>
     </div>
   );
 }

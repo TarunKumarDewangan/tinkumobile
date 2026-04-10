@@ -21,8 +21,8 @@ class AirtelDropController extends Controller
         $query = Retailer::query()
             ->select('retailers.*')
             ->selectRaw('(COALESCE(retailers.balance, 0) + 
-                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id), 0) - 
-                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id), 0)) as grand_pending_calculated')
+                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0) - 
+                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0)) as grand_pending_calculated')
             ->where(function($q) use ($request) {
                 $q->whereHas('drops', function($sq) use ($request) {
                     if ($request->from_date && $request->to_date) {
@@ -56,8 +56,8 @@ class AirtelDropController extends Controller
         // 3. Apply status filters at the retailer level
         if ($request->status && in_array($request->status, ['pending_only', 'recovered_only'])) {
             $query->where(function($q) use ($request) {
-                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id) + retailers.balance";
-                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id)";
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id AND airtel_drops.deleted_at IS NULL) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id AND airtel_recoveries.deleted_at IS NULL)";
                 if ($request->status === 'pending_only') {
                     $q->whereRaw("$debtSql > $paidSql");
                 } else {
@@ -282,8 +282,8 @@ class AirtelDropController extends Controller
         if ($request->status && in_array($request->status, ['pending_only', 'recovered_only'])) {
             $query->whereIn('retailer_id', function($sub) use ($request) {
                 $sub->select('id')->from('retailers');
-                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id) + retailers.balance";
-                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id)";
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id AND airtel_drops.deleted_at IS NULL) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id AND airtel_recoveries.deleted_at IS NULL)";
                 if ($request->status === 'pending_only') {
                     $sub->whereRaw("$debtSql > $paidSql");
                 } else {
@@ -513,14 +513,15 @@ class AirtelDropController extends Controller
             $r->pending_total = ($r->opening_bal + $r->airdrop_total) - $r->received_total;
             return $r;
         })
-        ->filter(fn($r) => $r->pending_total > 0)
+        // Remove the >0 filter to show ALL relevant retailers (including settled ones with activity)
+        // ->filter(fn($r) => $r->pending_total > 0)
         ->sort(function($a, $b) {
-            if ($a->received_total != $b->received_total) {
-                return $b->received_total <=> $a->received_total;
+            if ($a->pending_total != $b->pending_total) {
+                return $b->pending_total <=> $a->pending_total;
             }
-            return $b->pending_total <=> $a->pending_total;
+            return $b->received_total <=> $a->received_total;
         })
-        ->take(100)
+        ->take(1000)
         ->values();
 
         // 4. Grand Totals for ALL Retailers (to ensure header summary is 100% accurate)
