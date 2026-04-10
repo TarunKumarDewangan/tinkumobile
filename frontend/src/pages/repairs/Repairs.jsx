@@ -206,11 +206,20 @@ export default function Repairs() {
                         <option value="completed">Completed</option>
                         <option value="delivered">Delivered</option>
                       </select>
-                      {hasFullAccess() && (
-                        <button className="btn btn-outline-danger btn-sm ms-2 border-0 shadow-none p-1" onClick={() => deleteRepair(r.id)} title="Delete Repair">
-                           🗑️
-                        </button>
-                      )}
+                      
+                      <div className="d-inline-flex gap-1 ms-2">
+                        <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-primary btn-sm border-0 p-1" title="View/Edit Repair">
+                           👁️
+                        </Link>
+                        <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-info btn-sm border-0 p-1" title="Quick Edit">
+                           ✏️
+                        </Link>
+                        {hasFullAccess() && (
+                          <button className="btn btn-outline-danger btn-sm border-0 p-1" onClick={() => deleteRepair(r.id)} title="Delete Repair">
+                             🗑️
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

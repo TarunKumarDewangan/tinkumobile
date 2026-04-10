@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 
@@ -21,20 +20,39 @@ export default function RepairForm() {
     forwarded_phone: '',
     external_expected_delivery: ''
   });
-  const [externalShops, setExternalShops] = useState([]);
-  const [showShopList, setShowShopList] = useState(false);
+  const { id } = useParams();
   const navigate = useNavigate();
 
   useEffect(() => { 
     api.get('/customers').then(r => setCustomers(r.data)); 
     api.get('/repairs/external-shops').then(r => setExternalShops(r.data));
-  }, []);
+    
+    if (id) {
+      api.get(`/repairs/${id}`).then(r => {
+        setForm({
+          ...r.data,
+          submitted_date: r.data.submitted_date?.slice(0,10) || '',
+          estimated_delivery_date: r.data.estimated_delivery_date?.slice(0,10) || '',
+          external_expected_delivery: r.data.external_expected_delivery?.slice(0,10) || '',
+          issue_description: Array.isArray(r.data.issue_description) ? r.data.issue_description : [''],
+          quoted_amount: parseFloat(r.data.quoted_amount || 0),
+          advance_amount: parseFloat(r.data.advance_amount || 0),
+          service_center_cost: parseFloat(r.data.service_center_cost || 0),
+        });
+      });
+    }
+  }, [id]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/repairs', form);
-      toast.success('Repair request created');
+      if (id) {
+        await api.put(`/repairs/${id}`, form);
+        toast.success('Repair updated successfully');
+      } else {
+        await api.post('/repairs', form);
+        toast.success('Repair request created');
+      }
       navigate('/repairs');
     } catch (e) { toast.error(e.response?.data?.message || 'Error'); }
   };
@@ -60,7 +78,7 @@ export default function RepairForm() {
   return (
     <div>
       <div className="page-header">
-        <h2>➕ New Repair</h2>
+        <h2>{id ? '✏️ Edit Repair' : '➕ New Repair'}</h2>
         <button onClick={() => navigate('/repairs')} className="btn btn-outline-secondary btn-sm">← Back</button>
       </div>
       <div className="table-card p-4" style={{ maxWidth:600 }}>
@@ -186,7 +204,7 @@ export default function RepairForm() {
             </div>
           </div>
           <div className="mt-4">
-            <button type="submit" className="btn btn-primary me-2">Create Repair</button>
+            <button type="submit" className="btn btn-primary me-2">{id ? 'Update Repair' : 'Create Repair'}</button>
             <button type="button" className="btn btn-outline-secondary" onClick={() => navigate('/repairs')}>Cancel</button>
           </div>
         </form>

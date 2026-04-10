@@ -80,6 +80,7 @@ function AppRoutes() {
         <Route path="suppliers" element={<Suppliers />} />
         <Route path="repairs" element={<Repairs />} />
         <Route path="repairs/new" element={<RepairForm />} />
+        <Route path="repairs/:id/edit" element={<RepairForm />} />
         <Route path="follow-ups" element={<FollowUps />} />
         <Route path="loans" element={<Loans />} />
         <Route path="loans/new" element={<LoanForm />} />
