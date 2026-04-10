@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
+import { useAuth } from '../../contexts/AuthContext';
 
 const STATUS_COLORS = { pending:'warning', assigned:'info', in_progress:'primary', completed:'success', delivered:'secondary' };
 
 export default function Repairs() {
+  const { hasFullAccess } = useAuth();
   const [repairs, setRepairs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -30,6 +32,15 @@ export default function Repairs() {
     await api.put(`/repairs/${id}`, { status });
     toast.success('Status updated');
     load();
+  };
+
+  const deleteRepair = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this repair?')) return;
+    try {
+      await api.delete(`/repairs/${id}`);
+      toast.success('Repair deleted');
+      load();
+    } catch (e) { toast.error('Unauthorized or error'); }
   };
 
   const handleFilter = (field, val) => setFilters(prev => ({ ...prev, [field]: val }));
@@ -120,6 +131,7 @@ export default function Repairs() {
                   <th>Device</th>
                   <th>Issues</th>
                   <th>Forwarded To</th>
+                  <th className="text-end">Financials</th>
                   <th>Status</th>
                   <th>Delivery</th>
                   <th className="text-end pe-3">Actions</th>
@@ -160,6 +172,16 @@ export default function Repairs() {
                         <span className="text-muted small italic">Local Repair</span>
                       )}
                     </td>
+                    <td className="text-end">
+                      <div className="x-small text-uppercase text-muted opacity-75">Quoted: <span className="text-dark fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</span></div>
+                      <div className="x-small text-uppercase text-muted opacity-75">Advance: <span className="text-success fw-bold">₹{parseFloat(r.advance_amount || 0).toLocaleString()}</span></div>
+                      {r.is_forwarded && (
+                        <div className="x-small text-uppercase text-muted opacity-75">Cost: <span className="text-danger fw-bold">₹{parseFloat(r.service_center_cost || 0).toLocaleString()}</span></div>
+                      )}
+                      <div className="mt-1 pt-1 border-top border-light">
+                        <div className="small text-uppercase fw-bold text-primary">Balance: ₹{parseFloat((r.quoted_amount || 0) - (r.advance_amount || 0)).toLocaleString()}</div>
+                      </div>
+                    </td>
                     <td>
                        <span className={`badge bg-${STATUS_COLORS[r.status] || 'secondary'} rounded-pill`}>
                          {r.status.replace('_', ' ').toUpperCase()}
@@ -184,6 +206,11 @@ export default function Repairs() {
                         <option value="completed">Completed</option>
                         <option value="delivered">Delivered</option>
                       </select>
+                      {hasFullAccess() && (
+                        <button className="btn btn-outline-danger btn-sm ms-2 border-0 shadow-none p-1" onClick={() => deleteRepair(r.id)} title="Delete Repair">
+                           🗑️
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

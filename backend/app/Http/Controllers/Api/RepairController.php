@@ -93,6 +93,9 @@ class RepairController extends Controller
             'customer_email'            => 'nullable|email|max:100',
             'submitted_date'            => 'nullable|date',
             'device_model'              => 'required|string|max:150',
+            'quoted_amount'             => 'nullable|numeric',
+            'service_center_cost'       => 'nullable|numeric',
+            'advance_amount'            => 'nullable|numeric',
             'issue_description'         => 'required|array|min:1',
             'issue_description.*'       => 'required|string',
             'estimated_delivery_date'   => 'nullable|date',
@@ -126,6 +129,9 @@ class RepairController extends Controller
             'customer_name'             => 'sometimes|string',
             'customer_phone'            => 'sometimes|string',
             'device_model'              => 'sometimes|string',
+            'quoted_amount'             => 'nullable|numeric',
+            'service_center_cost'       => 'nullable|numeric',
+            'advance_amount'            => 'nullable|numeric',
             'issue_description'         => 'sometimes|array',
             'issue_description.*'       => 'required|string',
             'submitted_date'            => 'nullable|date',
@@ -146,6 +152,16 @@ class RepairController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         return response()->json($repairRequest->load('assignedTo', 'staff'));
+    }
+
+    public function destroy(Request $request, RepairRequest $repairRequest)
+    {
+        if (! $request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized. Only Owners/Admins can delete repairs.'], 403);
+        }
+
+        $repairRequest->delete();
+        return response()->json(['message' => 'Repair request deleted']);
     }
 
     public function getExternalShops(Request $request)

@@ -11,6 +11,9 @@ export default function RepairForm() {
     customer_email:'', 
     submitted_date: new Date().toISOString().slice(0,10),
     device_model:'', 
+    quoted_amount: 0,
+    advance_amount: 0,
+    service_center_cost: 0,
     issue_description: [''], 
     estimated_delivery_date:'',
     is_forwarded: false,
@@ -108,6 +111,26 @@ export default function RepairForm() {
               <label className="form-label fw-semibold">Expected Customer Delivery</label>
               <input type="date" className="form-control border-primary" {...f('estimated_delivery_date')} />
             </div>
+
+            <div className="col-12 border-top pt-3 mt-4">
+              <h6 className="text-uppercase fw-bold small text-muted mb-3">💰 Financial Tracking</h6>
+              <div className="row g-3 bg-light p-3 rounded-4 border border-info-subtle shadow-sm">
+                <div className="col-md-6">
+                  <label className="form-label x-small fw-bold text-uppercase opacity-75">Quoted Amount (Asking Price)</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-white border-end-0">₹</span>
+                    <input type="number" step="0.01" className="form-control border-start-0 fw-bold fs-5" placeholder="0.00" {...f('quoted_amount')} />
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label x-small fw-bold text-uppercase opacity-75">Advance Taken (Deposit)</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-white border-end-0 text-success">₹</span>
+                    <input type="number" step="0.01" className="form-control border-start-0 fw-bold fs-5 text-success" placeholder="0.00" {...f('advance_amount')} />
+                  </div>
+                </div>
+              </div>
+            </div>
             
             <div className="col-12 border-top pt-3 mt-4">
               <div className="form-check form-switch mb-3">
@@ -147,9 +170,16 @@ export default function RepairForm() {
                       <label className="form-label small fw-bold">External Contact No.</label>
                       <input className="form-control border-warning" placeholder="Shop Phone Number" {...f('forwarded_phone')} />
                    </div>
-                   <div className="col-md-5">
+                   <div className="col-md-7">
                       <label className="form-label small fw-bold">Ret. Delivery to TinkuMobiles</label>
                       <input type="date" className="form-control border-warning" {...f('external_expected_delivery')} />
+                   </div>
+                   <div className="col-md-5">
+                      <label className="form-label small fw-bold text-danger">Service Center Quote (Our Cost)</label>
+                      <div className="input-group">
+                        <span className="input-group-text bg-white border-end-0 text-danger small">₹</span>
+                        <input type="number" step="0.01" className="form-control border-warning border-start-0 fw-bold text-danger" placeholder="0.00" {...f('service_center_cost')} />
+                      </div>
                    </div>
                 </div>
               )}
