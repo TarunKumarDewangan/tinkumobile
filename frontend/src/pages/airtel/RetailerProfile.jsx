@@ -24,6 +24,7 @@ export default function RetailerProfile() {
     const [followUpReason, setFollowUpReason] = useState('');
     const [followUpDate, setFollowUpDate] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [isConfirmingRecovery, setIsConfirmingRecovery] = useState(false);
 
     const formatSystemDate = (dateStr) => {
         if (!dateStr) return '-';
@@ -59,6 +60,12 @@ export default function RetailerProfile() {
     const handleRecordRecovery = async (e) => {
         e.preventDefault();
         if (!recoveryAmount) return;
+
+        if (!isConfirmingRecovery) {
+            setIsConfirmingRecovery(true);
+            return;
+        }
+
         setSubmitting(true);
         try {
             await axios.post(`/airtel-retailers/${id}/record-recovery`, {
@@ -67,6 +74,7 @@ export default function RetailerProfile() {
             });
             toast.success('Recovery recorded');
             setShowRecovery(false);
+            setIsConfirmingRecovery(false);
             setRecoveryAmount('');
             setRecoveryNotes('');
             fetchProfile();
@@ -175,6 +183,7 @@ export default function RetailerProfile() {
                             className="btn btn-success btn-sm px-3 shadow-sm"
                             onClick={() => {
                                 setRecoveryAmount(stats.total_pending > 0 ? stats.total_pending : '');
+                                setIsConfirmingRecovery(false);
                                 setShowRecovery(true);
                             }}
                         >
@@ -351,64 +360,89 @@ export default function RetailerProfile() {
                 </div>
             </div>
 
-            <Modal show={showRecovery} onClose={() => setShowRecovery(false)} title="RECORD RECOVERY">
+            <Modal show={showRecovery} onClose={() => { setShowRecovery(false); setIsConfirmingRecovery(false); }} title="RECORD RECOVERY">
                 <form onSubmit={handleRecordRecovery}>
-                    <div className="mb-3">
-                        <label className="form-label x-small text-uppercase fw-bold">Retailer</label>
-                        <div className="fw-bold text-uppercase">{retailer.name}</div>
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label x-small text-uppercase fw-bold">Amount Recieved</label>
-                        <div className="input-group">
-                            <span className="input-group-text">₹</span>
-                            <input 
-                                type="number" 
-                                className="form-control" 
-                                step="0.01"
-                                value={recoveryAmount}
-                                onChange={e => setRecoveryAmount(e.target.value)}
-                                required
-                            />
-                            <button type="button" className="btn btn-outline-secondary" onClick={() => setRecoveryAmount(stats.total_pending)}>FULL PAY</button>
+                    {isConfirmingRecovery ? (
+                        <div className="animate__animated animate__fadeIn">
+                            <div className="text-center py-4 bg-success-light rounded-4 mb-4 border border-success-subtle">
+                                <div className="x-small text-uppercase fw-bold text-success mb-2">Final Confirmation</div>
+                                <div className="display-5 fw-bold text-success mb-1">₹{parseFloat(recoveryAmount).toLocaleString()}</div>
+                                <div className="fw-bold text-uppercase small text-muted">{recoveryNotes || 'No Notes'}</div>
+                            </div>
+                            
+                            <div className="alert alert-warning border-0 small text-center fw-bold text-uppercase mb-4">
+                                Are you sure you want to final submit?
+                            </div>
+
+                            <div className="d-flex gap-2">
+                                <button type="button" className="btn btn-outline-secondary flex-grow-1 text-uppercase fw-bold py-2" onClick={() => setIsConfirmingRecovery(false)}>
+                                    Back
+                                </button>
+                                <button type="submit" className="btn btn-success flex-grow-1 text-uppercase fw-bold py-2 shadow" disabled={submitting}>
+                                    {submitting ? 'Saving...' : 'Final Submit'}
+                                </button>
+                            </div>
                         </div>
-                        <div className="form-text x-small">Current Pending: ₹{stats.total_pending.toLocaleString()}</div>
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label x-small text-uppercase fw-bold">Payment Mode / Notes</label>
-                        <div className="input-group">
-                            <select 
-                                className="form-select form-select-sm text-uppercase fw-bold" 
-                                style={{maxWidth:'120px'}}
-                                value={recoveryNotes.split(' - ')[0]}
-                                onChange={e => {
-                                    const mode = e.target.value;
-                                    const currentNote = recoveryNotes.includes(' - ') ? recoveryNotes.split(' - ')[1] : '';
-                                    setRecoveryNotes(mode + (currentNote ? ` - ${currentNote}` : ''));
-                                }}
-                            >
-                                <option value="">SELECT</option>
-                                <option value="CASH">CASH</option>
-                                <option value="PHONE PE">PHONE PE</option>
-                                <option value="GPAY">GPAY</option>
-                                <option value="DIGITAL">DIGITAL</option>
-                                <option value="OTHER">OTHER</option>
-                            </select>
-                            <input 
-                                type="text" 
-                                className="form-control form-control-sm text-uppercase" 
-                                placeholder="ANY EXTRA DETAILS..." 
-                                value={recoveryNotes.includes(' - ') ? recoveryNotes.split(' - ')[1] : (['CASH','PHONE PE','GPAY','DIGITAL','OTHER'].includes(recoveryNotes) ? '' : recoveryNotes)}
-                                onChange={e => {
-                                    const details = e.target.value;
-                                    const mode = ['CASH','PHONE PE','GPAY','DIGITAL','OTHER'].find(m => recoveryNotes.startsWith(m)) || '';
-                                    setRecoveryNotes(mode ? `${mode} - ${details}` : details);
-                                }}
-                            />
-                        </div>
-                    </div>
-                    <button type="submit" className="btn btn-success w-100 text-uppercase fw-bold py-2" disabled={submitting}>
-                        {submitting ? 'Saving...' : 'Record Payment'}
-                    </button>
+                    ) : (
+                        <>
+                            <div className="mb-3">
+                                <label className="form-label x-small text-uppercase fw-bold">Retailer</label>
+                                <div className="fw-bold text-uppercase">{retailer.name}</div>
+                            </div>
+                            <div className="mb-3">
+                                <label className="form-label x-small text-uppercase fw-bold">Amount Recieved</label>
+                                <div className="input-group">
+                                    <span className="input-group-text">₹</span>
+                                    <input 
+                                        type="number" 
+                                        className="form-control fw-bold" 
+                                        step="0.01"
+                                        value={recoveryAmount}
+                                        onChange={e => setRecoveryAmount(e.target.value)}
+                                        required
+                                    />
+                                    <button type="button" className="btn btn-outline-secondary px-3 fw-bold small" onClick={() => setRecoveryAmount(stats.total_pending)}>FULL PAY</button>
+                                </div>
+                                <div className="form-text x-small">Current Pending: ₹{stats.total_pending.toLocaleString()}</div>
+                            </div>
+                            <div className="mb-4">
+                                <label className="form-label x-small text-uppercase fw-bold">Payment Mode / Notes</label>
+                                <div className="input-group">
+                                    <select 
+                                        className="form-select form-select-sm text-uppercase fw-bold" 
+                                        style={{maxWidth:'120px'}}
+                                        value={recoveryNotes.split(' - ')[0]}
+                                        onChange={e => {
+                                            const mode = e.target.value;
+                                            const currentNote = recoveryNotes.includes(' - ') ? recoveryNotes.split(' - ')[1] : '';
+                                            setRecoveryNotes(mode + (currentNote ? ` - ${currentNote}` : ''));
+                                        }}
+                                    >
+                                        <option value="">SELECT</option>
+                                        <option value="CASH">CASH</option>
+                                        <option value="PHONE PE">PHONE PE</option>
+                                        <option value="GPAY">GPAY</option>
+                                        <option value="DIGITAL">DIGITAL</option>
+                                        <option value="OTHER">OTHER</option>
+                                    </select>
+                                    <input 
+                                        type="text" 
+                                        className="form-control form-control-sm text-uppercase" 
+                                        placeholder="ANY EXTRA DETAILS..." 
+                                        value={recoveryNotes.includes(' - ') ? recoveryNotes.split(' - ')[1] : (['CASH','PHONE PE','GPAY','DIGITAL','OTHER'].includes(recoveryNotes) ? '' : recoveryNotes)}
+                                        onChange={e => {
+                                            const details = e.target.value;
+                                            const mode = ['CASH','PHONE PE','GPAY','DIGITAL','OTHER'].find(m => recoveryNotes.startsWith(m)) || '';
+                                            setRecoveryNotes(mode ? `${mode} - ${details}` : details);
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            <button type="submit" className="btn btn-success w-100 text-uppercase fw-bold py-3 shadow-sm" disabled={submitting}>
+                                Record Payment
+                            </button>
+                        </>
+                    )}
                 </form>
             </Modal>
 

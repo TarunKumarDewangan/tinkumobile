@@ -14,6 +14,7 @@ export default function QuickRecovery() {
     const [showRecoveryModal, setShowRecoveryModal] = useState(false);
     const [recoveryForm, setRecoveryForm] = useState({ amount: '', notes: '' });
     const [saving, setSaving] = useState(false);
+    const [isConfirming, setIsConfirming] = useState(false);
 
     // Auto-fetch when query is 10 digits, otherwise search by name
     useEffect(() => {
@@ -67,6 +68,12 @@ export default function QuickRecovery() {
     const handleRecordRecovery = async (e) => {
         e.preventDefault();
         if (!data || !data.retailer) return;
+
+        if (!isConfirming) {
+            setIsConfirming(true);
+            return;
+        }
+
         setSaving(true);
         try {
             await axios.post(`/airtel-retailers/${data.retailer.id}/recovery`, {
@@ -76,6 +83,7 @@ export default function QuickRecovery() {
             });
             toast.success('Recovery recorded successfully!');
             setShowRecoveryModal(false);
+            setIsConfirming(false);
             setRecoveryForm({ amount: '', notes: '' });
             fetchDirectRetailer(data.retailer.msisdn); // Refresh data
         } catch (error) {
@@ -148,6 +156,7 @@ export default function QuickRecovery() {
                                 className="btn btn-success btn-lg w-100 fw-bold rounded-pill shadow-sm mb-2"
                                 onClick={() => {
                                     setRecoveryForm({ ...recoveryForm, amount: data.stats.total_pending });
+                                    setIsConfirming(false);
                                     setShowRecoveryModal(true);
                                 }}
                             >
@@ -219,84 +228,109 @@ export default function QuickRecovery() {
             )}
 
             {/* Recovery Record Modal */}
-            <Modal show={showRecoveryModal} onClose={() => setShowRecoveryModal(false)} title="RECORD RECOVERY">
+            <Modal show={showRecoveryModal} onClose={() => { setShowRecoveryModal(false); setIsConfirming(false); }} title="RECORD RECOVERY">
                 <form onSubmit={handleRecordRecovery}>
-                    <div className="mb-4">
-                        <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>RETAILER</label>
-                        <div className="fw-bold h5 text-uppercase mb-0">{data?.retailer?.name}</div>
-                    </div>
+                    {isConfirming ? (
+                        <div className="animate__animated animate__fadeIn">
+                             <div className="text-center py-4 bg-success-light rounded-4 mb-4 border border-success-subtle">
+                                <div className="x-small text-uppercase fw-bold text-success mb-2">Final Confirmation</div>
+                                <div className="display-4 fw-bold text-success mb-1">₹{parseFloat(recoveryForm.amount).toLocaleString()}</div>
+                                <div className="fw-bold text-uppercase small text-muted">{recoveryForm.notes || 'No Notes'}</div>
+                            </div>
 
-                    <div className="mb-3">
-                        <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>AMOUNT RECEIVED</label>
-                        <div className="input-group">
-                            <span className="input-group-text bg-white border-end-0 fw-bold">₹</span>
-                            <input 
-                                type="number" 
-                                className="form-control border-start-0 fw-bold" 
-                                required 
-                                value={recoveryForm.amount} 
-                                onChange={e => setRecoveryForm({...recoveryForm, amount: e.target.value})} 
-                            />
-                            <button 
-                                type="button" 
-                                className="btn btn-outline-secondary text-uppercase fw-bold x-small px-3"
-                                onClick={() => setRecoveryForm({...recoveryForm, amount: data?.stats?.total_pending || 0})}
-                            >
-                                FULL PAY
-                            </button>
+                            <div className="alert alert-warning border-0 small text-center fw-bold text-uppercase mb-4">
+                                Are you sure you want to final submit?
+                            </div>
+
+                            <div className="d-grid gap-2">
+                                <button type="submit" className="btn btn-success btn-lg fw-bold text-uppercase shadow-sm py-3" disabled={saving}>
+                                    {saving ? <div className="spinner-border spinner-border-sm me-2"></div> : 'Final Submit'}
+                                </button>
+                                <button type="button" className="btn btn-link text-muted fw-bold text-uppercase text-decoration-none" onClick={() => setIsConfirming(false)}>
+                                    Back to Edit
+                                </button>
+                            </div>
                         </div>
-                        <div className="form-text x-small mt-1 text-muted">Current Pending: ₹{parseFloat(data?.stats?.total_pending || 0).toLocaleString()}</div>
-                    </div>
+                    ) : (
+                        <>
+                            <div className="mb-4">
+                                <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>RETAILER</label>
+                                <div className="fw-bold h5 text-uppercase mb-0">{data?.retailer?.name}</div>
+                            </div>
 
-                    <div className="mb-4">
-                        <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>PAYMENT MODE / NOTES</label>
-                        <div className="input-group">
-                            <select 
-                                className="form-select border-end-0 fw-bold text-uppercase x-small" 
-                                style={{maxWidth:'120px'}}
-                                value={['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : (recoveryForm.notes ? 'OTHER' : 'CASH')}
-                                onChange={e => {
-                                    if (e.target.value === 'OTHER') {
-                                        setRecoveryForm({...recoveryForm, notes: ''});
-                                    } else {
-                                        const extra = recoveryForm.notes?.includes(' - ') ? recoveryForm.notes.split(' - ')[1] : '';
-                                        setRecoveryForm({...recoveryForm, notes: e.target.value + (extra ? ' - ' + extra : '')});
-                                    }
-                                }}
-                            >
-                                <option value="CASH">CASH</option>
-                                <option value="GPAY">GPAY</option>
-                                <option value="PHONEPE">PHONEPE</option>
-                                <option value="PAYTM">PAYTM</option>
-                                <option value="BANK">BANK</option>
-                                <option value="OTHER">OTHER</option>
-                            </select>
-                            <input 
-                                type="text" 
-                                className="form-control text-uppercase x-small" 
-                                placeholder={recoveryForm.notes?.split(' - ')[0] === 'OTHER' || !['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? "TYPE PAYMENT MODE..." : "ANY EXTRA DETAILS..."}
-                                value={
-                                    ['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) 
-                                    ? (recoveryForm.notes?.includes(' - ') ? recoveryForm.notes.split(' - ')[1] : '')
-                                    : recoveryForm.notes
-                                }
-                                onChange={e => {
-                                    const mode = ['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : 'OTHER';
-                                    if (mode === 'OTHER') {
-                                        setRecoveryForm({...recoveryForm, notes: e.target.value.toUpperCase()});
-                                    } else {
-                                        setRecoveryForm({...recoveryForm, notes: mode + (e.target.value ? ' - ' + e.target.value.toUpperCase() : '')});
-                                    }
-                                }}
-                            />
-                        </div>
-                    </div>
+                            <div className="mb-3">
+                                <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>AMOUNT RECEIVED</label>
+                                <div className="input-group">
+                                    <span className="input-group-text bg-white border-end-0 fw-bold">₹</span>
+                                    <input 
+                                        type="number" 
+                                        className="form-control border-start-0 fw-bold" 
+                                        required 
+                                        value={recoveryForm.amount} 
+                                        onChange={e => setRecoveryForm({...recoveryForm, amount: e.target.value})} 
+                                    />
+                                    <button 
+                                        type="button" 
+                                        className="btn btn-outline-secondary text-uppercase fw-bold x-small px-3"
+                                        onClick={() => setRecoveryForm({...recoveryForm, amount: data?.stats?.total_pending || 0})}
+                                    >
+                                        FULL PAY
+                                    </button>
+                                </div>
+                                <div className="form-text x-small mt-1 text-muted">Current Pending: ₹{parseFloat(data?.stats?.total_pending || 0).toLocaleString()}</div>
+                            </div>
 
-                    <div className="d-grid mt-4">
-                        <button type="submit" className="btn btn-success btn-lg fw-bold text-uppercase shadow-sm py-3" disabled={saving}>
-                            {saving ? <div className="spinner-border spinner-border-sm me-2"></div> : 'RECORD PAYMENT'}
-                        </button>
-                    </div>
+                            <div className="mb-4">
+                                <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>PAYMENT MODE / NOTES</label>
+                                <div className="input-group">
+                                    <select 
+                                        className="form-select border-end-0 fw-bold text-uppercase x-small" 
+                                        style={{maxWidth:'120px'}}
+                                        value={['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : (recoveryForm.notes ? 'OTHER' : 'CASH')}
+                                        onChange={e => {
+                                            if (e.target.value === 'OTHER') {
+                                                setRecoveryForm({...recoveryForm, notes: ''});
+                                            } else {
+                                                const extra = recoveryForm.notes?.includes(' - ') ? recoveryForm.notes.split(' - ')[1] : '';
+                                                setRecoveryForm({...recoveryForm, notes: e.target.value + (extra ? ' - ' + extra : '')});
+                                            }
+                                        }}
+                                    >
+                                        <option value="CASH">CASH</option>
+                                        <option value="GPAY">GPAY</option>
+                                        <option value="PHONEPE">PHONEPE</option>
+                                        <option value="PAYTM">PAYTM</option>
+                                        <option value="BANK">BANK</option>
+                                        <option value="OTHER">OTHER</option>
+                                    </select>
+                                    <input 
+                                        type="text" 
+                                        className="form-control text-uppercase x-small" 
+                                        placeholder={recoveryForm.notes?.split(' - ')[0] === 'OTHER' || !['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? "TYPE PAYMENT MODE..." : "ANY EXTRA DETAILS..."}
+                                        value={
+                                            ['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) 
+                                            ? (recoveryForm.notes?.includes(' - ') ? recoveryForm.notes.split(' - ')[1] : '')
+                                            : recoveryForm.notes
+                                        }
+                                        onChange={e => {
+                                            const mode = ['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : 'OTHER';
+                                            if (mode === 'OTHER') {
+                                                setRecoveryForm({...recoveryForm, notes: e.target.value.toUpperCase()});
+                                            } else {
+                                                setRecoveryForm({...recoveryForm, notes: mode + (e.target.value ? ' - ' + e.target.value.toUpperCase() : '')});
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="d-grid mt-4">
+                                <button type="submit" className="btn btn-success btn-lg fw-bold text-uppercase shadow-sm py-3" disabled={saving}>
+                                    RECORD PAYMENT
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </form>
             </Modal>
 
