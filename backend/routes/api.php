@@ -88,7 +88,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Repairs
     Route::get('/repairs/external-shops', [RepairController::class, 'getExternalShops']);
-    Route::apiResource('repairs', RepairController::class)->except(['destroy']);
+    Route::apiResource('repairs', RepairController::class);
 
     // Follow-ups
     Route::apiResource('follow-ups', FollowUpController::class);
