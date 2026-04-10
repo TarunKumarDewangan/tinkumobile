@@ -45,6 +45,8 @@ const NAV = [
     children: [
         { to: '/customers',   icon: '👥', label: 'Customers',  perm: 'view_customers' },
         { to: '/employees',   icon: '👷', label: 'Staff Details', perm: 'view_staff' },
+        { to: '/admin/users', icon: '👤', label: 'Staff Accounts', perm: 'manage_users' },
+        { to: '/admin/shops', icon: '🏪', label: 'Shops Manager',  perm: 'manage_shops' },
         { to: '/suppliers',   icon: '🏭', label: 'Suppliers',  perm: 'view_suppliers' },
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
@@ -71,17 +73,6 @@ const NAV = [
         { to: '/airtel/reports',   icon: '📊', label: 'Reports',    perm: 'view_reports' },
     ]
   },
-
-  { 
-    section: 'Admin', 
-    dropdown: true,
-    children: [
-        { to: '/admin/users', icon: '👤', label: 'Users',      perm: 'manage_users' },
-        { to: '/admin/shops', icon: '🏪', label: 'Shops',      perm: 'manage_shops' },
-        { to: '/admin/activity-logs', icon: '📝', label: 'Activity Logs', owner: true },
-        { to: '/admin/trash', icon: '🗑️', label: 'Trash Manager', owner: true },
-    ]
-  },
 ];
 
 const BOTTOM_TABS = [
@@ -96,7 +87,7 @@ export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Admin': false });
+  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false });
   
   const toggleSection = (section) => {
     setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
@@ -122,8 +113,8 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
 
-  const shopName = user?.shop?.name || (hasFullAccess() ? 'All Shops (Admin)' : '');
-  const roleName = user?.roles?.[0] || (isOwner() ? 'Owner' : '');
+  const shopName = user?.shop?.name || (hasFullAccess() ? 'TinkuMobiles Main' : '');
+  const roleName = isOwner() ? 'Owner' : (isAdmin() ? 'Executive' : (user?.roles?.[0] || 'Staff'));
 
   const isVisible = (item) => {
     if (item.owner && !hasFullAccess()) return false;
@@ -223,7 +214,7 @@ export default function Layout() {
             {shopName && <span className="text-muted d-none d-sm-inline" style={{ fontSize:'0.78rem' }}>— {shopName}</span>}
           </div>
           <div className="topbar-right">
-            <span className="badge rounded-pill" style={{ background:hasFullAccess()? '#fef3c7':  'var(--primary)', color: hasFullAccess()? '#92400e' : '#fff', fontSize:'0.7rem' }}>{roleName}</span>
+            <span className="badge rounded-pill" style={{ background:isAdmin()? '#fef3c7':  'var(--primary)', color: isAdmin()? '#92400e' : '#fff', fontSize:'0.7rem' }}>{roleName}</span>
             <span className="text-muted d-none d-md-inline" style={{ fontSize:'0.8rem' }}>{user?.email}</span>
           </div>
         </header>

@@ -90,7 +90,7 @@ export default function Users() {
   };
 
   const roleColors = { 
-    Admin: 'badge-admin',
+    Executive: 'badge-admin',
     manager: 'badge-manager', 
     cashier: 'badge-cashier', 
     sales_person: 'badge-stock',
@@ -228,7 +228,10 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {users.filter(u => {
+                  const roles = u.roles?.map(r => typeof r === 'object' ? r.name : r) || [];
+                  return !roles.includes('Admin') && !roles.includes('admin');
+                }).map(u => (
                   <tr key={u.id}>
                     <td>
                       <div className="fw-bold">{u.name}</div>
@@ -238,7 +241,8 @@ export default function Users() {
                     <td>
                       <div>{u.designation || '—'}</div>
                       {u.roles?.map((r, idx) => {
-                        const roleName = typeof r === 'object' ? r.name : r;
+                        let roleName = typeof r === 'object' ? r.name : r;
+                        if (roleName === 'Admin' || roleName === 'admin') return null;
                         return (
                           <span key={roleName || idx} className={`role-badge ${roleColors[roleName] || ''} mt-1`} style={{ fontSize: '0.6rem' }}>
                             {roleName?.replace('_', ' ')}
