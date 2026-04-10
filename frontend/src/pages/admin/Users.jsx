@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 
@@ -17,11 +18,74 @@ export default function Users() {
     customRole: ''
   });
 
-  const standardRoles = ['manager', 'cashier', 'sales_person', 'computer_operator', 'stock_clerk', 'repair_tech', 'auditor', 'recovery_man'];
+  // Payroll / History Modals
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [currentStaff, setCurrentStaff]   = useState(null);
+  const [paymentData, setPaymentData]     = useState({
+      user_id: '', amount: '', type: 'salary', 
+      for_month: new Date().toISOString().slice(0, 7), 
+      payment_date: new Date().toISOString().slice(0, 10), 
+      notes: ''
+  });
+  const [history, setHistory]             = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const standardRoles = ['owner', 'manager', 'cashier', 'sales_person', 'computer_operator', 'stock_clerk', 'repair_tech', 'auditor', 'recovery_man'];
 
   const load = () => {
     setLoading(true);
     api.get('/users').then(r => setUsers(r.data)).finally(() => setLoading(false));
+  };
+
+  // ── Payroll Handlers (Consolidated) ──
+  const handleOpenPayment = (staff) => {
+    setCurrentStaff(staff);
+    setPaymentData({
+        user_id: staff.id,
+        amount: staff.base_salary || '',
+        type: 'salary',
+        for_month: new Date().toISOString().slice(0, 7),
+        payment_date: new Date().toISOString().slice(0, 10),
+        notes: ''
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handleSavePayment = async (e) => {
+    e.preventDefault();
+    try {
+        await api.post('/salary-payments', paymentData);
+        toast.success('✅ Payment recorded successfully');
+        setShowPaymentModal(false);
+    } catch (e) {
+        toast.error(e.response?.data?.message || 'Error recording payment');
+    }
+  };
+
+  const handleViewHistory = async (staff) => {
+    setCurrentStaff(staff);
+    setShowHistoryModal(true);
+    setHistoryLoading(true);
+    try {
+        const { data } = await api.get('/salary-payments', { params: { user_id: staff.id } });
+        setHistory(data);
+    } catch (e) {
+        toast.error('Failed to load history');
+    } finally {
+        setHistoryLoading(false);
+    }
+  };
+
+  const handleDeleteHistory = async (id) => {
+    if (!window.confirm('Delete this payment record?')) return;
+    try {
+        await api.delete(`/salary-payments/${id}`);
+        toast.success('Record deleted');
+        setHistory(prev => prev.filter(h => h.id !== id));
+    } catch (e) {
+        toast.error('Failed to delete');
+    }
   };
 
   useEffect(() => {
@@ -90,7 +154,11 @@ export default function Users() {
   };
 
   const roleColors = { 
+    owner: 'badge-owner',
     Executive: 'badge-admin',
+    Admin: 'badge-admin',
+    admin: 'badge-admin',
+    ADMIN: 'badge-admin',
     manager: 'badge-manager', 
     cashier: 'badge-cashier', 
     sales_person: 'badge-stock',
@@ -104,15 +172,15 @@ export default function Users() {
   return (
     <div>
       <div className="page-header">
-        <h2>👤 Staff & Employee Management</h2>
+        <h2>👤 User & Staff Management</h2>
         <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(true); setEditId(null); resetForm(); }}>
-          + Add Staff Member
+          + Add New User / Staff
         </button>
       </div>
 
       {showForm && (
         <div className="table-card p-4 mb-3">
-          <h6 className="fw-bold mb-3">{editId ? '📝 Edit Staff Details' : '🆕 Add New Staff Member'}</h6>
+          <h6 className="fw-bold mb-3">{editId ? '📝 Edit User Details' : '🆕 Create New Account (Owner/Staff)'}</h6>
           <form onSubmit={handleSubmit}>
             <div className="row g-3">
               {/* Basic Info */}
@@ -144,6 +212,7 @@ export default function Users() {
               <div className={form.role === 'other' ? 'col-md-2' : 'col-md-3'}>
                 <label className="form-label fw-semibold">Role *</label>
                 <select className="form-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                  <option value="owner">Owner</option>
                   <option value="manager">Manager</option>
                   <option value="cashier">Cashier</option>
                   <option value="sales_person">Sales Person</option>
@@ -230,7 +299,7 @@ export default function Users() {
               <tbody>
                 {users.filter(u => {
                   const roles = u.roles?.map(r => typeof r === 'object' ? r.name : r) || [];
-                  return !roles.includes('Admin') && !roles.includes('admin');
+                  return !roles.some(r => r.toLowerCase() === 'admin');
                 }).map(u => (
                   <tr key={u.id}>
                     <td>
@@ -242,10 +311,10 @@ export default function Users() {
                       <div>{u.designation || '—'}</div>
                       {u.roles?.map((r, idx) => {
                         let roleName = typeof r === 'object' ? r.name : r;
-                        if (roleName === 'Admin' || roleName === 'admin') return null;
+                        if (roleName?.toLowerCase() === 'admin') return null;
                         return (
-                          <span key={roleName || idx} className={`role-badge ${roleColors[roleName] || ''} mt-1`} style={{ fontSize: '0.6rem' }}>
-                            {roleName?.replace('_', ' ')}
+                          <span key={roleName || idx} className={`role-badge ${roleColors[roleName] || roleColors[roleName?.toLowerCase()] || roleColors['other']} mt-1`} style={{ fontSize: '0.6rem' }}>
+                            {roleName === 'admin' ? 'EXECUTIVE' : roleName?.replace('_', ' ').toUpperCase()}
                           </span>
                         );
                       })}
@@ -259,8 +328,12 @@ export default function Users() {
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-xs btn-outline-primary me-2" onClick={() => handleEdit(u)}>Edit</button>
-                      <button className="btn btn-xs btn-outline-danger" onClick={() => deleteUser(u.id)}>Del</button>
+                      <div className="d-flex gap-1 justify-content-end">
+                        <button className="btn btn-xs btn-success fw-bold" onClick={() => handleOpenPayment(u)}>PAY</button>
+                        <button className="btn btn-xs btn-info text-white fw-bold" onClick={() => handleViewHistory(u)}>HISTORY</button>
+                        <button className="btn btn-xs btn-outline-primary" onClick={() => handleEdit(u)}>Edit</button>
+                        <button className="btn btn-xs btn-outline-danger" onClick={() => deleteUser(u.id)}>Del</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -276,6 +349,103 @@ export default function Users() {
           </div>
         )}
       </div>
+
+      {/* Modal: Record Payment (Salary/Advance/Bonus) */}
+      <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} centered className="text-uppercase" style={{zIndex: 1100}}>
+          <Modal.Header closeButton className="bg-success text-white py-2">
+              <Modal.Title className="fw-bold" style={{fontSize: '1.1rem'}}>💳 Record Payment: {currentStaff?.name}</Modal.Title>
+          </Modal.Header>
+          <form onSubmit={handleSavePayment}>
+              <Modal.Body className="p-4">
+                  <div className="mb-3">
+                      <label className="form-label small fw-bold">Payment Type</label>
+                      <select className="form-select border-success fw-bold" value={paymentData.type} onChange={e => setPaymentData({...paymentData, type: e.target.value})}>
+                          <option value="salary">Monthly Salary</option>
+                          <option value="advance">Advance Payment</option>
+                          <option value="bonus">Bonus / Incentive</option>
+                      </select>
+                  </div>
+                  <div className="row g-2 mb-3">
+                      <div className="col-6">
+                            <label className="form-label small fw-bold">Amount (₹)</label>
+                            <input type="number" step="0.01" className="form-control fs-5 fw-bold text-success border-success" required value={paymentData.amount} onChange={e => setPaymentData({...paymentData, amount: e.target.value})} />
+                      </div>
+                      <div className="col-6">
+                            <label className="form-label small fw-bold">Payment Date</label>
+                            <input type="date" className="form-control" required value={paymentData.payment_date} onChange={e => setPaymentData({...paymentData, payment_date: e.target.value})} />
+                      </div>
+                  </div>
+                  {paymentData.type === 'salary' && (
+                      <div className="mb-3">
+                            <label className="form-label small fw-bold">For Month</label>
+                            <input type="month" className="form-control" required value={paymentData.for_month} onChange={e => setPaymentData({...paymentData, for_month: e.target.value})} />
+                      </div>
+                  )}
+                  <div className="mb-0">
+                      <label className="form-label small fw-bold">Notes / Reference</label>
+                      <textarea className="form-control text-uppercase" rows={2} placeholder="e.g. Paid via Cash, PhonePe, etc..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
+                  </div>
+              </Modal.Body>
+              <Modal.Footer>
+                  <Button variant="secondary" className="fw-bold" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
+                  <Button type="submit" variant="success" className="fw-bold px-4 shadow-sm">Confirm Payment</Button>
+              </Modal.Footer>
+          </form>
+      </Modal>
+
+      {/* Modal: Payment History */}
+      <Modal show={showHistoryModal} onHide={() => setShowHistoryModal(false)} centered size="lg" className="text-uppercase" style={{zIndex: 1100}}>
+          <Modal.Header closeButton className="bg-info text-white py-2">
+              <Modal.Title className="fw-bold" style={{fontSize: '1.1rem'}}>📜 Payment History: {currentStaff?.name}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body className="p-0">
+              <div className="table-responsive">
+                  <table className="table table-hover mb-0 align-middle">
+                      <thead className="bg-light">
+                          <tr>
+                              <th className="ps-3">Date</th>
+                              <th>Type</th>
+                              <th>Description</th>
+                              <th className="text-end pe-3">Amount</th>
+                              <th className="text-center">Action</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {historyLoading ? (
+                              <tr><td colSpan={5} className="text-center py-5"><div className="spinner-border text-info" /></td></tr>
+                          ) : history.length === 0 ? (
+                              <tr><td colSpan={5} className="text-center py-5 text-muted">No payment records found.</td></tr>
+                          ) : history.map(h => (
+                              <tr key={h.id}>
+                                  <td className="ps-3 small fw-bold">{formatDate(h.payment_date)}</td>
+                                  <td>
+                                      <span className={`badge x-small ${h.type === 'salary' ? 'bg-primary' : h.type === 'advance' ? 'bg-warning text-dark' : 'bg-success'}`}>
+                                          {h.type}
+                                      </span>
+                                  </td>
+                                  <td>
+                                      {h.type === 'salary' ? <div className="small fw-bold text-uppercase">Month: {h.for_month}</div> : null}
+                                      <div className="x-small text-muted">{h.notes || 'No notes'}</div>
+                                  </td>
+                                  <td className="text-end pe-3 fw-bold">₹{parseFloat(h.amount).toLocaleString('en-IN')}</td>
+                                  <td className="text-center">
+                                      <button onClick={() => handleDeleteHistory(h.id)} className="btn btn-xs btn-link text-danger border-0">DEL</button>
+                                  </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+          </Modal.Body>
+          <Modal.Footer>
+              <Button variant="secondary" className="fw-bold px-4 shadow-sm" onClick={() => setShowHistoryModal(false)}>Close</Button>
+          </Modal.Footer>
+      </Modal>
+
+      <style>{`
+          .x-small { font-size: 0.7rem; }
+          .btn-xs { padding: 2px 6px; font-size: 0.65rem; }
+      `}</style>
     </div>
   );
 }

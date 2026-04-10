@@ -66,4 +66,9 @@ class User extends Authenticatable
     {
         return $this->shop_id;
     }
+
+    public function salaryPayments()
+    {
+        return $this->hasMany(SalaryPayment::class, 'user_id');
+    }
 }

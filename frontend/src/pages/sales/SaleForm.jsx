@@ -372,7 +372,11 @@ export default function SaleForm() {
                             <label className="form-label small fw-bold text-success">SOLD BY / DEALING PERSON <span className="text-danger">*</span></label>
                             <select className="form-select border-success fw-bold" required value={form.sold_by_id} onChange={e => setForm({...form, sold_by_id: e.target.value})}>
                                 <option value="">— SELECT STAFF —</option>
-                                {staff.filter(s => !form.shop_id || s.shop_id == form.shop_id).map(s => (
+                                {staff.filter(s => {
+                                    if (form.shop_id && s.shop_id != form.shop_id) return false;
+                                    const roles = s.roles?.map(r => typeof r === 'object' ? r.name : r) || [];
+                                    return !roles.some(r => r.toLowerCase() === 'admin');
+                                }).map(s => (
                                     <option key={s.id} value={s.id}>{s.name.toUpperCase()} ({s.roles?.[0]?.name?.toUpperCase() || 'STAFF'})</option>
                                 ))}
                             </select>

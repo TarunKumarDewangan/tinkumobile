@@ -44,8 +44,7 @@ const NAV = [
     dropdown: true,
     children: [
         { to: '/customers',   icon: '👥', label: 'Customers',  perm: 'view_customers' },
-        { to: '/employees',   icon: '👷', label: 'Staff Details', perm: 'view_staff' },
-        { to: '/admin/users', icon: '👤', label: 'Staff Accounts', perm: 'manage_users' },
+        { to: '/admin/users', icon: '👷', label: 'Staff Details', perm: 'manage_users' },
         { to: '/admin/shops', icon: '🏪', label: 'Shops Manager',  perm: 'manage_shops' },
         { to: '/suppliers',   icon: '🏭', label: 'Suppliers',  perm: 'view_suppliers' },
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
@@ -68,6 +67,7 @@ const NAV = [
     section: 'Airtel Recovery', 
     dropdown: true,
     children: [
+        { to: '/airtel/quick-recovery', icon: '⚡', label: 'Quick Recovery', perm: 'view_airtel_recovery' },
         { to: '/airtel/retailers', icon: '🏪', label: 'Retailers', perm: 'view_airtel_recovery' },
         { to: '/airtel/drops',     icon: '📉', label: 'Daily Drops', perm: 'view_airtel_recovery' },
         { to: '/airtel/reports',   icon: '📊', label: 'Reports',    perm: 'view_reports' },
@@ -77,10 +77,10 @@ const NAV = [
 
 const BOTTOM_TABS = [
   { to: '/',         icon: '📊', label: 'Home',     end: true },
-  { to: '/sales',    icon: '🧾', label: 'Sales' },
-  { to: '/products', icon: '📱', label: 'Products' },
-  { to: '/repairs',  icon: '🔧', label: 'Repairs' },
-  { to: '/reports',  icon: '📈', label: 'Reports' },
+  { to: '/sales',    icon: '🧾', label: 'Sales',    perm: 'view_sales' },
+  { to: '/airtel/quick-recovery', icon: '⚡', label: 'Recovery', perm: 'view_airtel_recovery' },
+  { to: '/products', icon: '📱', label: 'Products', perm: 'view_products' },
+  { to: '/repairs',  icon: '🔧', label: 'Repairs',  perm: 'view_repairs' },
 ];
 
 export default function Layout() {
@@ -228,7 +228,7 @@ export default function Layout() {
       {/* ── Bottom mobile navigation bar ── */}
       <nav className="mobile-navbar">
         <div className="mobile-navbar-inner">
-          {BOTTOM_TABS.map(t => (
+          {BOTTOM_TABS.filter(isVisible).map(t => (
             <NavLink key={t.to} to={t.to} end={t.end} className="mobile-nav-item" onClick={closeSidebar}>
               <span className="nav-icon">{t.icon}</span>
               {t.label}

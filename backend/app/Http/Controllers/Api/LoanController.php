@@ -82,6 +82,8 @@ class LoanController extends Controller
                 'amount'           => $loan->principal,
                 'payment_mode'     => 'CASH',
                 'description'      => "Loan disbursed to {$loan->customer->name}",
+                'entity_id'        => $loan->id,
+                'entity_type'      => \App\Models\Loan::class,
                 'ref_id'           => $loan->id,
                 'transaction_date' => $loan->start_date->toDateString(),
             ]);
@@ -118,6 +120,8 @@ class LoanController extends Controller
             'amount'           => $loanPayment->amount + ($data['penalty'] ?? 0),
             'payment_mode'     => 'CASH',
             'description'      => "Loan repayment from {$loanPayment->loan->customer->name} (EMI)",
+            'entity_id'        => $loanPayment->id,
+            'entity_type'      => \App\Models\LoanPayment::class,
             'ref_id'           => $loanPayment->id,
             'transaction_date' => $loanPayment->paid_date->toDateString(),
         ]);

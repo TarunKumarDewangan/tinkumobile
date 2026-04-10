@@ -148,6 +148,8 @@ class AirtelRetailerController extends Controller
             'amount'           => $recovery->amount,
             'payment_mode'     => 'CASH', // Default for now
             'description'      => "Recovery payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
+            'entity_id'        => $recovery->id,
+            'entity_type'      => \App\Models\AirtelRecovery::class,
             'ref_id'           => $recovery->id,
             'transaction_date' => $recovery->recovered_at->toDateString(),
         ]);

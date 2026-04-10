@@ -40,6 +40,7 @@ import StockEntry from './pages/StockEntry';
 import AirtelRetailers from './pages/airtel/AirtelRetailers';
 import AirtelDrops from './pages/airtel/AirtelDrops';
 import RecoveryDashboard from './pages/airtel/RecoveryDashboard';
+import QuickRecovery from './pages/airtel/QuickRecovery';
 import AirtelReports from './pages/airtel/AirtelReports';
 import RetailerProfile from './pages/airtel/RetailerProfile';
 import PublicRetailerProfile from './pages/airtel/PublicRetailerProfile';
@@ -101,6 +102,7 @@ function AppRoutes() {
         <Route path="reports/loans" element={<LoanReport />} />
         {/* Airtel Recovery */}
         <Route path="airtel/retailers" element={<AirtelRetailers />} />
+        <Route path="airtel/quick-recovery" element={<QuickRecovery />} />
         <Route path="airtel/retailers/:id" element={<RetailerProfile />} />
         <Route path="airtel/drops" element={<AirtelDrops />} />
         <Route path="airtel/recovery" element={<RecoveryDashboard />} />
