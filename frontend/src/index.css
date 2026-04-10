@@ -28,13 +28,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-input, select, textarea, button {
-  /* text-transform: uppercase; */
-}
 
-::placeholder {
-  /* text-transform: uppercase; */
-}
+/* Force uppercase on all inputs, except login */
+input, select, textarea { text-transform: uppercase; }
+.login-page input, .login-page textarea { text-transform: none; }
 
 /* ══ SIDEBAR ═══════════════════════════════════════════════ */
 .sidebar {

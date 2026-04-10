@@ -87,6 +87,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/sale-invoices/{saleInvoice}/cancel', [SaleInvoiceController::class, 'cancel']);
 
     // Repairs
+    Route::get('/repairs/external-shops', [RepairController::class, 'getExternalShops']);
     Route::apiResource('repairs', RepairController::class)->except(['destroy']);
 
     // Follow-ups

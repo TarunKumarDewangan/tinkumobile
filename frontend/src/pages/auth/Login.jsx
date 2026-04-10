@@ -36,7 +36,7 @@ export default function Login() {
               type="email"
               className="form-control"
               value={form.email}
-              onChange={e => setForm({...form, email: e.target.value.toLowerCase()})}
+              onChange={e => setForm({...form, email: e.target.value})}
               placeholder="Email address"
               required
             />

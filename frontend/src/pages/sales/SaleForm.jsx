@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
@@ -14,11 +14,13 @@ export default function SaleForm() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [shops, setShops]       = useState([]);
+  const [staff, setStaff]       = useState([]);
   
   // Form State
   const [form, setForm] = useState({ 
     shop_id: '',
     customer_id: '', 
+    sold_by_id: '',
     sale_date: new Date().toISOString().slice(0,10), 
     bill_type: 'kaccha', 
     payment_method: 'cash', 
@@ -41,21 +43,36 @@ export default function SaleForm() {
   // Customer Search & Add
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustModal, setShowCustModal] = useState(false);
-  const [newCust, setNewCust] = useState({ name: '', phone: '', address: '' });
+  const [newCust, setNewCust] = useState({ name: '', phone: '', email: '', address: '', voucher_code: '', events: [] });
   // IMEI Scan Search
   const [scanProductId, setScanProductId] = useState('');
   const [imeiScanner, setImeiScanner] = useState('');
   const [scanResult, setScanResult] = useState(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [showProductList, setShowProductList] = useState(false);
+  const imeiInputRef = useRef(null);
+  const productSearchRef = useRef(null);
 
   useEffect(() => {
     fetchInitialData();
     if (id) loadSale();
+    
+    const clickOutside = (e) => {
+      if (productSearchRef.current && !productSearchRef.current.contains(e.target)) {
+        setShowProductList(false);
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
   }, [id]);
 
   const fetchInitialData = async () => {
     try {
       const custRes = await api.get('/customers');
       setCustomers(custRes.data);
+      
+      const staffRes = await api.get('/users');
+      setStaff(staffRes.data);
       
       if (isOwner()) {
         const shopsRes = await api.get('/shops');
@@ -115,7 +132,8 @@ export default function SaleForm() {
         is_cash_discount_on_bill: data.is_cash_discount_on_bill ?? true,
         rounding_mode: data.rounding_mode,
         round_off: data.round_off,
-        notes: data.notes || ''
+        notes: data.notes || '',
+        sold_by_id: data.sold_by_id || ''
       });
       setIsManualRound(true); 
       setItems(data.items.map(i => ({
@@ -293,8 +311,17 @@ export default function SaleForm() {
           setCustomers([...customers, data]);
           handleSelectCustomer(data);
           setShowCustModal(false);
+          setNewCust({ name: '', phone: '', email: '', address: '', voucher_code: '', events: [] });
           toast.success('✅ Customer added');
-      } catch (e) { toast.error('Error adding customer'); }
+      } catch (e) { toast.error(e.response?.data?.message || 'Error adding customer'); }
+  };
+
+  const addCustEvent = () => setNewCust({ ...newCust, events: [...newCust.events, { type: 'DOB', name: '', date: '' }] });
+  const removeCustEvent = (i) => setNewCust({ ...newCust, events: newCust.events.filter((_, idx) => idx !== i) });
+  const updateCustEvent = (i, field, val) => {
+    const evs = [...newCust.events];
+    evs[i][field] = val;
+    setNewCust({ ...newCust, events: evs });
   };
 
   const handleSubmit = async (e) => {
@@ -340,6 +367,16 @@ export default function SaleForm() {
                                 </select>
                             </div>
                         )}
+
+                        <div className="col-12">
+                            <label className="form-label small fw-bold text-success">SOLD BY / DEALING PERSON <span className="text-danger">*</span></label>
+                            <select className="form-select border-success fw-bold" required value={form.sold_by_id} onChange={e => setForm({...form, sold_by_id: e.target.value})}>
+                                <option value="">— SELECT STAFF —</option>
+                                {staff.filter(s => !form.shop_id || s.shop_id == form.shop_id).map(s => (
+                                    <option key={s.id} value={s.id}>{s.name.toUpperCase()} ({s.roles?.[0]?.name?.toUpperCase() || 'STAFF'})</option>
+                                ))}
+                            </select>
+                        </div>
                         <div className="col-12 text-uppercase">
                             <label className="form-label small fw-bold">CUSTOMER DETAILS <span className="text-danger">*</span></label>
                             <div className="input-group">
@@ -381,42 +418,51 @@ export default function SaleForm() {
                                     </div>
                                 )}
                                 <div className="input-group input-group-sm" style={{ width: '500px' }}>
-                                    <select 
-                                        className="form-select border-info fw-bold bg-info bg-opacity-10" 
-                                        style={{ width: '40%' }}
-                                        value={scanProductId}
-                                        onChange={e => setScanProductId(e.target.value)}
+                                    <div className="position-relative flex-grow-1" style={{ width: '40%' }} ref={productSearchRef}>
+                                        <input 
+                                            type="text"
+                                            className="form-control border-info fw-bold bg-info bg-opacity-10 text-uppercase h-100" 
+                                            placeholder="🔍 SEARCH ITEM..." 
+                                            value={productSearch}
+                                            onChange={e => { setProductSearch(e.target.value); setShowProductList(true); }}
+                                            onFocus={() => setShowProductList(true)}
+                                        />
+                                        {showProductList && (
+                                            <div className="list-group shadow-sm mt-1 position-absolute w-100 z-3 border animate-fade-in" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                                {products
+                                                    .filter(p => !productSearch || p.name.toUpperCase().includes(productSearch.toUpperCase()) || (p.attributes?.imei && p.attributes.imei.includes(productSearch.toUpperCase())))
+                                                    .slice(0, 20)
+                                                    .map(p => {
+                                                        const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color) 
+                                                            ? `(${p.attributes.ram || '-'}/${p.attributes.storage || '-'}/${p.attributes.color || '-'})`
+                                                            : '';
+                                                        const imeiSuffix = p.attributes?.imei ? ` / IMEI: ${p.attributes.imei}` : '';
+                                                        return (
+                                                            <button key={p.id} type="button" className="list-group-item list-group-item-action py-2 text-uppercase small" 
+                                                                onClick={() => {
+                                                                    addScannedItem(p);
+                                                                    setProductSearch('');
+                                                                    setShowProductList(false);
+                                                                }}>
+                                                                <div className="fw-bold">{p.name.toUpperCase()} {configStr}</div>
+                                                                <div className="x-small text-muted">{imeiSuffix} | 💰 ₹{p.selling_price}</div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                {products.length === 0 && <div className="list-group-item disabled x-small py-3">NO PRODUCTS FOUND</div>}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <span 
+                                        className="input-group-text bg-info border-info text-white border-start-0 cursor-pointer" 
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={() => imeiInputRef.current?.focus()}
+                                        title="Click to Scan"
                                     >
-                                        <option value="">— SELECT ITEM —</option>
-                                        {products.map(p => {
-                                            const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color) 
-                                                ? `(${p.attributes.ram || '-'}/${p.attributes.storage || '-'}/${p.attributes.color || '-'})`
-                                                : '';
-                                            const imeiSuffix = p.attributes?.imei ? ` / IMEI: ${p.attributes.imei}` : '';
-                                            return (
-                                                <option key={p.id} value={p.id}>
-                                                    {p.name.toUpperCase()} {configStr}{imeiSuffix}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
-                                    {scanProductId && (
-                                        <button 
-                                            type="button" 
-                                            className="btn btn-warning fw-bold text-dark border-info"
-                                            onClick={() => {
-                                                const p = products.find(px => px.id == scanProductId);
-                                                if (p) {
-                                                    addScannedItem(p);
-                                                    setScanProductId('');
-                                                }
-                                            }}
-                                        >
-                                            + ADD
-                                        </button>
-                                    )}
-                                    <span className="input-group-text bg-info border-info text-white border-start-0"><i className="bi bi-upc-scan"></i></span>
+                                        <i className="bi bi-upc-scan"></i>
+                                    </span>
                                     <input 
+                                        ref={imeiInputRef}
                                         type="text" 
                                         className="form-control border-info fw-bold" 
                                         placeholder="SCAN IMEI..." 
@@ -693,17 +739,60 @@ export default function SaleForm() {
           </Modal.Header>
           <form onSubmit={handleAddCustomer}>
               <Modal.Body className="p-4">
-                  <div className="mb-3">
-                      <label className="form-label small fw-bold">Full Name <span className="text-danger">*</span></label>
-                      <input type="text" className="form-control" required value={newCust.name} onChange={e => setNewCust({...newCust, name: e.target.value.toUpperCase()})} />
+                  <div className="row g-3">
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Full Name <span className="text-danger">*</span></label>
+                          <input type="text" className="form-control" required value={newCust.name} onChange={e => setNewCust({...newCust, name: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Phone Number <span className="text-danger">*</span></label>
+                          <input type="text" className="form-control" required value={newCust.phone} onChange={e => setNewCust({...newCust, phone: e.target.value})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Email</label>
+                          <input type="email" className="form-control" value={newCust.email} onChange={e => setNewCust({...newCust, email: e.target.value})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Voucher Code</label>
+                          <input type="text" className="form-control" value={newCust.voucher_code} onChange={e => setNewCust({...newCust, voucher_code: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-12 text-uppercase">
+                          <label className="form-label small fw-bold">Address</label>
+                          <input type="text" className="form-control" value={newCust.address} onChange={e => setNewCust({...newCust, address: e.target.value.toUpperCase()})} />
+                      </div>
                   </div>
-                  <div className="mb-3">
-                      <label className="form-label small fw-bold">Phone Number <span className="text-danger">*</span></label>
-                      <input type="text" className="form-control" required value={newCust.phone} onChange={e => setNewCust({...newCust, phone: e.target.value})} />
-                  </div>
-                  <div className="mb-0">
-                      <label className="form-label small fw-bold">Address</label>
-                      <input type="text" className="form-control" value={newCust.address} onChange={e => setNewCust({...newCust, address: e.target.value.toUpperCase()})} />
+
+                  <div className="mt-4 border-top pt-3 text-uppercase">
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                          <label className="form-label small fw-bold mb-0">🎂 Customer Events</label>
+                          <button type="button" className="btn btn-xs btn-outline-primary" onClick={addCustEvent}>+ Add Event</button>
+                      </div>
+                      {newCust.events.map((ev, i) => (
+                          <div key={i} className="row g-2 mb-2 align-items-end animate-fade-in border p-2 rounded bg-light">
+                              <div className="col-4">
+                                  <label className="x-small fw-bold">Type</label>
+                                  <select className="form-select form-select-sm" value={ev.type} onChange={e => updateCustEvent(i, 'type', e.target.value)}>
+                                      <option value="DOB">DOB</option>
+                                      <option value="Anniversary">Anniversary</option>
+                                      <option value="Other">Other</option>
+                                  </select>
+                              </div>
+                              {ev.type === 'Other' && (
+                                  <div className="col-4">
+                                      <label className="x-small fw-bold">Event Name</label>
+                                      <input className="form-control form-control-sm" placeholder="e.g. Wedding" value={ev.name} onChange={e => updateCustEvent(i, 'name', e.target.value.toUpperCase())} />
+                                  </div>
+                              )}
+                              <div className={ev.type === 'Other' ? 'col-3' : 'col-6'}>
+                                  <label className="x-small fw-bold">Date</label>
+                                  <input type="date" className="form-control form-control-sm" required value={ev.date} onChange={e => updateCustEvent(i, 'date', e.target.value)} />
+                              </div>
+                              <div className="col-1 text-center">
+                                  <button type="button" className="btn btn-link text-danger p-0 border-0" onClick={() => removeCustEvent(i)}>✕</button>
+                              </div>
+                          </div>
+                      ))}
+                      {newCust.events.length === 0 && <p className="text-muted x-small">Click "+ Add Event" to track birthdays, etc.</p>}
                   </div>
               </Modal.Body>
               <Modal.Footer>

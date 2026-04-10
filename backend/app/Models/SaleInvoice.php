@@ -13,7 +13,7 @@ class SaleInvoice extends Model
     use SoftDeletes, RecordsTransactions;
 
     protected $fillable = [
-        'invoice_no', 'shop_id', 'customer_id', 'user_id', 'sale_date',
+        'invoice_no', 'shop_id', 'customer_id', 'user_id', 'sold_by_id', 'sale_date',
         'total_amount', 'discount', 'grand_total', 'total_paid', 'payment_status',
         'cgst_rate', 'sgst_rate', 'cgst_amount', 'sgst_amount', 'rounding_mode', 'round_off',
         'calculate_gst', 'cash_discount', 'is_cash_discount_on_bill',
@@ -52,6 +52,7 @@ class SaleInvoice extends Model
     public function shop(): BelongsTo { return $this->belongsTo(Shop::class); }
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function soldBy(): BelongsTo { return $this->belongsTo(User::class, 'sold_by_id'); }
     public function items(): HasMany { return $this->hasMany(SaleItem::class); }
     public function giftItems(): HasMany { return $this->hasMany(SaleGiftItem::class); }
     public function parentBill(): BelongsTo { return $this->belongsTo(SaleInvoice::class, 'parent_bill_id'); }

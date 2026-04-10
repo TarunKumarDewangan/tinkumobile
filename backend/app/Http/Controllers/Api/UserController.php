@@ -32,7 +32,7 @@ class UserController extends Controller
             'email'         => 'required|email|unique:users,email',
             'password'      => 'required|min:6',
             'shop_id'       => 'required|exists:shops,id',
-            'role'          => 'required|string|exists:roles,name',
+            'role'          => 'required|string',
             'phone'         => 'nullable|string|max:20',
             'address'       => 'nullable|string',
             'designation'   => 'nullable|string|max:100',
@@ -61,7 +61,8 @@ class UserController extends Controller
             'status'        => $data['status'] ?? 'active',
         ]);
 
-        $user->assignRole($data['role']);
+        $role = Role::firstOrCreate(['name' => $data['role'], 'guard_name' => 'web']);
+        $user->assignRole($role);
 
         return response()->json($user->load('shop', 'roles'), 201);
     }
@@ -87,7 +88,7 @@ class UserController extends Controller
             'email'         => 'sometimes|email|unique:users,email,' . $user->id,
             'password'      => 'sometimes|min:6',
             'shop_id'       => 'sometimes|exists:shops,id',
-            'role'          => 'sometimes|string|exists:roles,name',
+            'role'          => 'sometimes|string',
             'phone'         => 'nullable|string|max:20',
             'address'       => 'nullable|string',
             'designation'   => 'nullable|string|max:100',
@@ -104,7 +105,8 @@ class UserController extends Controller
         $user->update($data);
 
         if (isset($data['role'])) {
-            $user->syncRoles([$data['role']]);
+            $role = Role::firstOrCreate(['name' => $data['role'], 'guard_name' => 'web']);
+            $user->syncRoles([$role->name]);
         }
 
         return response()->json($user->fresh()->load('shop', 'roles'));

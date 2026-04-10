@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Traits\UppercaseStrings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Retailer extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, UppercaseStrings;
 
     protected $fillable = ['name', 'msisdn', 'shop_id', 'balance', 'status'];
 

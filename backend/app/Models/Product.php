@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\UppercaseStrings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, UppercaseStrings;
 
     protected $fillable = [
         'category_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'min_selling_price', 'max_selling_price', 'condition', 'attributes', 'location'

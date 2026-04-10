@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Traits\UppercaseStrings;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Employee extends Model
 {
-    use HasFactory;
+    use HasFactory, UppercaseStrings;
 
     protected $fillable = [
         'shop_id',

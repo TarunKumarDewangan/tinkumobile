@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Traits\UppercaseStrings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Shop extends Model
 {
+    use UppercaseStrings;
     protected $fillable = ['name', 'address', 'phone', 'email', 'is_main'];
 
     protected $casts = ['is_main' => 'boolean'];

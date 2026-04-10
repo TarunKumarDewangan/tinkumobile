@@ -13,15 +13,51 @@ class RepairController extends Controller
         $user = $request->user();
         $query = RepairRequest::with('assignedTo', 'staff');
 
+        // Scope by shop
         if (! $user->hasFullAccess()) {
             $query->where('shop_id', $user->shop_id);
-        } elseif ($request->shop_id) {
+        } elseif ($request->filled('shop_id')) {
             $query->where('shop_id', $request->shop_id);
         }
 
-        if ($request->status) $query->where('status', $request->status);
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
 
-        return response()->json($query->latest()->get());
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function($q) use ($s) {
+                $q->where('customer_name', 'like', "%$s%")
+                  ->orWhere('customer_phone', 'like', "%$s%")
+                  ->orWhere('device_model', 'like', "%$s%")
+                  ->orWhere('forwarded_to', 'like', "%$s%");
+            });
+        }
+
+        // Submitted Date Range
+        if ($request->filled('submitted_from')) {
+            $query->whereDate('submitted_date', '>=', $request->submitted_from);
+        }
+        if ($request->filled('submitted_to')) {
+            $query->whereDate('submitted_date', '<=', $request->submitted_to);
+        }
+
+        // Delivery Date Range
+        if ($request->filled('delivery_from')) {
+            $query->whereDate('estimated_delivery_date', '>=', $request->delivery_from);
+        }
+        if ($request->filled('delivery_to')) {
+            $query->whereDate('estimated_delivery_date', '<=', $request->delivery_to);
+        }
+
+        if ($request->filled('is_forwarded') && $request->is_forwarded !== 'all') {
+            $val = filter_var($request->is_forwarded, FILTER_VALIDATE_BOOLEAN);
+            $query->where('is_forwarded', $val);
+        }
+
+        $results = $query->latest()->get();
+        
+        return response()->json($results);
     }
 
     /** Public: customer submits repair request */
@@ -33,26 +69,37 @@ class RepairController extends Controller
             'customer_phone'    => 'required|string|max:20',
             'customer_email'    => 'nullable|email|max:100',
             'device_model'      => 'required|string|max:150',
-            'issue_description' => 'required|string',
+            'issue_description' => 'required|array|min:1',
+            'issue_description.*' => 'required|string',
         ]);
 
         $repair = RepairRequest::create(array_merge($data, ['created_by' => 'customer']));
         return response()->json(['message' => 'Repair request submitted', 'id' => $repair->id], 201);
     }
 
-    /** Staff creates repair request */
     public function store(Request $request)
     {
         $user = $request->user();
-        $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
+        $shopId = ($user->hasFullAccess() && $request->shop_id) ? $request->shop_id : $user->shop_id;
+        
+        // Final fallback for admins/owners not linked to a specific shop
+        if (!$shopId && $user->hasFullAccess()) {
+            $shopId = \App\Models\Shop::first()?->id;
+        }
 
         $data = $request->validate([
             'customer_name'             => 'required|string|max:150',
             'customer_phone'            => 'required|string|max:20',
             'customer_email'            => 'nullable|email|max:100',
+            'submitted_date'            => 'nullable|date',
             'device_model'              => 'required|string|max:150',
-            'issue_description'         => 'required|string',
+            'issue_description'         => 'required|array|min:1',
+            'issue_description.*'       => 'required|string',
             'estimated_delivery_date'   => 'nullable|date',
+            'is_forwarded'              => 'boolean',
+            'forwarded_to'              => 'nullable|string|max:255',
+            'forwarded_phone'           => 'nullable|string|max:20',
+            'external_expected_delivery'=> 'nullable|date',
         ]);
 
         $repair = RepairRequest::create(array_merge($data, [
@@ -79,7 +126,13 @@ class RepairController extends Controller
             'customer_name'             => 'sometimes|string',
             'customer_phone'            => 'sometimes|string',
             'device_model'              => 'sometimes|string',
-            'issue_description'         => 'sometimes|string',
+            'issue_description'         => 'sometimes|array',
+            'issue_description.*'       => 'required|string',
+            'submitted_date'            => 'nullable|date',
+            'is_forwarded'              => 'boolean',
+            'forwarded_to'              => 'nullable|string|max:255',
+            'forwarded_phone'           => 'nullable|string|max:20',
+            'external_expected_delivery'=> 'nullable|date',
         ]);
 
         $repairRequest->update($data);
@@ -93,5 +146,15 @@ class RepairController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         return response()->json($repairRequest->load('assignedTo', 'staff'));
+    }
+
+    public function getExternalShops(Request $request)
+    {
+        $shops = RepairRequest::whereNotNull('forwarded_to')
+            ->select('forwarded_to', 'forwarded_phone')
+            ->distinct()
+            ->orderBy('forwarded_to')
+            ->get();
+        return response()->json($shops);
     }
 }

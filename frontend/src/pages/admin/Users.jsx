@@ -13,8 +13,11 @@ export default function Users() {
     name: '', email: '', password: '', shop_id: '', role: 'cashier',
     phone: '', address: '', designation: '', base_salary: 0,
     joining_date: new Date().toISOString().slice(0, 10),
-    aadhaar_no: '', status: 'active'
+    aadhaar_no: '', status: 'active',
+    customRole: ''
   });
+
+  const standardRoles = ['manager', 'cashier', 'sales_person', 'computer_operator', 'stock_clerk', 'repair_tech', 'auditor', 'recovery_man'];
 
   const load = () => {
     setLoading(true);
@@ -30,10 +33,10 @@ export default function Users() {
     e.preventDefault();
     try {
       if (editId) {
-        await api.put(`/users/${editId}`, form);
+        await api.put(`/users/${editId}`, { ...form, role: form.role === 'other' ? form.customRole : form.role });
         toast.success('Staff details updated');
       } else {
-        await api.post('/users', form);
+        await api.post('/users', { ...form, role: form.role === 'other' ? form.customRole : form.role });
         toast.success('Staff account created');
       }
       setShowForm(false);
@@ -50,7 +53,8 @@ export default function Users() {
       name: '', email: '', password: '', shop_id: '', role: 'cashier',
       phone: '', address: '', designation: '', base_salary: 0,
       joining_date: new Date().toISOString().slice(0, 10),
-      aadhaar_no: '', status: 'active'
+      aadhaar_no: '', status: 'active',
+      customRole: ''
     });
   };
 
@@ -71,7 +75,9 @@ export default function Users() {
       base_salary: u.base_salary || 0,
       joining_date: u.joining_date || new Date().toISOString().slice(0, 10),
       aadhaar_no: u.aadhaar_no || '',
-      status: u.status || 'active'
+      status: u.status || 'active',
+      role: standardRoles.includes(roleName) ? roleName : 'other',
+      customRole: standardRoles.includes(roleName) ? '' : roleName
     });
     setShowForm(true);
   };
@@ -87,6 +93,8 @@ export default function Users() {
     Admin: 'badge-admin',
     manager: 'badge-manager', 
     cashier: 'badge-cashier', 
+    sales_person: 'badge-stock',
+    computer_operator: 'badge-stock',
     stock_clerk: 'badge-stock', 
     repair_tech: 'badge-repair', 
     auditor: 'badge-auditor',
@@ -133,18 +141,26 @@ export default function Users() {
                   {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <div className="col-md-3">
+              <div className={form.role === 'other' ? 'col-md-2' : 'col-md-3'}>
                 <label className="form-label fw-semibold">Role *</label>
                 <select className="form-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
                   <option value="manager">Manager</option>
-                  <option value="Admin">Admin</option>
                   <option value="cashier">Cashier</option>
+                  <option value="sales_person">Sales Person</option>
+                  <option value="computer_operator">Computer Operator</option>
                   <option value="stock_clerk">Stock Clerk</option>
                   <option value="repair_tech">Repair Tech</option>
                   <option value="auditor">Auditor</option>
                   <option value="recovery_man">Recovery Man</option>
+                  <option value="other">Other...</option>
                 </select>
               </div>
+              {form.role === 'other' && (
+                <div className="col-md-2">
+                  <label className="form-label fw-semibold">Type Role *</label>
+                  <input className="form-control" required placeholder="Enter role" value={form.customRole} onChange={e => setForm({ ...form, customRole: e.target.value })} />
+                </div>
+              )}
               <div className="col-md-3">
                 <label className="form-label fw-semibold">Designation</label>
                 <input className="form-control" placeholder="e.g. Senior Technician" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} />

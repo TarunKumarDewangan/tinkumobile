@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Traits\UppercaseStrings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SimCard extends Model
 {
+    use UppercaseStrings;
     protected $fillable = [
         'shop_id', 'sim_number', 'mobile_number', 'operator',
         'purchase_price', 'selling_price', 'status', 'purchased_from', 'sold_to',
