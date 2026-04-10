@@ -21,6 +21,9 @@ export default function RepairForm() {
     forwarded_phone: '',
     external_expected_delivery: ''
   });
+  const [externalShops, setExternalShops] = useState([]);
+  const [showShopList, setShowShopList] = useState(false);
+  const [isSettling, setIsSettling] = useState(false);
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -35,14 +38,54 @@ export default function RepairForm() {
           submitted_date: r.data.submitted_date?.slice(0,10) || '',
           estimated_delivery_date: r.data.estimated_delivery_date?.slice(0,10) || '',
           external_expected_delivery: r.data.external_expected_delivery?.slice(0,10) || '',
-          issue_description: Array.isArray(r.data.issue_description) ? r.data.issue_description : [''],
+          issue_description: (() => {
+            let val = r.data.issue_description;
+            if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+              try { val = JSON.parse(val); } catch (e) { val = [val]; }
+            }
+            if (!Array.isArray(val)) val = val ? [val] : [''];
+            return val.map(i => i || '');
+          })(),
           quoted_amount: parseFloat(r.data.quoted_amount || 0),
           advance_amount: parseFloat(r.data.advance_amount || 0),
           service_center_cost: parseFloat(r.data.service_center_cost || 0),
+          balance_amount_received: parseFloat(r.data.balance_amount_received || 0),
         });
       });
     }
   }, [id]);
+
+  const fetchInternetTime = async () => {
+    try {
+      const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Kolkata');
+      const data = await res.json();
+      return data.datetime ? new Date(data.datetime) : new Date();
+    } catch (e) {
+      return new Date(); // Fallback to system time if internet check fails
+    }
+  };
+
+  const handleSettle = async () => {
+    const balance = parseFloat(form.quoted_amount || 0) - parseFloat(form.advance_amount || 0);
+    if (balance <= 0) return toast.info('No balance to settle');
+    
+    if (!window.confirm(`Settle balance of ₹${balance.toLocaleString()}? This will capture current network time.`)) return;
+    
+    setIsSettling(true);
+    const istTime = await fetchInternetTime();
+    
+    const updatedForm = {
+      ...form,
+      status: 'delivered',
+      balance_amount_received: balance,
+      balance_received_at: istTime.toISOString().slice(0,19).replace('T', ' '),
+      actual_delivery_date: new Date().toISOString().slice(0,10)
+    };
+    
+    setForm(updatedForm);
+    setIsSettling(false);
+    toast.success('Balance settled! Please click Update to save changes.');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,7 +102,7 @@ export default function RepairForm() {
   };
 
   const f = (field) => ({ 
-    value: form[field], 
+    value: form[field] || '', 
     onChange: e => setForm({ ...form, [field]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }) 
   });
 
@@ -76,140 +119,177 @@ export default function RepairForm() {
     setShowShopList(false);
   };
 
-  return (
-    <div>
-      <div className="page-header">
-        <h2>{id ? '✏️ Edit Repair' : '➕ New Repair'}</h2>
-        <button onClick={() => navigate('/repairs')} className="btn btn-outline-secondary btn-sm">← Back</button>
-      </div>
-      <div className="table-card p-4" style={{ maxWidth:600 }}>
-        <form onSubmit={handleSubmit}>
-          <div className="row g-3">
-            <div className="col-md-6">
-              <label className="form-label fw-semibold">Customer Name *</label>
-              <input className="form-control" required {...f('customer_name')} />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label fw-semibold">Phone *</label>
-              <input className="form-control" required {...f('customer_phone')} />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label fw-semibold">Email</label>
-              <input className="form-control" type="email" {...f('customer_email')} />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label fw-semibold">Submitted Date</label>
-              <input type="date" className="form-control" {...f('submitted_date')} />
-            </div>
-            <div className="col-12">
-              <label className="form-label fw-semibold">Device Model *</label>
-              <input className="form-control" required placeholder="e.g. Samsung Galaxy S22" {...f('device_model')} />
-            </div>
-            <div className="col-12">
-              <div className="d-flex justify-content-between align-items-center mb-1">
-                <label className="form-label fw-bold small text-uppercase mb-0">Issue Description(s) *</label>
-                <button type="button" className="btn btn-xs btn-outline-primary fw-bold" onClick={addIssue}>+ ADD ISSUE</button>
-              </div>
-              {form.issue_description.map((issue, idx) => (
-                <div key={idx} className="input-group input-group-sm mb-2 animate-fade-in shadow-sm">
-                  <span className="input-group-text bg-light fw-bold text-muted">{idx + 1}</span>
-                  <input 
-                    className="form-control text-uppercase" 
-                    placeholder="Describe the issue... (e.g. Broken Display)" 
-                    required 
-                    value={issue} 
-                    onChange={e => updateIssue(idx, e.target.value.toUpperCase())} 
-                  />
-                  {form.issue_description.length > 1 && (
-                    <button type="button" className="btn btn-outline-danger" onClick={() => removeIssue(idx)}>✕</button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="col-md-6">
-              <label className="form-label fw-semibold">Expected Customer Delivery</label>
-              <input type="date" className="form-control border-primary" {...f('estimated_delivery_date')} />
-            </div>
+  const balance = parseFloat(form.quoted_amount || 0) - parseFloat(form.advance_amount || 0) - parseFloat(form.balance_amount_received || 0);
 
-            <div className="col-12 border-top pt-3 mt-4">
-              <h6 className="text-uppercase fw-bold small text-muted mb-3">💰 Financial Tracking</h6>
-              <div className="row g-3 bg-light p-3 rounded-4 border border-info-subtle shadow-sm">
-                <div className="col-md-6">
-                  <label className="form-label x-small fw-bold text-uppercase opacity-75">Quoted Amount (Asking Price)</label>
-                  <div className="input-group">
-                    <span className="input-group-text bg-white border-end-0">₹</span>
-                    <input type="number" step="0.01" className="form-control border-start-0 fw-bold fs-5" placeholder="0.00" {...f('quoted_amount')} />
-                  </div>
+  return (
+    <div className="container-fluid py-2">
+      <div className="page-header mb-2 py-1">
+        <h4 className="mb-0">{id ? '✏️ Edit Repair' : '➕ New Repair'}</h4>
+        <button onClick={() => navigate('/repairs')} className="btn btn-outline-secondary btn-sm px-3">← Back</button>
+      </div>
+      
+      <div className="table-card p-3 mx-auto" style={{ maxWidth: 850 }}>
+        <form onSubmit={handleSubmit}>
+          <div className="row g-2">
+            {/* Customer & Specs Info */}
+            <div className="col-md-8 border-end pe-3">
+              <div className="row g-2">
+                <div className="col-md-6 text-uppercase">
+                  <label className="x-small fw-bold text-muted mb-0">Customer Name *</label>
+                  <input className="form-control form-control-sm border-2 fw-bold" required {...f('customer_name')} />
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label x-small fw-bold text-uppercase opacity-75">Advance Taken (Deposit)</label>
-                  <div className="input-group">
-                    <span className="input-group-text bg-white border-end-0 text-success">₹</span>
-                    <input type="number" step="0.01" className="form-control border-start-0 fw-bold fs-5 text-success" placeholder="0.00" {...f('advance_amount')} />
-                  </div>
+                  <label className="x-small fw-bold text-muted mb-0">Phone *</label>
+                  <input className="form-control form-control-sm border-2 fw-bold" required {...f('customer_phone')} />
+                </div>
+                <div className="col-md-6">
+                  <label className="x-small fw-bold text-muted mb-0">Email</label>
+                  <input className="form-control form-control-sm" type="email" {...f('customer_email')} />
+                </div>
+                <div className="col-md-6">
+                  <label className="x-small fw-bold text-muted mb-0">Submitted Date</label>
+                  <input type="date" className="form-control form-control-sm" {...f('submitted_date')} />
+                </div>
+                <div className="col-md-8">
+                  <label className="x-small fw-bold text-muted mb-0">Device Model *</label>
+                  <input className="form-control form-control-sm border-2 text-primary fw-bold" required placeholder="Device Model" {...f('device_model')} />
+                </div>
+                <div className="col-md-4">
+                  <label className="x-small fw-bold text-muted mb-0">Est. Delivery</label>
+                  <input type="date" className="form-control form-control-sm border-info" {...f('estimated_delivery_date')} />
                 </div>
               </div>
-            </div>
-            
-            <div className="col-12 border-top pt-3 mt-4">
-              <div className="form-check form-switch mb-3">
-                <input className="form-check-input" type="checkbox" id="isForwarded" {...f('is_forwarded')} checked={form.is_forwarded} />
-                <label className="form-check-label fw-bold text-primary" htmlFor="isForwarded">Forward to Service Center / Other Repair Shop?</label>
-              </div>
-              
-              {form.is_forwarded && (
-                <div className="row g-3 animate-fade-in p-3 bg-light rounded border border-warning">
-                   <div className="col-md-7 position-relative">
-                      <label className="form-label small fw-bold">Name of Service Center / Repair Shop</label>
+
+              {/* Issues */}
+              <div className="mt-3">
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <label className="x-small fw-bold text-uppercase text-muted mb-0">Issue Description(s) *</label>
+                  <button type="button" className="btn btn-xs btn-outline-primary py-0" onClick={addIssue}>+ ADD</button>
+                </div>
+                <div className="max-h-150 overflow-auto pe-1">
+                  {form.issue_description.map((issue, idx) => (
+                    <div key={idx} className="input-group input-group-sm mb-1 shadow-none">
+                      <span className="input-group-text bg-light x-small fw-bold">{idx + 1}</span>
                       <input 
-                        className="form-control border-warning" 
-                        placeholder="e.g. Samsung Care / ABC Mobile" 
-                        {...f('forwarded_to')} 
-                        onFocus={() => setShowShopList(true)}
-                        onBlur={() => setTimeout(() => setShowShopList(false), 200)}
+                        className="form-control x-small text-uppercase" 
+                        placeholder="Description..." required value={issue} 
+                        onChange={e => updateIssue(idx, e.target.value.toUpperCase())} 
                       />
+                      {form.issue_description.length > 1 && (
+                        <button type="button" className="btn btn-outline-danger btn-xs" onClick={() => removeIssue(idx)}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Forwarding Section (Collapsible Logic) */}
+              <div className="mt-3 pt-2 border-top">
+                <div className="form-check form-switch mb-1">
+                  <input className="form-check-input" type="checkbox" id="isForwarded" {...f('is_forwarded')} checked={form.is_forwarded} />
+                  <label className="form-check-label x-small fw-bold text-primary" htmlFor="isForwarded">Forward to External Shop?</label>
+                </div>
+                {form.is_forwarded && (
+                  <div className="row g-2 p-2 bg-light rounded border border-warning shadow-sm">
+                    <div className="col-6 position-relative">
+                      <input className="form-control form-control-sm x-small" placeholder="Shop Name" {...f('forwarded_to')} onFocus={() => setShowShopList(true)} onBlur={() => setTimeout(() => setShowShopList(false), 200)} />
                       {showShopList && externalShops.length > 0 && (
-                        <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 150, zIndex: 1000, left: 0 }}>
-                           {externalShops
-                             .filter(s => s.forwarded_to.toUpperCase().includes(form.forwarded_to.toUpperCase()))
-                             .map((shop, i) => (
-                               <div 
-                                 key={i} 
-                                 className="p-2 cursor-pointer border-bottom hover-bg-light"
-                                 onMouseDown={() => selectShop(shop)}
-                               >
-                                 <div className="fw-bold small">{shop.forwarded_to}</div>
-                                 <div className="text-muted" style={{ fontSize: '0.7rem' }}>{shop.forwarded_phone}</div>
-                               </div>
+                        <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 100, zIndex: 1000, left: 0 }}>
+                           {externalShops.filter(s => s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase())).map((shop, i) => (
+                             <div key={i} className="p-1 x-small cursor-pointer border-bottom hover-bg-light" onMouseDown={() => selectShop(shop)}>
+                               <div className="fw-bold">{shop.forwarded_to}</div>
+                             </div>
                            ))}
                         </div>
                       )}
-                   </div>
-                   <div className="col-md-5">
-                      <label className="form-label small fw-bold">External Contact No.</label>
-                      <input className="form-control border-warning" placeholder="Shop Phone Number" {...f('forwarded_phone')} />
-                   </div>
-                   <div className="col-md-7">
-                      <label className="form-label small fw-bold">Ret. Delivery to TinkuMobiles</label>
-                      <input type="date" className="form-control border-warning" {...f('external_expected_delivery')} />
-                   </div>
-                   <div className="col-md-5">
-                      <label className="form-label small fw-bold text-danger">Service Center Quote (Our Cost)</label>
-                      <div className="input-group">
-                        <span className="input-group-text bg-white border-end-0 text-danger small">₹</span>
-                        <input type="number" step="0.01" className="form-control border-warning border-start-0 fw-bold text-danger" placeholder="0.00" {...f('service_center_cost')} />
+                    </div>
+                    <div className="col-6">
+                      <input className="form-control form-control-sm x-small" placeholder="Phone" {...f('forwarded_phone')} />
+                    </div>
+                    <div className="col-6">
+                      <input type="date" className="form-control form-control-sm x-small" {...f('external_expected_delivery')} />
+                    </div>
+                    <div className="col-6">
+                      <div className="input-group input-group-sm">
+                        <span className="input-group-text bg-white x-small">₹</span>
+                        <input type="number" step="0.01" className="form-control x-small fw-bold text-danger" placeholder="Cost" {...f('service_center_cost')} />
                       </div>
-                   </div>
-                </div>
-              )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="mt-4">
-            <button type="submit" className="btn btn-primary me-2">{id ? 'Update Repair' : 'Create Repair'}</button>
-            <button type="button" className="btn btn-outline-secondary" onClick={() => navigate('/repairs')}>Cancel</button>
+
+            {/* Financial Tracking & Settlement */}
+            <div className="col-md-4 ps-3 bg-light-subtle rounded py-2">
+              <h6 className="x-small fw-bold text-uppercase text-muted mb-2 pb-1 border-bottom">💰 Financials</h6>
+              
+              <div className="mb-2">
+                <label className="x-small fw-bold opacity-75 d-block mb-1">Quoted Amount</label>
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text bg-white">₹</span>
+                  <input type="number" step="0.01" className="form-control fw-bold text-dark fs-5" {...f('quoted_amount')} />
+                </div>
+              </div>
+
+              <div className="mb-2">
+                <label className="x-small fw-bold text-success d-block mb-1">Advance Taken</label>
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text bg-white text-success">₹</span>
+                  <input type="number" step="0.01" className="form-control fw-bold text-success fs-5" {...f('advance_amount')} />
+                </div>
+              </div>
+
+              <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
+                <div className="d-flex justify-content-between align-items-center">
+                  <span className="x-small fw-bold text-uppercase text-primary">Pending Balance</span>
+                  <span className="fs-4 fw-bold text-primary">₹{balance.toLocaleString()}</span>
+                </div>
+                
+                {form.balance_amount_received > 0 ? (
+                  <div className="mt-1 pt-1 border-top border-light text-center">
+                    <div className="badge bg-success w-100 py-1">SETTLED</div>
+                    <div className="x-small opacity-75 mt-1 fw-bold text-success">
+                      Pending amount ₹{parseFloat(form.balance_amount_received).toLocaleString()} paid at {new Date(form.balance_received_at).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                ) : (
+                  balance > 0 && id && (
+                    <button type="button" className="btn btn-primary btn-sm w-100 mt-2 fw-bold py-1" onClick={handleSettle} disabled={isSettling}>
+                      {isSettling ? 'Fetching IST...' : 'COLLECT BALANCE'}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Status Selector UI - Multi-option buttons for compactness */}
+              <div className="mt-auto pt-3">
+                <label className="x-small fw-bold text-muted mb-1 d-block text-uppercase">Repair Status</label>
+                <select className={`form-select form-select-sm fw-bold ${form.status === 'delivered' ? 'border-success text-success' : 'border-primary text-primary'}`} {...f('status')}>
+                  <option value="pending">PENDING</option>
+                  <option value="in_progress">IN PROGRESS</option>
+                  <option value="completed">COMPLETED</option>
+                  <option value="delivered">DELIVERED</option>
+                </select>
+              </div>
+
+              <div className="mt-4 pt-3 border-top">
+                <button type="submit" className="btn btn-success w-100 fw-bold shadow-sm mb-2">{id ? '🚀 UPDATE REPAIR' : '✅ CREATE REPAIR'}</button>
+                <button type="button" className="btn btn-link btn-sm text-secondary w-100 p-0" onClick={() => navigate('/repairs')}>Discard Changes</button>
+              </div>
+            </div>
           </div>
         </form>
       </div>
+      
+      <style>{`
+        .x-small { font-size: 0.75rem; }
+        .btn-xs { padding: 1px 5px; font-size: 0.7rem; }
+        .max-h-150 { max-height: 150px; }
+        .bg-light-subtle { background-color: #f8f9fa; }
+        .hover-bg-light:hover { background-color: #f0f0f0; }
+        input.form-control-sm { height: 32px; }
+      `}</style>
     </div>
   );
 }

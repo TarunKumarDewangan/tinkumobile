@@ -20,6 +20,7 @@ export default function RetailerProfile() {
     const [showFollowUp, setShowFollowUp] = useState(false);
     const [selectedDrop, setSelectedDrop] = useState(null);
     const [recoveryAmount, setRecoveryAmount] = useState('');
+    const [recoveryDate, setRecoveryDate] = useState(new Date().toISOString().split('T')[0]);
     const [recoveryNotes, setRecoveryNotes] = useState('');
     const [followUpReason, setFollowUpReason] = useState('');
     const [followUpDate, setFollowUpDate] = useState('');
@@ -74,6 +75,7 @@ export default function RetailerProfile() {
         try {
             await axios.post(`/airtel-retailers/${id}/record-recovery`, {
                 amount: parseFloat(recoveryAmount),
+                recovered_at: recoveryDate,
                 notes: recoveryNotes
             });
             toast.success('Recovery recorded');
@@ -187,6 +189,7 @@ export default function RetailerProfile() {
                             className="btn btn-success btn-sm px-3 shadow-sm"
                             onClick={() => {
                                 setRecoveryAmount(stats.total_pending > 0 ? stats.total_pending : '');
+                                setRecoveryDate(new Date().toISOString().split('T')[0]);
                                 setIsConfirmingRecovery(false);
                                 setShowRecovery(true);
                             }}
@@ -374,6 +377,7 @@ export default function RetailerProfile() {
                             <div className="text-center py-4 bg-success-light rounded-4 mb-4 border border-success-subtle">
                                 <div className="x-small text-uppercase fw-bold text-success mb-2">Final Confirmation</div>
                                 <div className="display-5 fw-bold text-success mb-1">₹{parseFloat(recoveryAmount).toLocaleString()}</div>
+                                <div className="text-muted small fw-bold mb-1">Date: {new Date(recoveryDate).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'})}</div>
                                 <div className="fw-bold text-uppercase small text-muted">{recoveryNotes || 'No Notes'}</div>
                             </div>
                             
@@ -411,6 +415,17 @@ export default function RetailerProfile() {
                                     <button type="button" className="btn btn-outline-secondary px-3 fw-bold small" onClick={() => setRecoveryAmount(stats.total_pending)}>FULL PAY</button>
                                 </div>
                                 <div className="form-text x-small">Current Pending: ₹{stats.total_pending.toLocaleString()}</div>
+                            </div>
+                            <div className="mb-3">
+                                <label className="form-label x-small text-uppercase fw-bold">Recovery Date</label>
+                                <input 
+                                    type="date" 
+                                    className="form-control fw-bold" 
+                                    value={recoveryDate}
+                                    onChange={e => setRecoveryDate(e.target.value)}
+                                    required
+                                />
+                                <div className="form-text x-small">Date of money collection</div>
                             </div>
                             <div className="mb-4">
                                 <label className="form-label x-small text-uppercase fw-bold">Payment Mode / Notes</label>

@@ -325,7 +325,10 @@ class AirtelDropController extends Controller
         $opening_balance = (float)\App\Models\Retailer::whereIn('id', $allMatchingRetailerIds)->sum('balance');
         $retailerIds = $allMatchingRetailerIds;
 
-        $total_recovered_filtered = (float)\App\Models\AirtelRecovery::whereIn('retailer_id', $retailerIds)
+        $total_recovered_filtered = (float)\App\Models\AirtelRecovery::query()
+            ->when($request->retailer_id, function($q) use ($request) {
+                $q->where('retailer_id', $request->retailer_id);
+            })
             ->when($request->from_date && $request->to_date, function($q) use ($request) {
                 $q->whereBetween('recovered_at', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
             })
@@ -346,16 +349,37 @@ class AirtelDropController extends Controller
             })
             ->sum('amount');
 
+        // Period-specific summary stats for the dashboard header
         $total_dropped = (float)$query->sum('amount');
         
-        // Stats reflect the *filtered* query
+        $total_recovered_period = (float)\App\Models\AirtelRecovery::query()
+            ->when($request->retailer_id, function($q) use ($request) {
+                $q->where('retailer_id', $request->retailer_id);
+            })
+            ->when($request->from_date && $request->to_date, function($q) use ($request) {
+                $q->whereBetween('recovered_at', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+            })
+            ->when($request->date, function($q) use ($request) {
+                $q->whereDate('recovered_at', $request->date);
+            })
+            ->when($request->payment_mode, function($q) use ($request) {
+                $q->where('notes', 'like', $request->payment_mode . '%');
+            })
+            ->sum('amount');
+
+        // Global Pending (Still needed for the dashboard side panel/summary)
+        $global_dropped = (float)AirtelDrop::sum('amount');
+        $global_opening = (float)\App\Models\Retailer::sum('balance');
+        $global_recovered = (float)\App\Models\AirtelRecovery::sum('amount');
+        $grand_total_pending = ($global_dropped + $global_opening) - $global_recovered;
+        
         return response()->json([
             'total_dropped' => $total_dropped, 
             'total_receivable' => $total_dropped + $opening_balance, 
-            'total_recovered' => $total_recovered_filtered, 
+            'total_recovered' => $total_recovered_period, 
             'opening_balance' => $opening_balance,
-            'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_all,
-            'grand_total_pending' => (float)AirtelDrop::sum('amount') + (float)\App\Models\Retailer::sum('balance') - (float)\App\Models\AirtelRecovery::sum('amount'),
+            'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_period, // Corrected for filtered view
+            'grand_total_pending' => $grand_total_pending,
         ]);
     }
 
@@ -454,20 +478,22 @@ class AirtelDropController extends Controller
             $openingRecovered += min((float)$ret->balance, $retRec);
         }
 
-        if ($totalOpeningBal > 0) {
+        if ($totalOpeningBal > 0 || $openingRecovered > 0) {
+            // Find Total collection in range to make the sum match exactly
+            $totalCollectionInRange = (float)\App\Models\AirtelRecovery::whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])->sum('amount');
+
             if ($report->isNotEmpty()) {
-                // Merge into the first (newest) row as requested: "85500 + 1000"
                 $first = $report->first();
                 $first->total_dropped += $totalOpeningBal;
-                $first->total_recovered += $openingRecovered;
-                // Add a flag so frontend can show "Inc. Opening Balance" if needed, 
-                // but user just wants the total.
+                // Important: total_recovered in the status table should reflect total money in 
+                // if it's the 'Total' row, to avoid user confusion.
+                $first->total_recovered = $totalCollectionInRange;
                 $first->is_merged = true;
             } else {
                 $report->push((object)[
                     'date' => 'OPENING',
                     'total_dropped' => $totalOpeningBal,
-                    'total_recovered' => $openingRecovered
+                    'total_recovered' => $totalCollectionInRange
                 ]);
             }
         }
@@ -500,9 +526,15 @@ class AirtelDropController extends Controller
 
         // 3. Retailer Pending Summary (Aggregated)
         // Syncs with the dashboard grouping logic for 100% accuracy
-        $retailerSummary = Retailer::whereHas('drops', function($q) {
-            $q->where('status', 'pending');
-        })->orWhere('balance', '>', 0)
+        $retailerSummary = Retailer::where(function($q) use ($from, $to) {
+            $q->whereHas('drops', function($sq) {
+                $sq->where('status', 'pending');
+            })
+            ->orWhere('balance', '>', 0)
+            ->orWhereHas('recoveries', function($sq) use ($from, $to) {
+                $sq->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
+            });
+        })
         ->get()
         ->map(function($r) use ($request) {
             $r->opening_bal = (float)$r->balance;
@@ -524,18 +556,32 @@ class AirtelDropController extends Controller
         ->take(1000)
         ->values();
 
-        // 4. Grand Totals for ALL Retailers (to ensure header summary is 100% accurate)
-        $totalRetailersWithPending = Retailer::whereHas('drops', function($q) {
-            $q->where('status', 'pending');
-        })->orWhere('balance', '>', 0)->count();
+        $totalRetailersWithPending = Retailer::where(function($q) use ($from, $to) {
+            $q->whereHas('drops', function($sq) {
+                $sq->where('status', 'pending');
+            })
+            ->orWhere('balance', '>', 0)
+            ->orWhereHas('recoveries', function($sq) use ($from, $to) {
+                $sq->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
+            });
+        })->count();
+
+        // High precision period summary for the report header
+        $totalAirdrop = (float)\App\Models\AirtelDrop::whereBetween('refill_date', [$from . ' 00:00:00', $to . ' 23:59:59'])->sum('amount');
+        $totalReceived = (float)\App\Models\AirtelRecovery::whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])->sum('amount');
+        
+        // Calculate Opening Pending (Before the selected from_date)
+        $historyAirdrop = (float)\App\Models\AirtelDrop::where('refill_date', '<', $from . ' 00:00:00')->sum('amount');
+        $historyReceived = (float)\App\Models\AirtelRecovery::where('recovered_at', '<', $from . ' 00:00:00')->sum('amount');
+        $openingPendingAtStart = ((float)\App\Models\Retailer::sum('balance') + $historyAirdrop) - $historyReceived;
 
         $summaryTotals = [
             'count' => $totalRetailersWithPending,
-            'opening_bal' => (float)\App\Models\Retailer::sum('balance'),
-            'airdrop' => (float)\App\Models\AirtelDrop::sum('amount'),
-            'received' => (float)\App\Models\AirtelRecovery::sum('amount'),
+            'opening_bal' => $openingPendingAtStart,
+            'airdrop' => $totalAirdrop,
+            'received' => $totalReceived,
+            'pending' => ($openingPendingAtStart + $totalAirdrop) - $totalReceived
         ];
-        $summaryTotals['pending'] = ($summaryTotals['opening_bal'] + $summaryTotals['airdrop']) - $summaryTotals['received'];
 
         return response()->json([
             'daily_report' => $report,

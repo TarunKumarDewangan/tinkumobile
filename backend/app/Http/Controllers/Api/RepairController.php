@@ -42,12 +42,28 @@ class RepairController extends Controller
             $query->whereDate('submitted_date', '<=', $request->submitted_to);
         }
 
-        // Delivery Date Range
+        // Delivery Date Range (Estimated)
         if ($request->filled('delivery_from')) {
             $query->whereDate('estimated_delivery_date', '>=', $request->delivery_from);
         }
         if ($request->filled('delivery_to')) {
             $query->whereDate('estimated_delivery_date', '<=', $request->delivery_to);
+        }
+
+        // Actual Delivered Date Range
+        if ($request->filled('delivered_from')) {
+            $query->whereDate('actual_delivery_date', '>=', $request->delivered_from);
+        }
+        if ($request->filled('delivered_to')) {
+            $query->whereDate('actual_delivery_date', '<=', $request->delivered_to);
+        }
+
+        // Payment Settlement Date Range
+        if ($request->filled('payment_from')) {
+            $query->whereDate('balance_received_at', '>=', $request->payment_from);
+        }
+        if ($request->filled('payment_to')) {
+            $query->whereDate('balance_received_at', '<=', $request->payment_to);
         }
 
         if ($request->filled('is_forwarded') && $request->is_forwarded !== 'all') {
@@ -103,6 +119,8 @@ class RepairController extends Controller
             'forwarded_to'              => 'nullable|string|max:255',
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
+            'balance_amount_received'   => 'nullable|numeric',
+            'balance_received_at'       => 'nullable|date',
         ]);
 
         $repair = RepairRequest::create(array_merge($data, [
@@ -114,10 +132,10 @@ class RepairController extends Controller
         return response()->json($repair, 201);
     }
 
-    public function update(Request $request, RepairRequest $repairRequest)
+    public function update(Request $request, RepairRequest $repair)
     {
         $user = $request->user();
-        if (! $user->hasFullAccess() && $repairRequest->shop_id !== $user->shop_id) {
+        if (! $user->hasFullAccess() && $repair->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -139,28 +157,40 @@ class RepairController extends Controller
             'forwarded_to'              => 'nullable|string|max:255',
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
+            'balance_amount_received'   => 'nullable|numeric',
+            'balance_received_at'       => 'nullable|date',
         ]);
 
-        $repairRequest->update($data);
-        return response()->json($repairRequest->fresh()->load('assignedTo'));
+        if ($request->status === 'delivered' && !$repair->actual_delivery_date) {
+            $data['actual_delivery_date'] = now();
+            // If balance is not yet marked as received but status is delivered, 
+            // we should probably not force it, but let's at least mark the delivery date.
+            if (!$repair->balance_received_at && (float)$repair->quoted_amount > (float)$repair->advance_amount) {
+                $data['balance_received_at'] = now();
+                $data['balance_amount_received'] = (float)$repair->quoted_amount - (float)$repair->advance_amount;
+            }
+        }
+
+        $repair->update($data);
+        return response()->json($repair->fresh()->load('assignedTo'));
     }
 
-    public function show(Request $request, RepairRequest $repairRequest)
+    public function show(Request $request, RepairRequest $repair)
     {
         $user = $request->user();
-        if (! $user->hasFullAccess() && $repairRequest->shop_id !== $user->shop_id) {
+        if (! $user->hasFullAccess() && $repair->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return response()->json($repairRequest->load('assignedTo', 'staff'));
+        return response()->json($repair->load('assignedTo', 'staff'));
     }
 
-    public function destroy(Request $request, RepairRequest $repairRequest)
+    public function destroy(Request $request, RepairRequest $repair)
     {
         if (! $request->user()->hasFullAccess()) {
             return response()->json(['message' => 'Unauthorized. Only Owners/Admins can delete repairs.'], 403);
         }
 
-        $repairRequest->delete();
+        $repair->delete();
         return response()->json(['message' => 'Repair request deleted']);
     }
 

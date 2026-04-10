@@ -17,7 +17,10 @@ export default function Repairs() {
     submitted_from: '',
     submitted_to: '',
     delivery_from: '',
-    delivery_to: '',
+    delivered_from: '',
+    delivered_to: '',
+    payment_from: '',
+    payment_to: '',
     is_forwarded: ''
   });
 
@@ -83,7 +86,7 @@ export default function Repairs() {
 
             <div className="ms-auto d-flex gap-2">
                 <button className="btn btn-outline-secondary btn-sm" 
-                  onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', is_forwarded:'' })}>
+                  onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'' })}>
                   Reset
                 </button>
                 <Link to="/repairs/new" className="btn btn-primary btn-sm shadow-sm">+ New Repair</Link>
@@ -91,25 +94,41 @@ export default function Repairs() {
         </div>
 
         {/* Date Filters Row */}
-        <div className="d-flex align-items-center gap-4 py-2 px-3 bg-light rounded-3 shadow-sm border border-white">
-            <div className="d-flex align-items-center gap-2">
-                <span className="text-muted small fw-bold text-nowrap">Submitted:</span>
-                <input type="date" className="form-control form-control-sm border-0 shadow-none" style={{width:130, background:'transparent'}}
+        <div className="row g-2 px-3 py-2 bg-light rounded-3 shadow-sm border border-white mx-0">
+            <div className="col-auto d-flex align-items-center gap-2 border-end pe-3">
+                <span className="text-muted x-small fw-bold text-nowrap">SUBMITTED:</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
                     value={filters.submitted_from} onChange={e => handleFilter('submitted_from', e.target.value)} />
-                <span className="text-muted small">to</span>
-                <input type="date" className="form-control form-control-sm border-0 shadow-none" style={{width:130, background:'transparent'}}
+                <span className="text-muted x-small">→</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
                     value={filters.submitted_to} onChange={e => handleFilter('submitted_to', e.target.value)} />
             </div>
             
-            <div className="vr opacity-10"></div>
-
-            <div className="d-flex align-items-center gap-2">
-                <span className="text-muted small fw-bold text-nowrap">Delivery:</span>
-                <input type="date" className="form-control form-control-sm border-0 shadow-none" style={{width:130, background:'transparent'}}
+            <div className="col-auto d-flex align-items-center gap-2 border-end px-3">
+                <span className="text-muted x-small fw-bold text-nowrap">EST. DELIVERY:</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
                     value={filters.delivery_from} onChange={e => handleFilter('delivery_from', e.target.value)} />
-                <span className="text-muted small">to</span>
-                <input type="date" className="form-control form-control-sm border-0 shadow-none" style={{width:130, background:'transparent'}}
+                <span className="text-muted x-small">→</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
                     value={filters.delivery_to} onChange={e => handleFilter('delivery_to', e.target.value)} />
+            </div>
+
+            <div className="col-auto d-flex align-items-center gap-2 border-end px-3">
+                <span className="text-muted x-small fw-bold text-nowrap text-success">DELIVERED:</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
+                    value={filters.delivered_from} onChange={e => handleFilter('delivered_from', e.target.value)} />
+                <span className="text-muted x-small">→</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
+                    value={filters.delivered_to} onChange={e => handleFilter('delivered_to', e.target.value)} />
+            </div>
+
+            <div className="col-auto d-flex align-items-center gap-2 ps-3">
+                <span className="text-muted x-small fw-bold text-nowrap text-primary">PAYMENT:</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
+                    value={filters.payment_from} onChange={e => handleFilter('payment_from', e.target.value)} />
+                <span className="text-muted x-small">→</span>
+                <input type="date" className="form-control form-control-sm border-0 bg-transparent p-0" style={{width:110}}
+                    value={filters.payment_to} onChange={e => handleFilter('payment_to', e.target.value)} />
             </div>
         </div>
       </div>
@@ -178,9 +197,21 @@ export default function Repairs() {
                       {r.is_forwarded && (
                         <div className="x-small text-uppercase text-muted opacity-75">Cost: <span className="text-danger fw-bold">₹{parseFloat(r.service_center_cost || 0).toLocaleString()}</span></div>
                       )}
-                      <div className="mt-1 pt-1 border-top border-light">
-                        <div className="small text-uppercase fw-bold text-primary">Balance: ₹{parseFloat((r.quoted_amount || 0) - (r.advance_amount || 0)).toLocaleString()}</div>
-                      </div>
+                      
+                      {r.balance_received_at ? (
+                        <div className="mt-1 pt-1 border-top border-light animate-fade-in text-end">
+                          <div className="text-success fw-bold" style={{ fontSize: '0.65rem' }}>
+                            Pending amount ₹{parseFloat(r.balance_amount_received).toLocaleString()} paid at
+                          </div>
+                          <div className="text-muted" style={{ fontSize: '0.65rem' }}>
+                            {new Date(r.balance_received_at).toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-1 pt-1 border-top border-light">
+                          <div className="small text-uppercase fw-bold text-primary">Balance: ₹{parseFloat((r.quoted_amount || 0) - (r.advance_amount || 0)).toLocaleString()}</div>
+                        </div>
+                      )}
                     </td>
                     <td>
                        <span className={`badge bg-${STATUS_COLORS[r.status] || 'secondary'} rounded-pill`}>
@@ -236,6 +267,9 @@ export default function Repairs() {
           </div>
         )}
       </div>
+      <style>{`
+        .x-small { font-size: 0.7rem; }
+      `}</style>
     </div>
   );
 }

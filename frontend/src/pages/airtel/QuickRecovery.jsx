@@ -12,7 +12,11 @@ export default function QuickRecovery() {
     const [loading, setLoading] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [showRecoveryModal, setShowRecoveryModal] = useState(false);
-    const [recoveryForm, setRecoveryForm] = useState({ amount: '', notes: '' });
+    const [recoveryForm, setRecoveryForm] = useState({ 
+        amount: '', 
+        notes: '',
+        recovered_at: new Date().toISOString().split('T')[0]
+    });
     const [saving, setSaving] = useState(false);
     const [isConfirming, setIsConfirming] = useState(false);
 
@@ -87,15 +91,19 @@ export default function QuickRecovery() {
 
         setSaving(true);
         try {
-            await axios.post(`/airtel-retailers/${data.retailer.id}/recovery`, {
+            await axios.post(`/airtel-retailers/${data.retailer.id}/record-recovery`, {
                 amount: recoveryForm.amount,
                 notes: recoveryForm.notes?.toUpperCase(),
-                recovered_at: new Date().toISOString().split('T')[0]
+                recovered_at: recoveryForm.recovered_at
             });
             toast.success('Recovery recorded successfully!');
             setShowRecoveryModal(false);
             setIsConfirming(false);
-            setRecoveryForm({ amount: '', notes: '' });
+            setRecoveryForm({ 
+                amount: '', 
+                notes: '',
+                recovered_at: new Date().toISOString().split('T')[0]
+            });
             fetchDirectRetailer(data.retailer.msisdn); // Refresh data
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to record recovery');
@@ -166,7 +174,11 @@ export default function QuickRecovery() {
                             <button 
                                 className="btn btn-success btn-lg w-100 fw-bold rounded-pill shadow-sm mb-2"
                                 onClick={() => {
-                                    setRecoveryForm({ ...recoveryForm, amount: data.stats.total_pending });
+                                    setRecoveryForm({ 
+                                        ...recoveryForm, 
+                                        amount: data.stats.total_pending,
+                                        recovered_at: new Date().toISOString().split('T')[0]
+                                    });
                                     setIsConfirming(false);
                                     setShowRecoveryModal(true);
                                 }}
@@ -249,6 +261,7 @@ export default function QuickRecovery() {
                              <div className="text-center py-4 bg-success-light rounded-4 mb-4 border border-success-subtle">
                                 <div className="x-small text-uppercase fw-bold text-success mb-2">Final Confirmation</div>
                                 <div className="display-4 fw-bold text-success mb-1">₹{parseFloat(recoveryForm.amount).toLocaleString()}</div>
+                                <div className="text-muted small fw-bold mb-1">Date: {new Date(recoveryForm.recovered_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'})}</div>
                                 <div className="fw-bold text-uppercase small text-muted">{recoveryForm.notes || 'No Notes'}</div>
                             </div>
 
@@ -292,6 +305,18 @@ export default function QuickRecovery() {
                                     </button>
                                 </div>
                                 <div className="form-text x-small mt-1 text-muted">Current Pending: ₹{parseFloat(data?.stats?.total_pending || 0).toLocaleString()}</div>
+                            </div>
+                            
+                            <div className="mb-3">
+                                <label className="form-label text-uppercase x-small fw-bold text-muted mb-1" style={{letterSpacing:'0.5px'}}>RECOVERY DATE</label>
+                                <input 
+                                    type="date" 
+                                    className="form-control fw-bold" 
+                                    required 
+                                    value={recoveryForm.recovered_at} 
+                                    onChange={e => setRecoveryForm({...recoveryForm, recovered_at: e.target.value})} 
+                                />
+                                <div className="form-text x-small mt-1 text-muted">Date of money collection</div>
                             </div>
 
                             <div className="mb-4">
