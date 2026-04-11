@@ -7,7 +7,7 @@ import Modal from '../../components/Modal';
 
 import { useAuth } from '../../contexts/AuthContext';
 export default function AirtelDrops() {
-  const { can, isManager, hasFullAccess } = useAuth();
+  const { can, isManager, hasFullAccess, isOwner } = useAuth();
   const navigate = useNavigate();
   const [drops, setDrops] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -219,6 +219,10 @@ export default function AirtelDrops() {
                     className="btn btn-outline-danger btn-sm text-uppercase px-3" 
                     onClick={async () => {
                       const confirmDate = useRange ? `${fromDate} to ${toDate}` : date;
+                      if (!isOwner()) {
+                        toast.error('Only the owner can clear drops');
+                        return;
+                      }
                       if (window.confirm(`DELETE ALL DROPS FOR ${confirmDate}?`)) {
                         try {
                           const params = useRange ? { from_date: fromDate, to_date: toDate } : { date };
@@ -235,8 +239,33 @@ export default function AirtelDrops() {
                     Clear Drops
                   </button>
                   <button 
+                    className="btn btn-outline-danger btn-sm text-uppercase px-3" 
+                    onClick={async () => {
+                      if (!isOwner()) {
+                        toast.error('Only the owner can clear balances');
+                        return;
+                      }
+                      if (window.confirm('DELETE ALL OPENING BALANCES? This sets all retailer balances to 0.')) {
+                        try {
+                          await axios.post('/airtel-retailers/bulk-clear-opening-balances');
+                          toast.success('All opening balances cleared');
+                          fetchDrops();
+                          fetchSummary();
+                        } catch (err) {
+                          toast.error('Clear failed');
+                        }
+                      }
+                    }}
+                  >
+                    Clear Balances
+                  </button>
+                  <button 
                     className="btn btn-danger btn-sm text-uppercase px-3" 
                     onClick={async () => {
+                      if (!isOwner()) {
+                        toast.error('Only the owner can clear payments');
+                        return;
+                      }
                       if (window.confirm('WARNING: DELETE ALL RECOVERY PAYMENTS FROM THE ENTIRE SYSTEM? This cannot be undone.')) {
                         try {
                           await axios.post('/airtel-recoveries/bulk-delete');
@@ -250,6 +279,27 @@ export default function AirtelDrops() {
                     }}
                   >
                     Clear All Payments
+                  </button>
+                  <button 
+                    className="btn btn-dark btn-sm text-uppercase px-3" 
+                    onClick={async () => {
+                      if (!isOwner()) {
+                        toast.error('Only the owner can perform a full reset');
+                        return;
+                      }
+                      if (window.confirm('CRITICAL WARNING: This will DELETE ALL DROPS, ALL PAYMENTS, and CLEAR ALL BALANCES. The system will be completely reset. Are you absolutely sure?')) {
+                        try {
+                          await axios.post('/airtel-retailers/bulk-full-reset');
+                          toast.success('System fully reset');
+                          fetchDrops();
+                          fetchSummary();
+                        } catch (err) {
+                          toast.error('Reset failed');
+                        }
+                      }
+                    }}
+                  >
+                    Full Reset
                   </button>
                 </>
               )}

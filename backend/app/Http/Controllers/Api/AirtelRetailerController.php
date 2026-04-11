@@ -11,6 +11,7 @@ use App\Models\AirtelRecovery;
 use App\Models\User;
 use App\Models\ActivityLog;
 use App\Traits\RecordsTransactions;
+use Carbon\Carbon;
 
 class AirtelRetailerController extends Controller
 {
@@ -131,7 +132,13 @@ class AirtelRetailerController extends Controller
             'notes' => 'nullable|string|max:191'
         ]);
 
-        $recoveredAt = $validated['recovered_at'] ?? now();
+        $recoveredAtInput = $validated['recovered_at'] ?? now();
+        $recoveredAt = Carbon::parse($recoveredAtInput);
+
+        // If it's just a date (no time component or exactly midnight) and matches today, use the current time
+        if ($recoveredAt->isToday() && $recoveredAt->hour === 0 && $recoveredAt->minute === 0) {
+            $recoveredAt = now();
+        }
 
         $recovery = AirtelRecovery::create([
             'retailer_id' => $retailer->id,
@@ -308,8 +315,8 @@ class AirtelRetailerController extends Controller
 
     public function bulkDeleteRecoveries(Request $request)
     {
-        if ($request->user()->isManager()) {
-            return response()->json(['message' => 'Managers cannot delete recovery records'], 403);
+        if (!$request->user()->isOwner()) {
+            return response()->json(['message' => 'Only the owner can clear recovery records'], 403);
         }
 
         // Delete all recovery records
@@ -326,6 +333,39 @@ class AirtelRetailerController extends Controller
         ]);
 
         return response()->json(['message' => 'All recovery records have been cleared system-wide.']);
+    }
+
+    public function bulkClearOpeningBalances(Request $request)
+    {
+        if (!$request->user()->isOwner()) {
+            return response()->json(['message' => 'Only the owner can clear opening balances'], 403);
+        }
+
+        Retailer::query()->update(['balance' => 0]);
+        
+        ActivityLog::log('BULK_CLEAR_OPENING_BALANCES', null, 'Cleared all retailer opening balances');
+
+        return response()->json(['message' => 'All opening balances have been cleared']);
+    }
+
+    public function bulkFullReset(Request $request)
+    {
+        if (!$request->user()->isOwner()) {
+            return response()->json(['message' => 'Only the owner can perform a full reset'], 403);
+        }
+
+        // 1. Clear Opening Balances
+        Retailer::query()->update(['balance' => 0]);
+
+        // 2. Delete All Drops
+        AirtelDrop::query()->delete();
+
+        // 3. Delete All Recoveries
+        \App\Models\AirtelRecovery::truncate();
+
+        ActivityLog::log('BULK_FULL_RESET', null, 'Performed a FULL SYSTEM RESET of Airtel Daily Drops');
+
+        return response()->json(['message' => 'System has been fully reset (Balances, Drops, and Payments cleared)']);
     }
 
     public function destroy(Request $request, $id)
