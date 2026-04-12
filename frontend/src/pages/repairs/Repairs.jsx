@@ -217,70 +217,55 @@ export default function Repairs() {
         ) : (
           <div className="table-responsive">
             <table className="table table-hover align-middle mb-0">
-              <thead className="bg-light shadow-none">
-                <tr className="border-bottom border-white">
-                  <th className="ps-3" style={{width:50}}>#</th>
+              <thead className="bg-light-subtle shadow-none">
+                <tr className="border-bottom text-uppercase text-muted" style={{ fontSize: '0.65rem' }}>
+                  <th className="ps-3" style={{width:40}}>#</th>
                   <th>Submitted</th>
                   <th>Customer</th>
                   <th>Device</th>
                   <th>Issues</th>
-                  <th className="text-end">Recieved</th>
-                  <th className="text-end">Given</th>
-                  <th className="text-end">Customer Bills</th>
-                  <th>Status</th>
+                  <th>Forwarded To</th>
+                  <th>Financials</th>
+                  <th className="text-center">Status</th>
                   <th>Delivery</th>
-                  <th className="text-end pe-3">Actions</th>
+                  <th colSpan={2} className="text-end pe-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {/* Financial Summary Row */}
                 {!loading && repairs.length > 0 && (
-                  <tr className="bg-light-subtle fw-bold" style={{ backgroundColor: '#f0f7f9' }}>
-                    <td className="ps-3 text-primary">Σ</td>
-                    <td className="text-center small">
-                        <div className="x-small text-muted text-uppercase mb-1">Items</div>
-                        <div>{repairs.length} Rep.</div>
+                  <tr className="bg-light-subtle fw-bold" style={{ backgroundColor: '#f8f9fa' }}>
+                    <td className="ps-3 text-primary italic">Σ</td>
+                    <td className="small">
+                        <div className="x-small text-muted text-uppercase" style={{fontSize:'0.6rem'}}>Jobs</div>
+                        <div>{repairs.length}</div>
                     </td>
                     <td className="small">
-                        <div className="x-small text-muted text-uppercase mb-1">Clients</div>
-                        <div>{totals.customers.size} Uni.</div>
+                        <div className="x-small text-muted text-uppercase" style={{fontSize:'0.6rem'}}>Clients</div>
+                        <div>{totals.customers.size}</div>
                     </td>
+                    <td colSpan={2}></td>
                     <td className="small">
-                        <div className="x-small text-muted text-uppercase mb-1">Models</div>
-                        <div>{totals.devices.size} Def.</div>
+                        <div className="x-small text-muted text-uppercase" style={{fontSize:'0.6rem'}}>Forwarded</div>
+                        <div className="text-primary">{totals.forwardedCount}</div>
                     </td>
-                    <td className="small">
-                        <div className="x-small text-muted text-uppercase mb-1">Faults</div>
-                        <div className="text-info">{totals.issueCount} Tot.</div>
-                    </td>
-                    <td className="text-end py-3 bg-success-subtle shadow-sm border-start border-success border-opacity-25">
-                       <div className="x-small text-uppercase text-success fw-bold opacity-75">T. Recieved</div>
-                       <div className="h5 mb-0 text-success fw-bold">₹{totals.received.toLocaleString()}</div>
-                    </td>
-                    <td className="text-end py-3 bg-danger-subtle shadow-sm border-start border-danger border-opacity-25">
-                      <div className="x-small text-uppercase text-danger fw-bold opacity-75">T. Given</div>
-                      <div className="h5 mb-0 text-danger fw-bold">₹{totals.given.toLocaleString()}</div>
-                      {totals.costPending > 0 && <div className="text-muted" style={{fontSize:'0.6rem'}}>Owe: ₹{totals.costPending.toLocaleString()}</div>}
-                    </td>
-                    <td className="text-end py-3 bg-white shadow-sm rounded-end border-end border-3 border-primary">
-                      <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: ₹{(totals.quoted || 0).toLocaleString()}</div>
-                      <div className="x-small text-uppercase text-success opacity-75">T. Settled: ₹{(totals.received || 0).toLocaleString()}</div>
-                      <div className="mt-1 pt-1 border-top border-light text-primary fw-bold">
-                        T. DUE: ₹{(totals.balanceRemaining || 0).toLocaleString()}
-                      </div>
+                    <td className="text-end bg-white shadow-sm border-start border-primary border-3">
+                        <div className="d-flex flex-column gap-1 pe-2 py-1">
+                            <div className="x-small text-uppercase text-muted opacity-75">Q: ₹{totals.quoted.toLocaleString()}</div>
+                            <div className="x-small text-uppercase text-success opacity-75">S: ₹{totals.received.toLocaleString()}</div>
+                            <div className="x-small text-uppercase text-danger opacity-75">C: ₹{totals.cost.toLocaleString()}</div>
+                            <div className="border-top pt-1 text-primary fw-bold" style={{fontSize:'0.75rem'}}>
+                                DUE: ₹{totals.balanceRemaining.toLocaleString()}
+                            </div>
+                        </div>
                     </td>
                     <td className="text-center small">
-                        <div className="x-small text-muted text-uppercase mb-1">Forwarded</div>
-                        <div className="text-primary">{totals.forwardedCount} Jobs</div>
+                        <div className="x-small text-muted text-uppercase mb-1" style={{fontSize:'0.6rem'}}>Progress</div>
+                        <div className="text-primary small fw-bold" style={{lineHeight:1}}>
+                           P: {totals.pendingCount} | D: {totals.deliveredCount}
+                        </div>
                     </td>
-                    <td className="text-center">
-                       <div className="x-small text-muted text-uppercase mb-1">Progress</div>
-                       <div className="text-primary small fw-bold" style={{lineHeight:1}}>
-                          <div title="Pending">P: {totals.pendingCount}</div>
-                          <div title="Delivered">D: {totals.deliveredCount}</div>
-                       </div>
-                    </td>
-                    <td colSpan={1}></td>
+                    <td colSpan={3}></td>
                   </tr>
                 )}
 
@@ -309,94 +294,71 @@ export default function Repairs() {
                       )}
                     </td>
 
-                    <td className="text-end">
-                       <div className="x-small text-muted text-uppercase mb-1 opacity-75" style={{fontSize:'0.6rem'}}>
-                          {r.is_forwarded ? 'Forwarded' : 'Local Repair'}
-                       </div>
-                       <div className="p-2 rounded bg-success-subtle border-start border-success border-3">
-                          <div className="x-small text-uppercase text-success fw-bold opacity-75">Collected:</div>
-                          <div className="text-success fw-bold h6 mb-0">
-                             ₹{(parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0)).toLocaleString()}
+                    <td>
+                        {r.is_forwarded ? (
+                            <>
+                                <div className="fw-bold text-primary text-uppercase x-small">{r.forwarded_to}</div>
+                                <div className="text-muted" style={{fontSize:'0.65rem'}}>{r.forwarded_phone}</div>
+                            </>
+                        ) : (
+                            <div className="text-muted x-small italic opacity-50">Local Repair</div>
+                        )}
+                    </td>
+
+                    <td className="text-end py-2">
+                       <div className="d-flex flex-column x-small text-uppercase gap-1 opacity-75">
+                          <div>Quoted: <span className="fw-bold text-dark">₹{parseFloat(r.quoted_amount||0).toLocaleString()}</span></div>
+                          <div>Advance: <span className="fw-bold">₹{parseFloat(r.advance_amount||0).toLocaleString()}</span></div>
+                          {r.is_forwarded && (
+                              <div>Cost: <span className={`fw-bold ${r.is_cost_paid ? 'text-success' : 'text-danger'}`}>₹{parseFloat(r.service_center_cost||0).toLocaleString()}</span></div>
+                          )}
+                          <div className="border-top pt-1 fw-bold text-primary mt-1" style={{ fontSize: '0.75rem' }}>
+                             Balance: ₹{Math.max(0, parseFloat(r.quoted_amount || 0) - (parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0))).toLocaleString()}
                           </div>
-                          {r.balance_received_at && <div className="x-small text-muted mt-1" style={{fontSize:'0.6rem'}}>Full Paid</div>}
+                          {r.balance_received_at && (
+                            <div className="text-success fw-bold italic border-top pt-1 mt-1" style={{fontSize:'0.6rem', lineHeight: 1.1}}>
+                                Pending amount ₹{parseFloat(r.balance_amount_received).toLocaleString()} paid at <br/>
+                                {new Date(r.balance_received_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                            </div>
+                          )}
                        </div>
                     </td>
-                    <td className="text-end">
-                       {r.is_forwarded && r.service_center_cost > 0 ? (
-                         <div className={`p-2 rounded ${r.is_cost_paid ? 'bg-light' : 'bg-danger-subtle'} border-start border-danger border-3`}>
-                            <div className="x-small text-uppercase text-muted mb-1">{r.is_cost_paid ? 'Paid To:' : 'Owed To:'}</div>
-                            <div className="text-dark fw-bold small text-truncate" style={{maxWidth:100}}>{r.forwarded_to}</div>
-                            <div className={`${r.is_cost_paid ? 'text-dark' : 'text-danger'} fw-bold h6 mb-0`}>
-                                ₹{parseFloat(r.service_center_cost).toLocaleString()}
-                            </div>
-                            {!r.is_cost_paid && <span className="badge bg-danger text-white p-1" style={{fontSize:'0.6rem'}}>UNSETTLED</span>}
-                         </div>
-                       ) : <span className="text-muted small italic">-</span>}
+
+                    <td className="text-center">
+                        <span className={`badge bg-${STATUS_COLORS[r.status] || 'secondary'} rounded-pill x-small px-2`}>
+                          {r.status.toUpperCase()}
+                        </span>
                     </td>
-                    <td className="text-end bg-light-subtle rounded-3" style={{ borderLeft: '3px solid #dee2e6' }}>
-                      <div className="x-small text-uppercase text-muted opacity-75">Quoted: <span className="text-dark fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</span></div>
-                      
-                      <div className="x-small text-uppercase text-muted opacity-75 mt-1">Settled: <span className="text-success fw-bold">₹{(parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0)).toLocaleString()}</span></div>
-                      
-                      {(!r.balance_received_at || (parseFloat(r.quoted_amount) > (parseFloat(r.advance_amount) + parseFloat(r.balance_amount_received)))) ? (
-                        <div className="mt-1 pt-1 border-top border-light">
-                          <div className="small text-uppercase fw-bold text-primary">Due: ₹{Math.max(0, parseFloat(r.quoted_amount || 0) - (parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0))).toLocaleString()}</div>
-                        </div>
-                      ) : (
-                        <div className="mt-1 pt-1 border-top border-light animate-fade-in text-end">
-                           <div className="badge bg-success small">SETTLED</div>
-                           {r.balance_received_at && (
-                             <div className="text-muted" style={{fontSize:'0.6rem'}}>
-                                {new Date(r.balance_received_at).toLocaleDateString()}
-                             </div>
-                           )}
-                        </div>
-                      )}
-                    </td>
+
                     <td>
-                       <span className={`badge bg-${STATUS_COLORS[r.status] || 'secondary'} rounded-pill`}>
-                         {r.status.replace('_', ' ').toUpperCase()}
-                       </span>
-                    </td>
-                    <td>
-                      <div className={`x-small ${r.estimated_delivery_date && r.status !== 'delivered' && new Date(r.estimated_delivery_date) < new Date() ? 'text-danger fw-bold' : 'text-muted'}`}>
-                        <span className="text-uppercase opacity-50" style={{fontSize:'0.6rem'}}>Est:</span> {formatDate(r.estimated_delivery_date) || 'N/A'}
+                      <div className="x-small fw-bold">{formatDate(r.actual_delivery_date) || '-'}</div>
+                      <div className="text-muted mt-1" style={{fontSize:'0.6rem'}}>
+                        Expected: {formatDate(r.estimated_delivery_date) || 'N/A'}
                       </div>
-                      {r.actual_delivery_date && (
-                        <div className="x-small text-success fw-bold">
-                           <span className="text-uppercase opacity-50" style={{fontSize:'0.6rem'}}>Del:</span> {formatDate(r.actual_delivery_date)}
-                        </div>
-                      )}
-                      {r.is_forwarded && r.external_expected_delivery && r.status !== 'delivered' && (
-                         <div className="text-info mt-1" style={{ fontSize: '0.65rem' }}>
-                            Shop Exp: {formatDate(r.external_expected_delivery)}
-                         </div>
-                      )}
                     </td>
-                    <td className="text-end pe-3">
-                      <select className="form-select form-select-sm d-inline-block" style={{ width:125 }}
+                    <td className="text-end pe-1" style={{ width:130 }}>
+                      <select className="form-select form-select-sm fw-bold border-2" 
+                        style={{ fontSize: '0.7rem', height: '32px' }}
                         value={r.status} onChange={e => updateStatus(r.id, e.target.value)}>
-                        <option value="pending">Pending</option>
-                        <option value="assigned">Assigned</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="completed">Completed</option>
-                        <option value="delivered">Delivered</option>
+                        <option value="pending">PENDING</option>
+                        <option value="assigned">ASSIGNED</option>
+                        <option value="in_progress">IN PROGRESS</option>
+                        <option value="completed">COMPLETED</option>
+                        <option value="delivered">DELIVERED</option>
                       </select>
-                      
-                      <div className="d-inline-flex gap-1 ms-2">
+                    </td>
+                    <td className="text-end pe-3" style={{ width: 100 }}>
+                      <div className="d-flex justify-content-end gap-1">
                         {r.is_forwarded && !r.is_cost_paid && r.service_center_cost > 0 && (
-                          <button className="btn btn-outline-success btn-sm border-0 p-1" onClick={() => payShop(r.id)} title="Record Cost Payment">
+                          <button className="btn btn-outline-success btn-xs border-0" onClick={() => payShop(r.id)} title="Pay Shop">
                              💰
                           </button>
                         )}
-                        <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-primary btn-sm border-0 p-1" title="View/Edit Repair">
-                           👁️
-                        </Link>
-                        <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-info btn-sm border-0 p-1" title="Quick Edit">
+                        <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-primary btn-xs border-0" title="Edit">
                            ✏️
                         </Link>
                         {hasFullAccess() && (
-                          <button className="btn btn-outline-danger btn-sm border-0 p-1" onClick={() => deleteRepair(r.id)} title="Delete Repair">
+                          <button className="btn btn-outline-danger btn-xs border-0" onClick={() => deleteRepair(r.id)} title="Delete">
                              🗑️
                           </button>
                         )}
