@@ -140,14 +140,19 @@ export default function EntityLedger() {
                     className={`list-group-item list-group-item-action border-0 p-3 ${selectedEntity === ent.entity_name ? 'bg-primary-subtle border-start border-primary border-4' : ''}`}
                     onClick={() => loadLedger(ent.entity_name)}
                   >
-                    <div className="d-flex justify-content-between align-items-center">
+                    <div className="d-flex justify-content-between align-items-baseline">
                       <div>
                         <div className="fw-bold text-dark">{ent.entity_name}</div>
-                        <div className="small text-muted italic">Net Active Ledger</div>
+                        {ent.repair_dues > 0 && (
+                           <div className="x-small text-danger fw-bold">
+                              ₹{ent.repair_dues.toLocaleString()} DUES in Repairs
+                           </div>
+                        )}
+                        <div className="small text-muted italic">Net Statement Balance</div>
                       </div>
-                      <div className={`fw-bold ${ent.balance >= 0 ? 'text-success' : 'text-danger'}`}>
+                      <div className={`fw-bold text-end ${ent.balance >= 0 ? 'text-success' : 'text-danger'}`}>
                         ₹{Math.abs(ent.balance).toLocaleString()}
-                        <div className="x-small opacity-50 text-end">
+                        <div className="x-small opacity-50">
                             {ent.balance >= 0 ? 'RECEIVE' : 'PAY'}
                         </div>
                       </div>

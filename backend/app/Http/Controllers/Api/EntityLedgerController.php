@@ -17,22 +17,49 @@ class EntityLedgerController extends Controller
      */
     public function index(Request $request)
     {
-        // Exclude specific entities if needed, but for now we follow the user's "any entity" request
-        // except airtel recovery and customer (assuming customers have phone numbers or specific prefixes)
-        // Actually, we'll just group everything and let the UI filter.
-        
-        $summaries = Transaction::select(
+        // 1. Get Summary from Transactions
+        $transSummaries = Transaction::select(
             'entity_name',
             DB::raw('SUM(CASE WHEN type = "CASH_IN" THEN amount ELSE 0 END) as total_in'),
-            DB::raw('SUM(CASE WHEN type = "CASH_OUT" THEN amount ELSE 0 END) as total_out'),
-            DB::raw('SUM(CASE WHEN type = "CASH_IN" THEN amount ELSE -amount END) as balance')
+            DB::raw('SUM(CASE WHEN type = "CASH_OUT" THEN amount ELSE 0 END) as total_out')
         )
         ->whereNotNull('entity_name')
         ->where('entity_name', '!=', '')
         ->groupBy('entity_name')
-        ->get();
+        ->get()
+        ->keyBy('entity_name');
 
-        return response()->json($summaries);
+        // 2. Get Unpaid Repair Costs (Dues we owe to forward shops)
+        $repairDues = DB::table('repair_requests')
+            ->where('is_forwarded', true)
+            ->where('is_cost_paid', false)
+            ->where('service_center_cost', '>', 0)
+            ->select('forwarded_to as entity_name', DB::raw('SUM(service_center_cost) as total_due'))
+            ->groupBy('forwarded_to')
+            ->get();
+
+        // 3. Merge them
+        $final = [];
+        $allNames = $transSummaries->keys()->merge($repairDues->pluck('entity_name'))->unique();
+
+        foreach ($allNames as $name) {
+            $trans = $transSummaries->get($name);
+            $due = $repairDues->where('entity_name', $name)->first();
+            
+            $totalIn = (float)($trans->total_in ?? 0);
+            $totalOut = (float)($trans->total_out ?? 0);
+            $totalDueAccountable = (float)($due->total_due ?? 0);
+
+            $final[] = [
+                'entity_name' => $name,
+                'total_in'    => $totalIn,
+                'total_out'   => $totalOut,
+                'repair_dues' => $totalDueAccountable, // Unsettled costs
+                'balance'     => $totalIn - ($totalOut + $totalDueAccountable)
+            ];
+        }
+
+        return response()->json($final);
     }
 
     /**
