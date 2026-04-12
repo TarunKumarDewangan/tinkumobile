@@ -34,6 +34,8 @@ class EntityLedgerController extends Controller
             ->where('is_forwarded', true)
             ->where('is_cost_paid', false)
             ->where('service_center_cost', '>', 0)
+            ->whereNotNull('forwarded_to')
+            ->where('forwarded_to', '!=', '')
             ->select('forwarded_to as entity_name', DB::raw('SUM(service_center_cost) as total_due'))
             ->groupBy('forwarded_to')
             ->get();

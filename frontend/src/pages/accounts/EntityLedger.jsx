@@ -68,7 +68,7 @@ export default function EntityLedger() {
   };
 
   const filteredEntities = entities.filter(ent => 
-    ent.entity_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    String(ent.entity_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const totals = entities.reduce((acc, ent) => {
