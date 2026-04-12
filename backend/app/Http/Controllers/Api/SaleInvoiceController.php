@@ -162,6 +162,7 @@ class SaleInvoiceController extends Controller
                     'description'      => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
                     'entity_type'      => get_class($invoice),
                     'entity_id'        => $invoice->id,
+                    'entity_name'      => $invoice->customer_name,
                     'shop_id'          => $invoice->shop_id,
                     'transaction_date' => $invoice->sale_date,
                 ]);
@@ -246,7 +247,10 @@ class SaleInvoiceController extends Controller
             'category'         => 'SALE',
             'amount'           => $data['amount'],
             'payment_mode'     => 'CASH', // Default for addPayment for now
-            'description'      => "Partial payment for Invoice #{$saleInvoice->invoice_no}",
+            'description'      => "Partial payment for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})",
+            'entity_type'      => get_class($saleInvoice),
+            'entity_id'        => $saleInvoice->id,
+            'entity_name'      => $saleInvoice->customer_name,
             'ref_id'           => $saleInvoice->id,
             'transaction_date' => now()->toDateString(),
         ]);

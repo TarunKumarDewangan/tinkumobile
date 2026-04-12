@@ -185,9 +185,7 @@ export default function Cashbook() {
                                         <div className="text-muted" style={{fontSize:'0.7rem'}}>Mode: {t.payment_mode}</div>
                                     </td>
                                     <td className="small">
-                                        {t.entity ? (
-                                            <div>{t.entity.name || t.entity.invoice_no || 'Entity'}</div>
-                                        ) : '—'}
+                                        {t.entity_name || (t.entity ? (t.entity.name || t.entity.invoice_no || t.entity.customer_name || 'Entity') : '—')}
                                     </td>
                                     <td className="text-end fw-bold text-success">
                                         {t.type === 'IN' ? `₹${t.amount.toLocaleString()}` : '—'}

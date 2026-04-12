@@ -161,6 +161,7 @@ class PurchaseInvoiceController extends Controller
                     'payment_mode'     => 'CASH', // Assuming cash for now
                     'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}",
                     'ref_id'           => $invoice->id,
+                    'entity_name'      => $invoice->supplier?->name,
                     'transaction_date' => $invoice->purchase_date,
                 ]);
             }
@@ -484,6 +485,7 @@ class PurchaseInvoiceController extends Controller
             'payment_mode'     => 'CASH',
             'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
             'ref_id'           => $purchaseInvoice->id,
+            'entity_name'      => $purchaseInvoice->supplier?->name,
             'transaction_date' => now()->toDateString(),
         ]);
 

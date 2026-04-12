@@ -19,6 +19,7 @@ class Transaction extends Model
         'entity_type', 
         'entity_id', 
         'description', 
+        'entity_name',
         'ref_id', 
         'transaction_date'
     ];

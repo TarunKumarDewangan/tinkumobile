@@ -26,6 +26,7 @@ trait RecordsTransactions
             'payment_mode'     => $data['payment_mode'] ?? 'CASH',
             'entity_type'      => $data['entity_type'] ?? (isset($this->id) ? get_class($this) : null),
             'entity_id'        => $data['entity_id'] ?? ($this->id ?? null),
+            'entity_name'      => $data['entity_name'] ?? null,
             'description'      => $data['description'] ?? null,
             'ref_id'           => $data['ref_id'] ?? null,
             'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),

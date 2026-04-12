@@ -157,6 +157,7 @@ class RepairController extends Controller
                 'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
                 'entity_type' => get_class($repair),
                 'entity_id' => $repair->id,
+                'entity_name' => $repair->customer_name,
                 'shop_id' => $shopId,
             ]);
         }
@@ -229,6 +230,7 @@ class RepairController extends Controller
                 'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
                 'entity_type' => get_class($repair),
                 'entity_id' => $repair->id,
+                'entity_name' => $repair->customer_name,
                 'shop_id' => $repair->shop_id,
             ]);
         }
@@ -287,6 +289,7 @@ class RepairController extends Controller
             'description' => "Settled payment to {$repair->forwarded_to} for repair #{$repair->id} ({$repair->device_model})",
             'entity_type' => get_class($repair),
             'entity_id' => $repair->id,
+            'entity_name' => $repair->forwarded_to,
             'shop_id' => $repair->shop_id,
         ]);
 
