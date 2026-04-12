@@ -221,7 +221,6 @@ export default function Repairs() {
                   <th className="text-end">Given</th>
                   <th className="text-end">Customer Bills</th>
                   <th>Status</th>
-                  <th>Profile</th>
                   <th>Delivery</th>
                   <th className="text-end pe-3">Actions</th>
                 </tr>
@@ -347,11 +346,6 @@ export default function Repairs() {
                        <span className={`badge bg-${STATUS_COLORS[r.status] || 'secondary'} rounded-pill`}>
                          {r.status.replace('_', ' ').toUpperCase()}
                        </span>
-                    </td>
-                    <td className="text-center">
-                        <Link to={`/customers?search=${r.customer_phone}`} className="btn btn-outline-info btn-xs p-1 rounded-circle" title="Customer Profile">
-                           👤
-                        </Link>
                     </td>
                     <td>
                       {r.status !== 'delivered' ? (
