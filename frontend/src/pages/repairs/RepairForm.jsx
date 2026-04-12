@@ -21,7 +21,10 @@ export default function RepairForm() {
     is_forwarded: false,
     forwarded_to: '',
     forwarded_phone: '',
-    external_expected_delivery: ''
+    external_expected_delivery: '',
+    advance_payment_mode: 'CASH',
+    balance_amount_received: 0,
+    balance_payment_mode: 'CASH'
   });
   const [externalShops, setExternalShops] = useState([]);
   const [showShopList, setShowShopList] = useState(false);
@@ -54,6 +57,8 @@ export default function RepairForm() {
           advance_amount: parseFloat(r.data.advance_amount || 0),
           service_center_cost: parseFloat(r.data.service_center_cost || 0),
           balance_amount_received: parseFloat(r.data.balance_amount_received || 0),
+          advance_payment_mode: r.data.advance_payment_mode || 'CASH',
+          balance_payment_mode: r.data.balance_payment_mode || 'CASH',
         });
         setCustomerSearch(r.data.customer_name || '');
       });
@@ -83,6 +88,7 @@ export default function RepairForm() {
       ...form,
       status: 'delivered',
       balance_amount_received: balance,
+      balance_payment_mode: form.balance_payment_mode || 'CASH',
       balance_received_at: istTime.toISOString().slice(0,19).replace('T', ' '),
       actual_delivery_date: new Date().toISOString().slice(0,10)
     };
@@ -269,11 +275,35 @@ export default function RepairForm() {
 
               <div className="mb-2">
                 <label className="x-small fw-bold text-success d-block mb-1">Advance Taken</label>
-                <div className="input-group input-group-sm">
+                <div className="input-group input-group-sm mb-1">
                   <span className="input-group-text bg-white text-success">₹</span>
                   <input type="number" step="0.01" className="form-control fw-bold text-success fs-5" {...f('advance_amount')} />
                 </div>
+                <select className="form-select form-select-sm x-small" {...f('advance_payment_mode')}>
+                  <option value="CASH">CASH</option>
+                  <option value="PHONEPE">PHONEPE</option>
+                  <option value="GPAY">GPAY</option>
+                  <option value="PAYTM">PAYTM</option>
+                  <option value="CARD">CARD</option>
+                </select>
               </div>
+
+              {form.status === 'delivered' && !form.balance_received_at && (
+                <div className="mb-2 animate-fade-in border-top pt-2">
+                  <label className="x-small fw-bold text-info d-block mb-1">Final Settlement Amount</label>
+                  <div className="input-group input-group-sm mb-1">
+                    <span className="input-group-text bg-white text-info">₹</span>
+                    <input type="number" step="0.01" className="form-control fw-bold text-info fs-5" {...f('balance_amount_received')} />
+                  </div>
+                  <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
+                    <option value="CASH">CASH</option>
+                    <option value="PHONEPE">PHONEPE</option>
+                    <option value="GPAY">GPAY</option>
+                    <option value="PAYTM">PAYTM</option>
+                    <option value="CARD">CARD</option>
+                  </select>
+                </div>
+              )}
 
               <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
                 <div className="d-flex justify-content-between align-items-center">

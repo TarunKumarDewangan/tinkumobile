@@ -12,11 +12,11 @@ class RepairRequest extends Model
     use UppercaseStrings, RecordsTransactions;
     protected $fillable = [
         'shop_id', 'customer_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
-        'device_model', 'quoted_amount', 'service_center_cost', 'advance_amount',
+        'device_model', 'quoted_amount', 'service_center_cost', 'advance_amount', 'advance_payment_mode',
         'issue_description', 'status', 'assigned_to',
         'is_forwarded', 'forwarded_to', 'forwarded_phone', 'external_expected_delivery',
         'estimated_delivery_date', 'actual_delivery_date', 'created_by', 'staff_id',
-        'balance_amount_received', 'balance_received_at',
+        'balance_amount_received', 'balance_payment_mode', 'balance_received_at',
         'is_cost_paid', 'cost_paid_at'
     ];
 

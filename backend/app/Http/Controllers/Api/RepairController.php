@@ -136,7 +136,9 @@ class RepairController extends Controller
             'forwarded_to'              => 'nullable|string|max:255',
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
+            'advance_payment_mode'      => 'nullable|string|max:50',
             'balance_amount_received'   => 'nullable|numeric',
+            'balance_payment_mode'      => 'nullable|string|max:50',
             'balance_received_at'       => 'nullable|date',
         ]);
 
@@ -154,6 +156,7 @@ class RepairController extends Controller
                 'type' => 'IN',
                 'category' => 'REPAIR_ADVANCE',
                 'amount' => $data['advance_amount'],
+                'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
                 'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
                 'entity_type' => get_class($repair),
                 'entity_id' => $repair->id,
@@ -192,6 +195,7 @@ class RepairController extends Controller
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
             'balance_amount_received'   => 'nullable|numeric',
+            'balance_payment_mode'      => 'nullable|string|max:50',
             'balance_received_at'       => 'nullable|date',
         ]);
 
@@ -223,10 +227,11 @@ class RepairController extends Controller
 
         // Record Balance Settlement
         if ($request->filled('balance_amount_received') && $request->balance_amount_received > 0) {
-             $this->recordTransaction([
+               $this->recordTransaction([
                 'type' => 'IN',
                 'category' => 'REPAIR_SETTLEMENT',
                 'amount' => $request->balance_amount_received,
+                'payment_mode' => $request->balance_payment_mode ?? $repair->balance_payment_mode ?? 'CASH',
                 'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
                 'entity_type' => get_class($repair),
                 'entity_id' => $repair->id,
