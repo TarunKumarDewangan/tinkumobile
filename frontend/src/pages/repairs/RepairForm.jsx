@@ -9,6 +9,7 @@ export default function RepairForm() {
     customer_name:'', 
     customer_phone:'', 
     customer_email:'', 
+    customer_address:'', 
     submitted_date: new Date().toISOString().slice(0,10),
     device_model:'', 
     quoted_amount: 0,
@@ -149,6 +150,10 @@ export default function RepairForm() {
                 <div className="col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Submitted Date</label>
                   <input type="date" className="form-control form-control-sm" {...f('submitted_date')} />
+                </div>
+                <div className="col-md-12">
+                  <label className="x-small fw-bold text-muted mb-0">Customer Address</label>
+                  <input className="form-control form-control-sm" placeholder="Address Details" {...f('customer_address')} />
                 </div>
                 <div className="col-md-8">
                   <label className="x-small fw-bold text-muted mb-0">Device Model *</label>
