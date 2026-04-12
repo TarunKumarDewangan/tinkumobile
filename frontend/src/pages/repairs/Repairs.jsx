@@ -33,7 +33,16 @@ export default function Repairs() {
   useEffect(() => { load(); }, [filters]);
 
   const updateStatus = async (id, status) => {
-    await api.put(`/repairs/${id}`, { status });
+    let balance_amount_received = null;
+    if (status === 'delivered') {
+      const repair = repairs.find(r => r.id === id);
+      const balance = (repair.quoted_amount || 0) - (repair.advance_amount || 0);
+      const val = window.prompt(`Final Settlement: Mark as Delivered and record payment.\nTotal Due: ₹${balance}\n\nEnter amount received:`, balance);
+      if (val === null) return; // cancel
+      balance_amount_received = parseFloat(val || 0);
+    }
+    
+    await api.put(`/repairs/${id}`, { status, balance_amount_received });
     toast.success('Status updated');
     load();
   };
