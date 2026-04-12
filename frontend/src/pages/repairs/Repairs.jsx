@@ -290,16 +290,7 @@ export default function Repairs() {
                         <div className="small text-muted">{r.issue_description}</div>
                       )}
                     </td>
-                    <td>
-                      {r.is_forwarded ? (
-                        <div>
-                          <div className="fw-bold text-primary" style={{ fontSize: '0.9rem' }}>{r.forwarded_to}</div>
-                          <div className="text-muted small">{r.forwarded_phone || 'No Phone'}</div>
-                        </div>
-                      ) : (
-                        <span className="text-muted small italic">Local Repair</span>
-                      )}
-                    </td>
+
                     <td className="text-end">
                        <div className="p-2 rounded bg-success-subtle border-start border-success border-3">
                           <div className="x-small text-uppercase text-success fw-bold opacity-75">Collected:</div>
