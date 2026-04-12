@@ -21,6 +21,7 @@ export default function TrashManager() {
     { value: 'purchase_invoice', label: 'Purchase Invoices' },
     { value: 'sale_invoice', label: 'Sale Invoices' },
     { value: 'user', label: 'Users' },
+    { value: 'transaction', label: 'Cashbook' },
   ];
 
   useEffect(() => {
@@ -117,8 +118,11 @@ export default function TrashManager() {
                     {new Date(item.deleted_at).toLocaleString('en-GB')}
                   </td>
                   <td>
-                    <div className="fw-bold small">{item.name || item.invoice_no || `ID: ${item.id}`}</div>
-                    <div className="x-small text-muted">{item.msisdn || item.phone || item.email || item.refill_date || ''}</div>
+                    <div className="fw-bold small">{item.category || item.name || item.invoice_no || `ID: ${item.id}`}</div>
+                    <div className="x-small text-muted">
+                        {item.amount ? `₹${item.amount} | ` : ''}
+                        {item.description || item.msisdn || item.phone || item.email || item.refill_date || ''}
+                    </div>
                   </td>
                   <td className="small text-muted">
                     ID: {item.id}

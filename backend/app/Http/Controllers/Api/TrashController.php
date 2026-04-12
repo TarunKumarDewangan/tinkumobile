@@ -19,6 +19,7 @@ class TrashController extends Controller
         'purchase_invoice' => \App\Models\PurchaseInvoice::class,
         'sale_invoice'     => \App\Models\SaleInvoice::class,
         'user'             => \App\Models\User::class,
+        'transaction'      => \App\Models\Transaction::class,
     ];
 
     public function index(Request $request)
