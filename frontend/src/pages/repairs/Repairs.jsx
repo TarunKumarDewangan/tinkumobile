@@ -268,6 +268,7 @@ export default function Repairs() {
                     </td>
                     <td className="text-end py-3 bg-white shadow-sm rounded-end border-end border-3 border-primary">
                       <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: ₹{(totals.quoted || 0).toLocaleString()}</div>
+                      <div className="x-small text-uppercase text-success opacity-75">T. Settled: ₹{(totals.received || 0).toLocaleString()}</div>
                       <div className="mt-1 pt-1 border-top border-light text-primary fw-bold">
                         T. DUE: ₹{(totals.balanceRemaining || 0).toLocaleString()}
                       </div>
