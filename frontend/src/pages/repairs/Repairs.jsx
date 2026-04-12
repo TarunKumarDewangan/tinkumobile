@@ -66,8 +66,12 @@ export default function Repairs() {
     acc.cost += parseFloat(r.service_center_cost || 0);
     acc.costPending += !r.is_cost_paid ? parseFloat(r.service_center_cost || 0) : 0;
     acc.balance += (parseFloat(r.quoted_amount || 0) - parseFloat(r.advance_amount || 0));
+    acc.forwardedCount += r.is_forwarded ? 1 : 0;
+    acc.customers.add(r.customer_phone || r.customer_name);
+    acc.devices.add(r.device_model);
+    acc.issueCount += Array.isArray(r.issue_description) ? r.issue_description.length : 1;
     return acc;
-  }, { quoted: 0, advance: 0, cost: 0, costPending: 0, balance: 0 });
+  }, { quoted: 0, advance: 0, cost: 0, costPending: 0, balance: 0, forwardedCount: 0, customers: new Set(), devices: new Set(), issueCount: 0 });
 
   return (
     <div>
@@ -215,15 +219,34 @@ export default function Repairs() {
               <tbody>
                 {/* Financial Summary Row */}
                 {!loading && repairs.length > 0 && (
-                  <tr className="bg-light-subtle fw-bold" style={{ backgroundColor: '#f8fbfc' }}>
+                  <tr className="bg-light-subtle fw-bold" style={{ backgroundColor: '#f0f7f9' }}>
                     <td className="ps-3 text-primary">Σ</td>
-                    <td colSpan={5} className="text-muted small italic">Financial totals for {repairs.length} repairs shown below:</td>
-                    <td className="text-end py-3">
+                    <td className="text-center">
+                        <div className="x-small text-muted text-uppercase">Total</div>
+                        <div className="text-dark">{repairs.length} Rep.</div>
+                    </td>
+                    <td>
+                        <div className="x-small text-muted text-uppercase">Customers</div>
+                        <div className="text-dark">{totals.customers.size} Unique</div>
+                    </td>
+                    <td>
+                        <div className="x-small text-muted text-uppercase">Devices</div>
+                        <div className="text-dark">{totals.devices.size} Models</div>
+                    </td>
+                    <td>
+                        <div className="x-small text-muted text-uppercase">Issues</div>
+                        <div className="text-info">{totals.issueCount} Total</div>
+                    </td>
+                    <td>
+                        <div className="x-small text-muted text-uppercase">Forwarded</div>
+                        <div className="text-primary">{totals.forwardedCount} Jobs</div>
+                    </td>
+                    <td className="text-end py-3 bg-white shadow-sm rounded-start border-start border-3 border-primary">
                       <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: <span className="text-dark">₹{totals.quoted.toLocaleString()}</span></div>
                       <div className="x-small text-uppercase text-muted opacity-75">T. Advance: <span className="text-success">₹{totals.advance.toLocaleString()}</span></div>
-                      <div className="x-small text-uppercase text-muted opacity-75">
+                      <div className="x-small text-uppercase text-muted opacity-75 border-top mt-1 pt-1">
                         T. Cost: <span className="text-danger">₹{totals.cost.toLocaleString()}</span>
-                        <div style={{fontSize:'0.6rem'}} className="text-danger-emphasis">(Pending: ₹{totals.costPending.toLocaleString()})</div>
+                        {totals.costPending > 0 && <div style={{fontSize:'0.6rem'}} className="text-danger-emphasis">(Pending: ₹{totals.costPending.toLocaleString()})</div>}
                       </div>
                       <div className="mt-1 pt-1 border-top border-light text-primary">
                         BAL: ₹{totals.balance.toLocaleString()}
