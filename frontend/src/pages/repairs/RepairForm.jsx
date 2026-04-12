@@ -262,39 +262,50 @@ export default function RepairForm() {
             </div>
 
             {/* Financial Tracking & Settlement */}
-            <div className="col-md-4 ps-3 bg-light-subtle rounded py-2">
+            <div className="col-md-4 ps-3 bg-light-subtle rounded py-2 d-flex flex-column">
               <h6 className="x-small fw-bold text-uppercase text-muted mb-2 pb-1 border-bottom">💰 Financials</h6>
               
-              <div className="mb-2">
-                <label className="x-small fw-bold opacity-75 d-block mb-1">Quoted Amount</label>
-                <div className="input-group input-group-sm">
-                  <span className="input-group-text bg-white">₹</span>
-                  <input type="number" step="0.01" className="form-control fw-bold text-dark fs-5" {...f('quoted_amount')} />
+              <div className="row g-2 mb-2">
+                <div className="col-6">
+                  <label className="x-small fw-bold opacity-75 d-block mb-1">Quoted Amt</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-white px-1">₹</span>
+                    <input type="number" step="0.01" className="form-control fw-bold px-1" {...f('quoted_amount')} />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <label className="x-small fw-bold text-success d-block mb-1">Advance</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-white text-success px-1">₹</span>
+                    <input type="number" step="0.01" className="form-control fw-bold text-success px-1" {...f('advance_amount')} />
+                  </div>
                 </div>
               </div>
 
               <div className="mb-2">
-                <label className="x-small fw-bold text-success d-block mb-1">Advance Taken</label>
-                <div className="input-group input-group-sm mb-1">
-                  <span className="input-group-text bg-white text-success">₹</span>
-                  <input type="number" step="0.01" className="form-control fw-bold text-success fs-5" {...f('advance_amount')} />
-                </div>
-                <select className="form-select form-select-sm x-small" {...f('advance_payment_mode')}>
-                  <option value="CASH">CASH</option>
-                  <option value="PHONEPE">PHONEPE</option>
-                  <option value="GPAY">GPAY</option>
-                  <option value="PAYTM">PAYTM</option>
-                  <option value="CARD">CARD</option>
+                <select className="form-select form-select-sm x-small py-0" style={{ height: '24px' }} {...f('advance_payment_mode')}>
+                  <option value="CASH">ADVANCE MODE: CASH</option>
+                  <option value="PHONEPE">ADVANCE MODE: PHONEPE</option>
+                  <option value="GPAY">ADVANCE MODE: GPAY</option>
+                  <option value="PAYTM">ADVANCE MODE: PAYTM</option>
+                  <option value="CARD">ADVANCE MODE: CARD</option>
                 </select>
+              </div>
+
+              <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
+                <div className="d-flex justify-content-between align-items-center">
+                  <span className="x-small fw-bold text-uppercase text-primary">Pending Balance</span>
+                  <span className="fs-5 fw-bold text-primary">₹{balance.toLocaleString()}</span>
+                </div>
               </div>
 
               {(balance > 0 || form.balance_amount_received > 0) && (
                 <div className="mb-2 animate-fade-in border-top pt-2">
                   <label className="x-small fw-bold text-info d-block mb-1">
-                    {form.balance_received_at ? 'Settled Amount' : 'Balance Settlement (Receive)'}
+                    {form.balance_received_at ? 'Settled Amount' : 'Settle Amount (Received)'}
                   </label>
                   <div className="input-group input-group-sm mb-1">
-                    <span className="input-group-text bg-white text-info">₹</span>
+                    <span className="input-group-text bg-white text-info font-bold">₹</span>
                     <input 
                         type="number" 
                         step="0.01" 
@@ -305,40 +316,23 @@ export default function RepairForm() {
                   </div>
                   {!form.balance_received_at && (
                     <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
-                        <option value="CASH">CASH</option>
-                        <option value="PHONEPE">PHONEPE</option>
-                        <option value="GPAY">GPAY</option>
-                        <option value="PAYTM">PAYTM</option>
-                        <option value="CARD">CARD</option>
+                        <option value="CASH">PAYMENT MODE: CASH</option>
+                        <option value="PHONEPE">PAYMENT MODE: PHONEPE</option>
+                        <option value="GPAY">PAYMENT MODE: GPAY</option>
+                        <option value="PAYTM">PAYMENT MODE: PAYTM</option>
+                        <option value="CARD">PAYMENT MODE: CARD</option>
                     </select>
+                  )}
+                  {form.balance_received_at && (
+                    <div className="x-small opacity-75 mt-1 fw-bold text-success text-center">
+                        Paid via {form.balance_payment_mode} at {new Date(form.balance_received_at).toLocaleString('en-IN')}
+                    </div>
                   )}
                 </div>
               )}
 
-              <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
-                <div className="d-flex justify-content-between align-items-center">
-                  <span className="x-small fw-bold text-uppercase text-primary">Pending Balance</span>
-                  <span className="fs-4 fw-bold text-primary">₹{balance.toLocaleString()}</span>
-                </div>
-                
-                {form.balance_amount_received > 0 ? (
-                  <div className="mt-1 pt-1 border-top border-light text-center">
-                    <div className="badge bg-success w-100 py-1">SETTLED</div>
-                    <div className="x-small opacity-75 mt-1 fw-bold text-success">
-                      Pending amount ₹{parseFloat(form.balance_amount_received).toLocaleString()} paid at {new Date(form.balance_received_at).toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                ) : (
-                  balance > 0 && id && (
-                    <button type="button" className="btn btn-primary btn-sm w-100 mt-2 fw-bold py-1" onClick={handleSettle} disabled={isSettling}>
-                      {isSettling ? 'Fetching IST...' : 'COLLECT BALANCE'}
-                    </button>
-                  )
-                )}
-              </div>
-
-              {/* Status Selector UI - Multi-option buttons for compactness */}
-              <div className="mt-auto pt-3">
+              {/* Status Selector UI */}
+              <div className="mt-auto">
                 <label className="x-small fw-bold text-muted mb-1 d-block text-uppercase">Repair Status</label>
                 <select className={`form-select form-select-sm fw-bold ${form.status === 'delivered' ? 'border-success text-success' : 'border-primary text-primary'}`} {...f('status')}>
                   <option value="pending">PENDING</option>
@@ -348,7 +342,7 @@ export default function RepairForm() {
                 </select>
               </div>
 
-              <div className="mt-4 pt-3 border-top">
+              <div className="mt-3 pt-2 border-top">
                 <button type="submit" className="btn btn-success w-100 fw-bold shadow-sm mb-2">{id ? '🚀 UPDATE REPAIR' : '✅ CREATE REPAIR'}</button>
                 <button type="button" className="btn btn-link btn-sm text-secondary w-100 p-0" onClick={() => navigate('/repairs')}>Discard Changes</button>
               </div>
