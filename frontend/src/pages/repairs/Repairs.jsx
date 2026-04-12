@@ -75,11 +75,13 @@ export default function Repairs() {
     acc.balanceRemaining += (!r.balance_received_at) ? (quoted - advance) : 0;
     
     acc.forwardedCount += r.is_forwarded ? 1 : 0;
+    acc.deliveredCount += r.status === 'delivered' ? 1 : 0;
+    acc.pendingCount += r.status !== 'delivered' ? 1 : 0;
     acc.customers.add(r.customer_phone || r.customer_name);
     acc.devices.add(r.device_model);
     acc.issueCount += Array.isArray(r.issue_description) ? r.issue_description.length : 1;
     return acc;
-  }, { quoted: 0, advanceRemaining: 0, received: 0, cost: 0, costPending: 0, given: 0, balanceRemaining: 0, forwardedCount: 0, customers: new Set(), devices: new Set(), issueCount: 0 });
+  }, { quoted: 0, advanceRemaining: 0, received: 0, cost: 0, costPending: 0, given: 0, balanceRemaining: 0, forwardedCount: 0, deliveredCount: 0, pendingCount: 0, customers: new Set(), devices: new Set(), issueCount: 0 });
 
   return (
     <div>
@@ -339,19 +341,18 @@ export default function Repairs() {
                        </span>
                     </td>
                     <td>
-                      {r.status !== 'delivered' ? (
-                        <>
-                          <div className={`small ${r.estimated_delivery_date && new Date(r.estimated_delivery_date) < new Date() ? 'text-danger fw-bold' : 'text-muted'}`}>
-                            {formatDate(r.estimated_delivery_date) || 'N/A'}
-                          </div>
-                          {r.is_forwarded && r.external_expected_delivery && (
-                             <div className="text-info mt-1" style={{ fontSize: '0.65rem' }}>
-                                Shop Exp: {formatDate(r.external_expected_delivery)}
-                             </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="text-muted small">Released</div>
+                      <div className={`x-small ${r.estimated_delivery_date && r.status !== 'delivered' && new Date(r.estimated_delivery_date) < new Date() ? 'text-danger fw-bold' : 'text-muted'}`}>
+                        <span className="text-uppercase opacity-50" style={{fontSize:'0.6rem'}}>Est:</span> {formatDate(r.estimated_delivery_date) || 'N/A'}
+                      </div>
+                      {r.actual_delivery_date && (
+                        <div className="x-small text-success fw-bold">
+                           <span className="text-uppercase opacity-50" style={{fontSize:'0.6rem'}}>Del:</span> {formatDate(r.actual_delivery_date)}
+                        </div>
+                      )}
+                      {r.is_forwarded && r.external_expected_delivery && r.status !== 'delivered' && (
+                         <div className="text-info mt-1" style={{ fontSize: '0.65rem' }}>
+                            Shop Exp: {formatDate(r.external_expected_delivery)}
+                         </div>
                       )}
                     </td>
                     <td className="text-end pe-3">
