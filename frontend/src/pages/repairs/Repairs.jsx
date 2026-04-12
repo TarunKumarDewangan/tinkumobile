@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
@@ -9,6 +9,7 @@ const STATUS_COLORS = { pending:'warning', assigned:'info', in_progress:'primary
 
 export default function Repairs() {
   const { hasFullAccess } = useAuth();
+  const navigate = useNavigate();
   const [repairs, setRepairs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -33,16 +34,11 @@ export default function Repairs() {
   useEffect(() => { load(); }, [filters]);
 
   const updateStatus = async (id, status) => {
-    let balance_amount_received = null;
     if (status === 'delivered') {
-      const repair = repairs.find(r => r.id === id);
-      const balance = (repair.quoted_amount || 0) - (repair.advance_amount || 0);
-      const val = window.prompt(`Final Settlement: Mark as Delivered and record payment.\nTotal Due: ₹${balance}\n\nEnter amount received:`, balance);
-      if (val === null) return; // cancel
-      balance_amount_received = parseFloat(val || 0);
+       return navigate(`/repairs/${id}/edit`);
     }
     
-    await api.put(`/repairs/${id}`, { status, balance_amount_received });
+    await api.put(`/repairs/${id}`, { status });
     toast.success('Status updated');
     load();
   };
