@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../../api/axios';
 import { toast } from 'react-toastify';
 
 export default function CustomerProfile() {
@@ -14,7 +14,7 @@ export default function CustomerProfile() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/customer/history/${id}`);
+        const res = await api.get(`/customer/history/${id}`);
         setData(res.data);
       } catch (err) {
         toast.error('Could not fetch history');
@@ -27,9 +27,9 @@ export default function CustomerProfile() {
   }, [id, navigate, isAdmin]);
 
   if (loading) return <div className="text-center p-5 fw-bold text-primary">Loading your history...</div>;
-  if (!data) return null;
+  if (!data || !data.customer) return <div className="text-center p-5 text-muted">No history found for this customer.</div>;
 
-  const { customer, repairs, sales, recharges, sims, old_mobiles, loans } = data;
+  const { customer, repairs=[], sales=[], recharges=[], sims=[], old_mobiles=[], loans=[] } = data;
 
   return (
     <div className="min-vh-100 bg-light py-4 px-3">
