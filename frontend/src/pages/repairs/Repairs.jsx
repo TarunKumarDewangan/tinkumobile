@@ -241,39 +241,49 @@ export default function Repairs() {
                 {!loading && repairs.length > 0 && (
                   <tr className="bg-light-subtle fw-bold" style={{ backgroundColor: '#f0f7f9' }}>
                     <td className="ps-3 text-primary">Σ</td>
-                    <td className="text-center">
-                        <div className="x-small text-muted text-uppercase">Total</div>
-                        <div className="text-dark">{repairs.length} Rep.</div>
+                    <td className="text-center small">
+                        <div className="x-small text-muted text-uppercase mb-1">Items</div>
+                        <div>{repairs.length} Rep.</div>
                     </td>
-                    <td>
-                        <div className="x-small text-muted text-uppercase">Customers</div>
-                        <div className="text-dark">{totals.customers.size} Unique</div>
+                    <td className="small">
+                        <div className="x-small text-muted text-uppercase mb-1">Clients</div>
+                        <div>{totals.customers.size} Uni.</div>
                     </td>
-                    <td>
-                        <div className="x-small text-muted text-uppercase">Devices</div>
-                        <div className="text-dark">{totals.devices.size} Models</div>
+                    <td className="small">
+                        <div className="x-small text-muted text-uppercase mb-1">Models</div>
+                        <div>{totals.devices.size} Def.</div>
                     </td>
-                    <td>
-                        <div className="x-small text-muted text-uppercase">Issues</div>
-                        <div className="text-info">{totals.issueCount} Total</div>
+                    <td className="small">
+                        <div className="x-small text-muted text-uppercase mb-1">Faults</div>
+                        <div className="text-info">{totals.issueCount} Tot.</div>
                     </td>
-                    <td>
-                        <div className="x-small text-muted text-uppercase">Forwarded</div>
-                        <div className="text-primary">{totals.forwardedCount} Jobs</div>
+                    <td className="text-end py-3 bg-success-subtle shadow-sm border-start border-success border-opacity-25">
+                       <div className="x-small text-uppercase text-success fw-bold opacity-75">T. Recieved</div>
+                       <div className="h5 mb-0 text-success fw-bold">₹{totals.received.toLocaleString()}</div>
                     </td>
-                    <td className="text-end py-3 bg-danger-subtle shadow-sm border-start border-end border-danger border-opacity-25">
-                      <div className="x-small text-uppercase text-danger fw-bold opacity-75">T. Shop Cost</div>
-                      <div className="h6 mb-0 text-danger fw-bold">₹{totals.cost.toLocaleString()}</div>
-                      {totals.costPending > 0 && <div style={{fontSize:'0.65rem'}} className="text-danger-emphasis">Pending: ₹{totals.costPending.toLocaleString()}</div>}
+                    <td className="text-end py-3 bg-danger-subtle shadow-sm border-start border-danger border-opacity-25">
+                      <div className="x-small text-uppercase text-danger fw-bold opacity-75">T. Given</div>
+                      <div className="h5 mb-0 text-danger fw-bold">₹{totals.given.toLocaleString()}</div>
+                      {totals.costPending > 0 && <div className="text-muted" style={{fontSize:'0.6rem'}}>Owe: ₹{totals.costPending.toLocaleString()}</div>}
                     </td>
                     <td className="text-end py-3 bg-white shadow-sm rounded-end border-end border-3 border-primary">
-                      <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: <span className="text-dark">₹{(totals.quoted || 0).toLocaleString()}</span></div>
-                      {totals.advanceRemaining > 0 && <div className="x-small text-uppercase text-muted opacity-75">Adv. Pending: <span className="text-success">₹{totals.advanceRemaining.toLocaleString()}</span></div>}
+                      <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: ₹{(totals.quoted || 0).toLocaleString()}</div>
                       <div className="mt-1 pt-1 border-top border-light text-primary fw-bold">
                         T. DUE: ₹{(totals.balanceRemaining || 0).toLocaleString()}
                       </div>
                     </td>
-                    <td colSpan={3}></td>
+                    <td className="text-center small">
+                        <div className="x-small text-muted text-uppercase mb-1">Forwarded</div>
+                        <div className="text-primary">{totals.forwardedCount} Jobs</div>
+                    </td>
+                    <td className="text-center">
+                       <div className="x-small text-muted text-uppercase mb-1">Progress</div>
+                       <div className="text-primary small fw-bold" style={{lineHeight:1}}>
+                          <div title="Pending">P: {totals.pendingCount}</div>
+                          <div title="Delivered">D: {totals.deliveredCount}</div>
+                       </div>
+                    </td>
+                    <td colSpan={1}></td>
                   </tr>
                 )}
 
@@ -303,6 +313,9 @@ export default function Repairs() {
                     </td>
 
                     <td className="text-end">
+                       <div className="x-small text-muted text-uppercase mb-1 opacity-75" style={{fontSize:'0.6rem'}}>
+                          {r.is_forwarded ? 'Forwarded' : 'Local Repair'}
+                       </div>
                        <div className="p-2 rounded bg-success-subtle border-start border-success border-3">
                           <div className="x-small text-uppercase text-success fw-bold opacity-75">Collected:</div>
                           <div className="text-success fw-bold h6 mb-0">
