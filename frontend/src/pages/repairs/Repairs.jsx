@@ -354,13 +354,19 @@ export default function Repairs() {
                         </Link>
                     </td>
                     <td>
-                      <div className={`small ${r.estimated_delivery_date && !r.actual_delivery_date && new Date(r.estimated_delivery_date) < new Date() ? 'text-danger fw-bold' : 'text-muted'}`}>
-                        {formatDate(r.estimated_delivery_date) || 'N/A'}
-                      </div>
-                      {r.is_forwarded && r.external_expected_delivery && (
-                         <div className="text-info mt-1" style={{ fontSize: '0.65rem' }}>
-                            Expected: {formatDate(r.external_expected_delivery)}
-                         </div>
+                      {r.status !== 'delivered' ? (
+                        <>
+                          <div className={`small ${r.estimated_delivery_date && new Date(r.estimated_delivery_date) < new Date() ? 'text-danger fw-bold' : 'text-muted'}`}>
+                            {formatDate(r.estimated_delivery_date) || 'N/A'}
+                          </div>
+                          {r.is_forwarded && r.external_expected_delivery && (
+                             <div className="text-info mt-1" style={{ fontSize: '0.65rem' }}>
+                                Shop Exp: {formatDate(r.external_expected_delivery)}
+                             </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-muted small">Released</div>
                       )}
                     </td>
                     <td className="text-end pe-3">
