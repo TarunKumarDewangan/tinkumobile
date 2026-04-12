@@ -21,7 +21,8 @@ export default function Repairs() {
     delivered_to: '',
     payment_from: '',
     payment_to: '',
-    is_forwarded: ''
+    is_forwarded: '',
+    cost_payment_status: ''
   });
 
   const load = () => {
@@ -35,6 +36,17 @@ export default function Repairs() {
     await api.put(`/repairs/${id}`, { status });
     toast.success('Status updated');
     load();
+  };
+
+  const payShop = async (id) => {
+    if (!window.confirm('Are you sure you want to record payment to this external shop? This will create an OUT transaction in the cashbook.')) return;
+    try {
+      await api.post(`/repairs/${id}/pay-cost`);
+      toast.success('Payment recorded successfully');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Error recording payment');
+    }
   };
 
   const deleteRepair = async (id) => {
@@ -78,15 +90,21 @@ export default function Repairs() {
             <div className="btn-group btn-group-sm shadow-sm">
                 <button className={`btn ${filters.is_forwarded === '' ? 'btn-primary' : 'btn-outline-primary'}`} 
                   onClick={() => handleFilter('is_forwarded', '')}>All</button>
-                <button className={`btn ${filters.is_forwarded === 'true' ? 'btn-primary' : 'btn-outline-primary'}`} 
-                  onClick={() => handleFilter('is_forwarded', 'true')}>Forwarded</button>
                 <button className={`btn ${filters.is_forwarded === 'false' ? 'btn-primary' : 'btn-outline-primary'}`} 
                   onClick={() => handleFilter('is_forwarded', 'false')}>Local</button>
             </div>
 
+            {/* Cost Status Filter */}
+            <select className="form-select form-select-sm shadow-sm" style={{ width: 150 }} 
+              value={filters.cost_payment_status} onChange={e => handleFilter('cost_payment_status', e.target.value)}>
+                <option value="">Any Cost Status</option>
+                <option value="pending">Pending Cost</option>
+                <option value="paid">Paid Cost</option>
+            </select>
+
             <div className="ms-auto d-flex gap-2">
                 <button className="btn btn-outline-secondary btn-sm" 
-                  onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'' })}>
+                  onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'', cost_payment_status:'' })}>
                   Reset
                 </button>
                 <Link to="/repairs/new" className="btn btn-primary btn-sm shadow-sm">+ New Repair</Link>
@@ -194,8 +212,14 @@ export default function Repairs() {
                     <td className="text-end">
                       <div className="x-small text-uppercase text-muted opacity-75">Quoted: <span className="text-dark fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</span></div>
                       <div className="x-small text-uppercase text-muted opacity-75">Advance: <span className="text-success fw-bold">₹{parseFloat(r.advance_amount || 0).toLocaleString()}</span></div>
-                      {r.is_forwarded && (
-                        <div className="x-small text-uppercase text-muted opacity-75">Cost: <span className="text-danger fw-bold">₹{parseFloat(r.service_center_cost || 0).toLocaleString()}</span></div>
+                      {r.is_forwarded && r.service_center_cost > 0 && (
+                        <div className="x-small text-uppercase text-muted opacity-75">
+                          Cost: <span className={`${r.is_cost_paid ? 'text-dark' : 'text-danger'} fw-bold`}>
+                            ₹{parseFloat(r.service_center_cost || 0).toLocaleString()}
+                          </span>
+                          {!r.is_cost_paid && <span className="ms-1 badge bg-danger-subtle text-danger" style={{fontSize:'0.6rem'}}>PENDING</span>}
+                          {r.is_cost_paid && <span className="ms-1 badge bg-success-subtle text-success" style={{fontSize:'0.6rem'}}>PAID</span>}
+                        </div>
                       )}
                       
                       {r.balance_received_at ? (
@@ -239,6 +263,11 @@ export default function Repairs() {
                       </select>
                       
                       <div className="d-inline-flex gap-1 ms-2">
+                        {r.is_forwarded && !r.is_cost_paid && r.service_center_cost > 0 && (
+                          <button className="btn btn-outline-success btn-sm border-0 p-1" onClick={() => payShop(r.id)} title="Record Cost Payment">
+                             💰
+                          </button>
+                        )}
                         <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-primary btn-sm border-0 p-1" title="View/Edit Repair">
                            👁️
                         </Link>

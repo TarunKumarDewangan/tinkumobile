@@ -16,7 +16,8 @@ class RepairRequest extends Model
         'issue_description', 'status', 'assigned_to',
         'is_forwarded', 'forwarded_to', 'forwarded_phone', 'external_expected_delivery',
         'estimated_delivery_date', 'actual_delivery_date', 'created_by', 'staff_id',
-        'balance_amount_received', 'balance_received_at'
+        'balance_amount_received', 'balance_received_at',
+        'is_cost_paid', 'cost_paid_at'
     ];
 
     protected $casts = [
@@ -27,6 +28,8 @@ class RepairRequest extends Model
         'advance_amount' => 'decimal:2',
         'balance_amount_received' => 'decimal:2',
         'balance_received_at' => 'datetime',
+        'is_cost_paid' => 'boolean',
+        'cost_paid_at' => 'datetime',
     ];
 
     public function shop(): BelongsTo { return $this->belongsTo(Shop::class); }

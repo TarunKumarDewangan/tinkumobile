@@ -74,6 +74,14 @@ class RepairController extends Controller
             $query->where('is_forwarded', $val);
         }
 
+        if ($request->filled('cost_payment_status')) {
+            if ($request->cost_payment_status === 'pending') {
+                $query->where('is_forwarded', true)->where('is_cost_paid', false)->where('service_center_cost', '>', 0);
+            } elseif ($request->cost_payment_status === 'paid') {
+                $query->where('is_cost_paid', true);
+            }
+        }
+
         $results = $query->latest()->get();
         
         return response()->json($results);
@@ -215,19 +223,6 @@ class RepairController extends Controller
             ]);
         }
 
-        // Record Forwarding Expense (OUT)
-        if ($request->filled('service_center_cost') && $request->service_center_cost > 0 && $repair->wasChanged('service_center_cost')) {
-             $this->recordTransaction([
-                'type' => 'OUT',
-                'category' => 'REPAIR_FORWARDING_EXPENSE',
-                'amount' => $request->service_center_cost,
-                'description' => "Paid to {$repair->forwarded_to} for repair #{$repair->id} ({$repair->device_model})",
-                'entity_type' => get_class($repair),
-                'entity_id' => $repair->id,
-                'shop_id' => $repair->shop_id,
-            ]);
-        }
-
         return response()->json($repair->fresh()->load('assignedTo'));
     }
 
@@ -258,5 +253,33 @@ class RepairController extends Controller
             ->orderBy('forwarded_to')
             ->get();
         return response()->json($shops);
+    }
+
+    public function payForwardCost(Request $request, RepairRequest $repair)
+    {
+        if (!$repair->is_forwarded || $repair->service_center_cost <= 0) {
+            return response()->json(['message' => 'This repair is not forwarded or has no cost defined.'], 422);
+        }
+
+        if ($repair->is_cost_paid) {
+            return response()->json(['message' => 'Cost is already marked as paid.'], 422);
+        }
+
+        $repair->update([
+            'is_cost_paid' => true,
+            'cost_paid_at' => now(),
+        ]);
+
+        $this->recordTransaction([
+            'type' => 'OUT',
+            'category' => 'REPAIR_FORWARDING_EXPENSE',
+            'amount' => $repair->service_center_cost,
+            'description' => "Settled payment to {$repair->forwarded_to} for repair #{$repair->id} ({$repair->device_model})",
+            'entity_type' => get_class($repair),
+            'entity_id' => $repair->id,
+            'shop_id' => $repair->shop_id,
+        ]);
+
+        return response()->json(['message' => 'Cost payment recorded and repair updated', 'repair' => $repair]);
     }
 }
