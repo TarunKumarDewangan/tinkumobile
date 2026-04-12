@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 
 class RechargeController extends Controller
 {
+    use \App\Traits\SyncsWithCustomer;
     // ── Purchases ──────────────────────────────────────────────────────────
     public function purchaseIndex(Request $request)
     {
@@ -46,13 +47,21 @@ class RechargeController extends Controller
     {
         $user = $request->user();
         $data = $request->validate([
-            'customer_id'    => 'required|exists:customers,id',
+            'customer_id'    => 'nullable|exists:customers,id',
+            'customer_name'  => 'nullable|string|max:150',
+            'customer_phone' => 'nullable|string|max:20',
             'mobile_number'  => 'required|string|max:15',
             'operator'       => 'required|string|max:50',
             'amount'         => 'required|numeric|min:0',
             'selling_price'  => 'required|numeric|min:0',
             'sale_date'      => 'required|date',
         ]);
+
+        if (!$data['customer_id'] && !$data['customer_phone']) {
+            return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'RECHARGE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
         return response()->json(RechargeSale::create($data), 201);

@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 
 class OldMobileController extends Controller
 {
+    use \App\Traits\SyncsWithCustomer;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -20,13 +21,21 @@ class OldMobileController extends Controller
     {
         $user = $request->user();
         $data = $request->validate([
-            'customer_id'    => 'required|exists:customers,id',
+            'customer_id'    => 'nullable|exists:customers,id',
+            'customer_name'  => 'nullable|string|max:150',
+            'customer_phone' => 'nullable|string|max:20',
             'model_name'     => 'required|string|max:150',
             'imei'           => 'nullable|string|max:20',
             'purchase_price' => 'required|numeric|min:0',
             'condition_note' => 'nullable|string',
             'purchase_date'  => 'required|date',
         ]);
+
+        if (!$data['customer_id'] && !$data['customer_phone']) {
+            return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
         return response()->json(OldMobilePurchase::create($data), 201);

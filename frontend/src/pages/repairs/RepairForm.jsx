@@ -10,6 +10,7 @@ export default function RepairForm() {
     customer_phone:'', 
     customer_email:'', 
     customer_address:'', 
+    customer_id: '',
     submitted_date: new Date().toISOString().slice(0,10),
     device_model:'', 
     quoted_amount: 0,
@@ -25,6 +26,8 @@ export default function RepairForm() {
   const [externalShops, setExternalShops] = useState([]);
   const [showShopList, setShowShopList] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showCustList, setShowCustList] = useState(false);
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -52,6 +55,7 @@ export default function RepairForm() {
           service_center_cost: parseFloat(r.data.service_center_cost || 0),
           balance_amount_received: parseFloat(r.data.balance_amount_received || 0),
         });
+        setCustomerSearch(r.data.customer_name || '');
       });
     }
   }, [id]);
@@ -135,9 +139,35 @@ export default function RepairForm() {
             {/* Customer & Specs Info */}
             <div className="col-md-8 border-end pe-3">
               <div className="row g-2">
-                <div className="col-md-6 text-uppercase">
+                <div className="col-md-6 text-uppercase position-relative">
                   <label className="x-small fw-bold text-muted mb-0">Customer Name *</label>
-                  <input className="form-control form-control-sm border-2 fw-bold" required {...f('customer_name')} />
+                  <input 
+                    className="form-control form-control-sm border-2 fw-bold text-uppercase" 
+                    required 
+                    placeholder="Search or Type Name..."
+                    value={customerSearch}
+                    onChange={e => {
+                        setCustomerSearch(e.target.value);
+                        setForm({ ...form, customer_name: e.target.value.toUpperCase() });
+                        setShowCustList(true);
+                    }}
+                    onFocus={() => setShowCustList(true)}
+                    onBlur={() => setTimeout(() => setShowCustList(false), 200)}
+                  />
+                  {showCustList && customerSearch && (
+                      <div className="position-absolute w-100 bg-white shadow border rounded mt-1 overflow-auto z-3" style={{ maxHeight: 200, left: 0 }}>
+                          {customers.filter(c => c.name.toUpperCase().includes(customerSearch.toUpperCase()) || c.phone.includes(customerSearch)).slice(0, 10).map((c, i) => (
+                              <div key={i} className="p-2 x-small cursor-pointer border-bottom hover-bg-light text-uppercase d-flex justify-content-between" onMouseDown={() => {
+                                  setForm({ ...form, customer_id: c.id, customer_name: c.name, customer_phone: c.phone, customer_email: c.email || '', customer_address: c.address || '' });
+                                  setCustomerSearch(c.name);
+                                  setShowCustList(false);
+                              }}>
+                                  <span className="fw-bold">{c.name}</span>
+                                  <span className="text-muted">{c.phone}</span>
+                              </div>
+                          ))}
+                      </div>
+                  )}
                 </div>
                 <div className="col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Phone *</label>

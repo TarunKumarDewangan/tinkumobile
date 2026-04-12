@@ -116,13 +116,21 @@ export default function Customers() {
         </div>
         {loading ? <div className="text-center py-4"><div className="spinner-border spinner-border-sm" /></div> : (
           <table className="table table-hover mb-0">
-            <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Event Details</th><th>Voucher</th><th>Actions</th></tr></thead>
+            <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Last Activity</th><th>Event Details</th><th>Voucher</th><th>Actions</th></tr></thead>
             <tbody>
               {customers.map((c, i) => (
                 <tr key={c.id}>
                   <td className="text-muted" style={{ fontSize:'0.8rem' }}>{i+1}</td>
                   <td className="fw-semibold">{c.name}</td>
                   <td>{c.phone}</td>
+                  <td>
+                    {c.last_action ? (
+                       <div className="d-flex flex-column">
+                          <span className="badge bg-secondary text-uppercase x-small">{c.last_action}</span>
+                          <span className="x-small text-muted mt-1">{new Date(c.last_action_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                       </div>
+                    ) : '—'}
+                  </td>
                   <td>
                     {c.events && c.events.length > 0 ? (
                       <div className="d-flex flex-column gap-1">

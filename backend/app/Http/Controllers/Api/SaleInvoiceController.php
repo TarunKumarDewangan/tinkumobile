@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 
 class SaleInvoiceController extends Controller
 {
-    use RecordsTransactions;
+    use RecordsTransactions, \App\Traits\SyncsWithCustomer;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -50,7 +50,11 @@ class SaleInvoiceController extends Controller
 
         $data = $request->validate([
             'shop_id'          => $user->hasFullAccess() ? 'required|exists:shops,id' : 'nullable',
-            'customer_id'      => 'required|exists:customers,id',
+            'customer_id'      => 'nullable|exists:customers,id',
+            'customer_name'    => 'nullable|string|max:150',
+            'customer_phone'   => 'nullable|string|max:20',
+            'customer_email'   => 'nullable|email|max:100',
+            'customer_address' => 'nullable|string',
             'sale_date'        => 'required|date',
             'bill_type'        => 'in:kaccha,pakka',
             'payment_method'   => 'in:cash,card,mobile',
@@ -76,6 +80,12 @@ class SaleInvoiceController extends Controller
             'gift_items.*.gift_product_id' => 'exists:gift_products,id',
             'gift_items.*.quantity'        => 'integer|min:1',
         ]);
+
+        if (!$data['customer_id'] && !$data['customer_phone']) {
+            return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        $customerId = $data['customer_id'] ?? $this->syncCustomer($data, 'SALE');
 
         DB::beginTransaction();
         try {
@@ -119,7 +129,7 @@ class SaleInvoiceController extends Controller
             $invoice = SaleInvoice::create([
                 'invoice_no'     => $invoiceNo,
                 'shop_id'        => $shopId,
-                'customer_id'    => $data['customer_id'],
+                'customer_id'    => $customerId,
                 'user_id'        => $user->id,
                 'sale_date'      => $data['sale_date'],
                 'total_amount'   => $totalAmount,

@@ -10,7 +10,7 @@ class RepairRequest extends Model
 {
     use UppercaseStrings;
     protected $fillable = [
-        'shop_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
+        'shop_id', 'customer_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
         'device_model', 'quoted_amount', 'service_center_cost', 'advance_amount',
         'issue_description', 'status', 'assigned_to',
         'is_forwarded', 'forwarded_to', 'forwarded_phone', 'external_expected_delivery',

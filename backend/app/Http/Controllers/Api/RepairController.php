@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairRequest;
+use App\Traits\SyncsWithCustomer;
 use Illuminate\Http\Request;
 
 class RepairController extends Controller
 {
+    use SyncsWithCustomer;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -90,7 +92,11 @@ class RepairController extends Controller
             'issue_description.*' => 'required|string',
         ]);
 
-        $repair = RepairRequest::create(array_merge($data, ['created_by' => 'customer']));
+        $customerId = $this->syncCustomer($data, 'REPAIR');
+        $repair = RepairRequest::create(array_merge($data, [
+            'customer_id' => $customerId,
+            'created_by' => 'customer'
+        ]));
         return response()->json(['message' => 'Repair request submitted', 'id' => $repair->id], 201);
     }
 
@@ -125,7 +131,9 @@ class RepairController extends Controller
             'balance_received_at'       => 'nullable|date',
         ]);
 
+        $customerId = $this->syncCustomer($data, 'REPAIR');
         $repair = RepairRequest::create(array_merge($data, [
+            'customer_id' => $customerId,
             'shop_id'    => $shopId,
             'created_by' => 'staff',
             'staff_id'   => $user->id,
@@ -163,6 +171,10 @@ class RepairController extends Controller
             'balance_amount_received'   => 'nullable|numeric',
             'balance_received_at'       => 'nullable|date',
         ]);
+
+        if ($request->hasAny(['customer_name', 'customer_phone', 'customer_email', 'customer_address'])) {
+            $data['customer_id'] = $this->syncCustomer(array_merge($repair->toArray(), $data), 'REPAIR');
+        }
 
         if ($request->status === 'delivered' && !$repair->actual_delivery_date) {
             $data['actual_delivery_date'] = now();

@@ -37,6 +37,10 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/repair-request', [RepairController::class, 'publicStore']); // Customer submits repair
 Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile']);
 
+// Customer Portal
+Route::post('/customer/login', [CustomerController::class, 'portalLogin']);
+Route::get('/customer/history/{customer}', [CustomerController::class, 'getHistory']);
+
 // ── Authenticated Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->group(function () {
 

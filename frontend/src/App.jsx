@@ -47,6 +47,8 @@ import PublicRetailerProfile from './pages/airtel/PublicRetailerProfile';
 import Cashbook from './pages/accounts/Cashbook';
 import Overheads from './pages/accounts/Overheads';
 import ExpenseCategories from './pages/accounts/ExpenseCategories';
+import CustomerLogin from './pages/customer/CustomerLogin';
+import CustomerProfile from './pages/customer/CustomerProfile';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -61,6 +63,8 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/repair" element={<PublicRepair />} />
       <Route path="/r/:msisdn" element={<PublicRetailerProfile />} />
+      <Route path="/customer/login" element={<CustomerLogin />} />
+      <Route path="/customer/profile/:id" element={<CustomerProfile />} />
 
       {/* Protected */}
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
