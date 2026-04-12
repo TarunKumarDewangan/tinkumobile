@@ -120,6 +120,8 @@ export default function Repairs() {
                   onClick={() => handleFilter('is_forwarded', '')}>All</button>
                 <button className={`btn ${filters.is_forwarded === 'false' ? 'btn-primary' : 'btn-outline-primary'}`} 
                   onClick={() => handleFilter('is_forwarded', 'false')}>Local</button>
+                <button className={`btn ${filters.is_forwarded === 'true' ? 'btn-primary' : 'btn-outline-primary'}`} 
+                  onClick={() => handleFilter('is_forwarded', 'true')}>Forwarded</button>
             </div>
 
             {/* Cost Status Filter */}
