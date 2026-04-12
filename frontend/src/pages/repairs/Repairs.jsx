@@ -210,7 +210,8 @@ export default function Repairs() {
                   <th>Device</th>
                   <th>Issues</th>
                   <th>Forwarded To</th>
-                  <th className="text-end">Financials</th>
+                  <th className="text-end">Shop Cost</th>
+                  <th className="text-end">Customer Bills</th>
                   <th>Status</th>
                   <th>Delivery</th>
                   <th className="text-end pe-3">Actions</th>
@@ -241,15 +242,16 @@ export default function Repairs() {
                         <div className="x-small text-muted text-uppercase">Forwarded</div>
                         <div className="text-primary">{totals.forwardedCount} Jobs</div>
                     </td>
-                    <td className="text-end py-3 bg-white shadow-sm rounded-start border-start border-3 border-primary">
+                    <td className="text-end py-3 bg-danger-subtle shadow-sm border-start border-end border-danger border-opacity-25">
+                      <div className="x-small text-uppercase text-danger fw-bold opacity-75">T. Shop Cost</div>
+                      <div className="h6 mb-0 text-danger fw-bold">₹{totals.cost.toLocaleString()}</div>
+                      {totals.costPending > 0 && <div style={{fontSize:'0.65rem'}} className="text-danger-emphasis">Pending: ₹{totals.costPending.toLocaleString()}</div>}
+                    </td>
+                    <td className="text-end py-3 bg-white shadow-sm rounded-end border-end border-3 border-primary">
                       <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: <span className="text-dark">₹{totals.quoted.toLocaleString()}</span></div>
                       <div className="x-small text-uppercase text-muted opacity-75">T. Advance: <span className="text-success">₹{totals.advance.toLocaleString()}</span></div>
-                      <div className="x-small text-uppercase text-muted opacity-75 border-top mt-1 pt-1">
-                        T. Cost: <span className="text-danger">₹{totals.cost.toLocaleString()}</span>
-                        {totals.costPending > 0 && <div style={{fontSize:'0.6rem'}} className="text-danger-emphasis">(Pending: ₹{totals.costPending.toLocaleString()})</div>}
-                      </div>
-                      <div className="mt-1 pt-1 border-top border-light text-primary">
-                        BAL: ₹{totals.balance.toLocaleString()}
+                      <div className="mt-1 pt-1 border-top border-light text-primary fw-bold">
+                        T. BAL: ₹{totals.balance.toLocaleString()}
                       </div>
                     </td>
                     <td colSpan={3}></td>
@@ -290,18 +292,21 @@ export default function Repairs() {
                         <span className="text-muted small italic">Local Repair</span>
                       )}
                     </td>
+                    <td className="text-end">
+                       {r.is_forwarded && r.service_center_cost > 0 ? (
+                         <div className="p-2 rounded bg-light border-start border-danger border-3">
+                            <div className="x-small text-uppercase text-muted mb-1">Charge:</div>
+                            <div className={`${r.is_cost_paid ? 'text-dark' : 'text-danger'} fw-bold h6 mb-0`}>
+                                ₹{parseFloat(r.service_center_cost).toLocaleString()}
+                            </div>
+                            {!r.is_cost_paid && <span className="badge bg-danger-subtle text-danger p-1" style={{fontSize:'0.6rem'}}>PENDING</span>}
+                            {r.is_cost_paid && <span className="badge bg-success-subtle text-success p-1" style={{fontSize:'0.6rem'}}>PAID</span>}
+                         </div>
+                       ) : <span className="text-muted small italic">-</span>}
+                    </td>
                     <td className="text-end bg-light-subtle rounded-3" style={{ borderLeft: '3px solid #dee2e6' }}>
                       <div className="x-small text-uppercase text-muted opacity-75">Quoted: <span className="text-dark fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</span></div>
                       <div className="x-small text-uppercase text-muted opacity-75">Advance: <span className="text-success fw-bold">₹{parseFloat(r.advance_amount || 0).toLocaleString()}</span></div>
-                      {r.is_forwarded && r.service_center_cost > 0 && (
-                        <div className="x-small text-uppercase text-muted opacity-75 border-top border-white mt-1 pt-1">
-                          Cost: <span className={`${r.is_cost_paid ? 'text-dark' : 'text-danger'} fw-bold`}>
-                            ₹{parseFloat(r.service_center_cost || 0).toLocaleString()}
-                          </span>
-                          {!r.is_cost_paid && <span className="ms-1 badge bg-danger-subtle text-danger" style={{fontSize:'0.65rem'}}>PENDING</span>}
-                          {r.is_cost_paid && <span className="ms-1 badge bg-success-subtle text-success" style={{fontSize:'0.65rem'}}>PAID</span>}
-                        </div>
-                      )}
                       
                       {r.balance_received_at ? (
                         <div className="mt-1 pt-1 border-top border-light animate-fade-in text-end">
