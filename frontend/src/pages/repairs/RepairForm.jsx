@@ -288,20 +288,30 @@ export default function RepairForm() {
                 </select>
               </div>
 
-              {form.status === 'delivered' && !form.balance_received_at && (
+              {(balance > 0 || form.balance_amount_received > 0) && (
                 <div className="mb-2 animate-fade-in border-top pt-2">
-                  <label className="x-small fw-bold text-info d-block mb-1">Final Settlement Amount</label>
+                  <label className="x-small fw-bold text-info d-block mb-1">
+                    {form.balance_received_at ? 'Settled Amount' : 'Balance Settlement (Receive)'}
+                  </label>
                   <div className="input-group input-group-sm mb-1">
                     <span className="input-group-text bg-white text-info">₹</span>
-                    <input type="number" step="0.01" className="form-control fw-bold text-info fs-5" {...f('balance_amount_received')} />
+                    <input 
+                        type="number" 
+                        step="0.01" 
+                        className={`form-control fw-bold text-info fs-5 ${form.balance_received_at ? 'bg-light' : ''}`} 
+                        {...f('balance_amount_received')} 
+                        readOnly={!!form.balance_received_at}
+                    />
                   </div>
-                  <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
-                    <option value="CASH">CASH</option>
-                    <option value="PHONEPE">PHONEPE</option>
-                    <option value="GPAY">GPAY</option>
-                    <option value="PAYTM">PAYTM</option>
-                    <option value="CARD">CARD</option>
-                  </select>
+                  {!form.balance_received_at && (
+                    <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
+                        <option value="CASH">CASH</option>
+                        <option value="PHONEPE">PHONEPE</option>
+                        <option value="GPAY">GPAY</option>
+                        <option value="PAYTM">PAYTM</option>
+                        <option value="CARD">CARD</option>
+                    </select>
+                  )}
                 </div>
               )}
 
