@@ -285,6 +285,7 @@ export default function RepairForm() {
               <div className="mb-2">
                 <select className="form-select form-select-sm x-small py-0" style={{ height: '24px' }} {...f('advance_payment_mode')}>
                   <option value="CASH">ADVANCE MODE: CASH</option>
+                  <option value="ONLINE">ADVANCE MODE: ONLINE PAYMENT</option>
                   <option value="PHONEPE">ADVANCE MODE: PHONEPE</option>
                   <option value="GPAY">ADVANCE MODE: GPAY</option>
                   <option value="PAYTM">ADVANCE MODE: PAYTM</option>
@@ -317,6 +318,7 @@ export default function RepairForm() {
                   {!form.balance_received_at && (
                     <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
                         <option value="CASH">PAYMENT MODE: CASH</option>
+                        <option value="ONLINE">PAYMENT MODE: ONLINE PAYMENT</option>
                         <option value="PHONEPE">PAYMENT MODE: PHONEPE</option>
                         <option value="GPAY">PAYMENT MODE: GPAY</option>
                         <option value="PAYTM">PAYMENT MODE: PAYTM</option>
