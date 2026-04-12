@@ -325,7 +325,7 @@ export default function QuickRecovery() {
                                     <select 
                                         className="form-select border-end-0 fw-bold text-uppercase x-small" 
                                         style={{maxWidth:'120px'}}
-                                        value={['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : (recoveryForm.notes ? 'OTHER' : 'CASH')}
+                                        value={['CASH','GPAY','PHONE PE','PAYTM','DIGITAL','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : (recoveryForm.notes ? 'OTHER' : 'CASH')}
                                         onChange={e => {
                                             if (e.target.value === 'OTHER') {
                                                 setRecoveryForm({...recoveryForm, notes: ''});
@@ -337,22 +337,23 @@ export default function QuickRecovery() {
                                     >
                                         <option value="CASH">CASH</option>
                                         <option value="GPAY">GPAY</option>
-                                        <option value="PHONEPE">PHONEPE</option>
+                                        <option value="PHONE PE">PHONE PE</option>
                                         <option value="PAYTM">PAYTM</option>
+                                        <option value="DIGITAL">DIGITAL</option>
                                         <option value="BANK">BANK</option>
                                         <option value="OTHER">OTHER</option>
                                     </select>
                                     <input 
                                         type="text" 
                                         className="form-control text-uppercase x-small" 
-                                        placeholder={recoveryForm.notes?.split(' - ')[0] === 'OTHER' || !['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? "TYPE PAYMENT MODE..." : "ANY EXTRA DETAILS..."}
+                                        placeholder={recoveryForm.notes?.split(' - ')[0] === 'OTHER' || !['CASH','GPAY','PHONE PE','PAYTM','DIGITAL','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? "TYPE PAYMENT MODE..." : "ANY EXTRA DETAILS..."}
                                         value={
-                                            ['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) 
+                                            ['CASH','GPAY','PHONE PE','PAYTM','DIGITAL','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) 
                                             ? (recoveryForm.notes?.includes(' - ') ? recoveryForm.notes.split(' - ')[1] : '')
                                             : recoveryForm.notes
                                         }
                                         onChange={e => {
-                                            const mode = ['CASH','GPAY','PHONEPE','PAYTM','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : 'OTHER';
+                                            const mode = ['CASH','GPAY','PHONE PE','PAYTM','DIGITAL','BANK'].includes(recoveryForm.notes?.split(' - ')[0]) ? recoveryForm.notes.split(' - ')[0] : 'OTHER';
                                             if (mode === 'OTHER') {
                                                 setRecoveryForm({...recoveryForm, notes: e.target.value.toUpperCase()});
                                             } else {

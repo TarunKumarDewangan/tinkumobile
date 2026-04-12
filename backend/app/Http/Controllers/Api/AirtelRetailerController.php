@@ -148,12 +148,17 @@ class AirtelRetailerController extends Controller
             'notes' => $validated['notes'] ?? null
         ]);
 
+        // Extract Payment Mode from notes for Transaction recording
+        $notes = $validated['notes'] ?? '';
+        $parts = explode(' - ', $notes);
+        $mode = strtoupper(trim($parts[0])) ?: 'CASH';
+
         // Record Transaction
         $this->recordTransaction([
             'type'             => 'IN',
             'category'         => 'AIRTEL_RECOVERY',
             'amount'           => $recovery->amount,
-            'payment_mode'     => 'CASH', // Default for now
+            'payment_mode'     => $mode,
             'description'      => "Recovery payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
             'entity_id'        => $recovery->id,
             'entity_type'      => \App\Models\AirtelRecovery::class,
@@ -408,6 +413,7 @@ class AirtelRetailerController extends Controller
 
         return response()->json([
             'retailer' => [
+                'id' => $retailer->id,
                 'name' => $retailer->name,
                 'msisdn' => $retailer->msisdn,
                 'address' => $retailer->address,
