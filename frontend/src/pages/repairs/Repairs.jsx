@@ -338,22 +338,21 @@ export default function Repairs() {
                     </td>
                     <td className="text-end bg-light-subtle rounded-3" style={{ borderLeft: '3px solid #dee2e6' }}>
                       <div className="x-small text-uppercase text-muted opacity-75">Quoted: <span className="text-dark fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</span></div>
-                      {!r.balance_received_at && (
-                        <div className="x-small text-uppercase text-muted opacity-75">Advance: <span className="text-success fw-bold">₹{parseFloat(r.advance_amount || 0).toLocaleString()}</span></div>
-                      )}
                       
-                      {r.balance_received_at ? (
+                      <div className="x-small text-uppercase text-muted opacity-75 mt-1">Settled: <span className="text-success fw-bold">₹{(parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0)).toLocaleString()}</span></div>
+                      
+                      {(!r.balance_received_at || (parseFloat(r.quoted_amount) > (parseFloat(r.advance_amount) + parseFloat(r.balance_amount_received)))) ? (
+                        <div className="mt-1 pt-1 border-top border-light">
+                          <div className="small text-uppercase fw-bold text-primary">Due: ₹{Math.max(0, parseFloat(r.quoted_amount || 0) - (parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0))).toLocaleString()}</div>
+                        </div>
+                      ) : (
                         <div className="mt-1 pt-1 border-top border-light animate-fade-in text-end">
                            <div className="badge bg-success small">SETTLED</div>
                            {r.balance_received_at && (
-                             <div className="text-muted x-small mt-1">
+                             <div className="text-muted" style={{fontSize:'0.6rem'}}>
                                 {new Date(r.balance_received_at).toLocaleDateString()}
                              </div>
                            )}
-                        </div>
-                      ) : (
-                        <div className="mt-1 pt-1 border-top border-light">
-                          <div className="small text-uppercase fw-bold text-primary">Due: ₹{parseFloat((r.quoted_amount || 0) - (r.advance_amount || 0)).toLocaleString()}</div>
                         </div>
                       )}
                     </td>

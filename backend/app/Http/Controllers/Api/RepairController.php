@@ -200,12 +200,22 @@ class RepairController extends Controller
 
         if ($request->status === 'delivered' && !$repair->actual_delivery_date) {
             $data['actual_delivery_date'] = now();
-            // If balance is not yet marked as received but status is delivered, 
-            // we should probably not force it, but let's at least mark the delivery date.
-            if (!$repair->balance_received_at && (float)$repair->quoted_amount > (float)$repair->advance_amount) {
-                $data['balance_received_at'] = now();
-                $data['balance_amount_received'] = (float)$repair->quoted_amount - (float)$repair->advance_amount;
-            }
+        }
+
+        // Handle auto-settlement/suggested settlement
+        if ($request->status === 'delivered' && !$repair->balance_received_at) {
+             $balance = (float)$repair->quoted_amount - (float)$repair->advance_amount;
+             
+             // If user didn't provide an amount, but we are marking as delivered, 
+             // assume the standard balance is received.
+             if (!$request->filled('balance_amount_received') && $balance > 0) {
+                 $data['balance_amount_received'] = $balance;
+             }
+
+             // If we have an amount (either from request or from auto-calc), mark settlement date
+             if (isset($data['balance_amount_received']) || $request->filled('balance_amount_received')) {
+                 $data['balance_received_at'] = now();
+             }
         }
 
         $repair->update($data);
