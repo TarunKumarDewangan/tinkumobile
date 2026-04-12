@@ -49,6 +49,7 @@ import Overheads from './pages/accounts/Overheads';
 import ExpenseCategories from './pages/accounts/ExpenseCategories';
 import CustomerLogin from './pages/customer/CustomerLogin';
 import CustomerProfile from './pages/customer/CustomerProfile';
+import EntityLedger from './pages/accounts/EntityLedger';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -114,6 +115,7 @@ function AppRoutes() {
         <Route path="airtel/reports" element={<AirtelReports />} />
         {/* Accounts */}
         <Route path="accounts/cashbook" element={<Cashbook />} />
+        <Route path="accounts/entity-ledger" element={<EntityLedger />} />
         <Route path="accounts/expenses" element={<Overheads />} />
         <Route path="accounts/categories" element={<ExpenseCategories />} />
       </Route>
