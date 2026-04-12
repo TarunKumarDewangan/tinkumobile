@@ -59,6 +59,7 @@ const NAV = [
     children: [
         { to: '/accounts/cashbook', icon: '📖', label: 'Cashbook', perm: 'view_reports' },
         { to: '/accounts/entity-ledger', icon: '🧾', label: 'Entity Ledger', perm: 'view_reports' },
+        { to: '/accounts/entity-manager', icon: '👥', label: 'Entity Manager', perm: 'view_reports' },
         { to: '/accounts/expenses',  icon: '💸', label: 'Overheads', perm: 'view_reports' },
         { to: '/accounts/categories', icon: '📁', label: 'Categories', perm: 'view_reports' },
     ]

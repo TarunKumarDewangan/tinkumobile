@@ -9,6 +9,7 @@ export default function EntityLedger() {
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [targetEntity, setTargetEntity] = useState(null);
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -33,12 +34,14 @@ export default function EntityLedger() {
   };
 
   const loadLedger = async (name) => {
+    setSelectedEntity(name);
     setLedgerLoading(true);
     try {
-      const res = await api.get(`/entities/${name}/ledger`);
-      setLedger(res.data);
-      setSelectedEntity(name);
-    } catch (e) {
+      const { data } = await api.get(`/entities/${name}/ledger`);
+      // data is { entity: {...}, transactions: [...] }
+      setLedger(data.transactions || []);
+      setTargetEntity(data.entity); // Store entity metadata
+    } catch (error) {
       toast.error('Failed to load ledger');
     } finally {
       setLedgerLoading(false);
@@ -72,11 +75,12 @@ export default function EntityLedger() {
   );
 
   const totals = entities.reduce((acc, ent) => {
-    acc.in += parseFloat(ent.total_in || 0);
-    acc.out += parseFloat(ent.total_out || 0);
-    acc.balance += parseFloat(ent.balance || 0);
+    const bal = parseFloat(ent.balance || 0);
+    if (bal > 0) acc.receivable += bal;
+    else if (bal < 0) acc.payable += Math.abs(bal);
+    acc.net += bal;
     return acc;
-  }, { in: 0, out: 0, balance: 0 });
+  }, { receivable: 0, payable: 0, net: 0 });
 
   return (
     <div className="entity-ledger-container h-100 d-flex flex-column">
@@ -87,12 +91,11 @@ export default function EntityLedger() {
         </div>
         
         {/* Summary Stats */}
-        <div className="row g-3">
           <div className="col-md-4">
             <div className="card border-0 shadow-sm bg-success text-white">
               <div className="card-body p-3">
                 <div className="x-small opacity-75 text-uppercase fw-bold">Total Receivable</div>
-                <div className="h4 mb-0">₹{totals.in.toLocaleString()}</div>
+                <div className="h4 mb-0">₹{totals.receivable.toLocaleString()}</div>
               </div>
             </div>
           </div>
@@ -100,19 +103,18 @@ export default function EntityLedger() {
             <div className="card border-0 shadow-sm bg-danger text-white">
               <div className="card-body p-3">
                 <div className="x-small opacity-75 text-uppercase fw-bold">Total Payable</div>
-                <div className="h4 mb-0">₹{totals.out.toLocaleString()}</div>
+                <div className="h4 mb-0">₹{totals.payable.toLocaleString()}</div>
               </div>
             </div>
           </div>
           <div className="col-md-4">
-            <div className="card border-0 shadow-sm bg-primary text-white">
+             <div className={`card border-0 shadow-sm text-white ${totals.net >= 0 ? 'bg-primary' : 'bg-dark'}`}>
               <div className="card-body p-3">
-                <div className="x-small opacity-75 text-uppercase fw-bold">Net Balance</div>
-                <div className="h4 mb-0">₹{totals.balance.toLocaleString()}</div>
+                <div className="x-small opacity-75 text-uppercase fw-bold">Net Business Value</div>
+                <div className="h4 mb-0">₹{totals.net.toLocaleString()}</div>
               </div>
             </div>
           </div>
-        </div>
       </div>
 
       <div className="row g-0 flex-grow-1 overflow-hidden bg-white rounded-4 shadow-sm border">
@@ -194,21 +196,31 @@ export default function EntityLedger() {
                         </tr>
                       </thead>
                       <tbody>
-                        {ledger.map(t => (
-                          <tr key={t.id} className="small">
-                            <td className="ps-3 text-muted">{new Date(t.transaction_date).toLocaleDateString()}</td>
+                        <tr className="table-light italic">
+                          <td className="ps-3" colSpan="3">
+                            <i className="bi bi-info-circle me-1"></i> Opening Account Balance
+                          </td>
+                          <td className={`text-end fw-bold ${targetEntity?.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
+                            ₹{Number(targetEntity?.opening_balance || 0).toLocaleString()}
+                            <div className="x-small fw-normal opacity-50">{targetEntity?.balance_type}</div>
+                          </td>
+                          <td></td>
+                        </tr>
+                        {ledger.map(tx => (
+                          <tr key={tx.id} className="small">
+                            <td className="ps-3 text-muted">{new Date(tx.transaction_date || tx.created_at).toLocaleDateString()}</td>
                             <td>
-                                <span className="badge bg-light text-dark border x-small">{t.category}</span>
+                                <span className="badge bg-light text-dark border x-small">{tx.category}</span>
                             </td>
                             <td>
-                                <div className="fw-semibold">{t.description}</div>
-                                <div className="x-small text-muted">{t.payment_mode}</div>
+                                <div className="fw-semibold">{tx.description}</div>
+                                <div className="x-small text-muted">{tx.payment_mode}</div>
                             </td>
                             <td className="text-end text-success fw-bold">
-                                {t.type === 'CASH_IN' ? `₹${parseFloat(t.amount).toLocaleString()}` : '-'}
+                                {tx.type === 'CASH_IN' ? `₹${parseFloat(tx.amount).toLocaleString()}` : '-'}
                             </td>
                             <td className="text-end text-danger fw-bold pe-3">
-                                {t.type === 'CASH_OUT' ? `₹${parseFloat(t.amount).toLocaleString()}` : '-'}
+                                {tx.type === 'CASH_OUT' ? `₹${parseFloat(tx.amount).toLocaleString()}` : '-'}
                             </td>
                           </tr>
                         ))}

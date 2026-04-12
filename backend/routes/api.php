@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\AirtelDropController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\EntityLedgerController;
+use App\Http\Controllers\Api\EntityController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
@@ -181,10 +182,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::delete('airtel-drops/{drop}', [AirtelDropController::class, 'destroy']);
 
     // Accounting & Transactions
-    Route::get('/entities/statements', [EntityLedgerController::class, 'index']);
-    Route::get('/entities/{name}/ledger', [EntityLedgerController::class, 'show']);
-    Route::post('/entities/settle', [EntityLedgerController::class, 'settle']);
-    
+    Route::get('entities/statements', [EntityLedgerController::class, 'index']);
+    Route::get('entities/{name}/ledger', [EntityLedgerController::class, 'show']);
+    Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
+
+    Route::apiResource('entities', EntityController::class);
+    Route::post('entities-sync', [EntityController::class, 'autoSync']);
+
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
     Route::apiResource('transactions', TransactionController::class);
     Route::apiResource('expense-categories', ExpenseCategoryController::class);
