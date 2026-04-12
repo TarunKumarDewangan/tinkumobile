@@ -9,6 +9,8 @@ export default function CustomerProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  const isAdmin = localStorage.getItem('token');
+  
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -16,13 +18,13 @@ export default function CustomerProfile() {
         setData(res.data);
       } catch (err) {
         toast.error('Could not fetch history');
-        navigate('/customer/login');
+        if (!isAdmin) navigate('/customer/login');
       } finally {
         setLoading(false);
       }
     };
     fetchHistory();
-  }, [id, navigate]);
+  }, [id, navigate, isAdmin]);
 
   if (loading) return <div className="text-center p-5 fw-bold text-primary">Loading your history...</div>;
   if (!data) return null;
@@ -38,7 +40,15 @@ export default function CustomerProfile() {
             <h4 className="fw-bold mb-0 text-primary">Namaste, {customer.name}!</h4>
             <div className="x-small text-muted">{customer.phone}</div>
           </div>
-          <button onClick={() => { localStorage.removeItem('customer_info'); navigate('/customer/login'); }} className="btn btn-outline-danger btn-sm px-3 rounded-pill fw-bold">Logout</button>
+          <button 
+            onClick={() => { 
+                if (isAdmin) navigate('/customers'); 
+                else { localStorage.removeItem('customer_info'); navigate('/customer/login'); } 
+            }} 
+            className={`btn ${isAdmin ? 'btn-outline-secondary' : 'btn-outline-danger'} btn-sm px-3 rounded-pill fw-bold`}
+          >
+            {isAdmin ? 'Close' : 'Logout'}
+          </button>
         </div>
 
         {/* Customer Info Card */}

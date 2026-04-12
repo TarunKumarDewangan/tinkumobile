@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 
@@ -9,6 +10,7 @@ export default function Customers() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:'', phone:'', email:'', address:'', voucher_code:'', events: [] });
   const [editId, setEditId] = useState(null);
+  const navigate = useNavigate();
 
   const load = () => {
     setLoading(true);
@@ -145,6 +147,7 @@ export default function Customers() {
                   </td>
                   <td>{c.voucher_code ? <code className="text-primary">{c.voucher_code}</code> : '—'}</td>
                   <td>
+                    <button className="btn btn-xs btn-outline-info me-1" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => navigate(`/customer/profile/${c.id}`)}>History</button>
                     <button className="btn btn-xs btn-outline-primary me-1" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => { setEditId(c.id); setForm({ ...c, events: c.events || [] }); setShowForm(true); }}>Edit</button>
                     <button className="btn btn-xs btn-outline-danger" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => handleDelete(c.id)}>Delete</button>
                   </td>
