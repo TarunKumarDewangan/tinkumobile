@@ -257,10 +257,10 @@ export default function Repairs() {
                       {totals.costPending > 0 && <div style={{fontSize:'0.65rem'}} className="text-danger-emphasis">Pending: ₹{totals.costPending.toLocaleString()}</div>}
                     </td>
                     <td className="text-end py-3 bg-white shadow-sm rounded-end border-end border-3 border-primary">
-                      <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: <span className="text-dark">₹{totals.quoted.toLocaleString()}</span></div>
-                      <div className="x-small text-uppercase text-muted opacity-75">T. Advance: <span className="text-success">₹{totals.advance.toLocaleString()}</span></div>
+                      <div className="x-small text-uppercase text-muted opacity-75">T. Quoted: <span className="text-dark">₹{(totals.quoted || 0).toLocaleString()}</span></div>
+                      {totals.advanceRemaining > 0 && <div className="x-small text-uppercase text-muted opacity-75">Adv. Pending: <span className="text-success">₹{totals.advanceRemaining.toLocaleString()}</span></div>}
                       <div className="mt-1 pt-1 border-top border-light text-primary fw-bold">
-                        T. BAL: ₹{totals.balance.toLocaleString()}
+                        T. DUE: ₹{(totals.balanceRemaining || 0).toLocaleString()}
                       </div>
                     </td>
                     <td colSpan={3}></td>
