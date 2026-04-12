@@ -61,17 +61,25 @@ export default function Repairs() {
   const handleFilter = (field, val) => setFilters(prev => ({ ...prev, [field]: val }));
 
   const totals = repairs.reduce((acc, r) => {
-    acc.quoted += parseFloat(r.quoted_amount || 0);
-    acc.advance += parseFloat(r.advance_amount || 0);
-    acc.cost += parseFloat(r.service_center_cost || 0);
-    acc.costPending += !r.is_cost_paid ? parseFloat(r.service_center_cost || 0) : 0;
-    acc.balance += (parseFloat(r.quoted_amount || 0) - parseFloat(r.advance_amount || 0));
+    const quoted = parseFloat(r.quoted_amount || 0);
+    const advance = parseFloat(r.advance_amount || 0);
+    const balanceReceived = parseFloat(r.balance_amount_received || 0);
+    const shopCost = parseFloat(r.service_center_cost || 0);
+
+    acc.quoted += quoted;
+    acc.advanceRemaining += (!r.balance_received_at) ? advance : 0;
+    acc.received += advance + balanceReceived;
+    acc.cost += shopCost;
+    acc.given += r.is_cost_paid ? shopCost : 0;
+    acc.costPending += !r.is_cost_paid ? shopCost : 0;
+    acc.balanceRemaining += (!r.balance_received_at) ? (quoted - advance) : 0;
+    
     acc.forwardedCount += r.is_forwarded ? 1 : 0;
     acc.customers.add(r.customer_phone || r.customer_name);
     acc.devices.add(r.device_model);
     acc.issueCount += Array.isArray(r.issue_description) ? r.issue_description.length : 1;
     return acc;
-  }, { quoted: 0, advance: 0, cost: 0, costPending: 0, balance: 0, forwardedCount: 0, customers: new Set(), devices: new Set(), issueCount: 0 });
+  }, { quoted: 0, advanceRemaining: 0, received: 0, cost: 0, costPending: 0, given: 0, balanceRemaining: 0, forwardedCount: 0, customers: new Set(), devices: new Set(), issueCount: 0 });
 
   return (
     <div>
@@ -209,10 +217,11 @@ export default function Repairs() {
                   <th>Customer</th>
                   <th>Device</th>
                   <th>Issues</th>
-                  <th>Forwarded To</th>
-                  <th className="text-end">Shop Cost</th>
+                  <th className="text-end">Recieved</th>
+                  <th className="text-end">Given</th>
                   <th className="text-end">Customer Bills</th>
                   <th>Status</th>
+                  <th>Profile</th>
                   <th>Delivery</th>
                   <th className="text-end pe-3">Actions</th>
                 </tr>
@@ -293,33 +302,44 @@ export default function Repairs() {
                       )}
                     </td>
                     <td className="text-end">
+                       <div className="p-2 rounded bg-success-subtle border-start border-success border-3">
+                          <div className="x-small text-uppercase text-success fw-bold opacity-75">Collected:</div>
+                          <div className="text-success fw-bold h6 mb-0">
+                             ₹{(parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0)).toLocaleString()}
+                          </div>
+                          {r.balance_received_at && <div className="x-small text-muted mt-1" style={{fontSize:'0.6rem'}}>Full Paid</div>}
+                       </div>
+                    </td>
+                    <td className="text-end">
                        {r.is_forwarded && r.service_center_cost > 0 ? (
-                         <div className="p-2 rounded bg-light border-start border-danger border-3">
-                            <div className="x-small text-uppercase text-muted mb-1">Charge:</div>
+                         <div className={`p-2 rounded ${r.is_cost_paid ? 'bg-light' : 'bg-danger-subtle'} border-start border-danger border-3`}>
+                            <div className="x-small text-uppercase text-muted mb-1">{r.is_cost_paid ? 'Paid To:' : 'Owed To:'}</div>
+                            <div className="text-dark fw-bold small text-truncate" style={{maxWidth:100}}>{r.forwarded_to}</div>
                             <div className={`${r.is_cost_paid ? 'text-dark' : 'text-danger'} fw-bold h6 mb-0`}>
                                 ₹{parseFloat(r.service_center_cost).toLocaleString()}
                             </div>
-                            {!r.is_cost_paid && <span className="badge bg-danger-subtle text-danger p-1" style={{fontSize:'0.6rem'}}>PENDING</span>}
-                            {r.is_cost_paid && <span className="badge bg-success-subtle text-success p-1" style={{fontSize:'0.6rem'}}>PAID</span>}
+                            {!r.is_cost_paid && <span className="badge bg-danger text-white p-1" style={{fontSize:'0.6rem'}}>UNSETTLED</span>}
                          </div>
                        ) : <span className="text-muted small italic">-</span>}
                     </td>
                     <td className="text-end bg-light-subtle rounded-3" style={{ borderLeft: '3px solid #dee2e6' }}>
                       <div className="x-small text-uppercase text-muted opacity-75">Quoted: <span className="text-dark fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</span></div>
-                      <div className="x-small text-uppercase text-muted opacity-75">Advance: <span className="text-success fw-bold">₹{parseFloat(r.advance_amount || 0).toLocaleString()}</span></div>
+                      {!r.balance_received_at && (
+                        <div className="x-small text-uppercase text-muted opacity-75">Advance: <span className="text-success fw-bold">₹{parseFloat(r.advance_amount || 0).toLocaleString()}</span></div>
+                      )}
                       
                       {r.balance_received_at ? (
                         <div className="mt-1 pt-1 border-top border-light animate-fade-in text-end">
-                          <div className="text-success fw-bold" style={{ fontSize: '0.65rem' }}>
-                            Settled ₹{parseFloat(r.balance_amount_received).toLocaleString()} at
-                          </div>
-                          <div className="text-muted" style={{ fontSize: '0.65rem' }}>
-                            {new Date(r.balance_received_at).toLocaleString('en-IN')}
-                          </div>
+                           <div className="badge bg-success small">SETTLED</div>
+                           {r.balance_received_at && (
+                             <div className="text-muted x-small mt-1">
+                                {new Date(r.balance_received_at).toLocaleDateString()}
+                             </div>
+                           )}
                         </div>
                       ) : (
                         <div className="mt-1 pt-1 border-top border-light">
-                          <div className="small text-uppercase fw-bold text-primary">Balance: ₹{parseFloat((r.quoted_amount || 0) - (r.advance_amount || 0)).toLocaleString()}</div>
+                          <div className="small text-uppercase fw-bold text-primary">Due: ₹{parseFloat((r.quoted_amount || 0) - (r.advance_amount || 0)).toLocaleString()}</div>
                         </div>
                       )}
                     </td>
@@ -327,6 +347,11 @@ export default function Repairs() {
                        <span className={`badge bg-${STATUS_COLORS[r.status] || 'secondary'} rounded-pill`}>
                          {r.status.replace('_', ' ').toUpperCase()}
                        </span>
+                    </td>
+                    <td className="text-center">
+                        <Link to={`/customers?search=${r.customer_phone}`} className="btn btn-outline-info btn-xs p-1 rounded-circle" title="Customer Profile">
+                           👤
+                        </Link>
                     </td>
                     <td>
                       <div className={`small ${r.estimated_delivery_date && !r.actual_delivery_date && new Date(r.estimated_delivery_date) < new Date() ? 'text-danger fw-bold' : 'text-muted'}`}>
@@ -384,6 +409,7 @@ export default function Repairs() {
       </div>
       <style>{`
         .x-small { font-size: 0.7rem; }
+        .btn-xs { padding: 0.1rem 0.25rem; font-size: 0.7rem; }
         .letter-spacing-1 { letter-spacing: 1px; }
       `}</style>
     </div>
