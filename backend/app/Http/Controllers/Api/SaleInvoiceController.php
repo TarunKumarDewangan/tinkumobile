@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 
 class SaleInvoiceController extends Controller
 {
-    use RecordsTransactions, \App\Traits\SyncsWithCustomer;
+    use \App\Traits\RecordsTransactions, \App\Traits\SyncsWithCustomer;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -152,15 +152,17 @@ class SaleInvoiceController extends Controller
 
             $invoice->updatePaymentStatus();
 
-            // Record Transaction if there's an initial payment
+            // Record Income Transaction in Cashbook
             if ($invoice->total_paid > 0) {
                 $invoice->recordTransaction([
                     'type'             => 'IN',
-                    'category'         => 'SALE',
+                    'category'         => 'SALE_INCOME',
                     'amount'           => $invoice->total_paid,
                     'payment_mode'     => strtoupper($invoice->payment_method),
-                    'description'      => "Initial payment for Invoice #{$invoice->invoice_no}",
-                    'ref_id'           => $invoice->id,
+                    'description'      => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
+                    'entity_type'      => get_class($invoice),
+                    'entity_id'        => $invoice->id,
+                    'shop_id'          => $invoice->shop_id,
                     'transaction_date' => $invoice->sale_date,
                 ]);
             }

@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 
 class RechargeController extends Controller
 {
-    use \App\Traits\SyncsWithCustomer;
+    use \App\Traits\SyncsWithCustomer, \App\Traits\RecordsTransactions;
     // ── Purchases ──────────────────────────────────────────────────────────
     public function purchaseIndex(Request $request)
     {
@@ -64,6 +64,21 @@ class RechargeController extends Controller
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'RECHARGE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
-        return response()->json(RechargeSale::create($data), 201);
+        $recharge = RechargeSale::create($data);
+
+        // Record Income Transaction
+        if ($recharge->amount > 0) {
+            $this->recordTransaction([
+                'type' => 'IN',
+                'category' => 'RECHARGE_INCOME',
+                'amount' => $recharge->amount,
+                'description' => "Recharge income: ₹{$recharge->amount} for {$recharge->mobile_number}",
+                'entity_type' => get_class($recharge),
+                'entity_id' => $recharge->id,
+                'shop_id' => $recharge->shop_id,
+            ]);
+        }
+
+        return response()->json($recharge, 201);
     }
 }

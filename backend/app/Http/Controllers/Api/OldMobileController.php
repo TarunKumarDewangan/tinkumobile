@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 
 class OldMobileController extends Controller
 {
-    use \App\Traits\SyncsWithCustomer;
+    use \App\Traits\SyncsWithCustomer, \App\Traits\RecordsTransactions;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -38,7 +38,22 @@ class OldMobileController extends Controller
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
-        return response()->json(OldMobilePurchase::create($data), 201);
+        $purchase = OldMobilePurchase::create($data);
+
+        // Record Expense Transaction
+        if ($purchase->purchase_amount > 0) {
+            $this->recordTransaction([
+                'type' => 'OUT',
+                'category' => 'OLD_MOBILE_PURCHASE',
+                'amount' => $purchase->purchase_amount,
+                'description' => "Purchased old mobile: {$purchase->model_name} from {$purchase->customer_name}",
+                'entity_type' => get_class($purchase),
+                'entity_id' => $purchase->id,
+                'shop_id' => $purchase->shop_id,
+            ]);
+        }
+
+        return response()->json($purchase, 201);
     }
 
     public function show(Request $request, OldMobilePurchase $oldMobilePurchase)

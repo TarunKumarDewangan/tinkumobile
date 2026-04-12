@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairRequest;
+use App\Traits\RecordsTransactions;
 use App\Traits\SyncsWithCustomer;
 use Illuminate\Http\Request;
 
 class RepairController extends Controller
 {
-    use SyncsWithCustomer;
+    use SyncsWithCustomer, RecordsTransactions;
     public function index(Request $request)
     {
         $user = $request->user();
@@ -139,6 +140,19 @@ class RepairController extends Controller
             'staff_id'   => $user->id,
         ]));
 
+        // Record Advance Payment if any
+        if (isset($data['advance_amount']) && $data['advance_amount'] > 0) {
+            $this->recordTransaction([
+                'type' => 'IN',
+                'category' => 'REPAIR_ADVANCE',
+                'amount' => $data['advance_amount'],
+                'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
+                'entity_type' => get_class($repair),
+                'entity_id' => $repair->id,
+                'shop_id' => $shopId,
+            ]);
+        }
+
         return response()->json($repair, 201);
     }
 
@@ -187,6 +201,33 @@ class RepairController extends Controller
         }
 
         $repair->update($data);
+
+        // Record Balance Settlement
+        if ($request->filled('balance_amount_received') && $request->balance_amount_received > 0) {
+             $this->recordTransaction([
+                'type' => 'IN',
+                'category' => 'REPAIR_SETTLEMENT',
+                'amount' => $request->balance_amount_received,
+                'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
+                'entity_type' => get_class($repair),
+                'entity_id' => $repair->id,
+                'shop_id' => $repair->shop_id,
+            ]);
+        }
+
+        // Record Forwarding Expense (OUT)
+        if ($request->filled('service_center_cost') && $request->service_center_cost > 0 && $repair->wasChanged('service_center_cost')) {
+             $this->recordTransaction([
+                'type' => 'OUT',
+                'category' => 'REPAIR_FORWARDING_EXPENSE',
+                'amount' => $request->service_center_cost,
+                'description' => "Paid to {$repair->forwarded_to} for repair #{$repair->id} ({$repair->device_model})",
+                'entity_type' => get_class($repair),
+                'entity_id' => $repair->id,
+                'shop_id' => $repair->shop_id,
+            ]);
+        }
+
         return response()->json($repair->fresh()->load('assignedTo'));
     }
 

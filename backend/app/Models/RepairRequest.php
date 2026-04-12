@@ -3,12 +3,13 @@
 namespace App\Models;
 
 use App\Traits\UppercaseStrings;
+use App\Traits\RecordsTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class RepairRequest extends Model
 {
-    use UppercaseStrings;
+    use UppercaseStrings, RecordsTransactions;
     protected $fillable = [
         'shop_id', 'customer_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
         'device_model', 'quoted_amount', 'service_center_cost', 'advance_amount',
