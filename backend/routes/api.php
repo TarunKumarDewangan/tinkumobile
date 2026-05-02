@@ -190,6 +190,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('airtel-drops/update-follow-up', [AirtelDropController::class, 'updateFollowUp']);
     Route::get('airtel-drops/summary', [AirtelDropController::class, 'summary']);
     Route::get('airtel-drops/report', [AirtelDropController::class, 'report']);
+    Route::get('airtel-drops/export-recovery-log', [AirtelDropController::class, 'exportRecoveryLog']);
     Route::delete('airtel-drops/{drop}', [AirtelDropController::class, 'destroy']);
 
     // Accounting & Transactions

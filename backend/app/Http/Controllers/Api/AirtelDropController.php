@@ -470,7 +470,6 @@ class AirtelDropController extends Controller
         $to = $request->to_date ?: \Carbon\Carbon::now()->toDateString();
 
         // 1. Daily Performance (Drop-Centric)
-        // Shows the status of all drops made between these dates
         $reportQuery = AirtelDrop::selectRaw("
                 DATE(refill_date) as date, 
                 SUM(amount) as total_dropped,
@@ -489,14 +488,16 @@ class AirtelDropController extends Controller
         });
 
         // 2. Collections Received (Cash-Flow Centric)
-        $recoveries = \App\Models\AirtelRecovery::whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
+        $recoveries = \App\Models\AirtelRecovery::with(['retailer', 'recoveryUser'])
+            ->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
             ->orderBy('recovered_at', 'DESC')
-            ->get()
-            ->groupBy(function($item) {
+            ->get();
+            
+        $collectionsByDay = $recoveries->groupBy(function($item) {
                 return $item->recovered_at->toDateString();
             });
 
-        $collections = $recoveries->map(function($dayRecoveries, $date) {
+        $collections = $collectionsByDay->map(function($dayRecoveries, $date) {
             $modes = $dayRecoveries->groupBy(function($item) {
                 $parts = explode(' - ', $item->notes);
                 $mode = strtoupper(trim($parts[0]));
@@ -512,8 +513,7 @@ class AirtelDropController extends Controller
             ];
         })->values();
 
-        // 3. Retailer Pending Summary (Aggregated & Filtered)
-        // Optimized with subqueries to avoid N+1 problem
+        // 3. Retailer Pending Summary
         $retailerSummary = Retailer::where(function($q) use ($from, $to) {
             $q->whereHas('drops', function($sq) use ($from, $to) {
                 $sq->whereBetween('refill_date', [$from . ' 00:00:00', $to . ' 23:59:59']);
@@ -523,21 +523,28 @@ class AirtelDropController extends Controller
                 $sq->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
             });
         })
-        ->select('retailers.*')
-        ->selectRaw("(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE retailer_id = retailers.id AND refill_date < ?) as history_airdrop", [$from . ' 00:00:00'])
-        ->selectRaw("(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE retailer_id = retailers.id AND recovered_at < ?) as history_received", [$from . ' 00:00:00'])
-        ->selectRaw("(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE retailer_id = retailers.id AND refill_date BETWEEN ? AND ?) as period_airdrop", [$from . ' 00:00:00', $to . ' 23:59:59'])
-        ->selectRaw("(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE retailer_id = retailers.id AND recovered_at BETWEEN ? AND ?) as period_received", [$from . ' 00:00:00', $to . ' 23:59:59'])
+        ->withSum(['drops as history_airdrop' => function($q) use ($from) {
+            $q->where('refill_date', '<', $from . ' 00:00:00');
+        }], 'amount')
+        ->withSum(['recoveries as history_received' => function($q) use ($from) {
+            $q->where('recovered_at', '<', $from . ' 00:00:00');
+        }], 'amount')
+        ->withSum(['drops as period_airdrop' => function($q) use ($from, $to) {
+            $q->whereBetween('refill_date', [$from . ' 00:00:00', $to . ' 23:59:59']);
+        }], 'amount')
+        ->withSum(['recoveries as period_received' => function($q) use ($from, $to) {
+            $q->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
+        }], 'amount')
         ->get()
         ->map(function($r) {
-            $r->opening_bal = ((float)$r->balance + (float)$r->history_airdrop) - (float)$r->history_received;
-            $r->airdrop_total = (float)$r->period_airdrop;
-            $r->received_total = (float)$r->period_received;
+            $r->opening_bal = ((float)$r->balance + (float)($r->history_airdrop ?? 0)) - (float)($r->history_received ?? 0);
+            $r->airdrop_total = (float)($r->period_airdrop ?? 0);
+            $r->received_total = (float)($r->period_received ?? 0);
             $r->pending_total = ($r->opening_bal + $r->airdrop_total) - $r->received_total;
             return $r;
         })
         ->sort(function($a, $b) {
-            if ($a->pending_total != $b->pending_total) {
+            if (abs($a->pending_total - $b->pending_total) > 0.01) {
                 return $b->pending_total <=> $a->pending_total;
             }
             return $b->received_total <=> $a->received_total;
@@ -566,7 +573,56 @@ class AirtelDropController extends Controller
             'daily_report' => $report,
             'collections_received' => $collections,
             'retailer_summary' => $retailerSummary,
-            'summary_aggregate' => $summaryTotals
+            'summary_aggregate' => $summaryTotals,
+            'detailed_recoveries' => $recoveries // Added for frontend table display
         ]);
+    }
+
+    public function exportRecoveryLog(Request $request)
+    {
+        if (!$request->user()->isOwner()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $from = $request->from_date ?: now()->toDateString();
+        $to = $request->to_date ?: now()->toDateString();
+
+        $recoveries = \App\Models\AirtelRecovery::with(['retailer', 'recoveryUser'])
+            ->whereBetween('recovered_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
+            ->orderBy('recovered_at', 'DESC')
+            ->get();
+
+        $filename = "airtel_recovery_report_" . $from . "_to_" . $to . ".csv";
+        
+        $headers = [
+            "Content-type" => "text/csv",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma" => "no-cache",
+            "Cache-Control" => "must-revalidate, post-check=0, pre-check=0",
+            "Expires" => "0"
+        ];
+
+        $columns = ['DATE', 'TIME', 'RETAILER NAME', 'MSISDN', 'AMOUNT', 'MODE/NOTES', 'RECOVERY BY'];
+
+        $callback = function() use($recoveries, $columns) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $columns);
+
+            foreach ($recoveries as $rec) {
+                fputcsv($file, [
+                    $rec->recovered_at->format('d-m-Y'),
+                    $rec->recovered_at->format('h:i A'),
+                    $rec->retailer->name ?? 'Unknown',
+                    $rec->retailer->msisdn ?? 'N/A',
+                    $rec->amount,
+                    $rec->notes,
+                    $rec->recoveryUser->name ?? 'System'
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }

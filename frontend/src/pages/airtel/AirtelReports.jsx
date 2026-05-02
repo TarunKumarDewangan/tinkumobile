@@ -215,8 +215,29 @@ export default function AirtelReports() {
                   <div className="card shadow-sm border-0 border-top border-4 border-success">
                       <div className="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
                           <h6 className="mb-0 text-uppercase fw-bold text-success opacity-75">Daily Cash Collection <small className="text-muted">(Received on specific date)</small></h6>
-                          <div className="badge bg-success-subtle text-success text-uppercase py-2 px-3">
-                              Total Received: ₹{reportData.collections_received?.reduce((acc, curr) => acc + parseFloat(curr.amount_collected), 0).toLocaleString()}
+                          <div className="d-flex gap-2 align-items-center">
+                              <div className="badge bg-success-subtle text-success text-uppercase py-2 px-3 me-2">
+                                  Total Received: ₹{reportData.collections_received?.reduce((acc, curr) => acc + parseFloat(curr.amount_collected), 0).toLocaleString()}
+                              </div>
+                              <button 
+                                  className="btn btn-outline-success btn-sm fw-bold text-uppercase"
+                                  onClick={async () => {
+                                      try {
+                                          const response = await axios.get(`/airtel-drops/export-recovery-log?from_date=${fromDate}&to_date=${toDate}`, { responseType: 'blob' });
+                                          const url = window.URL.createObjectURL(new Blob([response.data]));
+                                          const link = document.createElement('a');
+                                          link.href = url;
+                                          link.setAttribute('download', `Airtel_Recovery_Report_${fromDate}_to_${toDate}.csv`);
+                                          document.body.appendChild(link);
+                                          link.click();
+                                          link.remove();
+                                      } catch (error) {
+                                          toast.error('Export failed');
+                                      }
+                                  }}
+                              >
+                                  📊 Export to Excel
+                              </button>
                           </div>
                       </div>
                       <div className="row g-0 p-2">
@@ -240,6 +261,46 @@ export default function AirtelReports() {
                         {(!reportData.collections_received || reportData.collections_received.length === 0) && (
                             <div className="col-12 py-5 text-center text-muted text-uppercase small">No collections received for this period</div>
                         )}
+                      </div>
+
+                      {/* Detailed Recovery Log Table */}
+                      <div className="border-top mt-2">
+                          <div className="p-3 bg-light-subtle">
+                              <h6 className="x-small fw-bold text-uppercase text-muted mb-0">Detailed Collection Log</h6>
+                          </div>
+                          <div className="table-responsive" style={{maxHeight:'400px'}}>
+                              <table className="table table-hover table-sm align-middle mb-0">
+                                  <thead className="table-light text-uppercase x-small">
+                                      <tr>
+                                          <th className="ps-3">Date / Time</th>
+                                          <th>Retailer</th>
+                                          <th>Amount</th>
+                                          <th>Mode / Notes</th>
+                                          <th className="pe-3">User</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {reportData.detailed_recoveries?.map(rec => (
+                                          <tr key={rec.id} style={{fontSize:'0.75rem'}}>
+                                              <td className="ps-3">
+                                                  <div className="fw-bold">{new Date(rec.recovered_at).toLocaleDateString('en-GB')}</div>
+                                                  <div className="x-small text-muted">{new Date(rec.recovered_at).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}</div>
+                                              </td>
+                                              <td>
+                                                  <div className="fw-bold text-uppercase">{rec.retailer?.name}</div>
+                                                  <div className="x-small text-muted">{rec.retailer?.msisdn}</div>
+                                              </td>
+                                              <td className="fw-bold text-success">₹{parseFloat(rec.amount).toLocaleString()}</td>
+                                              <td className="text-muted text-uppercase" style={{fontSize:'0.65rem'}}>{rec.notes}</td>
+                                              <td className="pe-3 small text-uppercase">{rec.recovery_user?.name || 'System'}</td>
+                                          </tr>
+                                      ))}
+                                      {(!reportData.detailed_recoveries || reportData.detailed_recoveries.length === 0) && (
+                                          <tr><td colSpan="5" className="text-center py-4 text-muted x-small">No detailed records found</td></tr>
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>
                       </div>
                   </div>
               </div>
