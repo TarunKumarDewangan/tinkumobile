@@ -204,16 +204,30 @@ class EntityLedgerController extends Controller
             ]);
         }
 
-        // Compute live balance for this entity (bypass stale cache)
-        $entityService = app(\App\Services\EntityService::class);
-        $entities = collect([$entity]);
-        $calculated = $entityService->calculateBalances($entities);
-        $entity = $calculated->first();
-        
+        // Get real opening balance from the linked model (Retailer has 'balance' column)
+        $realOpeningBalance = (float)$entity->opening_balance;
+        if ($entity->relation_type && $entity->relation_id) {
+            $linkedModel = \DB::table((new $entity->relation_type)->getTable())
+                ->where('id', $entity->relation_id)
+                ->first();
+            if ($linkedModel) {
+                // Retailer uses 'balance' column for opening balance
+                $realOpeningBalance = (float)($linkedModel->balance ?? $linkedModel->opening_balance ?? $entity->opening_balance ?? 0);
+                // Sync it back to entity if stale
+                if ($realOpeningBalance != (float)$entity->opening_balance) {
+                    $entity->opening_balance = $realOpeningBalance;
+                }
+            }
+        }
+
+        $entityId = $entity->id ?? 0;
         $ledgerItems = collect();
 
-        // 1. REAL TRANSACTIONS (Money In/Out)
-        $txQuery = Transaction::where('entity_name', $entityName);
+        // 1. REAL TRANSACTIONS (Money In/Out) - match by BOTH entity_name AND accounting_entity_id
+        $txQuery = Transaction::where(function($q) use ($entityName, $entityId) {
+            $q->where('entity_name', $entityName);
+            if ($entityId) $q->orWhere('accounting_entity_id', $entityId);
+        });
         if ($startDate) $txQuery->where('transaction_date', '>=', $startDate);
         if ($endDate) $txQuery->where('transaction_date', '<=', $endDate);
         
@@ -380,8 +394,9 @@ class EntityLedgerController extends Controller
         // Update entity with live-computed values so frontend shows correct numbers
         $entity->setAttribute('in_worth', (float)$totalIn);
         $entity->setAttribute('out_worth', (float)$totalOut);
-        // net_balance = what they owe us (out_worth) minus what we've received (in_worth)
-        $liveNet = (float)($entity->opening_balance ?? 0) + $totalOut - $totalIn;
+        $entity->setAttribute('opening_balance', $realOpeningBalance);
+        // net_balance = realOpeningBalance (what they owed before) + new drops (out) - payments received (in)
+        $liveNet = $realOpeningBalance + $totalOut - $totalIn;
         $entity->setAttribute('net_balance', $liveNet);
 
         return response()->json([

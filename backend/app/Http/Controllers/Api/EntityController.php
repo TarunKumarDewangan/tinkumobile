@@ -25,7 +25,24 @@ class EntityController extends Controller
             });
         }
         
-        $entities = $query->orderBy('name')->get();
+        $entities = $query->orderBy('name')->with('balance')->get();
+        
+        $service = app(\App\Services\EntityService::class);
+        
+        // Check if we have any corrupt cache values (> 10 million = clearly wrong)
+        $hasCorruptCache = $entities->contains(function($e) {
+            $cached = $e->balance;
+            return $cached && abs((float)$cached->net_balance) > 10000000;
+        });
+        
+        if ($hasCorruptCache) {
+            // Wipe corrupt entity_balances and recalculate all fresh
+            $ids = $entities->pluck('id')->filter()->toArray();
+            if (!empty($ids)) {
+                DB::table('entity_balances')->whereIn('entity_id', $ids)->delete();
+            }
+        }
+        
         return response()->json(Entity::calculateBalances($entities));
     }
 
