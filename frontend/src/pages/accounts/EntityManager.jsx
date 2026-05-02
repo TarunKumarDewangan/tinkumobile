@@ -48,6 +48,20 @@ export default function EntityManager() {
     }
   };
 
+  const handleRecalculate = async () => {
+    if (!window.confirm('This will recalculate EVERY balance from scratch to fix any 118 Billion errors. This may take a few seconds. Continue?')) return;
+    setLoading(true);
+    try {
+      const { data } = await axios.post('/entities/sync-all-balances');
+      toast.success(data.message);
+      fetchEntities();
+    } catch (error) {
+      toast.error('Recalculation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -136,6 +150,9 @@ export default function EntityManager() {
           </div>
           <button className="btn btn-outline-secondary" onClick={handleSync}>
             <i className="bi bi-arrow-repeat me-1" /> Auto-Sync
+          </button>
+          <button className="btn btn-outline-danger" onClick={handleRecalculate}>
+            <i className="bi bi-calculator me-1" /> Recalculate Balances
           </button>
           <button className="btn btn-primary" onClick={() => openModal()}>
              + New Entity
