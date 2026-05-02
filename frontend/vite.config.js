@@ -45,9 +45,15 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-ui': ['react-toastify', 'framer-motion', 'lucide-react'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react/') || id.includes('react-dom/') || id.includes('react-router-dom/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('react-toastify/') || id.includes('framer-motion/') || id.includes('lucide-react/')) {
+              return 'vendor-ui';
+            }
+          }
         }
       }
     },

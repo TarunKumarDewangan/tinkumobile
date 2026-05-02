@@ -306,4 +306,89 @@ class RepairController extends Controller
 
         return response()->json(['message' => 'Cost payment recorded and repair updated', 'repair' => $repair]);
     }
+
+    public function backup(Request $request)
+    {
+        $query = RepairRequest::query();
+        
+        if ($request->filled('start_date')) {
+            $query->whereDate('submitted_date', '>=', $request->start_date);
+        }
+        
+        if ($request->filled('end_date')) {
+            $query->whereDate('submitted_date', '<=', $request->end_date);
+        }
+        
+        $repairs = $query->get();
+        
+        $data = [
+            'timestamp' => now()->toDateTimeString(),
+            'type' => 'repair_backup',
+            'repairs' => $repairs,
+        ];
+        
+        $filename = "repair_backup_" . date('Y-m-d_His') . ".json";
+        
+        return response()->json($data)
+            ->header('Content-Disposition', "attachment; filename=$filename");
+    }
+
+    public function restoreBackup(Request $request)
+    {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Only admins/owners can restore backups.'], 403);
+        }
+
+        $request->validate([
+            'backup_file' => 'required|file|mimetypes:application/json,text/plain'
+        ]);
+
+        $file = $request->file('backup_file');
+        $jsonContent = file_get_contents($file->getRealPath());
+        $data = json_decode($jsonContent, true);
+
+        if (!$data || !isset($data['type']) || $data['type'] !== 'repair_backup' || !isset($data['repairs'])) {
+            return response()->json(['message' => 'Invalid repair backup file format.'], 422);
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::beginTransaction();
+
+            $formatDate = function($dateString) {
+                if (!$dateString) return null;
+                try {
+                    return \Carbon\Carbon::parse($dateString)->format('Y-m-d H:i:s');
+                } catch (\Exception $e) {
+                    return null;
+                }
+            };
+
+            foreach ($data['repairs'] as $item) {
+                $item['created_at'] = $formatDate($item['created_at']);
+                $item['updated_at'] = $formatDate($item['updated_at']);
+                $item['submitted_date'] = $formatDate($item['submitted_date'] ?? null);
+                $item['estimated_delivery_date'] = $formatDate($item['estimated_delivery_date'] ?? null);
+                $item['actual_delivery_date'] = $formatDate($item['actual_delivery_date'] ?? null);
+                $item['balance_received_at'] = $formatDate($item['balance_received_at'] ?? null);
+                $item['cost_paid_at'] = $formatDate($item['cost_paid_at'] ?? null);
+                $item['external_expected_delivery'] = $formatDate($item['external_expected_delivery'] ?? null);
+
+                // Encode array fields back to JSON for DB insert
+                if (isset($item['issue_description']) && is_array($item['issue_description'])) {
+                    $item['issue_description'] = json_encode($item['issue_description']);
+                }
+
+                \Illuminate\Support\Facades\DB::table('repair_requests')->updateOrInsert(
+                    ['id' => $item['id']],
+                    $item
+                );
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+            return response()->json(['message' => 'Backup restored successfully (Upserted ' . count($data['repairs']) . ' records)']);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+        }
+    }
 }

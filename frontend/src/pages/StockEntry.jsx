@@ -8,6 +8,7 @@ import StockList from './stock/components/StockList';
 import OpeningStockForm from './stock/components/OpeningStockForm';
 import StockHistory from './stock/components/StockHistory';
 import EditAdjustmentModal from './stock/components/EditAdjustmentModal';
+import ModelWiseStock from './stock/components/ModelWiseStock';
 
 export default function StockEntry() {
   const [tab, setTab] = useState('stocks');
@@ -188,6 +189,7 @@ export default function StockEntry() {
         <button className={`pm-tab ${tab==='stocks'?'active':''}`} onClick={() => setTab('stocks')}>📦 ALL STOCKS</button>
         <button className={`pm-tab ${tab==='entry'?'active':''}`} onClick={() => setTab('entry')}>📥 ENTRY BEFORE SYSTEM STARTED</button>
         <button className={`pm-tab ${tab==='history'?'active':''}`} onClick={() => setTab('history')}>🕓 HISTORY</button>
+        <button className={`pm-tab ${tab==='model-wise'?'active':''}`} onClick={() => setTab('model-wise')}>📊 MODEL WISE STOCK</button>
       </div>
 
       {tab === 'stocks' && (
@@ -232,6 +234,13 @@ export default function StockEntry() {
             setEditingAdj={setEditingAdj}
             setEditForm={setEditForm}
             handleDelete={handleDelete}
+        />
+      )}
+
+      {tab === 'model-wise' && (
+        <ModelWiseStock 
+            products={inventory.products}
+            loading={inventory.loading}
         />
       )}
 

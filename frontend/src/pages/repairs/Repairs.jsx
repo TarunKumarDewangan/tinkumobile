@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import { useAuth } from '../../contexts/AuthContext';
+import RepairBackupModal from './RepairBackupModal';
 
 const STATUS_COLORS = { pending:'warning', assigned:'info', in_progress:'primary', completed:'success', delivered:'secondary' };
 
@@ -12,6 +13,7 @@ export default function Repairs() {
   const navigate = useNavigate();
   const [repairs, setRepairs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     status: '',
     search: '',
@@ -136,6 +138,9 @@ export default function Repairs() {
                 <button className="btn btn-outline-secondary btn-sm" 
                   onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'', cost_payment_status:'' })}>
                   Reset
+                </button>
+                <button className="btn btn-info btn-sm text-white shadow-sm" onClick={() => setIsBackupModalOpen(true)}>
+                  💾 Backup
                 </button>
                 <Link to="/repairs/new" className="btn btn-primary btn-sm shadow-sm">+ New Repair</Link>
             </div>
@@ -386,6 +391,13 @@ export default function Repairs() {
           </div>
         )}
       </div>
+      
+      <RepairBackupModal 
+        isOpen={isBackupModalOpen} 
+        onClose={() => setIsBackupModalOpen(false)} 
+        onRefresh={load} 
+      />
+
       <style>{`
         .x-small { font-size: 0.7rem; }
         .btn-xs { padding: 0.1rem 0.25rem; font-size: 0.7rem; }

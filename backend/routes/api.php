@@ -95,6 +95,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/sale-invoices/{saleInvoice}/cancel', [SaleInvoiceController::class, 'cancel']);
 
     // Repairs
+    Route::get('/repairs/backup', [RepairController::class, 'backup']);
+    Route::post('/repairs/restore-backup', [RepairController::class, 'restoreBackup']);
     Route::get('/repairs/external-shops', [RepairController::class, 'getExternalShops']);
     Route::post('/repairs/{repair}/pay-cost', [RepairController::class, 'payForwardCost']);
     Route::apiResource('repairs', RepairController::class);
