@@ -212,6 +212,6 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     });
 
     // Full System Sync
-    Route::get('system/export', [SystemBackupController::class, 'export']);
-    Route::post('system/import', [SystemBackupController::class, 'import']);
+    Route::get('system/backup', [SystemBackupController::class, 'backup']);
+    Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup']);
 });

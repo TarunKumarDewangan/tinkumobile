@@ -23,7 +23,7 @@ use Carbon\Carbon;
 
 class SystemBackupController extends Controller
 {
-    public function export(Request $request)
+    public function backup(Request $request)
     {
         if (!$request->user()->isOwner()) return response()->json(['message' => 'Unauthorized'], 403);
 
@@ -48,7 +48,7 @@ class SystemBackupController extends Controller
             ->header('Content-Disposition', "attachment; filename=\"$filename\"");
     }
 
-    public function import(Request $request)
+    public function restoreBackup(Request $request)
     {
         if (!$request->user()->isOwner()) return response()->json(['message' => 'Only the owner can restore system backups'], 403);
 
