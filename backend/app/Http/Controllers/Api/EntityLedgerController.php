@@ -204,10 +204,11 @@ class EntityLedgerController extends Controller
             ]);
         }
 
-        // Batch calculate for the single entity
+        // Compute live balance for this entity (bypass stale cache)
+        $entityService = app(\App\Services\EntityService::class);
         $entities = collect([$entity]);
-        \App\Models\Entity::calculateBalances($entities);
-        $entity = $entities->first();
+        $calculated = $entityService->calculateBalances($entities);
+        $entity = $calculated->first();
         
         $ledgerItems = collect();
 
@@ -371,6 +372,17 @@ class EntityLedgerController extends Controller
                     'created_at' => $i->created_at
                 ]);
             });
+
+        // Compute running totals directly from ledger items for accuracy
+        $totalIn  = $ledgerItems->sum('in_worth');
+        $totalOut = $ledgerItems->sum('out_worth');
+
+        // Update entity with live-computed values so frontend shows correct numbers
+        $entity->setAttribute('in_worth', (float)$totalIn);
+        $entity->setAttribute('out_worth', (float)$totalOut);
+        // net_balance = what they owe us (out_worth) minus what we've received (in_worth)
+        $liveNet = (float)($entity->opening_balance ?? 0) + $totalOut - $totalIn;
+        $entity->setAttribute('net_balance', $liveNet);
 
         return response()->json([
             'entity' => $entity,
