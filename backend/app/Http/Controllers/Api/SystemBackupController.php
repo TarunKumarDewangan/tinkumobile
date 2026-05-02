@@ -29,14 +29,18 @@ class SystemBackupController extends Controller
 
         $data = [
             'type'              => 'FULL_SYSTEM_BACKUP',
-            'version'           => '1.0',
+            'version'           => '1.1',
             'timestamp'         => now()->toDateTimeString(),
             'categories'        => Category::all(),
             'suppliers'         => Supplier::all(),
             'customers'         => Customer::all(),
+            'retailers'         => \App\Models\Retailer::all(),
             'products'          => Product::withTrashed()->get(),
             'purchase_invoices' => PurchaseInvoice::with('items')->get(),
             'sale_invoices'     => SaleInvoice::with(['items', 'giftItems'])->get(),
+            'repair_requests'   => \App\Models\RepairRequest::all(),
+            'airtel_drops'      => \App\Models\AirtelDrop::all(),
+            'airtel_recoveries' => \App\Models\AirtelRecovery::all(),
             'inventories'       => Inventory::all(),
             'stock_adjustments' => StockAdjustment::all(),
             'transactions'      => Transaction::all(),
@@ -69,6 +73,9 @@ class SystemBackupController extends Controller
 
             // Sequence matters for deletion (reverse order of dependencies)
             DB::table('transactions')->delete();
+            DB::table('airtel_recoveries')->delete();
+            DB::table('airtel_drops')->delete();
+            DB::table('repair_requests')->delete();
             DB::table('sale_gift_items')->delete();
             DB::table('sale_items')->delete();
             DB::table('sale_invoices')->delete();
@@ -77,6 +84,7 @@ class SystemBackupController extends Controller
             DB::table('inventory')->delete();
             DB::table('stock_adjustments')->delete();
             DB::table('products')->delete();
+            DB::table('retailers')->delete();
             DB::table('customers')->delete();
             DB::table('suppliers')->delete();
             DB::table('categories')->delete();
@@ -87,7 +95,9 @@ class SystemBackupController extends Controller
                     'created_at', 'updated_at', 'deleted_at', 
                     'purchase_date', 'received_at', 'sale_date', 
                     'adjustment_date', 'date', 'expected_delivery_date',
-                    'transaction_date', 'dob', 'anniversary_date'
+                    'transaction_date', 'dob', 'anniversary_date',
+                    'refill_date', 'recovered_at', 'next_recovery_date',
+                    'submitted_date', 'estimated_delivery_date', 'actual_delivery_date', 'balance_received_at', 'cost_paid_at'
                 ];
                 foreach ($item as $key => $value) {
                     if (in_array($key, $dateFields) || str_ends_with($key, '_at') || str_ends_with($key, '_date')) {
@@ -95,7 +105,7 @@ class SystemBackupController extends Controller
                             try {
                                 $item[$key] = Carbon::parse($value)->format('Y-m-d H:i:s');
                             } catch (\Exception $e) {
-                                // If it's a simple date (Y-m-d), Carbon::parse will still work
+                                // Fallback or ignore
                             }
                         }
                     }
@@ -103,72 +113,62 @@ class SystemBackupController extends Controller
                 if (isset($item['attributes']) && is_array($item['attributes'])) {
                     $item['attributes'] = json_encode($item['attributes']);
                 }
+                if (isset($item['issue_description']) && is_array($item['issue_description'])) {
+                    $item['issue_description'] = json_encode($item['issue_description']);
+                }
                 return $item;
             };
 
-            // 1. Categories
-            if (!empty($data['categories'])) {
-                $categories = array_map($cleanItem, $data['categories']);
-                DB::table('categories')->insert($categories);
-            }
+            // 1. Foundation Tables
+            if (!empty($data['categories'])) DB::table('categories')->insert(array_map($cleanItem, $data['categories']));
+            if (!empty($data['suppliers'])) DB::table('suppliers')->insert(array_map($cleanItem, $data['suppliers']));
+            if (!empty($data['customers'])) DB::table('customers')->insert(array_map($cleanItem, $data['customers']));
+            if (!empty($data['retailers'])) DB::table('retailers')->insert(array_map($cleanItem, $data['retailers']));
 
-            // 2. Suppliers
-            if (!empty($data['suppliers'])) {
-                $suppliers = array_map($cleanItem, $data['suppliers']);
-                DB::table('suppliers')->insert($suppliers);
-            }
-
-            // 3. Customers
-            if (!empty($data['customers'])) {
-                $customers = array_map($cleanItem, $data['customers']);
-                DB::table('customers')->insert($customers);
-            }
-
-            // 4. Products
+            // 2. Products
             if (!empty($data['products'])) {
                 $products = array_map($cleanItem, $data['products']);
                 foreach (array_chunk($products, 500) as $chunk) DB::table('products')->insert($chunk);
             }
 
-            // 5. Purchases
+            // 3. Purchases
             if (!empty($data['purchase_invoices'])) {
                 foreach ($data['purchase_invoices'] as $inv) {
                     $items = $inv['items'] ?? [];
                     unset($inv['items'], $inv['supplier'], $inv['user']);
-                    
                     DB::table('purchase_invoices')->insert($cleanItem($inv));
-                    
-                    $cleanedItems = array_map($cleanItem, $items);
-                    if (!empty($cleanedItems)) DB::table('purchase_items')->insert($cleanedItems);
+                    if (!empty($items)) DB::table('purchase_items')->insert(array_map($cleanItem, $items));
                 }
             }
 
-            // 6. Sales
+            // 4. Sales
             if (!empty($data['sale_invoices'])) {
                 foreach ($data['sale_invoices'] as $inv) {
                     $items = $inv['items'] ?? [];
                     $gifts = $inv['gift_items'] ?? [];
                     unset($inv['items'], $inv['gift_items'], $inv['customer'], $inv['user'], $inv['shop']);
-                    
                     DB::table('sale_invoices')->insert($cleanItem($inv));
-                    
-                    $cleanedItems = array_map($cleanItem, $items);
-                    if (!empty($cleanedItems)) DB::table('sale_items')->insert($cleanedItems);
-
-                    $cleanedGifts = array_map($cleanItem, $gifts);
-                    if (!empty($cleanedGifts)) DB::table('sale_gift_items')->insert($cleanedGifts);
+                    if (!empty($items)) DB::table('sale_items')->insert(array_map($cleanItem, $items));
+                    if (!empty($gifts)) DB::table('sale_gift_items')->insert(array_map($cleanItem, $gifts));
                 }
             }
 
+            // 5. Repairs
+            if (!empty($data['repair_requests'])) {
+                DB::table('repair_requests')->insert(array_map($cleanItem, $data['repair_requests']));
+            }
+
+            // 6. Airtel Data
+            if (!empty($data['airtel_drops'])) {
+                DB::table('airtel_drops')->insert(array_map($cleanItem, $data['airtel_drops']));
+            }
+            if (!empty($data['airtel_recoveries'])) {
+                DB::table('airtel_recoveries')->insert(array_map($cleanItem, $data['airtel_recoveries']));
+            }
+
             // 7. Inventory & Adjustments
-            if (!empty($data['inventories'])) {
-                $inventories = array_map($cleanItem, $data['inventories']);
-                DB::table('inventory')->insert($inventories);
-            }
-            if (!empty($data['stock_adjustments'])) {
-                $adjustments = array_map($cleanItem, $data['stock_adjustments']);
-                DB::table('stock_adjustments')->insert($adjustments);
-            }
+            if (!empty($data['inventories'])) DB::table('inventory')->insert(array_map($cleanItem, $data['inventories']));
+            if (!empty($data['stock_adjustments'])) DB::table('stock_adjustments')->insert(array_map($cleanItem, $data['stock_adjustments']));
 
             // 8. Transactions
             if (!empty($data['transactions'])) {
