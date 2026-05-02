@@ -27,14 +27,26 @@ class EntityLedgerController extends Controller
 
     /**
      * Get summary of all entities with balances.
+     * Computed live from transactions to avoid stale cache issues.
      */
     public function summary()
     {
-        $balances = \App\Models\EntityBalance::all();
+        // Calculate live from transactions (avoiding stale entity_balances cache)
+        $txTotals = \Illuminate\Support\Facades\DB::table('transactions')
+            ->whereNull('deleted_at')
+            ->select(
+                \Illuminate\Support\Facades\DB::raw('SUM(CASE WHEN type = "IN" THEN amount ELSE 0 END) as total_in'),
+                \Illuminate\Support\Facades\DB::raw('SUM(CASE WHEN type = "OUT" THEN amount ELSE 0 END) as total_out')
+            )
+            ->first();
+
+        $totalIn = (float)($txTotals->total_in ?? 0);
+        $totalOut = (float)($txTotals->total_out ?? 0);
         
-        $overallTotal = $balances->sum('net_balance');
-        $receivable = $balances->where('net_balance', '>', 0)->sum('net_balance');
-        $payable = abs($balances->where('net_balance', '<', 0)->sum('net_balance'));
+        // Net = what we've paid out - what we've received (outstanding)
+        $overallTotal = $totalOut - $totalIn;
+        $receivable = $overallTotal > 0 ? $overallTotal : 0;
+        $payable = $overallTotal < 0 ? abs($overallTotal) : 0;
 
         return response()->json([
             'overallTotal' => $overallTotal,

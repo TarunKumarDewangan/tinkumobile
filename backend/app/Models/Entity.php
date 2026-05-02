@@ -42,7 +42,7 @@ class Entity extends Model
     }
 
     /**
-     * Refactored calculateBalances to use the service.
+     * Refactored calculateBalances to use the service (always live, no stale cache).
      * Keeps the method signature for compatibility.
      */
     public static function calculateBalances($entities)
@@ -51,24 +51,13 @@ class Entity extends Model
         
         $service = app(\App\Services\EntityService::class);
         
-        // Return entities with attributes loaded from cache or recalculation
-        return $entities->map(function ($entity) use ($service) {
-            $cached = $entity->balance;
-            
-            if (!$cached) {
-                // If no cache exists, sync it now (fallback for new entities)
-                $cached = $service->syncBalance($entity);
-            }
-
-            $entity->setAttribute('in_worth', (float)$cached->in_worth);
-            $entity->setAttribute('out_worth', (float)$cached->out_worth);
-            $entity->setAttribute('unrealized', (float)$cached->unrealized);
-            $entity->setAttribute('net_balance', (float)$cached->net_balance);
-            $entity->setAttribute('repair_dues', (float)$cached->repair_dues);
+        // Always recalculate live — never read from potentially stale cache
+        $calculated = $service->calculateBalances($entities);
+        
+        return $calculated->map(function ($entity) {
             $entity->setAttribute('entity_name', $entity->name);
             $entity->setAttribute('phone', $entity->phone);
             $entity->setAttribute('opening_balance', (float)$entity->opening_balance);
-
             return $entity;
         });
     }
