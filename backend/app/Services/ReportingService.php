@@ -46,8 +46,8 @@ class ReportingService
             'forwarding' => [DB::table('repair_requests'), 'forwarded_to', 'service_center_cost', [], 'submitted_date', -1],
             'sales'      => [DB::table('sale_invoices'), 'accounting_entity_id', 'grand_total', ['deleted_at' => null], 'sale_date', 1],
             'purchases'  => [DB::table('purchase_invoices'), 'accounting_entity_id', 'grand_total', ['deleted_at' => null], 'purchase_date', -1],
-            'loans'      => [DB::table('loans'), 'accounting_entity_id', DB::raw('monthly_installment * total_months'), [], 'start_date', 1],
-            'airtel'     => [DB::table('airtel_drops'), 'retailer_id', 'amount', [], 'refill_date', 1]
+            'loans'      => [DB::table('loans'), 'accounting_entity_id', 'monthly_installment * total_months', [], 'start_date', 1],
+            'airtel'     => [DB::table('airtel_drops'), 'retailer_id', 'airtel_drops.amount', [], 'refill_date', 1]
         ];
 
         foreach ($aggregates as $type => $config) {
@@ -78,10 +78,11 @@ class ReportingService
             if ($start) $q->where($dateCol, '>=', $start);
             if ($end) $q->where($dateCol, '<=', $end);
 
-            $data = $q->select([
-                DB::raw("$selectKey as group_key"),
-                DB::raw("SUM($valCol) as total")
-            ])->groupBy($selectKey)->get();
+            // Use selectRaw to handle both strings and Expression objects safely
+            $data = $q->select([DB::raw("$selectKey as group_key")])
+                ->selectRaw("SUM($valCol) as total")
+                ->groupBy($selectKey)
+                ->get();
             
             foreach ($data as $row) {
                 $key = $row->group_key;
