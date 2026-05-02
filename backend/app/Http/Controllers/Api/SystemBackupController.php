@@ -83,13 +83,20 @@ class SystemBackupController extends Controller
 
             $cleanItem = function($item) {
                 if (!$item) return $item;
-                $dateFields = ['created_at', 'updated_at', 'deleted_at', 'purchase_date', 'received_at', 'sale_date', 'adjustment_date', 'date', 'expected_delivery_date'];
-                foreach ($dateFields as $field) {
-                    if (isset($item[$field]) && $item[$field]) {
-                        try {
-                            $item[$field] = Carbon::parse($item[$field])->format('Y-m-d H:i:s');
-                        } catch (\Exception $e) {
-                            $item[$field] = null;
+                $dateFields = [
+                    'created_at', 'updated_at', 'deleted_at', 
+                    'purchase_date', 'received_at', 'sale_date', 
+                    'adjustment_date', 'date', 'expected_delivery_date',
+                    'transaction_date', 'dob', 'anniversary_date'
+                ];
+                foreach ($item as $key => $value) {
+                    if (in_array($key, $dateFields) || str_ends_with($key, '_at') || str_ends_with($key, '_date')) {
+                        if ($value) {
+                            try {
+                                $item[$key] = Carbon::parse($value)->format('Y-m-d H:i:s');
+                            } catch (\Exception $e) {
+                                // If it's a simple date (Y-m-d), Carbon::parse will still work
+                            }
                         }
                     }
                 }
