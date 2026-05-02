@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 
-export default function ModelWiseStock({ products, loading }) {
+export default function ModelWiseStock({ products, loading, filters }) {
   const [showModels, setShowModels] = useState(true);
+  const [quickSearch, setQuickSearch] = useState('');
 
   // Group products by Brand and then by Model + Config
   const groupedData = products.reduce((acc, p) => {
     let brand = (p.attributes?.brand || '').trim();
     if (!brand) {
-      // Try to extract brand from the first word of the name (e.g. "SAMSUNG A55" -> "SAMSUNG")
       brand = p.name ? p.name.split(' ')[0] : 'OTHER';
     }
     brand = brand.toUpperCase();
@@ -15,7 +15,6 @@ export default function ModelWiseStock({ products, loading }) {
     const modelAttr = (p.attributes?.model || '').trim();
     let model = modelAttr;
     if (!model) {
-      // If model attribute is missing, use the full name but remove the brand prefix if it exists
       model = p.name || 'UNKNOWN';
       if (model.toUpperCase().startsWith(brand)) {
         model = model.substring(brand.length).trim();
@@ -27,6 +26,13 @@ export default function ModelWiseStock({ products, loading }) {
     const config = ram || storage ? `(${ram}${ram && storage ? '/' : ''}${storage})` : '';
     const modelWithConfig = `${model} ${config}`.trim();
     const stock = parseInt(p.current_stock || 0);
+
+    // Apply Quick Search Filter
+    const searchMatch = !quickSearch || 
+      brand.includes(quickSearch.toUpperCase()) || 
+      modelWithConfig.toUpperCase().includes(quickSearch.toUpperCase());
+
+    if (!searchMatch) return acc;
 
     if (!acc[brand]) acc[brand] = { total: 0, models: {} };
     if (!acc[brand].models[modelWithConfig]) acc[brand].models[modelWithConfig] = 0;
@@ -40,9 +46,22 @@ export default function ModelWiseStock({ products, loading }) {
 
   return (
     <div className="fade-in">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <div className="text-muted small fw-bold text-uppercase letter-spacing-1">
-          📊 Inventory Distribution
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+        <div className="d-flex align-items-center gap-3">
+            <div className="text-muted small fw-bold text-uppercase letter-spacing-1">
+                📊 Inventory Distribution
+            </div>
+            <div className="position-relative" style={{ width: '250px' }}>
+                <input 
+                    type="text" 
+                    className="pm-finput" 
+                    placeholder="⚡ QUICK FILTER (E.G. MOTO A60)..."
+                    value={quickSearch}
+                    onChange={e => setQuickSearch(e.target.value)}
+                    style={{ background: '#f0f9ff', borderColor: '#bae6fd', fontSize: '.7rem', padding: '6px 12px' }}
+                />
+                {quickSearch && <span className="position-absolute end-0 top-50 translate-middle-y me-2 cursor-pointer text-muted" onClick={() => setQuickSearch('')} style={{fontSize:'.8rem'}}>✕</span>}
+            </div>
         </div>
         <label style={{display:'flex',alignItems:'center',gap:10,background:'#fff',padding:'6px 14px',borderRadius:10,cursor:'pointer',border:'1.5px solid #e2e8f0',boxShadow:'0 2px 8px rgba(0,0,0,.04)'}}>
           <input 

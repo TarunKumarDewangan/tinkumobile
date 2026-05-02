@@ -146,7 +146,7 @@ export default function StockEntry() {
         <button className={`pm-tab ${tab==='model-wise'?'active':''}`} onClick={() => setTab('model-wise')}>📊 MODEL WISE STOCK</button>
       </div>
 
-      {tab === 'stocks' && (
+      {(tab === 'stocks' || tab === 'model-wise') && (
         <>
             <StockFilters 
                 filters={filters} 
@@ -155,13 +155,21 @@ export default function StockEntry() {
                 suppliers={inventory.suppliers} 
                 imeiList={inventory.imeiList} 
             />
-            <StockList 
-                products={inventory.products} 
-                loading={inventory.loading} 
-                filters={filters} 
-                handleFilterChange={handleFilterChange} 
-                refresh={inventory.refresh} 
-            />
+            {tab === 'stocks' ? (
+                <StockList 
+                    products={inventory.products} 
+                    loading={inventory.loading} 
+                    filters={filters} 
+                    handleFilterChange={handleFilterChange} 
+                    refresh={inventory.refresh} 
+                />
+            ) : (
+                <ModelWiseStock 
+                    products={inventory.products}
+                    loading={inventory.loading}
+                    filters={filters}
+                />
+            )}
         </>
       )}
 
@@ -191,12 +199,6 @@ export default function StockEntry() {
         />
       )}
 
-      {tab === 'model-wise' && (
-        <ModelWiseStock 
-            products={inventory.products}
-            loading={inventory.loading}
-        />
-      )}
 
       <EditAdjustmentModal 
         editingAdj={editingAdj}
