@@ -551,8 +551,10 @@ export default function SaleForm() {
                                             </div>
                                         </td>
                                         <td className="text-end fw-bold text-primary">₹{((item.quantity * item.unit_price) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                        <td className="pe-3">
-                                            {items.length > 1 && <button type="button" className="btn btn-link text-danger p-0 border-0" onClick={() => removeItem(i)}>✕</button>}
+                                        <td className="pe-3 text-center">
+                                            <button type="button" className="btn btn-sm btn-outline-danger border-0 rounded-circle" onClick={() => removeItem(i)} title="Remove Item">
+                                                <i className="bi bi-trash3"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                 );
