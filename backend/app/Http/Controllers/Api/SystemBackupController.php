@@ -81,49 +81,58 @@ class SystemBackupController extends Controller
             DB::table('suppliers')->delete();
             DB::table('categories')->delete();
 
-            $formatDate = function($dateString) {
-                if (!$dateString) return null;
-                try { return Carbon::parse($dateString)->format('Y-m-d H:i:s'); } catch (\Exception $e) { return null; }
+            $cleanItem = function($item) {
+                if (!$item) return $item;
+                $dateFields = ['created_at', 'updated_at', 'deleted_at', 'purchase_date', 'received_at', 'sale_date', 'adjustment_date', 'date', 'expected_delivery_date'];
+                foreach ($dateFields as $field) {
+                    if (isset($item[$field]) && $item[$field]) {
+                        try {
+                            $item[$field] = Carbon::parse($item[$field])->format('Y-m-d H:i:s');
+                        } catch (\Exception $e) {
+                            $item[$field] = null;
+                        }
+                    }
+                }
+                if (isset($item['attributes']) && is_array($item['attributes'])) {
+                    $item['attributes'] = json_encode($item['attributes']);
+                }
+                return $item;
             };
 
             // 1. Categories
-            if (!empty($data['categories'])) DB::table('categories')->insert($data['categories']);
+            if (!empty($data['categories'])) {
+                $categories = array_map($cleanItem, $data['categories']);
+                DB::table('categories')->insert($categories);
+            }
 
             // 2. Suppliers
-            if (!empty($data['suppliers'])) DB::table('suppliers')->insert($data['suppliers']);
+            if (!empty($data['suppliers'])) {
+                $suppliers = array_map($cleanItem, $data['suppliers']);
+                DB::table('suppliers')->insert($suppliers);
+            }
 
             // 3. Customers
-            if (!empty($data['customers'])) DB::table('customers')->insert($data['customers']);
+            if (!empty($data['customers'])) {
+                $customers = array_map($cleanItem, $data['customers']);
+                DB::table('customers')->insert($customers);
+            }
 
             // 4. Products
             if (!empty($data['products'])) {
-                foreach ($data['products'] as &$p) {
-                    if (isset($p['attributes']) && is_array($p['attributes'])) $p['attributes'] = json_encode($p['attributes']);
-                    if (isset($p['created_at'])) $p['created_at'] = $formatDate($p['created_at']);
-                    if (isset($p['updated_at'])) $p['updated_at'] = $formatDate($p['updated_at']);
-                    if (isset($p['deleted_at'])) $p['deleted_at'] = $formatDate($p['deleted_at']);
-                }
-                foreach (array_chunk($data['products'], 500) as $chunk) DB::table('products')->insert($chunk);
+                $products = array_map($cleanItem, $data['products']);
+                foreach (array_chunk($products, 500) as $chunk) DB::table('products')->insert($chunk);
             }
 
             // 5. Purchases
             if (!empty($data['purchase_invoices'])) {
                 foreach ($data['purchase_invoices'] as $inv) {
                     $items = $inv['items'] ?? [];
-                    unset($inv['items']);
-                    // Format dates
-                    if (isset($inv['purchase_date'])) $inv['purchase_date'] = $formatDate($inv['purchase_date']);
-                    if (isset($inv['received_at'])) $inv['received_at'] = $formatDate($inv['received_at']);
-                    if (isset($inv['created_at'])) $inv['created_at'] = $formatDate($inv['created_at']);
-                    if (isset($inv['updated_at'])) $inv['updated_at'] = $formatDate($inv['updated_at']);
+                    unset($inv['items'], $inv['supplier'], $inv['user']);
                     
-                    DB::table('purchase_invoices')->insert($inv);
+                    DB::table('purchase_invoices')->insert($cleanItem($inv));
                     
-                    foreach ($items as &$item) {
-                        if (isset($item['created_at'])) $item['created_at'] = $formatDate($item['created_at']);
-                        if (isset($item['updated_at'])) $item['updated_at'] = $formatDate($item['updated_at']);
-                    }
-                    if (!empty($items)) DB::table('purchase_items')->insert($items);
+                    $cleanedItems = array_map($cleanItem, $items);
+                    if (!empty($cleanedItems)) DB::table('purchase_items')->insert($cleanedItems);
                 }
             }
 
@@ -132,47 +141,32 @@ class SystemBackupController extends Controller
                 foreach ($data['sale_invoices'] as $inv) {
                     $items = $inv['items'] ?? [];
                     $gifts = $inv['gift_items'] ?? [];
-                    unset($inv['items'], $inv['gift_items']);
+                    unset($inv['items'], $inv['gift_items'], $inv['customer'], $inv['user'], $inv['shop']);
                     
-                    if (isset($inv['sale_date'])) $inv['sale_date'] = $formatDate($inv['sale_date']);
-                    if (isset($inv['created_at'])) $inv['created_at'] = $formatDate($inv['created_at']);
-                    if (isset($inv['updated_at'])) $inv['updated_at'] = $formatDate($inv['updated_at']);
+                    DB::table('sale_invoices')->insert($cleanItem($inv));
                     
-                    DB::table('sale_invoices')->insert($inv);
-                    
-                    foreach ($items as &$item) {
-                        if (isset($item['created_at'])) $item['created_at'] = $formatDate($item['created_at']);
-                        if (isset($item['updated_at'])) $item['updated_at'] = $formatDate($item['updated_at']);
-                    }
-                    if (!empty($items)) DB::table('sale_items')->insert($items);
+                    $cleanedItems = array_map($cleanItem, $items);
+                    if (!empty($cleanedItems)) DB::table('sale_items')->insert($cleanedItems);
 
-                    foreach ($gifts as &$gift) {
-                        if (isset($gift['created_at'])) $gift['created_at'] = $formatDate($gift['created_at']);
-                        if (isset($gift['updated_at'])) $gift['updated_at'] = $formatDate($gift['updated_at']);
-                    }
-                    if (!empty($gifts)) DB::table('sale_gift_items')->insert($gifts);
+                    $cleanedGifts = array_map($cleanItem, $gifts);
+                    if (!empty($cleanedGifts)) DB::table('sale_gift_items')->insert($cleanedGifts);
                 }
             }
 
             // 7. Inventory & Adjustments
-            if (!empty($data['inventories'])) DB::table('inventory')->insert($data['inventories']);
+            if (!empty($data['inventories'])) {
+                $inventories = array_map($cleanItem, $data['inventories']);
+                DB::table('inventory')->insert($inventories);
+            }
             if (!empty($data['stock_adjustments'])) {
-                foreach ($data['stock_adjustments'] as &$adj) {
-                    if (isset($adj['adjustment_date'])) $adj['adjustment_date'] = $formatDate($adj['adjustment_date']);
-                    if (isset($adj['created_at'])) $adj['created_at'] = $formatDate($adj['created_at']);
-                    if (isset($adj['updated_at'])) $adj['updated_at'] = $formatDate($adj['updated_at']);
-                }
-                DB::table('stock_adjustments')->insert($data['stock_adjustments']);
+                $adjustments = array_map($cleanItem, $data['stock_adjustments']);
+                DB::table('stock_adjustments')->insert($adjustments);
             }
 
             // 8. Transactions
             if (!empty($data['transactions'])) {
-                foreach ($data['transactions'] as &$tx) {
-                    if (isset($tx['date'])) $tx['date'] = $formatDate($tx['date']);
-                    if (isset($tx['created_at'])) $tx['created_at'] = $formatDate($tx['created_at']);
-                    if (isset($tx['updated_at'])) $tx['updated_at'] = $formatDate($tx['updated_at']);
-                }
-                foreach (array_chunk($data['transactions'], 500) as $chunk) DB::table('transactions')->insert($chunk);
+                $transactions = array_map($cleanItem, $data['transactions']);
+                foreach (array_chunk($transactions, 500) as $chunk) DB::table('transactions')->insert($chunk);
             }
 
             Schema::enableForeignKeyConstraints();
