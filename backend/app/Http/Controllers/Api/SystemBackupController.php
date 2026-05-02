@@ -29,18 +29,25 @@ class SystemBackupController extends Controller
 
         $data = [
             'type'              => 'FULL_SYSTEM_BACKUP',
-            'version'           => '1.1',
+            'version'           => '1.2',
             'timestamp'         => now()->toDateTimeString(),
             'categories'        => Category::all(),
             'suppliers'         => Supplier::all(),
             'customers'         => Customer::all(),
             'retailers'         => \App\Models\Retailer::all(),
+            'employees'         => \App\Models\Employee::all(),
+            'expense_categories'=> \App\Models\ExpenseCategory::all(),
+            'entities'          => \App\Models\Entity::all(),
+            'entity_balances'   => \App\Models\EntityBalance::all(),
             'products'          => Product::withTrashed()->get(),
             'purchase_invoices' => PurchaseInvoice::with('items')->get(),
             'sale_invoices'     => SaleInvoice::with(['items', 'giftItems'])->get(),
             'repair_requests'   => \App\Models\RepairRequest::all(),
             'airtel_drops'      => \App\Models\AirtelDrop::all(),
             'airtel_recoveries' => \App\Models\AirtelRecovery::all(),
+            'loans'             => \App\Models\Loan::all(),
+            'loan_payments'     => \App\Models\LoanPayment::all(),
+            'salary_payments'   => \App\Models\SalaryPayment::all(),
             'inventories'       => Inventory::all(),
             'stock_adjustments' => StockAdjustment::all(),
             'transactions'      => Transaction::all(),
@@ -73,6 +80,9 @@ class SystemBackupController extends Controller
 
             // Sequence matters for deletion (reverse order of dependencies)
             DB::table('transactions')->delete();
+            DB::table('salary_payments')->delete();
+            DB::table('loan_payments')->delete();
+            DB::table('loans')->delete();
             DB::table('airtel_recoveries')->delete();
             DB::table('airtel_drops')->delete();
             DB::table('repair_requests')->delete();
@@ -84,6 +94,10 @@ class SystemBackupController extends Controller
             DB::table('inventory')->delete();
             DB::table('stock_adjustments')->delete();
             DB::table('products')->delete();
+            DB::table('entity_balances')->delete();
+            DB::table('entities')->delete();
+            DB::table('expense_categories')->delete();
+            DB::table('employees')->delete();
             DB::table('retailers')->delete();
             DB::table('customers')->delete();
             DB::table('suppliers')->delete();
@@ -97,7 +111,8 @@ class SystemBackupController extends Controller
                     'adjustment_date', 'date', 'expected_delivery_date',
                     'transaction_date', 'dob', 'anniversary_date',
                     'refill_date', 'recovered_at', 'next_recovery_date',
-                    'submitted_date', 'estimated_delivery_date', 'actual_delivery_date', 'balance_received_at', 'cost_paid_at'
+                    'submitted_date', 'estimated_delivery_date', 'actual_delivery_date', 'balance_received_at', 'cost_paid_at',
+                    'disbursal_date', 'payment_date'
                 ];
                 foreach ($item as $key => $value) {
                     if (in_array($key, $dateFields) || str_ends_with($key, '_at') || str_ends_with($key, '_date')) {
@@ -124,14 +139,20 @@ class SystemBackupController extends Controller
             if (!empty($data['suppliers'])) DB::table('suppliers')->insert(array_map($cleanItem, $data['suppliers']));
             if (!empty($data['customers'])) DB::table('customers')->insert(array_map($cleanItem, $data['customers']));
             if (!empty($data['retailers'])) DB::table('retailers')->insert(array_map($cleanItem, $data['retailers']));
+            if (!empty($data['employees'])) DB::table('employees')->insert(array_map($cleanItem, $data['employees']));
+            if (!empty($data['expense_categories'])) DB::table('expense_categories')->insert(array_map($cleanItem, $data['expense_categories']));
 
-            // 2. Products
+            // 2. Entities & Balances
+            if (!empty($data['entities'])) DB::table('entities')->insert(array_map($cleanItem, $data['entities']));
+            if (!empty($data['entity_balances'])) DB::table('entity_balances')->insert(array_map($cleanItem, $data['entity_balances']));
+
+            // 3. Products
             if (!empty($data['products'])) {
                 $products = array_map($cleanItem, $data['products']);
                 foreach (array_chunk($products, 500) as $chunk) DB::table('products')->insert($chunk);
             }
 
-            // 3. Purchases
+            // 4. Purchases
             if (!empty($data['purchase_invoices'])) {
                 foreach ($data['purchase_invoices'] as $inv) {
                     $items = $inv['items'] ?? [];
@@ -141,7 +162,7 @@ class SystemBackupController extends Controller
                 }
             }
 
-            // 4. Sales
+            // 5. Sales
             if (!empty($data['sale_invoices'])) {
                 foreach ($data['sale_invoices'] as $inv) {
                     $items = $inv['items'] ?? [];
@@ -153,24 +174,21 @@ class SystemBackupController extends Controller
                 }
             }
 
-            // 5. Repairs
-            if (!empty($data['repair_requests'])) {
-                DB::table('repair_requests')->insert(array_map($cleanItem, $data['repair_requests']));
-            }
+            // 6. Repairs & Airtel
+            if (!empty($data['repair_requests'])) DB::table('repair_requests')->insert(array_map($cleanItem, $data['repair_requests']));
+            if (!empty($data['airtel_drops'])) DB::table('airtel_drops')->insert(array_map($cleanItem, $data['airtel_drops']));
+            if (!empty($data['airtel_recoveries'])) DB::table('airtel_recoveries')->insert(array_map($cleanItem, $data['airtel_recoveries']));
 
-            // 6. Airtel Data
-            if (!empty($data['airtel_drops'])) {
-                DB::table('airtel_drops')->insert(array_map($cleanItem, $data['airtel_drops']));
-            }
-            if (!empty($data['airtel_recoveries'])) {
-                DB::table('airtel_recoveries')->insert(array_map($cleanItem, $data['airtel_recoveries']));
-            }
+            // 7. Loans & Salaries
+            if (!empty($data['loans'])) DB::table('loans')->insert(array_map($cleanItem, $data['loans']));
+            if (!empty($data['loan_payments'])) DB::table('loan_payments')->insert(array_map($cleanItem, $data['loan_payments']));
+            if (!empty($data['salary_payments'])) DB::table('salary_payments')->insert(array_map($cleanItem, $data['salary_payments']));
 
-            // 7. Inventory & Adjustments
+            // 8. Inventory & Adjustments
             if (!empty($data['inventories'])) DB::table('inventory')->insert(array_map($cleanItem, $data['inventories']));
             if (!empty($data['stock_adjustments'])) DB::table('stock_adjustments')->insert(array_map($cleanItem, $data['stock_adjustments']));
 
-            // 8. Transactions
+            // 9. Transactions
             if (!empty($data['transactions'])) {
                 $transactions = array_map($cleanItem, $data['transactions']);
                 foreach (array_chunk($transactions, 500) as $chunk) DB::table('transactions')->insert($chunk);
