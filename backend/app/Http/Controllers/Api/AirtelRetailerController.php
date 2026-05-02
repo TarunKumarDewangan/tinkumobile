@@ -132,92 +132,103 @@ class AirtelRetailerController extends Controller
 
     public function recordRecovery(Request $request, $id)
     {
-        $retailer = Retailer::findOrFail($id);
-        $validated = $request->validate([
-            'amount' => 'required|numeric|min:0.01',
-            'recovered_at' => 'nullable|date',
-            'notes' => 'nullable|string|max:191'
-        ]);
+        return DB::transaction(function () use ($request, $id) {
+            $retailer = Retailer::findOrFail($id);
+            $validated = $request->validate([
+                'amount' => 'required|numeric|min:0.01',
+                'recovered_at' => 'nullable|date',
+                'notes' => 'nullable|string|max:191'
+            ]);
 
-        $recoveredAtInput = $validated['recovered_at'] ?? now();
-        $recoveredAt = Carbon::parse($recoveredAtInput);
+            $recoveredAtInput = $validated['recovered_at'] ?? now();
+            $recoveredAt = Carbon::parse($recoveredAtInput);
 
-        // Security: Block date modification for non-owners/managers
-        $isPowerUser = $request->user()->isOwner() || $request->user()->isManager();
-        if (!$isPowerUser) {
-            $recoveredAt = now();
-        } elseif ($recoveredAt->isToday() && $recoveredAt->hour === 0 && $recoveredAt->minute === 0) {
-            // If it's just a date (no time component or exactly midnight) and matches today, use the current time
-            $recoveredAt = now();
-        }
-
-        $recovery = AirtelRecovery::create([
-            'retailer_id' => $retailer->id,
-            'amount' => $validated['amount'],
-            'recovered_at' => $recoveredAt,
-            'recovery_user_id' => $request->user()->id,
-            'notes' => $validated['notes'] ?? null
-        ]);
-
-        // Extract Payment Mode from notes for Transaction recording
-        $notes = $validated['notes'] ?? '';
-        $parts = explode(' - ', $notes);
-        $mode = strtoupper(trim($parts[0])) ?: 'CASH';
-
-        // Record Transaction using Service
-        $this->transactionService->recordForModel($recovery, [
-            'type'             => 'IN',
-            'category'         => 'AIRTEL_RECOVERY',
-            'amount'           => $recovery->amount,
-            'payment_mode'     => $mode,
-            'description'      => "Recovery payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
-            'entity_name'      => $retailer->name,
-            'transaction_date' => $recovery->recovered_at->toDateString(),
-            'shop_id'          => $retailer->shop_id,
-        ]);
-
-        ActivityLog::log('RECORD_RECOVERY', $retailer, 'Recorded recovery of ₹' . number_format($validated['amount']) . ' for ' . $retailer->name);
-
-        // FIFO: Re-evaluate all drops for this retailer based on current cumulative credit
-        $totalRecovered = AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
-        $availableCredit = (float)$totalRecovered - (float)$retailer->balance;
-
-        $allDrops = AirtelDrop::where('retailer_id', $retailer->id)
-            ->orderBy('refill_date')
-            ->orderBy('created_at')
-            ->get();
-
-        foreach ($allDrops as $drop) {
-            $dropAmt = (float)$drop->amount;
-            if ($availableCredit > 0) {
-                if ($availableCredit >= $dropAmt) {
-                    $drop->update([
-                        'paid_amount' => $dropAmt,
-                        'status' => 'recovered',
-                        'recovered_at' => $drop->status === 'recovered' ? $drop->recovered_at : $recoveredAt,
-                        'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id
-                    ]);
-                    $availableCredit -= $dropAmt;
-                } else {
-                    $drop->update([
-                        'paid_amount' => $availableCredit,
-                        'status' => 'pending', // Partial recovery still counts as pending
-                        'recovered_at' => null,
-                        'recovery_user_id' => null
-                    ]);
-                    $availableCredit = 0;
-                }
-            } else {
-                $drop->update([
-                    'paid_amount' => 0,
-                    'status' => 'pending', 
-                    'recovered_at' => null, 
-                    'recovery_user_id' => null
-                ]);
+            // Security: Block date modification for non-owners/managers
+            $isPowerUser = $request->user()->isOwner() || $request->user()->isManager();
+            if (!$isPowerUser) {
+                $recoveredAt = now();
+            } elseif ($recoveredAt->isToday() && $recoveredAt->hour === 0 && $recoveredAt->minute === 0) {
+                $recoveredAt = now();
             }
-        }
 
-        return response()->json($recovery, 201);
+            $recovery = AirtelRecovery::create([
+                'retailer_id' => $retailer->id,
+                'amount' => $validated['amount'],
+                'recovered_at' => $recoveredAt,
+                'recovery_user_id' => $request->user()->id,
+                'notes' => $validated['notes'] ?? null
+            ]);
+
+            // Extract Payment Mode from notes for Transaction recording
+            $notes = $validated['notes'] ?? '';
+            $parts = explode(' - ', $notes);
+            $mode = strtoupper(trim($parts[0])) ?: 'CASH';
+
+            // Record Transaction using Service
+            $this->transactionService->recordForModel($recovery, [
+                'type'             => 'IN',
+                'category'         => 'AIRTEL_RECOVERY',
+                'amount'           => $recovery->amount,
+                'payment_mode'     => $mode,
+                'description'      => "Recovery payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
+                'entity_name'      => $retailer->name,
+                'transaction_date' => $recovery->recovered_at->toDateString(),
+                'shop_id'          => $retailer->shop_id,
+            ]);
+
+            ActivityLog::log('RECORD_RECOVERY', $retailer, 'Recorded recovery of ₹' . number_format($validated['amount']) . ' for ' . $retailer->name);
+
+            // FIFO: Re-evaluate all drops for this retailer
+            $totalRecovered = AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
+            $availableCredit = (float)$totalRecovered - (float)($retailer->balance ?? 0);
+
+            $allDrops = AirtelDrop::where('retailer_id', $retailer->id)
+                ->orderBy('refill_date')
+                ->orderBy('created_at')
+                ->get();
+
+            foreach ($allDrops as $drop) {
+                $dropAmt = (float)$drop->amount;
+                if ($availableCredit > 0) {
+                    if ($availableCredit >= $dropAmt) {
+                        // Use DB::table to avoid triggering SyncsBalances trait multiple times in a loop
+                        DB::table('airtel_drops')->where('id', $drop->id)->update([
+                            'paid_amount' => $dropAmt,
+                            'status' => 'recovered',
+                            'recovered_at' => $drop->status === 'recovered' ? $drop->recovered_at : $recoveredAt,
+                            'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id,
+                            'updated_at' => now()
+                        ]);
+                        $availableCredit -= $dropAmt;
+                    } else {
+                        DB::table('airtel_drops')->where('id', $drop->id)->update([
+                            'paid_amount' => $availableCredit,
+                            'status' => 'pending',
+                            'recovered_at' => null,
+                            'recovery_user_id' => null,
+                            'updated_at' => now()
+                        ]);
+                        $availableCredit = 0;
+                    }
+                } else {
+                    DB::table('airtel_drops')->where('id', $drop->id)->update([
+                        'paid_amount' => 0,
+                        'status' => 'pending', 
+                        'recovered_at' => null, 
+                        'recovery_user_id' => null,
+                        'updated_at' => now()
+                    ]);
+                }
+            }
+
+            // Sync the entity balance ONCE at the end instead of once per drop
+            $entity = \App\Models\Entity::where('name', $retailer->name)->first();
+            if ($entity) {
+                app(\App\Services\EntityService::class)->syncBalance($entity);
+            }
+
+            return response()->json($recovery, 201);
+        });
     }
 
     public function update(Request $request, $id)
