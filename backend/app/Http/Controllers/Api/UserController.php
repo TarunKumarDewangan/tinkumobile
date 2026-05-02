@@ -21,7 +21,8 @@ class UserController extends Controller
         }
 
         // Strictly hide Admin users from everyone except the actual root Admins
-        if (! $user->is_admin) {
+        // Strictly hide Admin users from everyone except the actual root Admins/Owners
+        if (! $user->hasFullAccess()) {
             $query->whereDoesntHave('roles', function($q) {
                 $q->where('name', 'Admin');
             });
@@ -77,7 +78,7 @@ class UserController extends Controller
     public function show(Request $request, User $user)
     {
         $authUser = $request->user();
-        if (! $authUser->is_admin && $user->hasRole('Admin')) {
+        if (! $authUser->hasFullAccess() && $user->hasRole('Admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         if (! $authUser->hasFullAccess() && $authUser->shop_id !== $user->shop_id) {
@@ -89,7 +90,7 @@ class UserController extends Controller
     public function update(Request $request, User $user)
     {
         $authUser = $request->user();
-        if (! $authUser->is_admin && $user->hasRole('Admin')) {
+        if (! $authUser->hasFullAccess() && $user->hasRole('Admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         if (! $authUser->hasFullAccess() && $authUser->shop_id !== $user->shop_id) {
@@ -128,7 +129,7 @@ class UserController extends Controller
     public function destroy(Request $request, User $user)
     {
         $authUser = $request->user();
-        if (! $authUser->is_admin && $user->hasRole('Admin')) {
+        if (! $authUser->hasFullAccess() && $user->hasRole('Admin')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         if (! $authUser->hasFullAccess() && $authUser->shop_id !== $user->shop_id) {

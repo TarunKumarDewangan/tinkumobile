@@ -9,6 +9,13 @@ use Illuminate\Http\Request;
 
 class GiftController extends Controller
 {
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function products(Request $request)
     {
         return response()->json(GiftProduct::all());
@@ -45,6 +52,18 @@ class GiftController extends Controller
             ['stock' => 0]
         );
         $inv->increment('stock', $data['quantity']);
+        $product = $inv->giftProduct;
+
+        // Record Transaction (Expense)
+        $this->transactionService->recordForModel($inv, [
+            'type'             => 'OUT',
+            'category'         => 'GIFT_STOCK_PURCHASE',
+            'amount'           => $product->purchase_price * $data['quantity'],
+            'description'      => "Purchased gift stock: {$product->name} (Qty: {$data['quantity']})",
+            'transaction_date' => now()->toDateString(),
+            'shop_id'          => $inv->shop_id,
+        ]);
+
         return response()->json($inv->fresh()->load('giftProduct'));
     }
 }

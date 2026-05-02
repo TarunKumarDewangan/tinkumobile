@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Modal from '../../components/Modal';
 
 export default function QuickRecovery() {
-    const { user } = useAuth();
+    const { user, isOwner } = useAuth();
     const [query, setQuery] = useState('');
     const [data, setData] = useState(null);
     const [results, setResults] = useState([]);
@@ -19,6 +19,7 @@ export default function QuickRecovery() {
     });
     const [saving, setSaving] = useState(false);
     const [isConfirming, setIsConfirming] = useState(false);
+    const [historyMode, setHistoryMode] = useState('sequential'); // 'sequential' or 'grouped'
 
     const formatTime = (dateStr) => {
         if (!dateStr) return '';
@@ -190,51 +191,93 @@ export default function QuickRecovery() {
 
                     {/* Simple Stats Row */}
                     <div className="row g-2 mb-3">
-                        <div className="col-6">
+                        <div className="col-4">
                             <div className="card border-0 shadow-sm p-3 rounded-4 text-center bg-white h-100">
-                                <div className="x-small text-uppercase text-muted fw-bold">Dropped</div>
-                                <div className="fw-bold fs-5">₹{parseFloat(data.stats.total_dropped).toLocaleString()}</div>
+                                <div className="x-small text-uppercase text-muted fw-bold">Opening</div>
+                                <div className="fw-bold fs-6">₹{parseFloat(data.stats.opening_balance || 0).toLocaleString()}</div>
                             </div>
                         </div>
-                        <div className="col-6">
+                        <div className="col-4">
+                            <div className="card border-0 shadow-sm p-3 rounded-4 text-center bg-white h-100">
+                                <div className="x-small text-uppercase text-muted fw-bold">Dropped</div>
+                                <div className="fw-bold fs-6">₹{parseFloat(data.stats.total_dropped).toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div className="col-4">
                             <div className="card border-0 shadow-sm p-3 rounded-4 text-center bg-white h-100">
                                 <div className="x-small text-uppercase text-muted fw-bold">Collected</div>
-                                <div className="fw-bold fs-5 text-success">₹{parseFloat(data.stats.total_recovered).toLocaleString()}</div>
+                                <div className="fw-bold fs-6 text-success">₹{parseFloat(data.stats.total_recovered).toLocaleString()}</div>
                             </div>
                         </div>
                     </div>
 
                     {/* History Section */}
                     <div className="card shadow-sm border-0 rounded-4 overflow-hidden">
-                        <div className="card-header bg-white border-0 py-3 ps-4">
+                        <div className="card-header bg-white border-0 py-3 ps-4 d-flex justify-content-between align-items-center">
                             <h6 className="mb-0 fw-bold text-uppercase">Recent History</h6>
+                            <div className="btn-group btn-group-sm rounded-pill overflow-hidden border">
+                                <button 
+                                    className={`btn btn-xs fw-bold text-uppercase px-3 ${historyMode === 'sequential' ? 'btn-primary' : 'btn-white text-muted'}`}
+                                    onClick={() => setHistoryMode('sequential')}
+                                    style={{fontSize:'0.6rem'}}
+                                >
+                                    🕒 Seq
+                                </button>
+                                <button 
+                                    className={`btn btn-xs fw-bold text-uppercase px-3 ${historyMode === 'grouped' ? 'btn-primary' : 'btn-white text-muted'}`}
+                                    onClick={() => setHistoryMode('grouped')}
+                                    style={{fontSize:'0.6rem'}}
+                                >
+                                    📦 Group
+                                </button>
+                            </div>
                         </div>
                         <div className="table-responsive">
                             <table className="table table-hover mb-0 align-middle">
                                 <tbody>
-                                    {[
-                                        ...(data.drops || []).map(d => ({ ...d, entryType: 'DROP' })),
-                                        ...(data.recoveries || []).map(r => ({ ...r, entryType: 'RECOVERY' }))
-                                    ].sort((a,b) => {
-                                        const dateA = new Date(a.entryType === 'DROP' ? a.refill_date : a.recovered_at);
-                                        const dateB = new Date(b.entryType === 'DROP' ? b.refill_date : b.recovered_at);
-                                        return dateB - dateA;
-                                    }).slice(0, 10).map((item, idx) => (
-                                        <tr key={idx} className={item.entryType === 'RECOVERY' ? 'bg-success-light' : ''}>
+                                    {(historyMode === 'sequential' 
+                                        ? [
+                                            ...(data.drops || []).map(d => ({ ...d, entryType: 'DROP' })),
+                                            ...(data.recoveries || []).map(r => ({ ...r, entryType: 'RECOVERY' })),
+                                            ...(parseFloat(data.stats.opening_balance) > 0 ? [{ 
+                                                amount: data.stats.opening_balance, 
+                                                entryType: 'OPENING BALANCE', 
+                                                recovered_at: '1970-01-01T00:00:00Z', // Force to bottom
+                                                refill_date: '1970-01-01T00:00:00Z' 
+                                            }] : [])
+                                        ].sort((a,b) => {
+                                            const dateA = new Date(a.entryType === 'DROP' ? a.refill_date : a.recovered_at);
+                                            const dateB = new Date(b.entryType === 'DROP' ? b.refill_date : b.recovered_at);
+                                            return dateB - dateA;
+                                        })
+                                        : [
+                                            ...(data.drops || []).map(d => ({ ...d, entryType: 'DROP' })).sort((a,b) => new Date(b.refill_date) - new Date(a.refill_date)),
+                                            ...(data.recoveries || []).map(r => ({ ...r, entryType: 'RECOVERY' })).sort((a,b) => new Date(b.recovered_at) - new Date(a.recovered_at)),
+                                            ...(parseFloat(data.stats.opening_balance) > 0 ? [{ 
+                                                amount: data.stats.opening_balance, 
+                                                entryType: 'OPENING BALANCE'
+                                            }] : [])
+                                        ]
+                                    ).map((item, idx) => (
+                                        <tr key={idx} className={item.entryType === 'RECOVERY' ? 'bg-success-light' : (item.entryType === 'OPENING BALANCE' ? 'bg-light fw-bold' : '')}>
                                             <td className="ps-4">
                                                 <div className="fw-bold small">
-                                                    {new Date(item.entryType === 'DROP' ? item.refill_date : item.recovered_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short'})}
-                                                    <span className="ms-1 x-small text-muted font-monospace opacity-75">@{formatTime(item.entryType === 'DROP' ? item.refill_date : item.recovered_at)}</span>
+                                                    {item.entryType === 'OPENING BALANCE' ? 'STARTING' : new Date(item.entryType === 'DROP' ? item.refill_date : item.recovered_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short'})}
+                                                    {item.entryType !== 'OPENING BALANCE' && <span className="ms-1 x-small text-muted font-monospace opacity-75">@{formatTime(item.entryType === 'DROP' ? item.refill_date : item.recovered_at)}</span>}
                                                 </div>
                                                 <div className="x-small text-muted text-uppercase">{item.entryType}</div>
                                             </td>
-                                            <td className={`fw-bold ${item.entryType === 'RECOVERY' ? 'text-success' : 'text-primary'}`}>
+                                            <td className={`fw-bold ${item.entryType === 'RECOVERY' ? 'text-success' : (item.entryType === 'OPENING BALANCE' ? 'text-dark' : 'text-primary')}`}>
                                                 ₹{parseFloat(item.amount).toLocaleString()}
                                             </td>
                                             <td className="text-end pe-4">
-                                                <span className={`badge rounded-pill x-small ${item.entryType === 'RECOVERY' ? 'bg-success' : (item.status === 'recovered' ? 'bg-info' : 'bg-warning text-dark')}`}>
-                                                    {item.entryType === 'RECOVERY' ? 'PAID' : item.status.toUpperCase()}
-                                                </span>
+                                                {item.entryType === 'OPENING BALANCE' ? (
+                                                    <span className="badge bg-secondary rounded-pill x-small text-uppercase">Initial</span>
+                                                ) : (
+                                                    <span className={`badge rounded-pill x-small ${item.entryType === 'RECOVERY' ? 'bg-success' : (item.status === 'recovered' ? 'bg-info' : 'bg-warning text-dark')}`}>
+                                                        {item.entryType === 'RECOVERY' ? 'PAID' : item.status.toUpperCase()}
+                                                    </span>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -313,6 +356,7 @@ export default function QuickRecovery() {
                                     type="date" 
                                     className="form-control fw-bold" 
                                     required 
+                                    readOnly={!isOwner()}
                                     value={recoveryForm.recovered_at} 
                                     onChange={e => setRecoveryForm({...recoveryForm, recovered_at: e.target.value})} 
                                 />

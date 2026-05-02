@@ -8,6 +8,13 @@ use Illuminate\Http\Request;
 
 class SimCardController extends Controller
 {
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -31,7 +38,19 @@ class SimCardController extends Controller
         ]);
         $data['shop_id']          = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id_purchase'] = $user->id;
-        return response()->json(SimCard::create($data), 201);
+        $sim = SimCard::create($data);
+
+        // Record Transaction
+        $this->transactionService->recordForModel($sim, [
+            'type'             => 'OUT',
+            'category'         => 'SIM_PURCHASE',
+            'amount'           => $sim->purchase_price,
+            'description'      => "Purchased SIM: {$sim->sim_number} from {$sim->supplier->name}",
+            'transaction_date' => $sim->purchase_date,
+            'shop_id'          => $sim->shop_id,
+        ]);
+
+        return response()->json($sim, 201);
     }
 
     public function sell(Request $request, SimCard $simCard)
@@ -53,6 +72,16 @@ class SimCardController extends Controller
             'status'       => 'sold',
             'user_id_sale' => $user->id,
         ]));
+
+        // Record Transaction
+        $this->transactionService->recordForModel($simCard, [
+            'type'             => 'IN',
+            'category'         => 'SIM_SALE',
+            'amount'           => $simCard->selling_price,
+            'description'      => "Sold SIM: {$simCard->sim_number} to {$simCard->customer->name}",
+            'transaction_date' => $simCard->sale_date,
+            'shop_id'          => $simCard->shop_id,
+        ]);
 
         return response()->json($simCard->fresh()->load('customer'));
     }

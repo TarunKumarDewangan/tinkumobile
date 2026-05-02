@@ -11,9 +11,17 @@ use App\Traits\RecordsTransactions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+use App\Http\Resources\PurchaseInvoiceResource;
+
 class PurchaseInvoiceController extends Controller
 {
-    use RecordsTransactions;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -57,7 +65,7 @@ class PurchaseInvoiceController extends Controller
             });
         }
 
-        return response()->json($query->latest()->get());
+        return PurchaseInvoiceResource::collection($query->latest()->paginate($request->per_page ?? 50));
     }
 
     public function store(Request $request)
@@ -89,93 +97,53 @@ class PurchaseInvoiceController extends Controller
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
+            'items.*.wholeseller_price' => 'nullable|numeric|min:0',
             'items.*.imei'       => 'nullable|string|max:255',
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
             'items.*.min_selling_price' => 'nullable|numeric|min:0',
             'items.*.max_selling_price' => 'nullable|numeric|min:0',
+            'items.*.incentive_amount' => 'nullable|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data, $shopId, $user) {
-            $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
-            $discount    = $data['discount'] ?? 0;
-            $cashDiscount = (float) ($data['cash_discount'] ?? 0);
-            $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
-            $calculateGst = (bool) ($data['calculate_gst'] ?? true);
-            
-            if ($calculateGst) {
-                $cgstRate = $data['cgst_rate'] ?? 9;
-                $sgstRate = $data['sgst_rate'] ?? 9;
-                $cgstAmount = ($totalAmount * $cgstRate) / 100;
-                $sgstAmount = ($totalAmount * $sgstRate) / 100;
-            } else {
-                $cgstRate = 0;
-                $sgstRate = 0;
-                $cgstAmount = 0;
-                $sgstAmount = 0;
-            }
+            $calc = app(\App\Services\InvoiceService::class)->calculateTotals($data['items'], $data);
+            $invoiceNo = 'PUR-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
 
-            $roundingMode = $data['rounding_mode'] ?? 'auto';
-            $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
-            if ($isCashDiscOnBill) {
-                $rawGrandTotal -= $cashDiscount;
-            }
-            if ($roundingMode === 'up') $grandTotal = ceil($rawGrandTotal);
-            else if ($roundingMode === 'down') $grandTotal = floor($rawGrandTotal);
-            else $grandTotal = round($rawGrandTotal);
-            $invoiceNo   = 'PUR-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
-
-            $invoice = PurchaseInvoice::create([
+            $invoice = PurchaseInvoice::create(array_merge($calc, [
                 'invoice_no'    => $invoiceNo,
+                'supplier_id'   => $data['supplier_id'],
                 'bill_type'     => $data['bill_type'] ?? 'kaccha',
                 'shop_id'       => $shopId,
-                'supplier_id'   => $data['supplier_id'],
                 'user_id'       => $user->id,
                 'purchase_date' => $data['purchase_date'],
                 'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
                 'status'        => $data['status'],
                 'received_at'   => $data['status'] === 'received' ? ($data['received_at'] ?? now()) : null,
-                'total_amount'  => $totalAmount,
-                'cgst_rate'     => $cgstRate,
-                'sgst_rate'     => $sgstRate,
-                'cgst_amount'   => $cgstAmount,
-                'sgst_amount'   => $sgstAmount,
-                'calculate_gst' => $calculateGst,
-                'discount'      => $discount,
-                'cash_discount' => $cashDiscount,
-                'is_cash_discount_on_bill' => $isCashDiscOnBill,
-                'grand_total'   => $grandTotal,
                 'total_paid'    => $data['total_paid'] ?? 0,
-                'rounding_mode' => $roundingMode,
                 'notes'         => $data['notes'] ?? null,
-            ]);
+            ]));
+
             $invoice->updatePaymentStatus();
 
-            // Record Transaction if there's an initial payment
+            // Record Transaction using Service
             if ($invoice->total_paid > 0) {
-                $invoice->recordTransaction([
+                $this->transactionService->recordForModel($invoice, [
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
-                    'amount'           => $invoice->total_paid,
-                    'payment_mode'     => 'CASH', // Assuming cash for now
                     'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}",
-                    'ref_id'           => $invoice->id,
                     'entity_name'      => $invoice->supplier?->name,
-                    'transaction_date' => $invoice->purchase_date,
                 ]);
             }
 
             // Record separate Transaction for Cash Discount if not on bill
-            if ($cashDiscount > 0 && !$isCashDiscOnBill) {
-                $invoice->recordTransaction([
+            if (isset($data['cash_discount']) && $data['cash_discount'] > 0 && !($data['is_cash_discount_on_bill'] ?? true)) {
+                $this->transactionService->recordForModel($invoice, [
                     'type'             => 'IN', // Discount received is an incoming gain
                     'category'         => 'CASH_DISCOUNT',
-                    'amount'           => $cashDiscount,
-                    'payment_mode'     => 'CASH',
+                    'amount'           => $data['cash_discount'],
                     'description'      => "Cash discount (not on bill) for Purchase Invoice #{$invoice->invoice_no}",
-                    'ref_id'           => $invoice->id,
-                    'transaction_date' => $invoice->purchase_date,
                 ]);
             }
             
@@ -204,6 +172,8 @@ class PurchaseInvoiceController extends Controller
                             ],
                             'min_selling_price' => $item['min_selling_price'] ?? null,
                             'max_selling_price' => $item['max_selling_price'] ?? null,
+                            'wholeseller_price' => $item['wholeseller_price'] ?? null,
+                            'incentive_amount' => $item['incentive_amount'] ?? null,
                         ]);
                         $productId = $product->id;
                         $createdProducts[$item['new_product_name']] = $productId;
@@ -218,6 +188,8 @@ class PurchaseInvoiceController extends Controller
                         }
                         if (isset($item['min_selling_price'])) $p->min_selling_price = $item['min_selling_price'];
                         if (isset($item['max_selling_price'])) $p->max_selling_price = $item['max_selling_price'];
+                        if (isset($item['wholeseller_price'])) $p->wholeseller_price = $item['wholeseller_price'];
+                        if (isset($item['incentive_amount'])) $p->incentive_amount = $item['incentive_amount'];
                         $p->save();
                     }
                 }
@@ -234,8 +206,10 @@ class PurchaseInvoiceController extends Controller
                     'damaged_quantity'    => 0,
                     'unit_price'          => $item['unit_price'],
                     'selling_price'       => $item['selling_price'] ?? null,
+                    'wholeseller_price'   => $item['wholeseller_price'] ?? null,
                     'min_selling_price'   => $item['min_selling_price'] ?? null,
                     'max_selling_price'   => $item['max_selling_price'] ?? null,
+                    'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
                 ]);
 
@@ -279,12 +253,14 @@ class PurchaseInvoiceController extends Controller
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
+            'items.*.wholeseller_price' => 'nullable|numeric|min:0',
             'items.*.imei'       => 'nullable|string|max:255',
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
             'items.*.min_selling_price' => 'nullable|numeric|min:0',
             'items.*.max_selling_price' => 'nullable|numeric|min:0',
+            'items.*.incentive_amount' => 'nullable|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data, $purchaseInvoice) {
@@ -300,55 +276,18 @@ class PurchaseInvoiceController extends Controller
             // 2. Clear old items
             $purchaseInvoice->items()->delete();
 
-            // 3. Update Invoice Header
-            $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
-            $discount    = $data['discount'] ?? 0;
-            $cashDiscount = (float) ($data['cash_discount'] ?? 0);
-            $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
-            $calculateGst = (bool) ($data['calculate_gst'] ?? true);
+            $calc = app(InvoiceService::class)->calculateTotals($data['items'], $data);
 
-            if ($calculateGst) {
-                $cgstRate = $data['cgst_rate'] ?? 9;
-                $sgstRate = $data['sgst_rate'] ?? 9;
-                $cgstAmount = ($totalAmount * $cgstRate) / 100;
-                $sgstAmount = ($totalAmount * $sgstRate) / 100;
-            } else {
-                $cgstRate = 0;
-                $sgstRate = 0;
-                $cgstAmount = 0;
-                $sgstAmount = 0;
-            }
-
-            $roundingMode = $data['rounding_mode'] ?? 'auto';
-            $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
-            if ($isCashDiscOnBill) {
-                $rawGrandTotal -= $cashDiscount;
-            }
-            if ($roundingMode === 'up') $grandTotal = ceil($rawGrandTotal);
-            else if ($roundingMode === 'down') $grandTotal = floor($rawGrandTotal);
-            else $grandTotal = round($rawGrandTotal);
-
-            $purchaseInvoice->update([
+            $purchaseInvoice->update(array_merge($calc, [
                 'supplier_id'   => $data['supplier_id'],
                 'bill_type'     => $data['bill_type'] ?? $purchaseInvoice->bill_type,
                 'purchase_date' => $data['purchase_date'],
                 'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
                 'status'        => $data['status'],
                 'received_at'   => $data['status'] === 'received' ? ($data['received_at'] ?? $purchaseInvoice->received_at ?? now()) : null,
-                'total_amount'  => $totalAmount,
-                'cgst_rate'     => $cgstRate,
-                'sgst_rate'     => $sgstRate,
-                'cgst_amount'   => $cgstAmount,
-                'sgst_amount'   => $sgstAmount,
-                'calculate_gst' => $calculateGst,
-                'discount'      => $discount,
-                'cash_discount' => $cashDiscount,
-                'is_cash_discount_on_bill' => $isCashDiscOnBill,
-                'grand_total'   => $grandTotal,
                 'total_paid'    => $data['total_paid'] ?? $purchaseInvoice->total_paid,
-                'rounding_mode' => $roundingMode,
                 'notes'         => $data['notes'] ?? null,
-            ]);
+            ]));
             $purchaseInvoice->updatePaymentStatus();
 
             $createdProducts = []; 
@@ -375,6 +314,8 @@ class PurchaseInvoiceController extends Controller
                             ],
                             'min_selling_price' => $item['min_selling_price'] ?? null,
                             'max_selling_price' => $item['max_selling_price'] ?? null,
+                            'wholeseller_price' => $item['wholeseller_price'] ?? null,
+                            'incentive_amount' => $item['incentive_amount'] ?? null,
                         ]);
                         $productId = $product->id;
                         $createdProducts[$item['new_product_name']] = $productId;
@@ -388,6 +329,8 @@ class PurchaseInvoiceController extends Controller
                         }
                         if (isset($item['min_selling_price'])) $p->min_selling_price = $item['min_selling_price'];
                         if (isset($item['max_selling_price'])) $p->max_selling_price = $item['max_selling_price'];
+                        if (isset($item['wholeseller_price'])) $p->wholeseller_price = $item['wholeseller_price'];
+                        if (isset($item['incentive_amount']))  $p->incentive_amount  = $item['incentive_amount'];
                         $p->save();
                     }
                 }
@@ -404,8 +347,10 @@ class PurchaseInvoiceController extends Controller
                     'damaged_quantity'    => 0,
                     'unit_price'          => $item['unit_price'],
                     'selling_price'       => $item['selling_price'] ?? null,
+                    'wholeseller_price'   => $item['wholeseller_price'] ?? null,
                     'min_selling_price'   => $item['min_selling_price'] ?? null,
                     'max_selling_price'   => $item['max_selling_price'] ?? null,
+                    'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
                 ]);
 
@@ -477,16 +422,13 @@ class PurchaseInvoiceController extends Controller
         $purchaseInvoice->total_paid += $data['amount'];
         $purchaseInvoice->updatePaymentStatus();
 
-        // Record Transaction
-        $purchaseInvoice->recordTransaction([
+        // Record Transaction using Service
+        $this->transactionService->recordForModel($purchaseInvoice, [
             'type'             => 'OUT',
             'category'         => 'PURCHASE',
             'amount'           => $data['amount'],
-            'payment_mode'     => 'CASH',
             'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
-            'ref_id'           => $purchaseInvoice->id,
             'entity_name'      => $purchaseInvoice->supplier?->name,
-            'transaction_date' => now()->toDateString(),
         ]);
 
         return response()->json([
@@ -501,7 +443,7 @@ class PurchaseInvoiceController extends Controller
         if (! $user->hasFullAccess() && $purchaseInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return response()->json($purchaseInvoice->load('supplier', 'user', 'items.product'));
+        return new PurchaseInvoiceResource($purchaseInvoice->load('supplier', 'user', 'items.product'));
     }
 
     public function destroy(Request $request, PurchaseInvoice $purchaseInvoice)

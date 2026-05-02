@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/axios';
 
 export default function Dashboard() {
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, can } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -16,68 +16,96 @@ export default function Dashboard() {
 
   const shopLabel = isOwner() ? 'All Shops' : user?.shop?.name;
 
+  const quickActions = [
+    { to: '/airtel/quick-recovery', label: '⚡ Quick Recovery', perm: 'view_airtel_recovery', variant: 'success' },
+    { to: '/sales/new', label: '+ New Sale', perm: 'view_sales', variant: 'primary' },
+    { to: '/purchases/new', label: '+ New Purchase', perm: 'view_purchases', variant: 'outline-primary' },
+    { to: '/repairs/new', label: '+ New Repair', perm: 'view_repairs', variant: 'outline-secondary' },
+    { to: '/customers', label: '👥 Customers', perm: 'view_customers', variant: 'outline-secondary' },
+  ].filter(a => !a.perm || can(a.perm));
+
   return (
     <div>
-      <div className="page-header">
-        <h2>📊 Dashboard <span className="text-muted fs-6 fw-normal ms-2">— {shopLabel}</span></h2>
-        <div className="text-muted" style={{ fontSize: '0.85rem' }}>{new Date().toLocaleDateString('en-GB')}</div>
+      <div className="page-header d-block mb-4">
+        <h2 className="mb-1 fw-black">✨ Dashboard</h2>
+        <div className="d-flex align-items-center gap-2">
+            <span className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill small fw-bold">
+                🏢 {shopLabel}
+            </span>
+            <span className="text-muted small italic">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </span>
+        </div>
       </div>
 
-      <div className="row g-3 mb-4">
+      <div className="row g-4 mb-4">
         <div className="col-md-3 col-6">
-          <div className="stat-card">
-            <div className="stat-label">Today's Sales</div>
-            <div className="stat-value">{stats?.today_sales ?? 0}</div>
+          <div className="stat-card glass-card h-100 border-0 shadow-sm" style={{ background: 'linear-gradient(135deg, #6c3fc5, #8b5cf6)', color: 'white' }}>
+            <div className="stat-label text-white opacity-75">Today's Sales</div>
+            <div className="stat-value text-white">{stats?.today_sales ?? 0}</div>
             <div className="stat-icon">🧾</div>
           </div>
         </div>
         <div className="col-md-3 col-6">
-          <div className="stat-card orange">
-            <div className="stat-label">Today's Revenue</div>
-            <div className="stat-value">₹{Number(stats?.today_revenue ?? 0).toLocaleString('en-IN')}</div>
+          <div className="stat-card glass-card h-100 border-0 shadow-sm" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white' }}>
+            <div className="stat-label text-white opacity-75">Today's Revenue</div>
+            <div className="stat-value text-white">₹{Number(stats?.today_revenue ?? 0).toLocaleString('en-IN')}</div>
             <div className="stat-icon">💰</div>
           </div>
         </div>
         <div className="col-md-3 col-6">
-          <div className="stat-card green">
-            <div className="stat-label">Low Stock Items</div>
-            <div className="stat-value">{stats?.low_stock_items ?? 0}</div>
+          <div className="stat-card glass-card h-100 border-0 shadow-sm" style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white' }}>
+            <div className="stat-label text-white opacity-75">Low Stock Items</div>
+            <div className="stat-value text-white">{stats?.low_stock_items ?? 0}</div>
             <div className="stat-icon">📦</div>
           </div>
         </div>
         <div className="col-md-3 col-6">
-          <div className="stat-card" style={{ background: 'linear-gradient(135deg,#ea5455,#c62030)' }}>
-            <div className="stat-label">Pending Repairs</div>
-            <div className="stat-value">{stats?.pending_repairs ?? 0}</div>
+          <div className="stat-card glass-card h-100 border-0 shadow-sm" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white' }}>
+            <div className="stat-label text-white opacity-75">Pending Repairs</div>
+            <div className="stat-value text-white">{stats?.pending_repairs ?? 0}</div>
             <div className="stat-icon">🔧</div>
           </div>
         </div>
       </div>
 
-      <div className="row g-3">
-        <div className="col-md-4">
-          <div className="stat-card" style={{ background:'linear-gradient(135deg,#667eea,#764ba2)' }}>
-            <div className="stat-label">Today's Follow-ups</div>
-            <div className="stat-value">{stats?.pending_followups ?? 0}</div>
-            <div className="stat-icon">📅</div>
-            <Link to="/follow-ups" className="btn btn-sm btn-light mt-2">View all</Link>
-          </div>
+      <div className="row g-4">
+        <div className="col-md-8">
+            <div className="row g-4">
+                <div className="col-md-6">
+                    <div className="glass-card p-4 h-100 border-0 bg-white">
+                        <div className="d-flex justify-content-between align-items-center mb-4">
+                            <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">📅 Follow-ups</h5>
+                            <span className="badge bg-info bg-opacity-10 text-info rounded-pill">{stats?.pending_followups ?? 0} Today</span>
+                        </div>
+                        <div className="stat-value fs-2 mb-3">{stats?.pending_followups ?? 0}</div>
+                        <Link to="/follow-ups" className="btn btn-primary btn-sm rounded-pill px-4">View All</Link>
+                    </div>
+                </div>
+                <div className="col-md-6">
+                    <div className="glass-card p-4 h-100 border-0 bg-white">
+                        <div className="d-flex justify-content-between align-items-center mb-4">
+                            <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">⚠️ Overdue</h5>
+                            <span className="badge bg-danger bg-opacity-10 text-danger rounded-pill">{stats?.overdue_repairs ?? 0} Late</span>
+                        </div>
+                        <div className="stat-value fs-2 mb-3">{stats?.overdue_repairs ?? 0}</div>
+                        <Link to="/repairs?status=overdue" className="btn btn-outline-danger btn-sm rounded-pill px-4">Manage Repairs</Link>
+                    </div>
+                </div>
+            </div>
         </div>
+        
         <div className="col-md-4">
-          <div className="stat-card" style={{ background:'linear-gradient(135deg,#f093fb,#f5576c)' }}>
-            <div className="stat-label">Overdue Repairs</div>
-            <div className="stat-value">{stats?.overdue_repairs ?? 0}</div>
-            <div className="stat-icon">⚠️</div>
-            <Link to="/repairs?status=overdue" className="btn btn-sm btn-light mt-2">View all</Link>
-          </div>
-        </div>
-        <div className="col-md-4">
-          <div className="table-card p-4 h-100 d-flex flex-column justify-content-between">
-            <div className="fw-semibold mb-3">⚡ Quick Actions</div>
-            <Link to="/sales/new" className="btn btn-primary btn-sm mb-2 w-100">+ New Sale</Link>
-            <Link to="/purchases/new" className="btn btn-outline-primary btn-sm mb-2 w-100">+ New Purchase</Link>
-            <Link to="/repairs/new" className="btn btn-outline-secondary btn-sm mb-2 w-100">+ New Repair</Link>
-            <Link to="/customers" className="btn btn-outline-secondary btn-sm w-100">👥 Customers</Link>
+          <div className="glass-card p-4 h-100 border-0 bg-white shadow-sm">
+            <div className="fw-bold mb-4 small text-muted text-uppercase letter-spacing-1">⚡ Quick Actions</div>
+            <div className="d-grid gap-3">
+              {quickActions.map(action => (
+                <Link key={action.to} to={action.to} className={`btn btn-${action.variant} btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2`}>
+                  {action.label}
+                </Link>
+              ))}
+              {quickActions.length === 0 && <div className="text-muted small italic">No actions available</div>}
+            </div>
           </div>
         </div>
       </div>

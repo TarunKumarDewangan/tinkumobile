@@ -7,13 +7,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+use App\Traits\SyncsBalances;
+
 class Loan extends Model
 {
+    use SyncsBalances;
     use RecordsTransactions;
     protected $fillable = [
-        'customer_id', 'principal', 'interest_rate', 'total_months',
+        'shop_id', 'customer_id', 'principal', 'interest_rate', 'total_months',
         'monthly_installment', 'start_date', 'status', 'notes'
     ];
+
+    public function shop(): BelongsTo { return $this->belongsTo(Shop::class); }
 
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function payments(): HasMany { return $this->hasMany(LoanPayment::class); }

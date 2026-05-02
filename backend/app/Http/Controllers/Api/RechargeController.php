@@ -9,7 +9,14 @@ use Illuminate\Http\Request;
 
 class RechargeController extends Controller
 {
-    use \App\Traits\SyncsWithCustomer, \App\Traits\RecordsTransactions;
+    use \App\Traits\SyncsWithCustomer;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     // ── Purchases ──────────────────────────────────────────────────────────
     public function purchaseIndex(Request $request)
     {
@@ -31,7 +38,19 @@ class RechargeController extends Controller
         ]);
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
-        return response()->json(RechargePurchase::create($data), 201);
+        $purchase = RechargePurchase::create($data);
+
+        // Record Transaction
+        $this->transactionService->recordForModel($purchase, [
+            'type'             => 'OUT',
+            'category'         => 'RECHARGE_PURCHASE',
+            'amount'           => $purchase->cost_price,
+            'description'      => "Recharge stock purchased: {$purchase->operator} (Amount: {$purchase->amount})",
+            'transaction_date' => $purchase->purchase_date,
+            'shop_id'          => $purchase->shop_id,
+        ]);
+
+        return response()->json($purchase, 201);
     }
 
     // ── Sales ───────────────────────────────────────────────────────────────
@@ -67,15 +86,14 @@ class RechargeController extends Controller
         $recharge = RechargeSale::create($data);
 
         // Record Income Transaction
-        if ($recharge->amount > 0) {
-            $this->recordTransaction([
-                'type' => 'IN',
-                'category' => 'RECHARGE_INCOME',
-                'amount' => $recharge->amount,
-                'description' => "Recharge income: ₹{$recharge->amount} for {$recharge->mobile_number}",
-                'entity_type' => get_class($recharge),
-                'entity_id' => $recharge->id,
-                'shop_id' => $recharge->shop_id,
+        if ($recharge->selling_price > 0) {
+            $this->transactionService->recordForModel($recharge, [
+                'type'             => 'IN',
+                'category'         => 'RECHARGE_SALE',
+                'amount'           => $recharge->selling_price,
+                'description'      => "Recharge sale: {$recharge->operator} for {$recharge->mobile_number}",
+                'transaction_date' => $recharge->sale_date,
+                'shop_id'          => $recharge->shop_id,
             ]);
         }
 

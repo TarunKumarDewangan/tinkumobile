@@ -8,8 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\RecordsTransactions;
 
+use App\Traits\SyncsBalances;
+
 class PurchaseInvoice extends Model
 {
+    use SyncsBalances;
     use SoftDeletes, RecordsTransactions;
 
     protected $fillable = [

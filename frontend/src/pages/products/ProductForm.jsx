@@ -88,9 +88,8 @@ export default function ProductForm() {
   const [categories, setCategories] = useState([]);
   const [selectedCatSlug, setSelectedCatSlug] = useState('');
   const [form, setForm] = useState({
-    category_id: '', name: '', sku: '', imei: '',
-    purchase_price: '', selling_price: '', 
-    min_selling_price: '', max_selling_price: '',
+    purchase_price: '', selling_price: '', wholeseller_price: '',
+    min_selling_price: '', max_selling_price: '', incentive_amount: '',
     condition: 'new'
   });
   const [attrs, setAttrs] = useState({});
@@ -106,8 +105,10 @@ export default function ProductForm() {
         setForm({
           category_id: p.category_id, name: p.name, sku: p.sku, imei: p.imei || '',
           purchase_price: p.purchase_price, selling_price: p.selling_price,
+          wholeseller_price: p.wholeseller_price || '',
           min_selling_price: p.min_selling_price || '',
           max_selling_price: p.max_selling_price || '',
+          incentive_amount: p.incentive_amount || '',
           condition: p.condition
         });
         setAttrs(p.attributes || {});
@@ -202,36 +203,52 @@ export default function ProductForm() {
               <input className="form-control font-monospace" placeholder="15-digit IMEI"
                 value={form.imei} onChange={e => setForm({ ...form, imei: e.target.value })} />
             </div>
-            <div className="col-6 col-md-3">
-              <label className="form-label fw-semibold">Purchase Price ₹ <span className="text-danger">*</span></label>
+            <div className="col-6 col-md-4">
+              <label className="form-label fw-semibold">DP(DealerPrice) ₹ <span className="text-danger">*</span></label>
               <div className="input-group">
                 <span className="input-group-text">₹</span>
                 <input className="form-control" type="number" step="0.01" required min="0" placeholder="0"
                   value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} />
               </div>
             </div>
-            <div className="col-6 col-md-3">
-              <label className="form-label fw-semibold">Selling Price ₹ <span className="text-danger">*</span></label>
+            <div className="col-6 col-md-4">
+              <label className="form-label fw-semibold text-success">Sell Price(MOP) ₹ <span className="text-danger">*</span></label>
               <div className="input-group">
-                <span className="input-group-text">₹</span>
-                <input className="form-control" type="number" step="0.01" required min="0" placeholder="0"
+                <span className="input-group-text text-success">₹</span>
+                <input className="form-control border-success text-success fw-bold" type="number" step="0.01" required min="0" placeholder="0"
                   value={form.selling_price} onChange={e => setForm({ ...form, selling_price: e.target.value })} />
               </div>
             </div>
-            <div className="col-6 col-md-3">
-              <label className="form-label fw-semibold text-danger">Min Selling Price ₹</label>
+            <div className="col-6 col-md-4">
+              <label className="form-label fw-semibold text-primary">Whole Seller Price ₹</label>
+              <div className="input-group">
+                <span className="input-group-text text-primary">₹</span>
+                <input className="form-control border-primary" type="number" step="0.01" min="0" placeholder="0"
+                  value={form.wholeseller_price} onChange={e => setForm({ ...form, wholeseller_price: e.target.value })} />
+              </div>
+            </div>
+            <div className="col-6 col-md-4">
+              <label className="form-label fw-semibold text-info">Customer Price ₹</label>
+              <div className="input-group">
+                <span className="input-group-text text-info">₹</span>
+                <input className="form-control border-info font-monospace" type="number" step="0.01" min="0" placeholder="0"
+                  value={form.max_selling_price} onChange={e => setForm({ ...form, max_selling_price: e.target.value })} />
+              </div>
+            </div>
+            <div className="col-6 col-md-4">
+              <label className="form-label fw-semibold text-danger">Min Price ₹</label>
               <div className="input-group">
                 <span className="input-group-text text-danger">₹</span>
                 <input className="form-control border-danger font-monospace" type="number" step="0.01" min="0" placeholder="0"
                   value={form.min_selling_price} onChange={e => setForm({ ...form, min_selling_price: e.target.value })} />
               </div>
             </div>
-            <div className="col-6 col-md-3">
-              <label className="form-label fw-semibold text-info">Max Selling Price ₹</label>
+            <div className="col-6 col-md-4">
+              <label className="form-label fw-semibold" style={{color:'#6366f1'}}>Commission (Salesman) ₹</label>
               <div className="input-group">
-                <span className="input-group-text text-info">₹</span>
-                <input className="form-control border-info font-monospace" type="number" step="0.01" min="0" placeholder="0"
-                  value={form.max_selling_price} onChange={e => setForm({ ...form, max_selling_price: e.target.value })} />
+                <span className="input-group-text" style={{color:'#6366f1',borderColor:'#a5b4fc'}}>₹</span>
+                <input className="form-control" style={{borderColor:'#a5b4fc'}} type="number" step="0.01" min="0" placeholder="0"
+                  value={form.incentive_amount} onChange={e => setForm({ ...form, incentive_amount: e.target.value })} />
               </div>
             </div>
             <div className="col-6 col-md-3">

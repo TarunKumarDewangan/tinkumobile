@@ -12,12 +12,18 @@ use App\Traits\RecordsTransactions;
 
 class LoanController extends Controller
 {
-    use RecordsTransactions;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
         $query = Loan::with('customer', 'payments');
-
+        if (! $user->hasFullAccess()) $query->where('shop_id', $user->shop_id);
         if ($request->status) $query->where('status', $request->status);
 
         return response()->json($query->latest()->get()->map(function ($loan) {
@@ -38,7 +44,12 @@ class LoanController extends Controller
             'start_date'    => 'required|date',
             'notes'         => 'nullable|string',
             'interest_type' => 'in:simple,compound',
+            'shop_id'       => 'nullable|integer',
         ]);
+
+        $user = $request->user();
+        $shopId = ($user->hasFullAccess() && $request->shop_id) ? $request->shop_id : $user->shop_id;
+        if (!$shopId) $shopId = \App\Models\Shop::first()?->id;
 
         DB::beginTransaction();
         try {
@@ -56,6 +67,7 @@ class LoanController extends Controller
             $monthlyInstallment = round($totalAmount / $months, 2);
 
             $loan = Loan::create([
+                'shop_id'              => $shopId,
                 'customer_id'          => $data['customer_id'],
                 'principal'            => $principal,
                 'interest_rate'        => $data['interest_rate'],
@@ -69,23 +81,19 @@ class LoanController extends Controller
             $startDate = Carbon::parse($data['start_date']);
             for ($i = 1; $i <= $months; $i++) {
                 LoanPayment::create([
+                    'shop_id'  => $shopId,
                     'loan_id'  => $loan->id,
                     'due_date' => $startDate->copy()->addMonths($i)->toDateString(),
                     'amount'   => $monthlyInstallment,
                 ]);
             }
 
-            // Record Transaction (Disbursement)
-            $this->recordTransaction([
+            // Record Transaction (Disbursement) using Service
+            $this->transactionService->recordForModel($loan, [
                 'type'             => 'OUT',
                 'category'         => 'LOAN_DISBURSEMENT',
-                'amount'           => $loan->principal,
-                'payment_mode'     => 'CASH',
                 'description'      => "Loan disbursed to {$loan->customer->name}",
-                'entity_id'        => $loan->id,
-                'entity_type'      => \App\Models\Loan::class,
-                'ref_id'           => $loan->id,
-                'transaction_date' => $loan->start_date->toDateString(),
+                'shop_id'          => $loan->shop_id,
             ]);
 
             DB::commit();
@@ -113,17 +121,14 @@ class LoanController extends Controller
 
         $loanPayment->update(array_merge($data, ['status' => 'paid']));
 
-        // Record Transaction (Repayment)
-        $this->recordTransaction([
+        // Record Transaction (Repayment) using Service
+        $this->transactionService->recordForModel($loanPayment, [
             'type'             => 'IN',
             'category'         => 'LOAN_REPAYMENT',
             'amount'           => $loanPayment->amount + ($data['penalty'] ?? 0),
-            'payment_mode'     => 'CASH',
             'description'      => "Loan repayment from {$loanPayment->loan->customer->name} (EMI)",
-            'entity_id'        => $loanPayment->id,
-            'entity_type'      => \App\Models\LoanPayment::class,
-            'ref_id'           => $loanPayment->id,
-            'transaction_date' => $loanPayment->paid_date->toDateString(),
+            'transaction_date' => Carbon::parse($loanPayment->paid_date)->toDateString(),
+            'shop_id'          => $loanPayment->shop_id,
         ]);
 
         // Check if all paid → close loan

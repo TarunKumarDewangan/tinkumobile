@@ -37,6 +37,13 @@ export default function AirtelDrops() {
   const [historyData, setHistoryData] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const verifyPin = () => {
+    const pin = window.prompt('ENTER SECURITY PIN TO PROCEED:');
+    if (pin === '71727378') return true;
+    if (pin !== null) toast.error('INVALID PIN');
+    return false;
+  };
+
   useEffect(() => {
     fetchDrops();
     fetchSummary();
@@ -224,6 +231,7 @@ export default function AirtelDrops() {
                         return;
                       }
                       if (window.confirm(`DELETE ALL DROPS FOR ${confirmDate}?`)) {
+                        if (!verifyPin()) return;
                         try {
                           const params = useRange ? { from_date: fromDate, to_date: toDate } : { date };
                           await axios.post('/airtel-drops/bulk-delete', params);
@@ -246,6 +254,7 @@ export default function AirtelDrops() {
                         return;
                       }
                       if (window.confirm('DELETE ALL OPENING BALANCES? This sets all retailer balances to 0.')) {
+                        if (!verifyPin()) return;
                         try {
                           await axios.post('/airtel-retailers/bulk-clear-opening-balances');
                           toast.success('All opening balances cleared');
@@ -267,6 +276,7 @@ export default function AirtelDrops() {
                         return;
                       }
                       if (window.confirm('WARNING: DELETE ALL RECOVERY PAYMENTS FROM THE ENTIRE SYSTEM? This cannot be undone.')) {
+                        if (!verifyPin()) return;
                         try {
                           await axios.post('/airtel-recoveries/bulk-delete');
                           toast.success('All system recoveries have been cleared');
@@ -288,6 +298,7 @@ export default function AirtelDrops() {
                         return;
                       }
                       if (window.confirm('CRITICAL WARNING: This will DELETE ALL DROPS, ALL PAYMENTS, and CLEAR ALL BALANCES. The system will be completely reset. Are you absolutely sure?')) {
+                        if (!verifyPin()) return;
                         try {
                           await axios.post('/airtel-retailers/bulk-full-reset');
                           toast.success('System fully reset');

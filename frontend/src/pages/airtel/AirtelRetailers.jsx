@@ -104,6 +104,47 @@ export default function AirtelRetailers() {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="h4 mb-0 text-uppercase fw-bold">Airtel Retailers</h2>
         <div className="d-flex gap-2">
+          {can('manage_airtel_recovery') && (
+            <>
+              <input
+                type="file"
+                accept=".json"
+                style={{ display: 'none' }}
+                id="backupFileInput"
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+
+                  if (!window.confirm("WARNING: This will replace ALL existing Airtel data! Are you absolutely sure you want to restore from this backup?")) {
+                    e.target.value = '';
+                    return;
+                  }
+
+                  const formData = new FormData();
+                  formData.append('backup_file', file);
+
+                  try {
+                    toast.info('Restoring backup...');
+                    await axios.post('/airtel-retailers/restore-backup', formData, {
+                      headers: { 'Content-Type': 'multipart/form-data' }
+                    });
+                    toast.success('Backup restored successfully!');
+                    fetchRetailers();
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || 'Failed to restore backup');
+                  } finally {
+                    e.target.value = '';
+                  }
+                }}
+              />
+              <button 
+                className="btn btn-outline-danger btn-sm text-uppercase px-3"
+                onClick={() => document.getElementById('backupFileInput').click()}
+              >
+                Import JSON
+              </button>
+            </>
+          )}
           <button 
             className="btn btn-outline-success btn-sm text-uppercase px-3"
             onClick={async () => {

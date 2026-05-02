@@ -103,6 +103,10 @@ class StockAdjustmentController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'nullable|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
+            'items.*.wholeseller_price' => 'nullable|numeric|min:0',
+            'items.*.min_selling_price' => 'nullable|numeric|min:0',
+            'items.*.max_selling_price' => 'nullable|numeric|min:0',
+            'items.*.incentive_amount' => 'nullable|numeric|min:0',
             'adjustment_date' => 'required|date',
             'shop_id' => 'required|exists:shops,id',
             'notes' => 'nullable|string|max:500',
@@ -114,17 +118,26 @@ class StockAdjustmentController extends Controller
             $created = [];
 
             // ── Create a Dummy Invoice for Legacy Stock ──
+            $supplier = \App\Models\Supplier::firstOrCreate(
+                ['name' => 'OPENING STOCK'],
+                ['phone' => '0000000000', 'address' => 'AUTO GENERATED']
+            );
+
+            // Find matching accounting entity for the audit logic
+            $accountingEntityId = \App\Models\Entity::where('name', $supplier->name)->value('id');
+
             $invoice = \App\Models\PurchaseInvoice::create([
-                'shop_id'         => $shopId,
-                'supplier_id'     => 1, // Default or Legacy Supplier
-                'user_id'         => $request->user()->id,
-                'invoice_no'      => 'LEGACY_BAL_' . strtoupper(Str::random(6)),
-                'purchase_date'   => $request->adjustment_date,
-                'status'          => 'received',
-                'notes'           => 'Opening stock from bulk entry. ' . ($request->notes ?? ''),
-                'total_amount'    => 0, // Will update or leave
-                'grand_total'     => 0,
-                'payment_status'  => 'paid'
+                'shop_id'               => $shopId,
+                'supplier_id'           => $supplier->id,
+                'accounting_entity_id'  => $accountingEntityId,
+                'user_id'               => $request->user()->id,
+                'invoice_no'            => 'LEGACY_BAL_' . strtoupper(Str::random(6)),
+                'purchase_date'         => $request->adjustment_date,
+                'status'                => 'received',
+                'notes'                 => 'Opening stock from bulk entry. ' . ($request->notes ?? ''),
+                'total_amount'          => 0,
+                'grand_total'           => 0,
+                'payment_status'        => 'paid'
             ]);
 
             foreach ($request->items as $item) {
@@ -163,6 +176,10 @@ class StockAdjustmentController extends Controller
                             'received_quantity'   => 1,
                             'unit_price'          => $item['unit_price'] ?: 0,
                             'selling_price'       => $item['selling_price'] ?: 0,
+                            'wholeseller_price'   => $item['wholeseller_price'] ?? 0,
+                            'min_selling_price'   => $item['min_selling_price'] ?? 0,
+                            'max_selling_price'   => $item['max_selling_price'] ?? 0,
+                            'incentive_amount'    => $item['incentive_amount'] ?? 0,
                             'total'               => $item['unit_price'] ?: 0
                         ]);
 
@@ -195,6 +212,10 @@ class StockAdjustmentController extends Controller
                             'received_quantity'   => $quantity,
                             'unit_price'          => $item['unit_price'] ?: 0,
                             'selling_price'       => $item['selling_price'] ?: 0,
+                            'wholeseller_price'   => $item['wholeseller_price'] ?? 0,
+                            'min_selling_price'   => $item['min_selling_price'] ?? 0,
+                            'max_selling_price'   => $item['max_selling_price'] ?? 0,
+                            'incentive_amount'    => $item['incentive_amount'] ?? 0,
                             'total'               => ($item['unit_price'] ?: 0) * $quantity
                         ]);
 
@@ -230,6 +251,10 @@ class StockAdjustmentController extends Controller
                 'imei'           => $imei, // Set specific IMEI if provided
                 'purchase_price' => $item['unit_price'] ?? 0,
                 'selling_price'  => $item['selling_price'] ?? 0,
+                'min_selling_price' => $item['min_selling_price'] ?? 0,
+                'max_selling_price' => $item['max_selling_price'] ?? 0,
+                'wholeseller_price' => $item['wholeseller_price'] ?? 0,
+                'incentive_amount'  => $item['incentive_amount'] ?? 0,
                 'attributes'     => [
                     'ram'     => $item['ram'] ?? null,
                     'storage' => $item['storage'] ?? null,

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Modal, Button, Tabs, Tab } from 'react-bootstrap';
+import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import { useAuth } from '../../contexts/AuthContext';
@@ -69,7 +69,7 @@ export default function Purchases() {
     setLoading(true);
     try {
       const { data } = await api.get('/purchase-invoices', { params: { ...filters, category_id: 1, with_items: 1 } });
-      setPurchases(data);
+      setPurchases(data.data || data); // Fallback for non-paginated or error
     } catch(e) {
       toast.error('Failed to load purchases');
     } finally {
@@ -82,7 +82,7 @@ export default function Purchases() {
     try {
       // Category 1 = Mobile
       const { data } = await api.get('/products', { params: { ...filters, category_id: 1, group_by_config: groupStocks } });
-      setAvailableStock(data);
+      setAvailableStock(data.data || data);
     } catch(e) {
       toast.error('Failed to load available stock');
     } finally {
@@ -94,7 +94,7 @@ export default function Purchases() {
     setLoadingStocks(true);
     try {
       const { data } = await api.get('/purchase-invoices/pending-stocks', { params: { ...filters, group_by_config: groupPending } });
-      setPendingStock(data);
+      setPendingStock(data.data || data);
     } catch(e) {
       toast.error('Failed to load pending stock');
     } finally {
@@ -207,485 +207,334 @@ export default function Purchases() {
     }
   };
 
+  const PS = `
+    .pm-wrap{background:#f1f5f9;min-height:100vh;padding:20px;}
+    .pm-hero{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%);border-radius:16px;padding:22px 28px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}
+    .pm-hero h2{color:#fff;font-size:1.15rem;font-weight:800;letter-spacing:1px;margin:0;}
+    .pm-hero p{color:rgba(255,255,255,.5);font-size:.7rem;margin:2px 0 0;letter-spacing:.5px;}
+    .pm-new-btn{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.78rem;padding:9px 20px;border-radius:10px;letter-spacing:.5px;text-decoration:none;white-space:nowrap;transition:opacity .18s;}
+    .pm-new-btn:hover{opacity:.88;color:#fff;}
+    .pm-filters{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.06);}
+    .pm-flabel{font-size:.63rem;font-weight:800;letter-spacing:.8px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;display:block;}
+    .pm-finput{font-size:.78rem;border:1.5px solid #e2e8f0;border-radius:8px;padding:5px 10px;width:100%;background:#f8fafc;transition:border-color .15s;}
+    .pm-finput:focus{outline:none;border-color:#6366f1;background:#fff;}
+    .pm-tab-bar{display:flex;gap:6px;margin-bottom:16px;}
+    .pm-tab{padding:8px 18px;border-radius:10px;font-size:.75rem;font-weight:700;letter-spacing:.5px;cursor:pointer;border:2px solid transparent;transition:all .18s;text-transform:uppercase;}
+    .pm-tab.active{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-color:transparent;box-shadow:0 3px 10px rgba(99,102,241,.3);}
+    .pm-tab:not(.active){background:#fff;color:#64748b;border-color:#e2e8f0;}
+    .pm-tab:not(.active):hover{border-color:#6366f1;color:#6366f1;}
+    .pm-table-wrap{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);}
+    .pm-table{width:100%;border-collapse:collapse;font-size:.78rem;}
+    .pm-table thead tr{background:linear-gradient(135deg,#1e293b,#0f172a);}
+    .pm-table thead th{color:rgba(255,255,255,.7);font-size:.62rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:11px 14px;border:none;}
+    .pm-table tbody tr{border-bottom:1px solid #f1f5f9;transition:background .1s;}
+    .pm-table tbody tr:hover{background:#f8fafc;}
+    .pm-table td{padding:11px 14px;vertical-align:middle;border:none;color:#334155;}
+    .pm-badge-ordered{background:#fef3c7;color:#92400e;font-size:.6rem;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px;}
+    .pm-badge-received{background:#d1fae5;color:#065f46;font-size:.6rem;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px;}
+    .pm-badge-unpaid{background:#fee2e2;color:#991b1b;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:20px;}
+    .pm-badge-partial{background:#e0f2fe;color:#0369a1;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:20px;}
+    .pm-badge-paid{background:#d1fae5;color:#065f46;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:20px;}
+    .pm-act-btn{font-size:.65rem;font-weight:700;padding:4px 9px;border-radius:7px;border:1.5px solid;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-block;}
+    .pm-tip{background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:12px;padding:12px 18px;font-size:.78rem;margin-top:16px;border-left:4px solid #6366f1;}
+    .pm-clear-btn{font-size:.7rem;font-weight:700;padding:5px 12px;border-radius:8px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;transition:all .15s;}
+    .pm-clear-btn:hover{border-color:#ef4444;color:#ef4444;}
+    .pm-toggle{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:7px 14px;cursor:pointer;font-size:.7rem;font-weight:700;color:#475569;transition:border-color .15s;}
+    .pm-toggle:hover{border-color:#6366f1;color:#6366f1;}
+  `;
+
   return (
-    <div className="container-fluid py-2">
-      <div className="page-header mb-3 d-flex justify-content-between align-items-center">
-        <div className="text-uppercase">
-           <h2 className="mb-0 fw-bold">📱 NEW MOBILES MANAGER</h2>
-           <p className="text-muted small mb-0">MANAGE PURCHASES AND INVENTORY FOR NEW MOBILE PHONES</p>
+    <div className="pm-wrap">
+      <style>{PS}</style>
+
+      {/* Hero Header */}
+      <div className="pm-hero">
+        <div>
+          <h2>📱 New Mobiles Manager</h2>
+          <p>PURCHASES · INVENTORY · STOCK TRACKING</p>
         </div>
-        <Link to="/purchases/new" className="btn btn-primary shadow-sm text-uppercase fw-bold">+ New Purchase</Link>
+        <Link to="/purchases/new" className="pm-new-btn">+ New Purchase</Link>
       </div>
 
-      {/* GLOBAL FILTERS */}
-      <div className="card border-0 shadow-sm p-3 mb-4 bg-white rounded-3">
-        <div className="row g-2 align-items-end text-uppercase">
+      {/* Filters */}
+      <div className="pm-filters">
+        <div className="row g-2 align-items-end">
           <div className="col-12 col-md-3">
-            <label className="small text-muted mb-1 px-1 fw-bold">🔍 SEARCH INVOICE / SUPPLIER / PRODUCT</label>
-            <input 
-              type="text" 
-              className="form-control form-control-sm border-light bg-light text-uppercase"
-              placeholder="TYPE TO SEARCH..." 
-              value={filters.search}
-              onChange={e => handleFilterChange('search', e.target.value.toUpperCase())}
-            />
+            <span className="pm-flabel">🔍 Search Invoice / Supplier</span>
+            <input className="pm-finput" placeholder="Type to search..." value={filters.search}
+              onChange={e => handleFilterChange('search', e.target.value.toUpperCase())} />
           </div>
           {activeTab === 'purchases' && (
+            <div className="col-6 col-md-1">
+              <span className="pm-flabel">📅 From</span>
+              <input type="date" className="pm-finput" value={filters.from} onChange={e => handleFilterChange('from', e.target.value)} />
+            </div>
+          )}
+          {activeTab === 'purchases' && (
+            <div className="col-6 col-md-1">
+              <span className="pm-flabel">📅 To</span>
+              <input type="date" className="pm-finput" value={filters.to} onChange={e => handleFilterChange('to', e.target.value)} />
+            </div>
+          )}
+          {activeTab === 'purchases' && (
+            <div className="col-auto d-flex align-items-end">
+              <button className="pm-clear-btn" onClick={clearFilters}>✕ Clear</button>
+            </div>
+          )}
+          {activeTab === 'purchases' && (
             <div className="col-6 col-md-2">
-              <label className="small text-muted mb-1 px-1 fw-bold">📦 STATUS</label>
-              <select 
-                className="form-control form-control-sm border-light bg-light text-uppercase"
-                value={filters.status}
-                onChange={e => handleFilterChange('status', e.target.value)}
-              >
-                <option value="">ALL STATUS</option>
-                <option value="ordered">ORDERED</option>
-                <option value="received">RECEIVED</option>
+              <span className="pm-flabel">📦 Status</span>
+              <select className="pm-finput" value={filters.status} onChange={e => handleFilterChange('status', e.target.value)}>
+                <option value="">All Status</option>
+                <option value="ordered">Ordered</option>
+                <option value="received">Received</option>
               </select>
             </div>
           )}
           <div className="col-6 col-md-2">
-            <label className="small text-muted mb-1 px-1 fw-bold">👩‍💼 SUPPLIER</label>
-            <select 
-              className="form-control form-control-sm border-light bg-light text-uppercase"
-              value={filters.supplier_id}
-              onChange={e => handleFilterChange('supplier_id', e.target.value)}
-            >
-              <option value="">ALL SUPPLIERS</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
+            <span className="pm-flabel">👤 Supplier</span>
+            <select className="pm-finput" value={filters.supplier_id} onChange={e => handleFilterChange('supplier_id', e.target.value)}>
+              <option value="">All Suppliers</option>
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <div className="col-6 col-md-1">
-            <label className="small text-muted mb-1 px-1 fw-bold">📅 FROM</label>
-            <input 
-              type="date" 
-              className="form-control form-control-sm border-light bg-light"
-              value={filters.from}
-              onChange={e => handleFilterChange('from', e.target.value)}
-            />
-          </div>
-          <div className="col-6 col-md-1">
-            <label className="small text-muted mb-1 px-1 fw-bold">📅 TO</label>
-            <input 
-              type="date" 
-              className="form-control form-control-sm border-light bg-light"
-              value={filters.to}
-              onChange={e => handleFilterChange('to', e.target.value)}
-            />
-          </div>
-          <div className="col-auto">
-             <button className="btn btn-sm btn-light border-0 text-uppercase fw-bold" onClick={clearFilters}>Clear</button>
-          </div>
-        </div>
-
-        <div className="row g-2 align-items-end mt-2 pt-2 border-top border-light text-uppercase">
-           <div className="col-6 col-md-3">
-              <label className="small text-muted mb-1 px-1 fw-bold">📱 MODEL/BRAND</label>
-              <input 
-                type="text" 
-                className="form-control form-control-sm border-light bg-light text-uppercase"
-                placeholder="E.G. VIVO V70" 
-                value={filters.model}
-                onChange={e => handleFilterChange('model', e.target.value.toUpperCase())}
-              />
-           </div>
-           <div className="col-6 col-md-2">
-              <label className="small text-muted mb-1 px-1 fw-bold">🎨 COLOR</label>
-              <input 
-                type="text" 
-                className="form-control form-control-sm border-light bg-light text-uppercase"
-                placeholder="E.G. BLACK" 
-                value={filters.color}
-                onChange={e => handleFilterChange('color', e.target.value.toUpperCase())}
-              />
-           </div>
-           <div className="col-6 col-md-2">
-              <label className="small text-muted mb-1 px-1 fw-bold">🚀 RAM</label>
-              <input 
-                type="text" 
-                className="form-control form-control-sm border-light bg-light text-uppercase"
-                placeholder="E.G. 8GB" 
-                value={filters.ram}
-                onChange={e => handleFilterChange('ram', e.target.value.toUpperCase())}
-              />
-           </div>
-           <div className="col-6 col-md-2">
-              <label className="small text-muted mb-1 px-1 fw-bold">💾 STORAGE</label>
-              <input 
-                type="text" 
-                className="form-control form-control-sm border-light bg-light text-uppercase"
-                placeholder="E.G. 128GB" 
-                value={filters.storage}
-                onChange={e => handleFilterChange('storage', e.target.value.toUpperCase())}
-              />
-           </div>
-           <div className="col-6 col-md-2">
-              <label className="small text-muted mb-1 px-1 fw-bold">🆔 IMEI NUMBER</label>
-              <input 
-                list="imeiOptions"
-                type="text" 
-                className="form-control form-control-sm border-light bg-light text-uppercase"
-                placeholder="TYPE OR SELECT IMEI..." 
-                value={filters.imei}
-                onChange={e => handleFilterChange('imei', e.target.value.toUpperCase())}
-              />
-              <datalist id="imeiOptions">
-                {imeiList.map((imei, idx) => <option key={idx} value={imei} />)}
-              </datalist>
-           </div>
         </div>
       </div>
 
-      <Tabs 
-        activeKey={activeTab} 
-        onSelect={(k) => setActiveTab(k)} 
-        className="mb-0 custom-tabs border-bottom-0 text-uppercase"
-        id="new-mobiles-tabs"
-      >
-        <Tab eventKey="purchases" title="📋 Purchase History">
-          <div className="mt-3">
-             <div className="table-card">
-              <div className="table-responsive-mobile">
-                <table className="table table-hover mb-0 text-uppercase">
-                  <thead>
-                    <tr className="bg-light">
-                      <th style={{width: '120px'}}>Dates</th>
-                      <th>Invoice #</th>
-                      <th>Supplier</th>
-                      <th style={{minWidth: '150px'}}>Products (Qty)</th>
-                      <th>Configuration</th>
-                      <th>Status</th>
-                      <th className="fw-bold">Total</th>
-                      <th className="fw-bold">Paid / Bal</th>
-                      <th>Notes/Ref</th>
-                      <th className="text-end">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr><td colSpan={10} className="text-center py-4"><div className="spinner-border spinner-border-sm"/></td></tr>
-                    ) : (purchases || []).map(p => {
-                      const balance = parseFloat(p.grand_total || 0) - parseFloat(p.total_paid || 0);
-                      return (
-                        <tr key={p.id}>
-                          <td>
-                            <div className="small text-muted">📅 {formatDate(p.purchase_date)}</div>
-                          </td>
-                          <td className="fw-semibold">{p.invoice_no}</td>
-                          <td>{p.supplier?.name}</td>
-                          <td className="small">
-                            {p.items?.map((item, idx) => (
-                              <div key={idx} className="d-flex flex-column border-bottom border-light pb-1 mb-1">
-                                <div className="d-flex justify-content-between">
-                                  <span>{item.product?.name}</span>
-                                  <span className="badge bg-secondary ms-2">{item.quantity}</span>
-                                </div>
-                                {p.status === 'received' && (
-                                  <div className="d-flex gap-1 mt-1" style={{fontSize: '0.65rem'}}>
-                                    <span className="text-success fw-bold">RCV: {item.received_quantity || 0}</span>
-                                    {item.damaged_quantity > 0 && (
-                                      <span className="text-danger fw-bold">DMG: {item.damaged_quantity}</span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </td>
-                          <td className="small text-muted">
-                            {p.items?.map((item, idx) => (
-                              <div key={idx} className="mb-1 border-bottom border-light pb-1">
-                                {item.ram || '-'}/{item.storage || '-'}/{item.color || '-'}
-                                {item.imei && (
-                                  <div className="text-primary fw-bold mt-1" style={{fontSize: '0.65rem'}}>
-                                    🆔 {item.imei}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </td>
-                          <td>
-                            {p.status === 'ordered' ? (
-                              <span className="badge bg-warning text-dark px-2 rounded-pill shadow-xs" style={{fontSize:'0.65rem'}}>ORDERED</span>
-                            ) : (
-                              <span className="badge bg-success px-2 rounded-pill shadow-xs" style={{fontSize:'0.65rem'}}>RECEIVED</span>
-                            )}
-                          </td>
-                          <td className="fw-bold text-primary" title={`SUBTOTAL: ₹${(p.total_amount || 0).toLocaleString('en-IN')}\nGST: ₹${((parseFloat(p.cgst_amount || 0) + parseFloat(p.sgst_amount || 0))).toLocaleString('en-IN')}`}>
-                            ₹{parseFloat(p.grand_total || 0).toLocaleString('en-IN')}
-                          </td>
-                          <td>
-                            <div className="text-success small fw-bold" style={{fontSize:'0.7rem'}}>Paid: ₹{parseFloat(p.total_paid || 0).toLocaleString('en-IN')}</div>
-                            <div className={balance > 0 ? "text-danger small fw-bold" : "text-muted small"} style={{fontSize:'0.7rem'}}>
-                              Bal: ₹{balance.toLocaleString('en-IN')}
-                            </div>
-                            <span className={`badge mt-1 ${
-                              p.payment_status === 'paid' ? 'bg-success' : 
-                              p.payment_status === 'partial' ? 'bg-info text-white' : 'bg-danger-subtle text-danger border'
-                            }`} style={{fontSize:'0.6rem'}}>
-                              {p.payment_status?.toUpperCase() || 'UNPAID'}
-                            </span>
-                          </td>
-                          <td className="small text-muted truncate" title={p.notes} style={{maxWidth: '120px'}}>
-                            {p.notes || '-'}
-                          </td>
-                          <td className="text-end">
-                            <div className="d-flex justify-content-end gap-1">
-                                {p.status === 'ordered' && (
-                                <button onClick={() => handleMarkReceived(p)} className="btn btn-xs btn-success py-1 px-2 fw-bold" style={{fontSize:'0.72rem'}}>
-                                    MARK RECEIVED
-                                </button>
-                                )}
-                                <Link to={`/purchases/${p.id}/edit`} className="btn btn-xs btn-outline-primary py-1 px-2 fw-bold" style={{fontSize:'0.72rem'}}>EDIT</Link>
-                                <Link to={`/purchases/${p.id}`} className="btn btn-xs btn-outline-info py-1 px-2 fw-bold" style={{fontSize:'0.72rem'}}>VIEW</Link>
-                                <button onClick={() => handleDelete(p.id)} className="btn btn-xs btn-outline-danger py-1 px-2 fw-bold" style={{fontSize:'0.72rem'}}>DELETE</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+      {/* Custom Tab Bar */}
+      <div className="pm-tab-bar">
+        <button className={`pm-tab${activeTab==='purchases'?' active':''}`} onClick={() => setActiveTab('purchases')}>📋 Purchase History</button>
+        <button className={`pm-tab${activeTab==='available'?' active':''}`} onClick={() => setActiveTab('available')}>✅ Stocks Available</button>
+        <button className={`pm-tab${activeTab==='pending'?' active':''}`} onClick={() => setActiveTab('pending')}>⏳ Stocks Pending</button>
+      </div>
+
+      {/* ── PURCHASE HISTORY ── */}
+      {activeTab === 'purchases' && (
+        <div className="pm-table-wrap">
+          <table className="pm-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Invoice #</th><th>Supplier</th>
+                <th>Products</th><th>Config</th><th>Status</th>
+                <th>Total</th><th>Paid / Bal</th><th>Notes</th><th style={{textAlign:'right'}}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={10} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
+              ) : (purchases||[]).length === 0 ? (
+                <tr><td colSpan={10} style={{textAlign:'center',padding:'40px',color:'#94a3b8'}}>No purchases found</td></tr>
+              ) : (purchases||[]).map(p => {
+                const balance = parseFloat(p.grand_total||0) - parseFloat(p.total_paid||0);
+                const ps = p.payment_status;
+                return (
+                  <tr key={p.id}>
+                    <td><span style={{fontSize:'.72rem',color:'#64748b'}}>📅 {formatDate(p.purchase_date)}</span></td>
+                    <td><span style={{fontWeight:700,color:'#6366f1',fontSize:'.78rem'}}>{p.invoice_no}</span></td>
+                    <td style={{fontWeight:600}}>{p.supplier?.name}</td>
+                    <td style={{fontSize:'.75rem'}}>
+                      {p.items?.map((item,idx) => (
+                        <div key={idx} style={{marginBottom:3,paddingBottom:3,borderBottom:'1px solid #f1f5f9'}}>
+                          <span>{item.product?.name}</span>
+                          <span style={{background:'#e0e7ff',color:'#6366f1',fontSize:'.6rem',fontWeight:700,padding:'1px 7px',borderRadius:10,marginLeft:6}}>{item.quantity}</span>
+                          {p.status==='received' && <div style={{fontSize:'.63rem',marginTop:2}}>
+                            <span style={{color:'#059669',fontWeight:700}}>RCV:{item.received_quantity||0}</span>
+                            {item.damaged_quantity>0 && <span style={{color:'#dc2626',fontWeight:700,marginLeft:5}}>DMG:{item.damaged_quantity}</span>}
+                          </div>}
+                        </div>
+                      ))}
+                    </td>
+                    <td style={{fontSize:'.72rem',color:'#64748b'}}>
+                      {p.items?.map((item,idx) => (
+                        <div key={idx} style={{marginBottom:3,paddingBottom:3,borderBottom:'1px solid #f1f5f9'}}>
+                          {item.ram||'-'}/{item.storage||'-'}/{item.color||'-'}
+                          {item.imei && <div style={{color:'#6366f1',fontWeight:700,fontSize:'.62rem'}}>🆔{item.imei}</div>}
+                        </div>
+                      ))}
+                    </td>
+                    <td><span className={p.status==='ordered'?'pm-badge-ordered':'pm-badge-received'}>{p.status?.toUpperCase()}</span></td>
+                    <td style={{fontWeight:700,color:'#6366f1'}}>₹{parseFloat(p.grand_total||0).toLocaleString('en-IN')}</td>
+                    <td>
+                      <div style={{fontSize:'.7rem',color:'#059669',fontWeight:700}}>₹{parseFloat(p.total_paid||0).toLocaleString('en-IN')}</div>
+                      <div style={{fontSize:'.7rem',color:balance>0?'#dc2626':'#94a3b8',fontWeight:700}}>Bal:₹{balance.toLocaleString('en-IN')}</div>
+                      <span className={ps==='paid'?'pm-badge-paid':ps==='partial'?'pm-badge-partial':'pm-badge-unpaid'}>{ps?.toUpperCase()||'UNPAID'}</span>
+                    </td>
+                    <td style={{fontSize:'.72rem',color:'#94a3b8',maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={p.notes}>{p.notes||'-'}</td>
+                    <td>
+                      <div style={{display:'flex',justifyContent:'flex-end',gap:5,flexWrap:'wrap'}}>
+                        {p.status==='ordered' && (
+                          <button onClick={() => handleMarkReceived(p)} className="pm-act-btn" style={{background:'#d1fae5',borderColor:'#6ee7b7',color:'#065f46'}}>✓ Receive</button>
+                        )}
+                        <Link to={`/purchases/${p.id}/edit`} className="pm-act-btn" style={{borderColor:'#a5b4fc',color:'#6366f1'}}>Edit</Link>
+                        <Link to={`/purchases/${p.id}`} className="pm-act-btn" style={{borderColor:'#93c5fd',color:'#2563eb'}}>View</Link>
+                        <button onClick={() => handleDelete(p.id)} className="pm-act-btn" style={{background:'none',borderColor:'#fca5a5',color:'#dc2626'}}>Del</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── AVAILABLE STOCKS ── */}
+      {activeTab === 'available' && (
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div className="pm-toggle" onClick={() => setGroupStocks(!groupStocks)}>
+              <input type="checkbox" checked={groupStocks} onChange={()=>{}} style={{accentColor:'#6366f1',width:16,height:16}} />
+              Group by Same Configuration
             </div>
+            <button className="pm-act-btn" style={{borderColor:'#a5b4fc',color:'#6366f1',padding:'6px 14px'}}>📊 Full Report</button>
           </div>
-        </Tab>
-        
-        <Tab eventKey="available" title="✅ Stocks Available">
-           <div className="mt-3">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                 <div className="d-inline-flex align-items-center bg-white p-2 px-3 rounded-pill shadow-sm border border-primary-subtle" style={{cursor: 'pointer'}} onClick={() => setGroupStocks(!groupStocks)}>
-                    <div className="form-check form-switch p-0 m-0 d-flex align-items-center">
-                        <input className="form-check-input ms-0" type="checkbox" id="groupSwitch" style={{cursor: 'pointer', width: '2.5em', height: '1.25em'}} checked={groupStocks} onChange={() => {}} />
-                        <label className="form-check-label small fw-bold text-primary ms-2 mb-0" style={{cursor: 'pointer', fontSize:'0.75rem'}}>GROUP BY SAME CONFIGURATION</label>
-                    </div>
-                 </div>
-                 <button className="btn btn-sm btn-outline-primary shadow-sm text-uppercase fw-bold">📊 View Full Report</button>
-              </div>
-              <div className="table-card">
-                <div className="table-responsive-mobile">
-                  <table className="table table-hover mb-0 text-uppercase">
-                    <thead>
-                      <tr className="bg-light">
-                        <th>Product Name</th>
-                        <th>Configuration</th>
-                        <th>Location</th>
-                        <th className="text-center">Available Stock</th>
-                        <th className="text-end">Price</th>
-                        <th className="text-end">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadingStocks ? (
-                        <tr><td colSpan={6} className="text-center py-4"><div className="spinner-border spinner-border-sm"/></td></tr>
-                      ) : availableStock.map((p, idx) => (
-                        <tr key={p.id || idx}>
-                          <td className="fw-semibold text-primary">{p.name}</td>
-                          <td>
-                            <span className="badge border text-dark bg-white me-1 text-uppercase" style={{borderColor:'#eee'}}>{p.attributes?.color || '-'}</span>
-                            <small className="text-muted text-uppercase">{p.attributes?.ram || '-'} / {p.attributes?.storage || '-'}</small>
-                            {p.attributes?.imei && (
-                               <div className="text-success x-small mt-1" style={{fontSize:'0.7rem'}}>
-                                  🆔 IMEI: {p.attributes.imei}
-                                </div>
-                            )}
-                          </td>
-                          <td>
-                             <button 
-                               onClick={() => openLocationModal(p.id, p.location, groupStocks)}
-                               className="btn btn-link btn-sm p-0 text-decoration-none text-muted fw-bold"
-                             >
-                                📍 {p.location || 'SET LOCATION'}
-                             </button>
-                          </td>
-                          <td className="text-center">
-                             <span className={`badge ${p.current_stock > 0 ? 'bg-success' : 'bg-danger'} rounded-pill`}>
-                               {p.current_stock} pcs
-                             </span>
-                          </td>
-                          <td className="text-end fw-bold text-dark">₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}</td>
-                          <td className="text-end">
-                             <div className="d-flex justify-content-end gap-1">
-                                {(isOwner() && !groupStocks) && (
-                                  <button 
-                                    onClick={() => setConfirmModal({ show: true, id: p.id, type: 'delete_stock' })} 
-                                    className="btn btn-xs btn-outline-danger p-1" 
-                                    title="Delete Stock Unit"
-                                  >
-                                    🗑️
-                                  </button>
-                                )}
-                                <button className="btn btn-xs btn-outline-info p-1" title="Stock Report" onClick={() => toast.info("Stock Ledger / History feature coming soon!")}>📄</button>
-                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-           </div>
-        </Tab>
-
-        <Tab eventKey="pending" title="⏳ Stocks Pending">
-           <div className="mt-3">
-              <div className="d-flex justify-content-between align-items-center mb-3 text-uppercase">
-                 <div className="d-inline-flex align-items-center bg-white p-2 px-3 rounded-pill shadow-sm border border-warning-subtle" style={{cursor: 'pointer'}} onClick={() => setGroupPending(!groupPending)}>
-                    <div className="form-check form-switch p-0 m-0 d-flex align-items-center">
-                        <input className="form-check-input ms-0" type="checkbox" id="groupPendingSwitch" style={{cursor: 'pointer', width: '2.5em', height: '1.25em'}} checked={groupPending} onChange={() => {}} />
-                        <label className="form-check-label small fw-bold text-warning ms-2 mb-0" style={{cursor: 'pointer', fontSize:'0.75rem'}}>GROUP PENDING BY CONFIGURATION</label>
-                    </div>
-                 </div>
-                 <button className="btn btn-sm btn-outline-primary shadow-sm fw-bold">📑 Pending Orders Report</button>
-              </div>
-              <div className="table-card">
-                <div className="table-responsive-mobile">
-                  <table className="table table-hover mb-0 text-uppercase">
-                    <thead>
-                      <tr className="bg-light">
-                        <th>Product</th>
-                        <th>Configuration</th>
-                        <th className="text-center">Qty</th>
-                        <th>Supplier</th>
-                        <th>Expected Date</th>
-                        <th className="text-end">Reports</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadingStocks ? (
-                        <tr><td colSpan={6} className="text-center py-4"><div className="spinner-border spinner-border-sm"/></td></tr>
-                      ) : pendingStock.map((item, idx) => (
-                        <tr key={item.id || idx}>
-                          <td className="fw-semibold text-primary">{item.product?.name}</td>
-                          <td>
-                            <span className="badge border text-dark bg-white me-1 text-uppercase" style={{borderColor:'#eee'}}>{item.color || '-'}</span>
-                            <small className="text-muted text-uppercase">{item.ram || '-'}/{item.storage || '-'}</small>
-                            {item.imei && (
-                               <div className="text-warning x-small mt-1" style={{fontSize:'0.7rem'}}>
-                                  🆔 IMEI: {item.imei}
-                               </div>
-                            )}
-                          </td>
-                          <td className="text-center fw-bold text-warning">{item.quantity}</td>
-                          <td>{item.invoice?.supplier?.name}</td>
-                          <td className="small text-muted">{item.invoice?.expected_delivery_date || '-'}</td>
-                          <td className="text-end">
-                             <button className="btn btn-xs btn-outline-info p-1" title="Order Report">📋</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-           </div>
-        </Tab>
-      </Tabs>
-
-      {/* Pro Tip */}
-      <div className="mt-4 p-3 bg-white rounded-3 shadow-sm border-start border-primary border-4 text-uppercase" style={{fontSize:'0.82rem'}}>
-        💡 <strong>PRO TIP:</strong> ORDERS IN <span className="text-warning fw-bold">ORDERED</span> STATUS DO NOT AFFECT INVENTORY. STOCK IS ADDED ONLY WHEN YOU CLICK <span className="text-success fw-bold">"MARK RECEIVED"</span>.
-      </div>
-
-      <Modal show={confirmModal.show} onHide={() => setConfirmModal({ show: false, id: null, type: '' })} centered className="text-uppercase">
-        <Modal.Header closeButton>
-          <Modal.Title className="fw-bold">Confirm Action</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {confirmModal.type === 'delete' ? 
-            'ARE YOU SURE YOU WANT TO DELETE THIS PURCHASE ORDER? THIS WILL REVERSE ANY STOCK ADDED IF IT WAS ALREADY MARKED AS RECEIVED.' :
-            'MARK THIS ORDER AS RECEIVED? THIS WILL ADD THE ITEMS TO YOUR INVENTORY STOCK.'
-          }
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setConfirmModal({ show: false, id: null, type: '' })} className="fw-bold">
-            CANCEL
-          </Button>
-          <Button variant={confirmModal.type === 'delete' ? 'danger' : 'success'} onClick={executeAction} className="fw-bold">
-            CONFIRM {confirmModal.type === 'delete' ? 'DELETE' : 'RECEIVE'}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* RECEIPT MODAL */}
-      <Modal show={receiptModal.show} onHide={() => setReceiptModal({ show: false, invoice: null, items: [] })} centered size="lg" className="text-uppercase">
-        <Modal.Header closeButton>
-          <Modal.Title className="fw-bold">📦 RECEIVE PURCHASE: {receiptModal.invoice?.invoice_no}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <p className="small text-muted mb-3">CHECK ITEMS RECEIVED AND MARK ANY DAMAGES. ONLY "GOOD" ITEMS WILL BE ADDED TO STOCK.</p>
-          <div className="table-responsive">
-            <table className="table table-sm table-bordered align-middle">
-              <thead className="bg-light">
-                <tr>
-                  <th>PRODUCT</th>
-                  <th className="text-center" style={{width:'100px'}}>ORDERED</th>
-                  <th className="text-center" style={{width:'120px'}}>RECEIVED</th>
-                  <th className="text-center" style={{width:'120px'}}>DAMAGED</th>
-                  <th className="text-center" style={{width:'100px'}}>GOOD QTY</th>
-                </tr>
-              </thead>
+          <div className="pm-table-wrap">
+            <table className="pm-table">
+              <thead><tr><th>Product</th><th>Configuration</th><th>Location</th><th style={{textAlign:'center'}}>Stock</th><th style={{textAlign:'right'}}>Price</th><th style={{textAlign:'right'}}>Actions</th></tr></thead>
               <tbody>
-                {receiptModal.items.map((item, idx) => (
-                  <tr key={item.id}>
-                    <td className="small fw-bold">{item.product_name}</td>
-                    <td className="text-center">{item.ordered_quantity}</td>
-                    <td>
-                      <input 
-                        type="number" 
-                        className="form-control form-control-sm text-center fw-bold"
-                        value={item.received_quantity}
-                        onChange={(e) => handleReceiptItemChange(idx, 'received_quantity', e.target.value)}
-                        min="0"
-                      />
+                {loadingStocks ? (
+                  <tr><td colSpan={6} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
+                ) : availableStock.map((p,idx) => (
+                  <tr key={p.id||idx}>
+                    <td style={{fontWeight:700,color:'#6366f1'}}>{p.name}</td>
+                    <td style={{fontSize:'.75rem'}}>
+                      <span style={{background:'#f1f5f9',borderRadius:6,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{p.attributes?.color||'-'}</span>
+                      <span style={{color:'#64748b'}}>{p.attributes?.ram||'-'}/{p.attributes?.storage||'-'}</span>
+                      {p.attributes?.imei && <div style={{color:'#059669',fontSize:'.63rem',fontWeight:700}}>🆔{p.attributes.imei}</div>}
                     </td>
                     <td>
-                      <input 
-                        type="number" 
-                        className="form-control form-control-sm text-center fw-bold text-danger"
-                        value={item.damaged_quantity}
-                        onChange={(e) => handleReceiptItemChange(idx, 'damaged_quantity', e.target.value)}
-                        min="0"
-                      />
+                      <button onClick={() => openLocationModal(p.id,p.location,groupStocks)} style={{background:'none',border:'none',color:'#64748b',fontWeight:700,fontSize:'.75rem',cursor:'pointer',padding:0}}>
+                        📍 {p.location||'Set Location'}
+                      </button>
                     </td>
-                    <td className="text-center fw-bold text-success">
-                      {item.received_quantity - item.damaged_quantity}
+                    <td style={{textAlign:'center'}}>
+                      <span style={{background:p.current_stock>0?'#d1fae5':'#fee2e2',color:p.current_stock>0?'#065f46':'#991b1b',fontWeight:700,fontSize:'.7rem',padding:'3px 12px',borderRadius:20}}>{p.current_stock} pcs</span>
+                    </td>
+                    <td style={{textAlign:'right',fontWeight:700}}>₹{parseFloat(p.selling_price||0).toLocaleString('en-IN')}</td>
+                    <td style={{textAlign:'right'}}>
+                      <div style={{display:'flex',justifyContent:'flex-end',gap:5}}>
+                        {(isOwner()&&!groupStocks) && <button onClick={() => setConfirmModal({show:true,id:p.id,type:'delete_stock'})} className="pm-act-btn" style={{borderColor:'#fca5a5',color:'#dc2626'}}>🗑️</button>}
+                        <button onClick={() => toast.info('Stock Ledger coming soon!')} className="pm-act-btn" style={{borderColor:'#93c5fd',color:'#2563eb'}}>📄</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ── PENDING STOCKS ── */}
+      {activeTab === 'pending' && (
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div className="pm-toggle" onClick={() => setGroupPending(!groupPending)}>
+              <input type="checkbox" checked={groupPending} onChange={()=>{}} style={{accentColor:'#f59e0b',width:16,height:16}} />
+              Group Pending by Configuration
+            </div>
+            <button className="pm-act-btn" style={{borderColor:'#a5b4fc',color:'#6366f1',padding:'6px 14px'}}>📑 Pending Report</button>
+          </div>
+          <div className="pm-table-wrap">
+            <table className="pm-table">
+              <thead><tr><th>Product</th><th>Configuration</th><th style={{textAlign:'center'}}>Qty</th><th>Supplier</th><th>Expected</th><th style={{textAlign:'right'}}>Actions</th></tr></thead>
+              <tbody>
+                {loadingStocks ? (
+                  <tr><td colSpan={6} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
+                ) : pendingStock.map((item,idx) => (
+                  <tr key={item.id||idx}>
+                    <td style={{fontWeight:700,color:'#6366f1'}}>{item.product?.name}</td>
+                    <td style={{fontSize:'.75rem'}}>
+                      <span style={{background:'#fef3c7',borderRadius:6,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{item.color||'-'}</span>
+                      <span style={{color:'#64748b'}}>{item.ram||'-'}/{item.storage||'-'}</span>
+                      {item.imei && <div style={{color:'#f59e0b',fontSize:'.63rem',fontWeight:700}}>🆔{item.imei}</div>}
+                    </td>
+                    <td style={{textAlign:'center'}}><span style={{background:'#fef3c7',color:'#92400e',fontWeight:700,fontSize:'.75rem',padding:'3px 12px',borderRadius:20}}>{item.quantity}</span></td>
+                    <td style={{fontSize:'.78rem'}}>{item.invoice?.supplier?.name}</td>
+                    <td style={{fontSize:'.72rem',color:'#94a3b8'}}>{item.invoice?.expected_delivery_date||'-'}</td>
+                    <td style={{textAlign:'right'}}><button className="pm-act-btn" style={{borderColor:'#93c5fd',color:'#2563eb'}}>📋</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pro Tip */}
+      <div className="pm-tip">
+        💡 <strong>PRO TIP:</strong> Orders in <span style={{color:'#f59e0b',fontWeight:700}}>ORDERED</span> status do not affect inventory. Stock is added only when you click <span style={{color:'#059669',fontWeight:700}}>"MARK RECEIVED"</span>.
+      </div>
+
+      {/* Confirm Modal */}
+      <Modal show={confirmModal.show} onHide={() => setConfirmModal({show:false,id:null,type:''})} centered>
+        <Modal.Header closeButton style={{background:'#1e293b',borderBottom:'none'}}>
+          <Modal.Title style={{color:'#fff',fontWeight:700,fontSize:'1rem'}}>⚠️ Confirm Action</Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{padding:'24px',fontSize:'.85rem',color:'#475569'}}>
+          {confirmModal.type==='delete'
+            ? 'Are you sure you want to delete this purchase order? This will reverse any stock added.'
+            : 'Mark this order as received? Items will be added to inventory stock.'}
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setReceiptModal({ show: false, invoice: null, items: [] })} className="fw-bold">
-            CANCEL
-          </Button>
-          <Button variant="success" onClick={handleConfirmReceipt} className="fw-bold">
-            CONFIRM RECEIPT & ADD TO STOCK
+        <Modal.Footer style={{borderTop:'1px solid #f1f5f9',padding:'12px 20px'}}>
+          <Button variant="light" className="fw-bold" onClick={() => setConfirmModal({show:false,id:null,type:''})}>Cancel</Button>
+          <Button variant={confirmModal.type==='delete'?'danger':'success'} className="fw-bold px-4" onClick={executeAction}>
+            {confirmModal.type==='delete'?'Yes, Delete':'Confirm Receive'}
           </Button>
         </Modal.Footer>
       </Modal>
 
-      {/* LOCATION MODAL */}
-      <Modal show={locationModal.show} onHide={() => setLocationModal({ ...locationModal, show: false })} centered className="text-uppercase">
-        <Modal.Header closeButton className="border-0 pb-0">
-          <Modal.Title className="fw-bold h5">📍 SET STOCK LOCATION</Modal.Title>
+      {/* Receipt Modal */}
+      <Modal show={receiptModal.show} onHide={() => setReceiptModal({show:false,invoice:null,items:[]})} centered size="lg">
+        <Modal.Header closeButton style={{background:'linear-gradient(135deg,#1a1a2e,#0f3460)',borderBottom:'none'}}>
+          <Modal.Title style={{color:'#fff',fontWeight:700,fontSize:'1rem'}}>📦 Receive: {receiptModal.invoice?.invoice_no}</Modal.Title>
         </Modal.Header>
-        <Modal.Body className="py-4">
-           <label className="small text-muted mb-2 fw-bold">ENTER PHYSICAL LOCATION (E.G. COUNTER 1, DRAWER A)</label>
-           <input 
-             type="text" 
-             className="form-control fw-bold border-primary shadow-sm"
-             placeholder="TYPE LOCATION..."
-             autoFocus
-             value={locationModal.currentLocation}
-             onChange={e => setLocationModal({ ...locationModal, currentLocation: e.target.value.toUpperCase() })}
-             onKeyDown={e => e.key === 'Enter' && handleUpdateLocation()}
-           />
+        <Modal.Body style={{padding:'20px'}}>
+          <p style={{fontSize:'.8rem',color:'#64748b',marginBottom:16}}>Check received items and mark any damage. Only "good" items will be added to stock.</p>
+          <div className="table-responsive">
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.82rem'}}>
+              <thead><tr style={{background:'#f8fafc'}}>
+                <th style={{padding:'10px 14px',fontWeight:700,color:'#475569',textTransform:'uppercase',fontSize:'.65rem',letterSpacing:.8}}>Product</th>
+                <th style={{padding:'10px 14px',textAlign:'center',fontWeight:700,color:'#475569',textTransform:'uppercase',fontSize:'.65rem',letterSpacing:.8,width:90}}>Ordered</th>
+                <th style={{padding:'10px 14px',textAlign:'center',fontWeight:700,color:'#059669',textTransform:'uppercase',fontSize:'.65rem',letterSpacing:.8,width:110}}>Received</th>
+                <th style={{padding:'10px 14px',textAlign:'center',fontWeight:700,color:'#dc2626',textTransform:'uppercase',fontSize:'.65rem',letterSpacing:.8,width:110}}>Damaged</th>
+                <th style={{padding:'10px 14px',textAlign:'center',fontWeight:700,color:'#6366f1',textTransform:'uppercase',fontSize:'.65rem',letterSpacing:.8,width:90}}>Good</th>
+              </tr></thead>
+              <tbody>
+                {receiptModal.items.map((item,idx) => (
+                  <tr key={item.id} style={{borderBottom:'1px solid #f1f5f9'}}>
+                    <td style={{padding:'10px 14px',fontWeight:600}}>{item.product_name}</td>
+                    <td style={{padding:'10px 14px',textAlign:'center',fontWeight:700,color:'#64748b'}}>{item.ordered_quantity}</td>
+                    <td style={{padding:'10px 14px'}}><input type="number" className="form-control form-control-sm text-center fw-bold" style={{borderColor:'#6ee7b7'}} value={item.received_quantity} onChange={e => handleReceiptItemChange(idx,'received_quantity',e.target.value)} min="0" /></td>
+                    <td style={{padding:'10px 14px'}}><input type="number" className="form-control form-control-sm text-center fw-bold" style={{borderColor:'#fca5a5',color:'#dc2626'}} value={item.damaged_quantity} onChange={e => handleReceiptItemChange(idx,'damaged_quantity',e.target.value)} min="0" /></td>
+                    <td style={{padding:'10px 14px',textAlign:'center',fontWeight:700,color:'#6366f1'}}>{item.received_quantity-item.damaged_quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Modal.Body>
-        <Modal.Footer className="border-0 pt-0">
-          <button className="btn btn-light fw-bold" onClick={() => setLocationModal({ ...locationModal, show: false })}>CANCEL</button>
-          <button className="btn btn-primary fw-bold px-4" onClick={handleUpdateLocation}>SAVE LOCATION</button>
+        <Modal.Footer style={{borderTop:'1px solid #f1f5f9',padding:'12px 20px'}}>
+          <Button variant="light" className="fw-bold" onClick={() => setReceiptModal({show:false,invoice:null,items:[]})}>Cancel</Button>
+          <Button className="fw-bold px-4" style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)',borderColor:'transparent'}} onClick={handleConfirmReceipt}>✅ Confirm Receipt & Add to Stock</Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Location Modal */}
+      <Modal show={locationModal.show} onHide={() => setLocationModal({...locationModal,show:false})} centered>
+        <Modal.Header closeButton style={{borderBottom:'none',paddingBottom:0}}>
+          <Modal.Title style={{fontWeight:700,fontSize:'1rem'}}>📍 Set Stock Location</Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{padding:'20px 24px'}}>
+          <label style={{fontSize:'.72rem',fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:.8,display:'block',marginBottom:8}}>Enter physical location (e.g. Counter 1, Drawer A)</label>
+          <input type="text" className="form-control fw-bold" style={{borderColor:'#6366f1',borderWidth:2}} placeholder="TYPE LOCATION..." autoFocus
+            value={locationModal.currentLocation}
+            onChange={e => setLocationModal({...locationModal,currentLocation:e.target.value.toUpperCase()})}
+            onKeyDown={e => e.key==='Enter' && handleUpdateLocation()} />
+        </Modal.Body>
+        <Modal.Footer style={{borderTop:'none',padding:'0 24px 20px'}}>
+          <Button variant="light" className="fw-bold" onClick={() => setLocationModal({...locationModal,show:false})}>Cancel</Button>
+          <Button className="fw-bold px-4" style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)',borderColor:'transparent'}} onClick={handleUpdateLocation}>Save Location</Button>
         </Modal.Footer>
       </Modal>
     </div>

@@ -5,11 +5,30 @@ import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 
+const NumberToWords = (num) => {
+    const a = ['', 'one ', 'two ', 'three ', 'four ', 'five ', 'six ', 'seven ', 'eight ', 'nine ', 'ten ', 'eleven ', 'twelve ', 'thirteen ', 'fourteen ', 'fifteen ', 'sixteen ', 'seventeen ', 'eighteen ', 'nineteen '];
+    const b = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+    if ((num = num.toString()).length > 9) return 'overflow';
+    let n = ('000000000' + num).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+    if (!n) return '';
+    let str = '';
+    str += (n[1] != 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'crore ' : '';
+    str += (n[2] != 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'lakh ' : '';
+    str += (n[3] != 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'thousand ' : '';
+    str += (n[4] != 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'hundred ' : '';
+    str += (n[5] != 0) ? ((str != '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) : '';
+    return str.toUpperCase();
+};
+
 export default function SaleDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // View Setup
+  const [viewMode, setViewMode] = useState('v1'); // 'v1' or 'v2'
   
   // Payment Modal
   const [showPayModal, setShowPayModal] = useState(false);
@@ -22,7 +41,10 @@ export default function SaleDetails() {
     try {
       const { data } = await api.get(`/sale-invoices/${id}`);
       setInvoice(data);
-    } catch (e) { toast.error('Failed to load invoice'); }
+    } catch (e) { 
+        console.error(e);
+        toast.error('Failed to load invoice'); 
+    }
     finally { setLoading(false); }
   };
 
@@ -52,6 +74,9 @@ export default function SaleDetails() {
            <p className="text-muted small mb-0">VIEW DETAILS, TRACK PAYMENTS AND PRINT</p>
         </div>
         <div className="d-flex gap-2">
+            <button onClick={() => setViewMode(viewMode === 'v1' ? 'v2' : 'v1')} className={`btn btn-sm fw-bold border-2 text-uppercase ${viewMode === 'v1' ? 'btn-outline-primary' : 'btn-primary'}`}>
+                {viewMode === 'v1' ? '💎 Standard View' : '✨ Tax Invoice View'}
+            </button>
             <button onClick={() => navigate('/sales')} className="btn btn-outline-secondary btn-sm fw-bold border-2 text-uppercase">← List</button>
             <button onClick={handlePrint} className="btn btn-dark btn-sm fw-bold shadow-sm text-uppercase">🖨️ Print</button>
         </div>
@@ -61,137 +86,284 @@ export default function SaleDetails() {
           {/* Main Invoice Card */}
           <div className="col-12 col-lg-8">
               <div className="card shadow-sm border-0 rounded-3 overflow-hidden bg-white invoice-print-container">
-                  <div className="card-body p-4 p-md-5">
-                      {/* Header Section */}
-                      <div className="d-flex justify-content-between align-items-start mb-4 border-bottom pb-4">
-                          <div>
-                              <h1 className="fw-black text-primary mb-1" style={{ fontSize: '2.5rem' }}>TINKU MOBILES</h1>
-                              <p className="mb-0 fw-bold text-uppercase">{invoice.shop?.name}</p>
-                              <p className="text-muted small mb-0">{invoice.shop?.address || 'Premium Mobile Solutions'}</p>
+                  {viewMode === 'v1' ? (
+                      <div className="card-body p-4 p-md-5">
+                          {/* Header Section */}
+                          <div className="d-flex justify-content-between align-items-start mb-4 border-bottom pb-4">
+                              <div>
+                                  <h1 className="fw-black text-primary mb-1" style={{ fontSize: '2.5rem' }}>TINKU MOBILES</h1>
+                                  <p className="mb-0 fw-bold text-uppercase">{invoice.shop?.name}</p>
+                                  <p className="text-muted small mb-0">{invoice.shop?.address || 'Premium Mobile Solutions'}</p>
+                              </div>
+                              <div className="text-end text-uppercase">
+                                  <h4 className="fw-bold mb-0">INVOICE</h4>
+                                  <div className="fw-bold text-primary">#{invoice.invoice_no}</div>
+                                  <div className="small text-muted fw-bold mt-1">DATE: {formatDate(invoice.sale_date)}</div>
+                              </div>
                           </div>
-                          <div className="text-end text-uppercase">
-                              <h4 className="fw-bold mb-0">INVOICE</h4>
-                              <div className="fw-bold text-primary">#{invoice.invoice_no}</div>
-                              <div className="small text-muted fw-bold mt-1">DATE: {formatDate(invoice.sale_date)}</div>
-                          </div>
-                      </div>
 
-                      {/* Info Section */}
-                      <div className="row mb-4 text-uppercase">
-                          <div className="col-6">
-                              <div className="small text-muted fw-bold mb-1 border-bottom d-inline-block">BILLING TO:</div>
-                              <div className="h5 fw-black mb-0 text-dark mt-1">{invoice.customer?.name}</div>
-                              <div className="small fw-bold">📞 {invoice.customer?.phone}</div>
-                              <div className="small text-muted">{invoice.customer?.address || 'No Address Provided'}</div>
+                          {/* Info Section */}
+                          <div className="row mb-4 text-uppercase">
+                              <div className="col-6">
+                                  <div className="small text-muted fw-bold mb-1 border-bottom d-inline-block">BILLING TO:</div>
+                                  <div className="h5 fw-black mb-0 text-dark mt-1">{invoice.customer?.name}</div>
+                                  <div className="small fw-bold">📞 {invoice.customer?.phone}</div>
+                                  <div className="small text-muted">{invoice.customer?.address || 'No Address Provided'}</div>
+                              </div>
                           </div>
-                      </div>
 
-                      {/* Items Table */}
-                      <div className="table-responsive mb-4">
-                          <table className="table table-bordered border-secondary-subtle align-middle text-uppercase">
-                              <thead className="bg-light fw-bold x-small">
-                                  <tr>
-                                      <th className="ps-3 py-3" style={{ width: '50px' }}>#</th>
-                                      <th className="py-3">ITEM DESCRIPTION & CONFIG</th>
-                                      <th className="text-center py-3" style={{ width: '80px' }}>QTY</th>
-                                      <th className="text-end py-3" style={{ width: '130px' }}>PRICE</th>
-                                      <th className="text-end pe-3 py-3" style={{ width: '130px' }}>TOTAL</th>
-                                  </tr>
-                              </thead>
-                              <tbody>
-                                  {invoice.items.map((item, i) => (
-                                      <tr key={i}>
-                                          <td className="ps-3 fw-bold text-muted">{i + 1}</td>
-                                          <td className="py-2">
-                                              <div className="fw-black text-dark">{item.product?.name}</div>
-                                               <div className="mt-1 d-flex flex-wrap gap-2 align-items-center">
-                                                   {item.imei ? (
-                                                       <span className="badge bg-dark text-white px-2 py-1" style={{ fontSize: '0.8rem' }}>IMEI: {item.imei}</span>
-                                                   ) : (
-                                                       <span className="text-danger fw-bold x-small border border-danger px-1 rounded">⚠️ IMEI NOT RECORDED</span>
-                                                   )}
-                                                   {(item.ram || item.storage || item.color) && (
-                                                       <span className="text-muted fw-bold" style={{ fontSize: '0.8rem' }}>
-                                                           {item.ram && <span>{item.ram} / </span>}
-                                                           {item.storage && <span>{item.storage} / </span>}
-                                                           {item.color && <span>{item.color}</span>}
-                                                       </span>
-                                                   )}
-                                               </div>
-                                          </td>
-                                          <td className="text-center fw-bold">{item.quantity}</td>
-                                          <td className="text-end fw-semibold">₹{parseFloat(item.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                          <td className="text-end pe-3 fw-black">₹{parseFloat(item.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          {/* Items Table */}
+                          <div className="table-responsive mb-4">
+                              <table className="table table-bordered border-secondary-subtle align-middle text-uppercase">
+                                  <thead className="bg-light fw-bold x-small">
+                                      <tr>
+                                          <th className="ps-3 py-3" style={{ width: '50px' }}>#</th>
+                                          <th className="py-3">ITEM DESCRIPTION & CONFIG</th>
+                                          <th className="text-center py-3" style={{ width: '80px' }}>QTY</th>
+                                          <th className="text-end py-3" style={{ width: '130px' }}>PRICE</th>
+                                          <th className="text-end pe-3 py-3" style={{ width: '130px' }}>TOTAL</th>
                                       </tr>
-                                  ))}
-                              </tbody>
-                          </table>
-                      </div>
-
-                      {/* Gift Items if any */}
-                      {invoice.gift_items?.length > 0 && (
-                          <div className="mb-4 bg-light-subtle p-3 border rounded-3 border-secondary-subtle">
-                             <div className="small fw-black text-primary text-uppercase mb-2">🎁 FREE GIFTS INCLUDED</div>
-                             {invoice.gift_items.map((g, i) => (
-                                 <div key={i} className="small fw-bold text-uppercase">• {g.gift_product?.name} ({g.quantity} PCS)</div>
-                             ))}
+                                  </thead>
+                                  <tbody>
+                                      {invoice.items?.map((item, i) => (
+                                          <tr key={i}>
+                                              <td className="ps-3 fw-bold text-muted">{i + 1}</td>
+                                              <td className="py-2">
+                                                  <div className="fw-black text-dark">{item.product?.name}</div>
+                                                   <div className="mt-1 d-flex flex-wrap gap-2 align-items-center">
+                                                       {item.imei ? (
+                                                            <span className="badge bg-dark text-white px-2 py-1" style={{ fontSize: '0.8rem' }}>IMEI: {item.imei}</span>
+                                                       ) : (
+                                                           <span className="text-danger fw-bold x-small border border-danger px-1 rounded">⚠️ IMEI NOT RECORDED</span>
+                                                       )}
+                                                       {(item.ram || item.storage || item.color) && (
+                                                           <span className="text-muted fw-bold" style={{ fontSize: '0.8rem' }}>
+                                                               {item.ram && <span>{item.ram} / </span>}
+                                                               {item.storage && <span>{item.storage} / </span>}
+                                                               {item.color && <span>{item.color}</span>}
+                                                           </span>
+                                                       )}
+                                                   </div>
+                                              </td>
+                                              <td className="text-center fw-bold">{item.quantity}</td>
+                                              <td className="text-end fw-semibold">₹{parseFloat(item.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                              <td className="text-end pe-3 fw-black">₹{parseFloat(item.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                              </table>
                           </div>
-                      )}
 
-                      {/* Calculation Section */}
-                      <div className="row justify-content-end text-uppercase">
-                          <div className="col-12 col-md-5">
-                              <div className="d-flex justify-content-between mb-2">
-                                  <span className="fw-bold text-muted small">SUBTOTAL:</span>
-                                  <span className="fw-bold">₹{parseFloat(invoice.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                          {/* Gift Items if any */}
+                          {invoice.gift_items?.length > 0 && (
+                              <div className="mb-4 bg-light-subtle p-3 border rounded-3 border-secondary-subtle">
+                                 <div className="small fw-black text-primary text-uppercase mb-2">🎁 FREE GIFTS INCLUDED</div>
+                                 {invoice.gift_items?.map((g, i) => (
+                                     <div key={i} className="small fw-bold text-uppercase">• {g.gift_product?.name} ({g.quantity} PCS)</div>
+                                 ))}
                               </div>
-                              <div className="d-flex justify-content-between mb-2">
-                                  <span className="fw-bold text-muted small">CGST ({parseFloat(invoice.cgst_rate)}%):</span>
-                                  <span className="fw-bold">₹{parseFloat(invoice.cgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-2">
-                                  <span className="fw-bold text-muted small">SGST ({parseFloat(invoice.sgst_rate)}%):</span>
-                                  <span className="fw-bold">₹{parseFloat(invoice.sgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-2">
-                                  <span className="fw-bold text-muted small">ROUND OFF:</span>
-                                  <span className="fw-bold">₹{parseFloat(invoice.round_off || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              {parseFloat(invoice.cash_discount) > 0 && (
+                          )}
+
+                          {/* Calculation Section */}
+                          <div className="row justify-content-end text-uppercase">
+                              <div className="col-12 col-md-5">
                                   <div className="d-flex justify-content-between mb-2">
-                                      <span className="fw-bold text-muted small">CASH DISCOUNT:</span>
-                                      <span className="fw-bold text-success">- ₹{parseFloat(invoice.cash_discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      <span className="fw-bold text-muted small">SUBTOTAL:</span>
+                                      <span className="fw-bold">₹{parseFloat(invoice.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
-                              )}
-                              {parseFloat(invoice.discount) > 0 && (
                                   <div className="d-flex justify-content-between mb-2">
-                                      <span className="fw-bold text-muted small">DISCOUNT:</span>
-                                      <span className="fw-bold text-danger">- ₹{parseFloat(invoice.discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      <span className="fw-bold text-muted small">CGST ({parseFloat(invoice.cgst_rate)}%):</span>
+                                      <span className="fw-bold">₹{parseFloat(invoice.cgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
-                              )}
-                              <div className="d-flex justify-content-between py-2 border-top border-bottom border-dark mb-3 bg-light px-2 rounded-1">
-                                  <span className="h5 mb-0 fw-black">GRAND TOTAL:</span>
-                                  <span className="h5 mb-0 fw-black text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              
-                              {/* Payment Breakdown */}
-                              <div className="d-flex justify-content-between mb-1 opacity-75">
-                                  <span className="x-small fw-black text-success">TOTAL PAID:</span>
-                                  <span className="x-small fw-black text-success">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div className="d-flex justify-content-between">
-                                  <span className="x-small fw-black text-danger">PENDING BALANCE:</span>
-                                  <span className="x-small fw-black text-danger">₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  <div className="d-flex justify-content-between mb-2">
+                                      <span className="fw-bold text-muted small">SGST ({parseFloat(invoice.sgst_rate)}%):</span>
+                                      <span className="fw-bold">₹{parseFloat(invoice.sgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                  <div className="d-flex justify-content-between mb-2">
+                                      <span className="fw-bold text-muted small">ROUND OFF:</span>
+                                      <span className="fw-bold">₹{parseFloat(invoice.round_off || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                  {parseFloat(invoice.cash_discount) > 0 && (
+                                      <div className="d-flex justify-content-between mb-2">
+                                          <span className="fw-bold text-muted small">CASH DISCOUNT:</span>
+                                          <span className="fw-bold text-success">- ₹{parseFloat(invoice.cash_discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                  )}
+                                  {parseFloat(invoice.discount) > 0 && (
+                                      <div className="d-flex justify-content-between mb-2">
+                                          <span className="fw-bold text-muted small">DISCOUNT:</span>
+                                          <span className="fw-bold text-danger">- ₹{parseFloat(invoice.discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                  )}
+                                  <div className="d-flex justify-content-between py-2 border-top border-bottom border-dark mb-3 bg-light px-2 rounded-1">
+                                      <span className="h5 mb-0 fw-black">GRAND TOTAL:</span>
+                                      <span className="h5 mb-0 fw-black text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                  
+                                  {/* Payment Breakdown */}
+                                  <div className="d-flex justify-content-between mb-1 opacity-75">
+                                      <span className="x-small fw-black text-success">TOTAL PAID:</span>
+                                      <span className="x-small fw-black text-success">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                  <div className="d-flex justify-content-between">
+                                      <span className="x-small fw-black text-danger">PENDING BALANCE:</span>
+                                      <span className="x-small fw-black text-danger">₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
                               </div>
                           </div>
-                      </div>
 
-                      {/* Footer Section */}
-                      <div className="mt-5 pt-5 border-top border-secondary-subtle text-center text-muted x-small text-uppercase">
-                          <p className="mb-1 fw-bold italicized">THANK YOU FOR YOUR PATRONAGE! PLEASE VISIT AGAIN.</p>
-                          <p className="mb-0 fw-bold">THIS IS A COMPUTER GENERATED INVOICE.</p>
+                          {/* Footer Section */}
+                          <div className="mt-5 pt-5 border-top border-secondary-subtle text-center text-muted x-small text-uppercase">
+                              <p className="mb-1 fw-bold italicized">THANK YOU FOR YOUR PATRONAGE! PLEASE VISIT AGAIN.</p>
+                              <p className="mb-0 fw-bold">THIS IS A COMPUTER GENERATED INVOICE.</p>
+                          </div>
                       </div>
-                  </div>
+                  ) : (
+                      <div className="card-body p-3 p-md-4 view2-container">
+                          {/* VIEW 2: Professional Tax Invoice */}
+                          <div className="row mb-3 align-items-center">
+                              <div className="col-8">
+                                  <div className="d-flex align-items-center gap-3">
+                                      {/* Logo Placeholder like in Photo */}
+                                      <div className="bg-primary text-white p-2 rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', fontSize: '1.5rem', fontWeight: 900 }}>TM</div>
+                                      <div>
+                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">TINKU MOBILES</h1>
+                                          <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">{invoice.shop?.address || 'Main Road, Local Market, Kanker'}</p>
+                                          <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">📞 MOBILE: {invoice.shop?.phone || '9098795200'}</p>
+                                          <p className="mb-0 x-small fw-black text-primary text-uppercase">GSTIN: {invoice.shop?.gstin || '22AXIPR7683P1ZJ'}</p>
+                                      </div>
+                                  </div>
+                              </div>
+                              <div className="col-4 text-end">
+                                  <h5 className="fw-black text-muted mb-1 text-uppercase border-bottom pb-1">TAX INVOICE</h5>
+                                  <div className="small fw-bold mt-2">Inv No: <span className="text-primary">{invoice.invoice_no}</span></div>
+                                  <div className="small fw-bold">Date: {formatDate(invoice.sale_date)}</div>
+                                  <div className="small fw-bold">Deal By: <span className="text-uppercase">{invoice.creator?.name || 'ADMIN'}</span></div>
+                              </div>
+                          </div>
+
+                          <div className="row mb-3 gx-0 border rounded overflow-hidden">
+                              <div className="col-12 bg-light p-1 border-bottom px-3 fw-black x-small text-uppercase">Customer Details</div>
+                              <div className="col-12 p-2 px-3">
+                                  <div className="row">
+                                      <div className="col-6">
+                                          <div className="small fw-bold">NAME: <span className="text-dark">{invoice.customer?.name}</span></div>
+                                          <div className="small fw-bold">MOBILE: <span className="text-dark">{invoice.customer?.phone}</span></div>
+                                      </div>
+                                      <div className="col-6">
+                                          <div className="small fw-bold">Address: <span className="text-dark x-small">{invoice.customer?.address || 'N/A'}</span></div>
+                                          <div className="small fw-bold">GST No: <span className="text-dark">{invoice.customer?.gst_no || 'N/A'}</span></div>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="table-responsive">
+                              <table className="table table-bordered border-dark table-sm view2-table text-uppercase">
+                                  <thead>
+                                      <tr className="bg-light text-center small align-middle">
+                                          <th rowSpan="2" style={{ width: '40px' }}>SNo.</th>
+                                          <th rowSpan="2">Description of Item</th>
+                                          <th rowSpan="2" style={{ width: '50px' }}>QTY</th>
+                                          <th rowSpan="2" style={{ width: '100px' }}>MRP</th>
+                                          <th rowSpan="2" style={{ width: '100px' }}>RATE</th>
+                                          <th rowSpan="2" style={{ width: '50px' }}>Disc%</th>
+                                          <th rowSpan="2" style={{ width: '100px' }}>Taxable Amount</th>
+                                          <th rowSpan="2" style={{ width: '50px' }}>GST%</th>
+                                          <th colSpan="2">GST Amount</th>
+                                          <th rowSpan="2" style={{ width: '120px' }}>Net Amount</th>
+                                      </tr>
+                                      <tr className="bg-light text-center x-small">
+                                          <th style={{ width: '80px' }}>CGST</th>
+                                          <th style={{ width: '80px' }}>SGST</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {invoice.items?.map((item, i) => {
+                                          const taxable = invoice.calculate_gst ? (parseFloat(item.total) / (1 + (parseFloat(invoice.cgst_rate) + parseFloat(invoice.sgst_rate)) / 100)) : parseFloat(item.total);
+                                          const cgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.cgst_rate) / 100) : 0;
+                                          const sgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.sgst_rate) / 100) : 0;
+                                          
+                                          return (
+                                              <tr key={i} className="small text-center align-middle">
+                                                  <td>{i + 1}</td>
+                                                  <td className="text-start ps-2 py-2">
+                                                      <div className="fw-black">{item.product?.name}</div>
+                                                      <div className="x-small text-muted fw-bold">
+                                                          {item.imei && <span>Serial No: {item.imei}</span>}
+                                                          {(item.ram || item.storage || item.color) && (
+                                                              <div className="opacity-75">CONFIG: {item.ram}/{item.storage}/{item.color}</div>
+                                                          )}
+                                                      </div>
+                                                  </td>
+                                                  <td>{item.quantity}</td>
+                                                  <td>{parseFloat(item.product?.max_selling_price || item.unit_price).toFixed(2)}</td>
+                                                  <td>{parseFloat(item.unit_price).toFixed(2)}</td>
+                                                  <td>0.00</td>
+                                                  <td className="text-end pe-1">{taxable.toFixed(2)}</td>
+                                                  <td>{parseFloat(invoice.cgst_rate) + parseFloat(invoice.sgst_rate)}</td>
+                                                  <td className="text-end pe-1">{cgstPer.toFixed(2)}</td>
+                                                  <td className="text-end pe-1">{sgstPer.toFixed(2)}</td>
+                                                  <td className="text-end pe-1 fw-bold">{parseFloat(item.total).toFixed(2)}</td>
+                                              </tr>
+                                          );
+                                      })}
+                                      {/* Fill empty rows to maintain height like in photo */}
+                                      {Array.from({ length: Math.max(0, 5 - (invoice.items?.length || 0)) }).map((_, i) => (
+                                          <tr key={`empty-${i}`} style={{ height: '30px' }}>
+                                              {Array.from({ length: 11 }).map((_, j) => <td key={j}></td>)}
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                                  <tfoot>
+                                      <tr className="fw-black bg-light text-uppercase">
+                                          <td colSpan="6" className="text-start ps-3 align-top py-3" rowSpan="6">
+                                              <div className="mb-2">Terms & Conditions :</div>
+                                              <ol className="ps-3 x-small fw-bold mb-0 opacity-75">
+                                                  <li>GOODS ONCE SOLD WILL NOT BE TAKEN BACK.</li>
+                                                  <li>WARRANTY WILL BE COVERED AS PER COMPANY POLICY.</li>
+                                                  <li>WARRANTY WILL NOT BE COVERED IN CASE OF PHYSICAL/LIQUID DAMAGE.</li>
+                                                  <li>PLEASE CHECK GOODS BEFORE LEAVING OUR PREMISES.</li>
+                                                  <li>SUBJECT TO KANKER JURISDICTION.</li>
+                                              </ol>
+                                          </td>
+                                          <td className="text-start ps-2 x-small">Gross Amount</td>
+                                          <td colSpan="3"></td>
+                                          <td className="text-end pe-2">{parseFloat(invoice.total_amount).toFixed(2)}</td>
+                                      </tr>
+                                      <tr className="small fw-bold text-uppercase">
+                                          <td className="text-start ps-2 x-small">Total Discount</td>
+                                          <td colSpan="3"></td>
+                                          <td className="text-end pe-2">{(parseFloat(invoice.discount) + parseFloat(invoice.cash_discount)).toFixed(2)}</td>
+                                      </tr>
+                                      <tr className="small fw-bold text-uppercase">
+                                          <td className="text-start ps-2 x-small">CGST Amount</td>
+                                          <td colSpan="3"></td>
+                                          <td className="text-end pe-2">{parseFloat(invoice.cgst_amount).toFixed(2)}</td>
+                                      </tr>
+                                      <tr className="small fw-bold text-uppercase">
+                                          <td className="text-start ps-2 x-small">SGST Amount</td>
+                                          <td colSpan="3"></td>
+                                          <td className="text-end pe-2">{parseFloat(invoice.sgst_amount).toFixed(2)}</td>
+                                      </tr>
+                                      <tr className="small fw-bold text-uppercase">
+                                          <td className="text-start ps-2 x-small">Round Off</td>
+                                          <td colSpan="3"></td>
+                                          <td className="text-end pe-2">{parseFloat(invoice.round_off || 0).toFixed(2)}</td>
+                                      </tr>
+                                      <tr className="h5 fw-black text-uppercase bg-light border-dark">
+                                          <td className="text-start ps-2 py-2">Invoice Amount</td>
+                                          <td colSpan="3" className="text-center align-middle">:</td>
+                                          <td className="text-end pe-2 py-2 text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                      </tr>
+                                  </tfoot>
+                              </table>
+                          </div>
+                          <div className="mt-2 text-uppercase fw-bold text-muted" style={{ fontSize: '0.6rem' }}>
+                              Amount in words: <span className="text-dark">Rs. {NumberToWords(Math.round(invoice.grand_total))} Only</span>
+                          </div>
+                      </div>
+                  )}
               </div>
           </div>
 
@@ -274,21 +446,6 @@ export default function SaleDetails() {
               </Modal.Footer>
           </form>
       </Modal>
-
-      <style>{`
-          .x-small { font-size: 0.7rem; }
-          .fw-black { font-weight: 900; }
-          .italicized { font-style: italic; }
-          @media print {
-              @page { size: A4; margin: 15mm; }
-              body { background: white !important; }
-              .sale-details-page { padding: 0 !important; }
-              .col-lg-8 { width: 100% !important; }
-              .invoice-print-container { box-shadow: none !important; border: none !important; }
-              .d-print-none { display: none !important; }
-              .card-body { padding: 0 !important; }
-          }
-      `}</style>
     </div>
   );
 }

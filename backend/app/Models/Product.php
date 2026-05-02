@@ -13,15 +13,17 @@ class Product extends Model
     use SoftDeletes, UppercaseStrings;
 
     protected $fillable = [
-        'category_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'min_selling_price', 'max_selling_price', 'condition', 'attributes', 'location'
+        'category_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'condition', 'attributes', 'location'
     ];
 
     protected $casts = [
         'attributes' => 'array',
         'purchase_price' => 'decimal:2',
         'selling_price' => 'decimal:2',
+        'wholeseller_price' => 'decimal:2',
         'min_selling_price' => 'decimal:2',
         'max_selling_price' => 'decimal:2',
+        'incentive_amount' => 'decimal:2',
     ];
 
     public function category(): BelongsTo { return $this->belongsTo(Category::class); }

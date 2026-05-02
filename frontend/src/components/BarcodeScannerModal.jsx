@@ -33,21 +33,18 @@ export default function BarcodeScannerModal({ show, onHide, onScanSuccess, conti
 
           scanner.render((decodedText) => {
             const now = Date.now();
-            // Prevent duplicate scans within 2 seconds for same text in continuous mode
             if (continuous && decodedText === lastScannedRef.current && (now - lastScannedTimeRef.current < 2000)) {
               return;
             }
-            
             lastScannedRef.current = decodedText;
             lastScannedTimeRef.current = now;
-            
             onScanSuccess(decodedText);
-            
-            if (!continuous) {
-              onHide();
-            }
+            if (!continuous) onHide();
           }, (error) => {
-            // ignore
+            // Check for specific "Device not found" error to provide help
+            if (error?.includes('Requested device not found') || error?.includes('NotFoundError')) {
+               console.warn("Camera not found or permission denied");
+            }
           });
 
           scannerRef.current = scanner;

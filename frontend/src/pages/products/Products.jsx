@@ -13,7 +13,7 @@ export default function Products() {
   const load = () => {
     setLoading(true);
     api.get('/products', { params: { search } })
-      .then(r => setProducts(r.data))
+      .then(r => setProducts(r.data.data || r.data))
       .finally(() => setLoading(false));
   };
 

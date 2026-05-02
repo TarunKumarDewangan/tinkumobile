@@ -3,13 +3,14 @@
 namespace App\Models;
 
 use App\Traits\UppercaseStrings;
+use App\Traits\SyncsWithMasterEntity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Supplier extends Model
 {
-    use SoftDeletes, UppercaseStrings;
+    use SoftDeletes, UppercaseStrings, SyncsWithMasterEntity;
 
     protected $fillable = ['name', 'phone', 'address', 'is_online_shop'];
     protected $casts = ['is_online_shop' => 'boolean'];

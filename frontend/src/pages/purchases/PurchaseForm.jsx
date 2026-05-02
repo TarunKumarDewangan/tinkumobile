@@ -85,8 +85,10 @@ export default function PurchaseForm() {
           quantity: i.quantity,
           unit_price: i.unit_price,
           selling_price: i.selling_price || '',
+          wholeseller_price: i.wholeseller_price || '',
           min_selling_price: i.min_selling_price || '',
-          max_selling_price: i.max_selling_price || ''
+          max_selling_price: i.max_selling_price || '',
+          incentive_amount: i.incentive_amount || ''
         })));
       }).finally(() => setLoading(false));
     }
@@ -145,8 +147,10 @@ export default function PurchaseForm() {
       if (p) {
         a[i].unit_price = p.purchase_price;
         a[i].selling_price = p.selling_price;
+        a[i].wholeseller_price = p.wholeseller_price || '';
         a[i].min_selling_price = p.min_selling_price || '';
         a[i].max_selling_price = p.max_selling_price || '';
+        a[i].incentive_amount = p.incentive_amount || '';
         // Search attributes if available (assuming Product model has them)
         if (p.attributes) {
           a[i].ram = p.attributes.ram || '';
@@ -222,370 +226,312 @@ export default function PurchaseForm() {
     }
   };
 
+  const S=`.pf-wrap{background:#f1f5f9;min-height:100vh;padding:16px 20px}.pf-hero{background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);border-radius:14px;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.pf-hero h2{color:#fff;font-size:1rem;font-weight:800;letter-spacing:.8px;margin:0}.pf-hero p{color:rgba(255,255,255,.45);font-size:.65rem;margin:1px 0 0}.pf-back{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.2);color:#fff;font-size:.7rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s}.pf-back:hover{background:rgba(255,255,255,.22)}.pf-card{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.06)}.pf-sec{font-size:.62rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;display:flex;align-items:center;gap:6px}.pf-lbl{font-size:.62rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px}.pf-inp{font-size:.78rem;border:1.5px solid #e2e8f0;border-radius:7px;padding:5px 9px;width:100%;background:#f8fafc;transition:border-color .15s;color:#334155}.pf-inp:focus{outline:none;border-color:#6366f1;background:#fff}.pf-item{background:#f8fafc;border-radius:10px;border:1.5px solid #e2e8f0;padding:12px 14px;margin-bottom:8px;position:relative}.pf-item:hover{border-color:#a5b4fc}.pf-imei{font-size:.72rem;border:1.5px solid #e2e8f0;border-radius:7px;padding:4px 8px;flex:1;background:#fff}.pf-price-lbl{font-size:.58rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;display:block}.pf-bulk{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.72rem;padding:7px 16px;border-radius:9px;cursor:pointer;transition:opacity .15s}.pf-bulk:hover{opacity:.87}.pf-sum{background:linear-gradient(135deg,#1e293b,#0f172a);border-radius:12px;padding:16px}.pf-sum-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.78rem}.pf-sum-row:last-child{border-bottom:none}.pf-grand{font-size:1.3rem;font-weight:800;color:#818cf8}.pf-submit{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.85rem;padding:10px 28px;border-radius:10px;cursor:pointer;transition:opacity .15s;letter-spacing:.5px}.pf-submit:hover{opacity:.88}.pf-submit.green{background:linear-gradient(135deg,#059669,#10b981)}`;
+
   return (
-    <div className="container-fluid py-2">
-      <div className="page-header mb-3 d-flex justify-content-between align-items-center">
-        <div className="text-uppercase">
-           <h2 className="mb-0 fw-bold">{id ? '✍️ EDIT PURCHASE' : '🛒 NEW PURCHASE'}</h2>
-           <p className="text-muted small mb-0">MANAGE PURCHASE RECORD AND SUPPLIER DETAILS</p>
+    <div className="pf-wrap">
+      <style>{S}</style>
+      
+      <div className="pf-hero">
+        <div>
+          <h2>{id ? '✍️ Edit Purchase' : '🛒 New Purchase'}</h2>
+          <p>Manage purchase record and supplier details</p>
         </div>
-        <button onClick={() => navigate('/purchases')} className="btn btn-outline-secondary shadow-sm text-uppercase fw-bold btn-sm">← Back</button>
+        <button type="button" className="pf-back" onClick={() => navigate('/purchases')}>← Back</button>
       </div>
 
       {loading ? (
         <div className="text-center py-5"><div className="spinner-border text-primary"/></div>
       ) : (
         <form onSubmit={handleSubmit}>
-        {/* ─ Header Info ─ */}
-        <div className="form-card mb-4 shadow-sm border-0 bg-white rounded-3 p-4">
-          <div className="d-flex align-items-center gap-2 mb-3 border-bottom pb-2">
-             <span className="fs-5">📋</span>
-             <h5 className="mb-0 fw-bold text-uppercase">General Information</h5>
-          </div>
-          <div className="row g-3 text-uppercase">
-            {isOwner() && (
-              <div className="col-12 col-md-3">
-                <label className="form-label small fw-bold text-primary">Shop / Branch <span className="text-danger">*</span></label>
-                <select className="form-select form-select-sm border-primary bg-primary-subtle" required value={form.shop_id} onChange={e => setForm({...form, shop_id: e.target.value})}>
-                  <option value="">— SELECT SHOP —</option>
-                  {shops.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
+          {/* General Info */}
+          <div className="pf-card">
+            <div className="pf-sec">📋 General Information</div>
+            <div className="row g-2">
+              {isOwner() && (
+                <div className="col-6 col-md-2">
+                  <span className="pf-lbl">Shop / Branch *</span>
+                  <select className="pf-inp" required value={form.shop_id} onChange={e=>setForm({...form,shop_id:e.target.value})}>
+                    <option value="">— Select —</option>
+                    {shops.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="col-6 col-md-2">
+                <span className="pf-lbl">Bill Type *</span>
+                <select className="pf-inp" required value={form.bill_type} onChange={e=>setForm({...form,bill_type:e.target.value})}>
+                  <option value="kaccha">Kaccha Bill</option>
+                  <option value="pakka">Pakka Bill (GST)</option>
                 </select>
               </div>
-            )}
-            <div className="col-12 col-md-3">
-              <label className="form-label small fw-bold">Bill Type <span className="text-danger">*</span></label>
-              <select className="form-select form-select-sm border-2 fw-bold border-secondary" required value={form.bill_type} onChange={e => setForm({...form, bill_type: e.target.value})}>
-                <option value="kaccha">KACCHA BILL</option>
-                <option value="pakka">PAKKA BILL (GST)</option>
-              </select>
-            </div>
-            <div className="col-12 col-md-3">
-              <div className="d-flex justify-content-between align-items-center">
-                <label className="form-label small fw-bold">Supplier <span className="text-danger">*</span></label>
-                <button type="button" className="btn btn-link p-0 text-decoration-none small fw-black fs-5" onClick={() => setShowSupplierModal(true)}>+</button>
+              <div className="col-6 col-md-3">
+                <span className="pf-lbl" style={{display:'flex',justifyContent:'space-between'}}>
+                  Supplier * <button type="button" onClick={()=>setShowSupplierModal(true)} style={{background:'none',border:'none',color:'#6366f1',fontWeight:700,fontSize:'.85rem',cursor:'pointer',padding:0}}>+ Add</button>
+                </span>
+                <select className="pf-inp" required value={form.supplier_id} onChange={e=>setForm({...form,supplier_id:e.target.value})}>
+                  <option value="">— Select Supplier —</option>
+                  {suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
               </div>
-              <select className="form-select form-select-sm" required value={form.supplier_id} onChange={e => setForm({...form, supplier_id: e.target.value})}>
-                <option value="">— SELECT SUPPLIER —</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
-              </select>
-            </div>
-            <div className="col-12 col-md-3">
-              <label className="form-label small fw-bold">Purchase Date</label>
-              <input type="date" className="form-control form-control-sm" value={form.purchase_date} onChange={e => setForm({...form, purchase_date: e.target.value})} />
-            </div>
-            <div className="col-12 col-md-4">
-              <label className="form-label small fw-bold">Order Status</label>
-              <select className="form-select form-select-sm" value={form.status} onChange={e => setForm({...form, status: e.target.value})}>
-                <option value="ordered">📦 ORDERED (PENDING)</option>
-                <option value="received">✅ RECEIVED (IN HAND)</option>
-              </select>
-            </div>
-            {form.status === 'ordered' && (
-              <div className="col-12 col-md-4">
-                <label className="form-label small fw-bold text-primary">Expected Delivery</label>
-                <input type="date" className="form-control form-control-sm border-primary" value={form.expected_delivery_date} onChange={e => setForm({...form, expected_delivery_date: e.target.value})} />
+              <div className="col-6 col-md-2">
+                <span className="pf-lbl">Purchase Date</span>
+                <input type="date" className="pf-inp" value={form.purchase_date} onChange={e=>setForm({...form,purchase_date:e.target.value})}/>
               </div>
-            )}
-            {form.status === 'received' && (
-              <div className="col-12 col-md-4">
-                <label className="form-label small fw-bold text-success">Received At</label>
-                <input type="date" className="form-control form-control-sm border-success" value={form.received_at} 
-                  onChange={e => setForm({...form, received_at: e.target.value})} />
+              <div className="col-6 col-md-2">
+                <span className="pf-lbl">Status</span>
+                <select className="pf-inp" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
+                  <option value="ordered">📦 Ordered</option>
+                  <option value="received">✅ Received</option>
+                </select>
               </div>
-            )}
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h5 className="mb-0 fw-bold text-uppercase">📦 Purchase Items</h5>
-            <button type="button" className="btn btn-primary btn-sm d-flex align-items-center gap-2 shadow-sm text-uppercase fw-bold" onClick={() => setShowBulkScan(true)}>
-              <span className="fs-5">+</span> Bulk Add Products
-            </button>
+              {form.status==='ordered' && (
+                <div className="col-6 col-md-2">
+                  <span className="pf-lbl" style={{color:'#6366f1'}}>Expected Delivery</span>
+                  <input type="date" className="pf-inp" style={{borderColor:'#a5b4fc'}} value={form.expected_delivery_date} onChange={e=>setForm({...form,expected_delivery_date:e.target.value})}/>
+                </div>
+              )}
+              {form.status==='received' && (
+                <div className="col-6 col-md-2">
+                  <span className="pf-lbl" style={{color:'#059669'}}>Received At</span>
+                  <input type="date" className="pf-inp" style={{borderColor:'#6ee7b7'}} value={form.received_at} onChange={e=>setForm({...form,received_at:e.target.value})}/>
+                </div>
+              )}
+            </div>
           </div>
 
-          {items.length === 0 ? (
-            <div className="text-center py-5 bg-white rounded-3 shadow-xs border flex-column d-flex align-items-center">
-              <div className="fs-1 opacity-25 mb-2">🛒</div>
-              <h6 className="text-muted text-uppercase fw-bold">No items added yet</h6>
-              <p className="small text-muted mb-3 text-uppercase">Start by adding a product below or use bulk scan</p>
-              <button type="button" className="btn btn-outline-primary btn-sm fw-bold text-uppercase" onClick={() => setItems([{product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0, min_selling_price: 0, max_selling_price: 0}])}>
-                + Add Item Manually
-              </button>
-            </div>
-          ) : (
-            <div className="row g-3">
-              {items.map((item, i) => {
-                const marginVal = parseFloat(item.selling_price || 0) - parseFloat(item.unit_price || 0);
-                const marginPer = item.unit_price > 0 ? (marginVal / item.unit_price) * 100 : 0;
+          <div className="row g-3">
+            <div className="col-12 col-lg-8">
+              <div className="pf-card">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <div className="pf-sec mb-0">📦 Purchase Items ({items.length})</div>
+                  <button type="button" className="pf-bulk" onClick={()=>setShowBulkScan(true)}>+ Bulk Add</button>
+                </div>
 
-                return (
-                  <div key={i} className="col-12">
-                    <div className="form-card shadow-sm border-0 bg-white rounded-3 p-3 position-relative overflow-hidden border-start border-4 border-primary">
-                      {items.length > 0 && (
-                        <button type="button" className="btn-close position-absolute top-0 end-0 m-2" onClick={() => removeItem(i)}></button>
-                      )}
-                      
-                      <div className="row g-3">
-                        <div className="col-12 col-md-4">
-                           <div className="d-flex justify-content-between mb-1">
-                            <label className="form-label small fw-bold mb-0 text-uppercase">Product</label>
-                            <div className="form-check form-switch p-0 m-0">
-                                <label className="form-check-label me-4 small text-muted text-uppercase" htmlFor={`is_new_${i}`} style={{fontSize:'0.65rem'}}>Is New?</label>
-                                <input className="form-check-input" type="checkbox" id={`is_new_${i}`} 
-                                    checked={item.is_new} onChange={e => updateItem(i, 'is_new', e.target.checked)} />
+                {items.length===0 ? (
+                  <div style={{textAlign:'center',padding:'30px 0',color:'#94a3b8'}}>
+                    <div style={{fontSize:'2.5rem',opacity:.3,marginBottom:8}}>🛒</div>
+                    <div style={{fontWeight:700,fontSize:'.82rem',marginBottom:4}}>No items added yet</div>
+                    <button type="button" style={{background:'#f1f5f9',border:'1.5px solid #e2e8f0',borderRadius:8,padding:'6px 16px',fontSize:'.75rem',fontWeight:700,cursor:'pointer',color:'#6366f1'}}
+                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0}])}>
+                      + Add Item
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {items.map((item,i)=>{
+                      const marginVal=parseFloat(item.selling_price||0)-parseFloat(item.unit_price||0);
+                      const marginPer=item.unit_price>0?(marginVal/item.unit_price)*100:0;
+                      return (
+                        <div key={i} className="pf-item">
+                          <button type="button" onClick={()=>removeItem(i)} style={{position:'absolute',top:8,right:10,background:'none',border:'none',color:'#94a3b8',cursor:'pointer',fontSize:'.9rem',fontWeight:700,lineHeight:1}}>✕</button>
+                          <div className="row g-2 mb-2">
+                            <div className="col-12 col-md-3">
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                                <span className="pf-lbl" style={{marginBottom:0}}>Product</span>
+                                <label style={{fontSize:'.6rem',color:'#94a3b8',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                                  New? <input type="checkbox" checked={item.is_new} onChange={e=>updateItem(i,'is_new',e.target.checked)} style={{accentColor:'#6366f1'}}/>
+                                </label>
+                              </div>
+                              {item.is_new
+                                ? <input type="text" className="pf-inp" placeholder="e.g. Vivo V70" required value={item.new_product_name} onChange={e=>updateItem(i,'new_product_name',e.target.value)}/>
+                                : <select className="pf-inp" required value={item.product_id} onChange={e=>updateItem(i,'product_id',e.target.value)}>
+                                    <option value="">— Choose Product —</option>
+                                    {products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </select>
+                              }
                             </div>
-                           </div>
-                           {item.is_new ? (
-                             <input type="text" className="form-control form-control-sm text-uppercase" placeholder="E.G. VIVO V70" required value={item.new_product_name} onChange={e => updateItem(i, 'new_product_name', e.target.value)} />
-                           ) : (
-                             <select className="form-select form-select-sm text-uppercase" required value={item.product_id} onChange={e => updateItem(i, 'product_id', e.target.value)}>
-                               <option value="">— CHOOSE PRODUCT —</option>
-                               {products.map(p => <option key={p.id} value={p.id}>{p.name.toUpperCase()}</option>)}
-                             </select>
-                           )}
+                            <div className="col-12 col-md-4">
+                              <span className="pf-lbl">IMEI / Serial</span>
+                              <div style={{display:'flex',gap:4}}>
+                                <input type="text" className="pf-imei" placeholder="Scan or type..." value={item.imei} onChange={e=>updateItem(i,'imei',e.target.value)}/>
+                                <button type="button" onClick={()=>setScanner({show:true,itemIndex:i})} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:7,padding:'0 9px',cursor:'pointer',fontSize:'.8rem'}}>📷</button>
+                              </div>
+                            </div>
+                            <div className="col-4 col-md-2">
+                              <span className="pf-lbl">RAM</span>
+                              <input type="text" className="pf-inp" placeholder="8GB" value={item.ram} onChange={e=>updateItem(i,'ram',e.target.value)}/>
+                            </div>
+                            <div className="col-4 col-md-2">
+                              <span className="pf-lbl">Storage</span>
+                              <input type="text" className="pf-inp" placeholder="128GB" value={item.storage} onChange={e=>updateItem(i,'storage',e.target.value)}/>
+                            </div>
+                            <div className="col-4 col-md-1">
+                              <span className="pf-lbl">Color</span>
+                              <input type="text" className="pf-inp" placeholder="Red" value={item.color} onChange={e=>updateItem(i,'color',e.target.value)}/>
+                            </div>
+                          </div>
+                           <div className="row g-2 align-items-end">
+                            <div className="col-4 col-md-1">
+                              <span className="pf-price-lbl" style={{color:'#64748b'}}>Qty</span>
+                              <input type="number" className="pf-inp" style={{textAlign:'center',fontWeight:700}} min="1" value={item.quantity} readOnly={!!item.imei} onChange={e=>updateItem(i,'quantity',parseInt(e.target.value))}/>
+                            </div>
+                            <div className="col-4 col-md-2">
+                              <span className="pf-price-lbl">DP ₹</span>
+                              <input type="number" className="pf-inp" style={{fontWeight:700}} step=".01" value={item.unit_price} onChange={e=>updateItem(i,'unit_price',parseFloat(e.target.value))}/>
+                            </div>
+                            <div className="col-4 col-md-2">
+                              <span className="pf-price-lbl" style={{color:'#059669'}}>MOP ₹</span>
+                              <input type="number" className="pf-inp" style={{borderColor:'#6ee7b7',color:'#059669',fontWeight:700}} step=".01" value={item.selling_price} onChange={e=>updateItem(i,'selling_price',parseFloat(e.target.value))}/>
+                            </div>
+                            <div className="col-4 col-md-2">
+                              <span className="pf-price-lbl" style={{color:'#6366f1'}}>WHOLE ₹</span>
+                              <input type="number" className="pf-inp" style={{borderColor:'#a5b4fc',color:'#6366f1'}} step=".01" value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))}/>
+                            </div>
+                            <div className="col-4 col-md-2">
+                              <span className="pf-price-lbl" style={{color:'#0284c7'}}>CUST ₹</span>
+                              <input type="number" className="pf-inp" style={{borderColor:'#93c5fd',color:'#0284c7'}} step=".01" value={item.max_selling_price} onChange={e=>updateItem(i,'max_selling_price',parseFloat(e.target.value))}/>
+                            </div>
+                            <div className="col-4 col-md-1">
+                              <span className="pf-price-lbl" style={{color:'#dc2626'}}>MIN ₹</span>
+                              <input type="number" className="pf-inp" style={{borderColor:'#fca5a5',color:'#dc2626'}} step=".01" value={item.min_selling_price} onChange={e=>updateItem(i,'min_selling_price',parseFloat(e.target.value))}/>
+                            </div>
+                            <div className="col-4 col-md-1">
+                              <span className="pf-price-lbl" style={{color:'#6366f1'}}>COM ₹</span>
+                              <input type="number" className="pf-inp" style={{borderColor:'#a5b4fc',color:'#6366f1'}} step=".01" value={item.incentive_amount} onChange={e=>updateItem(i,'incentive_amount',parseFloat(e.target.value))}/>
+                            </div>
+                            <div className="col-12 col-md-1">
+                              <div style={{background:'#f1f5f9',borderRadius:8,padding:'5px 5px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:42}}>
+                                <span style={{fontSize:'.45rem',fontWeight:700,color:'#94a3b8',textTransform:'uppercase'}}>Margin</span>
+                                <span style={{fontWeight:700,color:marginVal>=0?'#059669':'#dc2626',fontSize:'.6rem'}}>₹{marginVal.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div style={{background:'#e2e8f0',height:3,borderRadius:4,marginTop:3}}>
+                                <div style={{background:marginVal>=0?'#059669':'#dc2626',width:`${Math.min(100,Math.max(0,marginPer))}%`,height:'100%',borderRadius:4}}/>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right',marginTop:4,fontSize:'.75rem',color:'#64748b'}}>
+                            Item Total: <span style={{fontWeight:700,color:'#6366f1',fontSize:'.88rem'}}>₹{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toLocaleString('en-IN')}</span>
+                          </div>
                         </div>
+                      );
+                    })}
+                    <div style={{textAlign:'center',marginTop:4}}>
+                      <button type="button" className="pf-bulk" style={{background:'#f1f5f9',color:'#6366f1',border:'1.5px dashed #a5b4fc'}}
+                        onClick={()=>setItems([...items,{product_id:'',is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0}])}>
+                        + Add More Items
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
-                        <div className="col-12 col-md-8">
-                             {(() => {
-                                 return (
-                                 <div className="row g-2 text-uppercase">
-                                     <div className="col-12 col-md-4">
-                                         <label className="small text-muted mb-0 fw-bold">IMEI / SERIALS</label>
-                                         <div className="input-group input-group-sm">
-                                             <input type="text" className="form-control" placeholder="SCAN OR TYPE..."
-                                                 value={item.imei} onChange={e => updateItem(i, 'imei', e.target.value)} />
-                                             <button className="btn btn-outline-primary" type="button" onClick={() => setScanner({ show: true, itemIndex: i })}>📷</button>
-                                         </div>
-                                     </div>
-                                     <div className="col-4 col-md-2">
-                                         <label className="small text-muted mb-0 fw-bold">RAM</label>
-                                         <input type="text" className="form-control form-control-sm" placeholder="8GB"
-                                             value={item.ram} onChange={e => updateItem(i, 'ram', e.target.value)} />
-                                     </div>
-                                     <div className="col-4 col-md-3">
-                                         <label className="small text-muted mb-0 fw-bold">STORAGE</label>
-                                         <input type="text" className="form-control form-control-sm" placeholder="128GB"
-                                             value={item.storage} onChange={e => updateItem(i, 'storage', e.target.value)} />
-                                     </div>
-                                     <div className="col-4 col-md-3">
-                                         <label className="small text-muted mb-0 fw-bold">COLOR</label>
-                                         <input type="text" className="form-control form-control-sm" placeholder="BLACK"
-                                             value={item.color} onChange={e => updateItem(i, 'color', e.target.value)} />
-                                     </div>
-                                 </div>
-                                 );
-                             })()}
-                        </div>
-
-                        <div className="col-6 col-md-1">
-                            <label className="small text-muted mb-0 fw-bold text-uppercase">Qty</label>
-                            <input type="number" className="form-control form-control-sm text-center fw-bold" min="1" value={item.quantity} readOnly={!!item.imei} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value))} />
-                        </div>
-                        <div className="col-6 col-md-2">
-                            <label className="small text-muted mb-0 fw-bold text-uppercase">Buy Price (₹)</label>
-                            <input type="number" className="form-control form-control-sm fw-bold" step="0.01" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value))} />
-                        </div>
-                        <div className="col-6 col-md-2">
-                            <label className="small text-muted mb-0 fw-bold text-uppercase text-success">Sell Price (₹)</label>
-                            <input type="number" className="form-control form-control-sm border-success fw-bold text-success" step="0.01" value={item.selling_price} onChange={e => updateItem(i, 'selling_price', parseFloat(e.target.value))} />
-                        </div>
-                        <div className="col-6 col-md-2">
-                            <label className="small text-muted mb-0 fw-bold text-uppercase text-danger">Min Price (₹)</label>
-                            <input type="number" className="form-control form-control-sm border-danger fw-bold text-danger" step="0.01" value={item.min_selling_price} onChange={e => updateItem(i, 'min_selling_price', parseFloat(e.target.value))} />
-                        </div>
-                        <div className="col-6 col-md-2">
-                            <label className="small text-muted mb-0 fw-bold text-uppercase text-info">Max Price (₹)</label>
-                            <input type="number" className="form-control form-control-sm border-info fw-bold text-info" step="0.01" value={item.max_selling_price} onChange={e => updateItem(i, 'max_selling_price', parseFloat(e.target.value))} />
-                        </div>
-                        <div className="col-6 col-md-3">
-                            <div className="d-flex align-items-end h-100 pb-1">
-                                <div className="bg-light p-2 rounded w-100">
-                                    <div className="d-flex justify-content-between align-items-center">
-                                        <span className="small text-muted fw-bold text-uppercase">Profit Margin</span>
-                                        <span className={`fw-bold ${marginVal > 0 ? 'text-success' : 'text-danger'}`}>
-                                            ₹{marginVal.toLocaleString('en-IN')} ({marginPer.toFixed(1)}%)
-                                        </span>
-                                    </div>
-                                    <div className="progress mt-1" style={{height: '4px'}}>
-                                        <div className={`progress-bar ${marginVal > 0 ? 'bg-success' : 'bg-danger'}`} style={{width: `${Math.min(100, Math.max(0, marginPer))}%`}}></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-12 col-md-4 ms-auto text-end">
-                            <div className="pt-2">
-                                <span className="small text-muted me-2 text-uppercase">Item Total:</span>
-                                <span className="fw-bold fs-5 text-primary">₹{(parseFloat(item.quantity||0) * parseFloat(item.unit_price||0)).toLocaleString('en-IN')}</span>
-                            </div>
-                        </div>
-                      </div>
+              <div className="pf-card">
+                <div className="row g-2">
+                  <div className="col-12 col-md-6">
+                    <span className="pf-lbl">Internal Notes / Reminders</span>
+                    <textarea className="pf-inp" rows={2} placeholder="e.g. Bill No, Payment Due Date..." value={form.notes} onChange={e=>setForm({...form,notes:e.target.value.toUpperCase()})}/>
+                  </div>
+                  <div className="col-12 col-md-3">
+                    <span className="pf-lbl" style={{color:'#059669'}}>Initial Payment Paid (₹)</span>
+                    <div style={{display:'flex',gap:0}}>
+                      <span style={{background:'#059669',color:'#fff',fontWeight:700,padding:'5px 10px',borderRadius:'7px 0 0 7px',fontSize:'.82rem'}}>₹</span>
+                      <input type="number" className="pf-inp" style={{borderRadius:'0 7px 7px 0',borderLeft:'none',color:'#059669',fontWeight:700,borderColor:'#6ee7b7'}}
+                        placeholder="0.00" value={form.total_paid===0?'':form.total_paid} onFocus={e=>e.target.select()} onChange={e=>setForm({...form,total_paid:parseFloat(e.target.value)||0})}/>
                     </div>
                   </div>
-                );
-              })}
-              <div className="col-12 text-center mt-2">
-                 <button type="button" className="btn btn-outline-primary btn-sm fw-bold text-uppercase shadow-sm px-4" onClick={() => setItems([...items, {product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0, min_selling_price: 0, max_selling_price: 0}])}>
-                    + Add More Items
-                 </button>
+                  <div className="col-12 col-md-3">
+                    <span className="pf-lbl" style={{color:'#dc2626'}}>Pending Balance</span>
+                    <div style={{background:'#fef2f2',border:'1.5px solid #fca5a5',borderRadius:8,padding:'8px 12px'}}>
+                      <div style={{fontWeight:800,fontSize:'1rem',color:'#dc2626'}}>₹{(grandTotal-(parseFloat(form.total_paid)||0)).toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* ─ Summary Section ─ */}
-        <div className="row g-4 mb-5">
-           <div className="col-12 col-lg-7">
-              <div className="form-card shadow-sm border-0 bg-white rounded-3 p-4 h-100">
-                <div className="mb-3">
-                    <label className="form-label small fw-bold text-uppercase">Internal Notes / Reminders</label>
-                    <textarea 
-                        className="form-control text-uppercase" 
-                        rows={3} 
-                        placeholder="E.G. BILL NO, PAYMENT DUE DATE, ETC..."
-                        value={form.notes} 
-                        onChange={e => setForm({...form, notes: e.target.value.toUpperCase()})}
-                    ></textarea>
+            <div className="col-12 col-lg-4">
+              <div className="pf-sum" style={{position:'sticky',top:16}}>
+                <div style={{color:'rgba(255,255,255,.5)',fontSize:'.62rem',fontWeight:700,letterSpacing:1,textTransform:'uppercase',marginBottom:12}}>Order Summary</div>
+                <div className="pf-sum-row"><span style={{color:'rgba(255,255,255,.6)'}}>Subtotal</span><span style={{color:'#fff',fontWeight:600}}>₹{total.toLocaleString('en-IN')}</span></div>
+                <div className="pf-sum-row">
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <input type="checkbox" id="calcGst" checked={form.calculate_gst} onChange={e=>setForm({...form,calculate_gst:e.target.checked})} style={{accentColor:'#818cf8'}}/>
+                    <label htmlFor="calcGst" style={{color:'rgba(255,255,255,.6)',fontSize:'.75rem',cursor:'pointer',margin:0}}>GST</label>
+                  </div>
                 </div>
-                <div className="row g-3 text-uppercase">
-                    <div className="col-12 col-md-6">
-                        <label className="form-label small fw-bold text-success text-uppercase">Initial Payment Paid (₹)</label>
-                        <div className="input-group">
-                            <span className="input-group-text bg-success text-white fw-bold">₹</span>
-                            <input 
-                                type="number" 
-                                className="form-control fw-bold border-success text-success" 
-                                placeholder="0.00"
-                                value={form.total_paid === 0 ? '' : form.total_paid}
-                                onFocus={e => e.target.select()}
-                                onChange={e => setForm({...form, total_paid: parseFloat(e.target.value) || 0})}
-                            />
-                        </div>
-                        <div className="form-text small text-muted mt-1">IF YOU PAID ANY AMOUNT TO SUPPLIER TODAY, RECORD IT HERE.</div>
+                {form.calculate_gst && <>
+                  <div className="pf-sum-row">
+                    <div style={{display:'flex',alignItems:'center',gap:6,color:'rgba(255,255,255,.55)'}}>
+                      CGST <input type="number" value={form.cgst_rate} onChange={e=>setForm({...form,cgst_rate:e.target.value})} style={{width:40,background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.2)',borderRadius:5,color:'#fff',textAlign:'center',fontSize:'.72rem',padding:'2px 4px'}}/> %
                     </div>
-                    <div className="col-12 col-md-6">
-                        <div className="bg-light p-3 rounded-3 h-100 d-flex flex-column justify-content-center">
-                            <div className="d-flex justify-content-between mb-1">
-                                <span className="small text-muted fw-bold">PENDING BALANCE:</span>
-                                <span className="fw-bold text-danger">₹{(grandTotal - (parseFloat(form.total_paid) || 0)).toLocaleString('en-IN')}</span>
-                            </div>
-                            <div className="progress" style={{height: '6px'}}>
-                                <div className="progress-bar bg-danger" style={{width: `${Math.min(100, ((grandTotal - (parseFloat(form.total_paid) || 0)) / grandTotal) * 100)}%`}}></div>
-                            </div>
-                        </div>
+                    <span style={{color:'#a5b4fc',fontWeight:600}}>₹{cgstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="pf-sum-row">
+                    <div style={{display:'flex',alignItems:'center',gap:6,color:'rgba(255,255,255,.55)'}}>
+                      SGST <input type="number" value={form.sgst_rate} onChange={e=>setForm({...form,sgst_rate:e.target.value})} style={{width:40,background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.2)',borderRadius:5,color:'#fff',textAlign:'center',fontSize:'.72rem',padding:'2px 4px'}}/> %
                     </div>
+                    <span style={{color:'#a5b4fc',fontWeight:600}}>₹{sgstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </>}
+                <div className="pf-sum-row">
+                  <div>
+                    <div style={{color:'rgba(255,255,255,.6)',fontSize:'.75rem',marginBottom:4}}>Cash Discount
+                      <label style={{marginLeft:8,fontSize:'.6rem',color:'rgba(255,255,255,.4)',cursor:'pointer'}}>
+                        <input type="checkbox" checked={form.is_cash_discount_on_bill} onChange={e=>setForm({...form,is_cash_discount_on_bill:e.target.checked})} style={{marginRight:4,accentColor:'#818cf8'}}/>On Bill
+                      </label>
+                    </div>
+                    <input type="number" value={form.cash_discount===0?'':form.cash_discount} onFocus={e=>e.target.select()} onChange={e=>setForm({...form,cash_discount:parseFloat(e.target.value)||0})}
+                      style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',borderRadius:7,color:'#38bdf8',fontWeight:700,padding:'4px 8px',fontSize:'.82rem'}} placeholder="0"/>
+                  </div>
+                </div>
+                <div className="pf-sum-row">
+                  <div style={{display:'flex',alignItems:'center',gap:6,color:'rgba(255,255,255,.55)'}}>
+                    Round Off
+                    <div style={{display:'flex',gap:2}}>
+                      {['down','auto','up'].map(m=>(
+                        <button key={m} type="button" onClick={()=>setForm({...form,rounding_mode:m})}
+                          style={{background:form.rounding_mode===m?'#6366f1':'rgba(255,255,255,.1)',border:'none',color:'#fff',borderRadius:4,padding:'1px 7px',fontSize:'.65rem',cursor:'pointer',fontWeight:700}}>
+                          {m==='down'?'-':m==='up'?'+':'A'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <span style={{color:parseFloat(roundOff)>=0?'#4ade80':'#f87171',fontWeight:600}}>{parseFloat(roundOff)>=0?'+':''}{roundOff}</span>
+                </div>
+                <div style={{borderTop:'1px solid rgba(255,255,255,.15)',marginTop:8,paddingTop:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{color:'rgba(255,255,255,.7)',fontWeight:700,textTransform:'uppercase',fontSize:'.75rem'}}>Grand Total</span>
+                  <span className="pf-grand">₹{grandTotal.toLocaleString('en-IN')}</span>
+                </div>
+                <div style={{marginTop:14,display:'flex',flexDirection:'column',gap:8}}>
+                  <button type="submit" className={`pf-submit${form.status==='received'?' green':''}`} style={{width:'100%'}}>
+                    {id?`Update ${form.bill_type} Purchase`:(form.status==='received'?`✅ Save & Add Stock`:`📦 Save Order`)}
+                  </button>
+                  <button type="button" onClick={()=>navigate('/purchases')} style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1.5px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',fontWeight:700,fontSize:'.8rem',padding:'8px',borderRadius:10,cursor:'pointer'}}>Cancel</button>
                 </div>
               </div>
-           </div>
-           <div className="col-12 col-lg-5">
-              <div className="form-card shadow-sm border-0 bg-white rounded-3 p-4 h-100">
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                    <span className="text-muted text-uppercase fw-bold">Subtotal:</span>
-                    <span className="fw-bold">₹{total.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-2 bg-light p-2 rounded">
-                    <div className="form-check form-switch p-0 m-0 d-flex align-items-center gap-2">
-                        <input className="form-check-input ms-0" type="checkbox" id="calcGst" 
-                            checked={form.calculate_gst} onChange={e => setForm({...form, calculate_gst: e.target.checked})} />
-                        <label className="form-check-label small fw-bold text-uppercase" htmlFor="calcGst">Calculate GST</label>
-                    </div>
-                    {!form.calculate_gst && <span className="badge bg-secondary text-uppercase">Disabled</span>}
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                    <div className="d-flex align-items-center gap-2">
-                        <span className="text-muted text-uppercase fw-bold">CGST:</span>
-                        <input type="number" className="form-control form-control-sm px-1 text-center" style={{width:'50px'}} value={form.cgst_rate} onChange={e => setForm({...form, cgst_rate: e.target.value})} disabled={!form.calculate_gst} />
-                        <span className="text-muted">%</span>
-                    </div>
-                    <span className={`fw-semibold ${!form.calculate_gst ? 'text-muted text-decoration-line-through' : ''}`}>₹{cgstAmount.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
-                    <div className="d-flex align-items-center gap-2">
-                        <span className="text-muted text-uppercase fw-bold">SGST:</span>
-                        <input type="number" className="form-control form-control-sm px-1 text-center" style={{width:'50px'}} value={form.sgst_rate} onChange={e => setForm({...form, sgst_rate: e.target.value})} disabled={!form.calculate_gst} />
-                        <span className="text-muted">%</span>
-                    </div>
-                    <span className={`fw-semibold ${!form.calculate_gst ? 'text-muted text-decoration-line-through' : ''}`}>₹{sgstAmount.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
-                    <div className="w-100">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                            <span className="text-muted text-uppercase fw-bold">Cash Discount:</span>
-                            <div className="form-check form-switch p-0 m-0 d-flex align-items-center gap-2">
-                                <label className="form-check-label small text-muted" htmlFor="onBill">On Bill?</label>
-                                <input className="form-check-input ms-0" type="checkbox" id="onBill" 
-                                    checked={form.is_cash_discount_on_bill} onChange={e => setForm({...form, is_cash_discount_on_bill: e.target.checked})} />
-                            </div>
-                        </div>
-                        <div className="input-group input-group-sm">
-                            <span className="input-group-text bg-info text-white border-info">₹</span>
-                            <input type="number" className="form-control border-info text-end fw-bold text-info"
-                                value={form.cash_discount === 0 ? '' : form.cash_discount}
-                                onFocus={e => e.target.select()}
-                                onChange={e => setForm({...form, cash_discount: parseFloat(e.target.value) || 0})} 
-                            />
-                        </div>
-                        <div className="small text-muted mt-1" style={{fontSize:'0.65rem'}}>
-                            {form.is_cash_discount_on_bill ? '✅ DEDUCTED FROM GRAND TOTAL' : 'ℹ️ RECORDED SEPARATELY IN ACCOUNTS'}
-                        </div>
-                    </div>
-                </div>
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                    <div className="d-flex align-items-center gap-2">
-                        <span className="text-muted text-uppercase fw-bold">Round Off:</span>
-                        <div className="btn-group btn-group-xs">
-                            <button type="button" className={`btn btn-xs py-0 px-2 ${form.rounding_mode === 'down' ? 'btn-danger' : 'btn-outline-secondary'}`} onClick={() => setForm({...form, rounding_mode: 'down'})}>-</button>
-                            <button type="button" className={`btn btn-xs py-0 px-2 ${form.rounding_mode === 'auto' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setForm({...form, rounding_mode: 'auto'})}>A</button>
-                            <button type="button" className={`btn btn-xs py-0 px-2 ${form.rounding_mode === 'up' ? 'btn-success' : 'btn-outline-secondary'}`} onClick={() => setForm({...form, rounding_mode: 'up'})}>+</button>
-                        </div>
-                    </div>
-                    <span className={`fw-bold ${parseFloat(roundOff) >= 0 ? 'text-success' : 'text-danger'}`}>{parseFloat(roundOff) >= 0 ? '+' : ''}{roundOff}</span>
-                </div>
-                <div className="d-flex justify-content-between align-items-center border-top pt-3 bg-light p-3 rounded-3 shadow-xs">
-                    <h4 className="fw-bold mb-0 text-uppercase">Grand Total:</h4>
-                    <h3 className="fw-bold text-primary mb-0">₹{grandTotal.toLocaleString('en-IN')}</h3>
-                </div>
-              </div>
-           </div>
-        </div>
-
-        <div className="d-flex gap-2 mb-5">
-          <button type="submit" className={`btn btn-lg fw-bold px-5 text-uppercase shadow ${form.status === 'received' ? 'btn-success' : 'btn-primary'}`}>
-             {id ? `UPDATE ${form.bill_type.toUpperCase()} PURCHASE` : (form.status === 'received' ? `✅ Save & Add ${form.bill_type.toUpperCase()} Stock` : `📦 Save ${form.bill_type.toUpperCase()} Order`)}
-          </button>
-          <button type="button" className="btn btn-lg btn-outline-secondary text-uppercase fw-bold px-4" onClick={() => navigate('/purchases')}>Cancel</button>
-        </div>
-      </form>
+            </div>
+          </div>
+        </form>
       )}
 
-      {/* Quick Add Supplier Modal */}
+      {/* Modals */}
       <Modal show={showSupplierModal} onHide={() => setShowSupplierModal(false)} centered className="text-uppercase">
-          <Modal.Header closeButton className="bg-primary text-white">
-              <Modal.Title className="fw-bold small">🆕 QUICK ADD NEW SUPPLIER</Modal.Title>
-          </Modal.Header>
-          <form onSubmit={handleQuickSupplierAdd}>
-              <Modal.Body className="p-4">
-                  <div className="mb-3">
-                      <label className="form-label small fw-bold">Supplier Name <span className="text-danger">*</span></label>
-                      <input type="text" className="form-control text-uppercase" required 
-                          value={newSupplier.name} onChange={e => setNewSupplier({...newSupplier, name: e.target.value.toUpperCase()})} />
-                  </div>
-                  <div className="mb-3">
-                      <label className="form-label small fw-bold">Phone / Contact <span className="text-danger">*</span></label>
-                      <input type="text" className="form-control" required 
-                          value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} />
-                  </div>
-                  <div className="mb-0">
-                      <label className="form-label small fw-bold">Address / City <span className="text-danger">*</span></label>
-                      <textarea className="form-control text-uppercase" rows={2} required 
-                          value={newSupplier.address} onChange={e => setNewSupplier({...newSupplier, address: e.target.value.toUpperCase()})} />
-                  </div>
-              </Modal.Body>
-              <Modal.Footer>
-                  <Button variant="secondary" className="fw-bold" onClick={() => setShowSupplierModal(false)}>CANCEL</Button>
-                  <Button type="submit" variant="primary" className="fw-bold px-4">SAVE SUPPLIER</Button>
-              </Modal.Footer>
-          </form>
+        <Modal.Header closeButton className="bg-primary text-white">
+          <Modal.Title className="fw-bold small">🆕 QUICK ADD NEW SUPPLIER</Modal.Title>
+        </Modal.Header>
+        <form onSubmit={handleQuickSupplierAdd}>
+          <Modal.Body className="p-4">
+            <div className="mb-3">
+              <label className="form-label small fw-bold">Supplier Name <span className="text-danger">*</span></label>
+              <input type="text" className="form-control text-uppercase" required 
+                value={newSupplier.name} onChange={e => setNewSupplier({...newSupplier, name: e.target.value.toUpperCase()})} />
+            </div>
+            <div className="mb-3">
+              <label className="form-label small fw-bold">Phone / Contact <span className="text-danger">*</span></label>
+              <input type="text" className="form-control" required 
+                value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} />
+            </div>
+            <div className="mb-0">
+              <label className="form-label small fw-bold">Address / City <span className="text-danger">*</span></label>
+              <textarea className="form-control text-uppercase" rows={2} required 
+                value={newSupplier.address} onChange={e => setNewSupplier({...newSupplier, address: e.target.value.toUpperCase()})} />
+            </div>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" className="fw-bold" onClick={() => setShowSupplierModal(false)}>CANCEL</Button>
+            <Button type="submit" variant="primary" className="fw-bold px-4">SAVE SUPPLIER</Button>
+          </Modal.Footer>
+        </form>
       </Modal>
 
       <BarcodeScannerModal 

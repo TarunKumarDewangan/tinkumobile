@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
+import api from '../api/axios';
 
 const NAV = [
   { section: 'Main' },
@@ -59,6 +60,7 @@ const NAV = [
     children: [
         { to: '/accounts/cashbook', icon: '📖', label: 'Cashbook', perm: 'view_reports' },
         { to: '/accounts/entity-ledger', icon: '🧾', label: 'Entity Ledger', perm: 'view_reports' },
+        { to: '/accounts/entity-report', icon: '📊', label: 'Entity Report', perm: 'view_reports' },
         { to: '/accounts/entity-manager', icon: '👥', label: 'Entity Manager', perm: 'view_reports' },
         { to: '/accounts/expenses',  icon: '💸', label: 'Overheads', perm: 'view_reports' },
         { to: '/accounts/categories', icon: '📁', label: 'Categories', perm: 'view_reports' },
@@ -73,6 +75,7 @@ const NAV = [
         { to: '/airtel/retailers', icon: '🏪', label: 'Retailers', perm: 'view_airtel_recovery' },
         { to: '/airtel/drops',     icon: '📉', label: 'Daily Drops', perm: 'view_airtel_recovery' },
         { to: '/airtel/reports',   icon: '📊', label: 'Reports',    perm: 'view_reports' },
+        { id: 'airtel-backup', icon: '💾', label: 'Full Backup v3 (JSON)', perm: 'view_reports', action: 'BACKUP_AIRTEL' },
     ]
   },
 ];
@@ -101,6 +104,30 @@ export default function Layout() {
     await logout();
     toast.success('Logged out');
     navigate('/login');
+  };
+
+  const handleAirtelBackup = async () => {
+      try {
+          toast.info('Preparing backup...');
+          const response = await api.get('/airtel-retailers/backup', {
+              responseType: 'blob'
+          });
+          
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          link.setAttribute('download', `airtel_full_backup_${timestamp}.json`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+          
+          toast.success('Backup downloaded successfully');
+      } catch (error) {
+          console.error('Backup error:', error);
+          toast.error('Backup failed: ' + (error.response?.data?.message || 'Server error'));
+      }
   };
   
   // Shortcut: Alt + S for Stocks
@@ -167,9 +194,15 @@ export default function Layout() {
                         {isExpanded && (
                             <div className="sidebar-dropdown-content" style={{ paddingLeft: '0.5rem', borderLeft: '1px solid rgba(255,255,255,0.05)', marginLeft: '1.25rem' }}>
                                 {visibleChildren.map(child => (
-                                    <NavLink key={child.to} to={child.to} end={child.end} onClick={closeSidebar}>
-                                        {child.icon} {child.label}
-                                    </NavLink>
+                                    child.action === 'BACKUP_AIRTEL' ? (
+                                        <button key={child.id} onClick={handleAirtelBackup} className="sidebar-action-btn">
+                                            {child.icon} {child.label}
+                                        </button>
+                                    ) : (
+                                        <NavLink key={child.to} to={child.to} end={child.end} onClick={closeSidebar}>
+                                            {child.icon} {child.label}
+                                        </NavLink>
+                                    )
                                 ))}
                             </div>
                         )}

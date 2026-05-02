@@ -24,7 +24,8 @@ export default function RepairForm() {
     external_expected_delivery: '',
     advance_payment_mode: 'CASH',
     balance_amount_received: 0,
-    balance_payment_mode: 'CASH'
+    balance_payment_mode: 'CASH',
+    is_pay_later: false
   });
   const [externalShops, setExternalShops] = useState([]);
   const [showShopList, setShowShopList] = useState(false);
@@ -235,10 +236,14 @@ export default function RepairForm() {
                     <div className="col-6 position-relative">
                       <input className="form-control form-control-sm x-small" placeholder="Shop Name" {...f('forwarded_to')} onFocus={() => setShowShopList(true)} onBlur={() => setTimeout(() => setShowShopList(false), 200)} />
                       {showShopList && externalShops.length > 0 && (
-                        <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 100, zIndex: 1000, left: 0 }}>
-                           {externalShops.filter(s => s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase())).map((shop, i) => (
-                             <div key={i} className="p-1 x-small cursor-pointer border-bottom hover-bg-light" onMouseDown={() => selectShop(shop)}>
-                               <div className="fw-bold">{shop.forwarded_to}</div>
+                        <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 150, zIndex: 1000, left: 0 }}>
+                           {externalShops.filter(s => 
+                              s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase()) || 
+                              (s.forwarded_phone && s.forwarded_phone.includes(form.forwarded_to))
+                           ).map((shop, i) => (
+                             <div key={i} className="p-2 x-small cursor-pointer border-bottom hover-bg-light d-flex justify-content-between align-items-center" onMouseDown={() => selectShop(shop)}>
+                               <div className="fw-bold text-uppercase">{shop.forwarded_to}</div>
+                               <div className="text-muted small">{shop.forwarded_phone}</div>
                              </div>
                            ))}
                         </div>
@@ -279,6 +284,13 @@ export default function RepairForm() {
                     <span className="input-group-text bg-white text-success px-1">₹</span>
                     <input type="number" step="0.01" className="form-control fw-bold text-success px-1" {...f('advance_amount')} />
                   </div>
+                </div>
+              </div>
+
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <div className="form-check form-switch p-0 ms-4">
+                  <input className="form-check-input ms-0 me-2" type="checkbox" id="isPayLater" {...f('is_pay_later')} checked={form.is_pay_later} />
+                  <label className="form-check-label x-small fw-bold text-primary" htmlFor="isPayLater">Pay Later by Customer?</label>
                 </div>
               </div>
 

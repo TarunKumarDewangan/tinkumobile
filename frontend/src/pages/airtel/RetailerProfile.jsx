@@ -8,7 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function RetailerProfile() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { hasFullAccess } = useAuth();
+    const { hasFullAccess, isOwner } = useAuth();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -421,6 +421,7 @@ export default function RetailerProfile() {
                                 <input 
                                     type="date" 
                                     className="form-control fw-bold" 
+                                    readOnly={!isOwner()}
                                     value={recoveryDate}
                                     onChange={e => setRecoveryDate(e.target.value)}
                                     required

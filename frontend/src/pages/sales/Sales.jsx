@@ -27,7 +27,8 @@ export default function Sales() {
     setLoading(true);
     try {
       const { data } = await api.get('/sale-invoices', { params: filters });
-      setInvoices(data);
+      // If data.data exists (pagination), use it; otherwise use data
+      setInvoices(data.data || data);
     } catch (e) {
       toast.error('Failed to load sales');
     } finally {

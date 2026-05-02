@@ -12,10 +12,17 @@ use App\Models\User;
 use App\Models\ActivityLog;
 use App\Traits\RecordsTransactions;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class AirtelRetailerController extends Controller
 {
-    use RecordsTransactions;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $sortBy = $request->get('sort_by', 'name');
@@ -135,8 +142,12 @@ class AirtelRetailerController extends Controller
         $recoveredAtInput = $validated['recovered_at'] ?? now();
         $recoveredAt = Carbon::parse($recoveredAtInput);
 
-        // If it's just a date (no time component or exactly midnight) and matches today, use the current time
-        if ($recoveredAt->isToday() && $recoveredAt->hour === 0 && $recoveredAt->minute === 0) {
+        // Security: Block date modification for non-owners/managers
+        $isPowerUser = $request->user()->isOwner() || $request->user()->isManager();
+        if (!$isPowerUser) {
+            $recoveredAt = now();
+        } elseif ($recoveredAt->isToday() && $recoveredAt->hour === 0 && $recoveredAt->minute === 0) {
+            // If it's just a date (no time component or exactly midnight) and matches today, use the current time
             $recoveredAt = now();
         }
 
@@ -153,18 +164,16 @@ class AirtelRetailerController extends Controller
         $parts = explode(' - ', $notes);
         $mode = strtoupper(trim($parts[0])) ?: 'CASH';
 
-        // Record Transaction
-        $this->recordTransaction([
+        // Record Transaction using Service
+        $this->transactionService->recordForModel($recovery, [
             'type'             => 'IN',
             'category'         => 'AIRTEL_RECOVERY',
             'amount'           => $recovery->amount,
             'payment_mode'     => $mode,
             'description'      => "Recovery payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
-            'entity_id'        => $recovery->id,
-            'entity_type'      => \App\Models\AirtelRecovery::class,
             'entity_name'      => $retailer->name,
-            'ref_id'           => $recovery->id,
             'transaction_date' => $recovery->recovered_at->toDateString(),
+            'shop_id'          => $retailer->shop_id,
         ]);
 
         ActivityLog::log('RECORD_RECOVERY', $retailer, 'Recorded recovery of ₹' . number_format($validated['amount']) . ' for ' . $retailer->name);
@@ -229,6 +238,118 @@ class AirtelRetailerController extends Controller
         ActivityLog::log('UPDATE_RETAILER', $retailer, 'Updated retailer: ' . $retailer->name . ' (MSISDN: ' . $retailer->msisdn . ')');
 
         return response()->json($retailer);
+    }
+
+    public function backup()
+    {
+        $retailers = Retailer::all();
+        $drops = AirtelDrop::all();
+        $recoveries = AirtelRecovery::all();
+
+        $data = [
+            'timestamp' => now()->toDateTimeString(),
+            'retailers' => $retailers,
+            'airtel_drops' => $drops,
+            'airtel_recoveries' => $recoveries,
+        ];
+
+        $filename = "airtel_full_backup_" . date('Y-m-d_His') . ".json";
+        
+        return response()->json($data)
+            ->header('Content-Disposition', "attachment; filename=$filename");
+    }
+
+    public function restoreBackup(Request $request)
+    {
+        if (!$request->user()->isOwner()) {
+            return response()->json(['message' => 'Only the owner can restore backups'], 403);
+        }
+
+        $request->validate([
+            'backup_file' => 'required|file|mimetypes:application/json,text/plain'
+        ]);
+
+        $file = $request->file('backup_file');
+        $jsonContent = file_get_contents($file->getRealPath());
+        $data = json_decode($jsonContent, true);
+
+        if (!$data || !isset($data['retailers']) || !isset($data['airtel_drops']) || !isset($data['airtel_recoveries'])) {
+            return response()->json(['message' => 'Invalid backup file format.'], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Disable foreign key checks (database agnostic)
+            \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
+
+            // Clear existing tables
+            DB::table('airtel_recoveries')->delete();
+            DB::table('airtel_drops')->delete();
+            DB::table('retailers')->delete();
+
+            // Helper to format ISO dates to MySQL DATETIME
+            $formatDate = function($dateString) {
+                if (!$dateString) return null;
+                try {
+                    return \Carbon\Carbon::parse($dateString)->format('Y-m-d H:i:s');
+                } catch (\Exception $e) {
+                    return null;
+                }
+            };
+
+            // Format retailer dates
+            if (!empty($data['retailers'])) {
+                foreach ($data['retailers'] as &$item) {
+                    $item['created_at'] = $formatDate($item['created_at']);
+                    $item['updated_at'] = $formatDate($item['updated_at']);
+                    $item['deleted_at'] = $formatDate($item['deleted_at'] ?? null);
+                }
+                foreach (array_chunk($data['retailers'], 500) as $chunk) {
+                    DB::table('retailers')->insert($chunk);
+                }
+            }
+            
+            // Format drop dates
+            if (!empty($data['airtel_drops'])) {
+                foreach ($data['airtel_drops'] as &$item) {
+                    $item['created_at'] = $formatDate($item['created_at']);
+                    $item['updated_at'] = $formatDate($item['updated_at']);
+                    $item['refill_date'] = $formatDate($item['refill_date'] ?? null);
+                    $item['next_recovery_date'] = $formatDate($item['next_recovery_date'] ?? null);
+                    $item['recovered_at'] = $formatDate($item['recovered_at'] ?? null);
+                }
+                foreach (array_chunk($data['airtel_drops'], 500) as $chunk) {
+                    DB::table('airtel_drops')->insert($chunk);
+                }
+            }
+            
+            // Format recovery dates
+            if (!empty($data['airtel_recoveries'])) {
+                foreach ($data['airtel_recoveries'] as &$item) {
+                    $item['created_at'] = $formatDate($item['created_at']);
+                    $item['updated_at'] = $formatDate($item['updated_at']);
+                    $item['deleted_at'] = $formatDate($item['deleted_at'] ?? null);
+                    $item['recovered_at'] = $formatDate($item['recovered_at'] ?? null);
+                }
+                foreach (array_chunk($data['airtel_recoveries'], 500) as $chunk) {
+                    DB::table('airtel_recoveries')->insert($chunk);
+                }
+            }
+
+            // Re-enable foreign key checks
+            \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
+
+            ActivityLog::log('RESTORE_BACKUP', null, 'Restored Airtel data from backup file.');
+
+            DB::commit();
+
+            return response()->json(['message' => 'Backup restored successfully']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints(); // Ensure it's re-enabled on failure
+            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+        }
     }
 
     public function export()

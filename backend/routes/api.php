@@ -65,6 +65,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/stock-adjustments/bulk', [StockAdjustmentController::class, 'bulkStore']);
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
+    Route::get('/stocks/backup', [StockController::class, 'backup']);
+    Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup']);
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);
 
     // Shops – owner only
@@ -165,6 +167,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     });
 
     // Airtel Recovery System
+    Route::get('airtel-retailers/backup', [AirtelRetailerController::class, 'backup']);
+    Route::post('airtel-retailers/restore-backup', [AirtelRetailerController::class, 'restoreBackup']);
     Route::get('airtel-retailers/export', [AirtelRetailerController::class, 'export']);
     Route::apiResource('airtel-retailers', AirtelRetailerController::class);
     Route::get('airtel-drops', [AirtelDropController::class, 'index']);
@@ -182,6 +186,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::delete('airtel-drops/{drop}', [AirtelDropController::class, 'destroy']);
 
     // Accounting & Transactions
+    Route::get('entities/summary', [EntityLedgerController::class, 'summary']);
+    Route::get('entities/report', [EntityLedgerController::class, 'report']);
     Route::get('entities/statements', [EntityLedgerController::class, 'index']);
     Route::get('entities/{name}/ledger', [EntityLedgerController::class, 'show']);
     Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
@@ -192,4 +198,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
     Route::apiResource('transactions', TransactionController::class);
     Route::apiResource('expense-categories', ExpenseCategoryController::class);
+
+    Route::post('entities/sync-all-balances', function() {
+        app(\App\Services\EntityService::class)->syncAll();
+        return response()->json(['message' => 'All balances synced successfully']);
+    });
 });

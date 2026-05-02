@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes;
+    use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes, \App\Traits\SyncsWithMasterEntity;
 
     protected $fillable = [
         'name', 'email', 'password', 'shop_id', 'is_owner',
@@ -49,10 +49,20 @@ class User extends Authenticatable
         return $this->hasRole('Admin');
     }
 
-    /** Full system access (Owner or Admin) */
+    /** Full system access (Owner or Admin role) */
     public function hasFullAccess(): bool
     {
-        return $this->isOwner() || $this->isAdmin();
+        return $this->isOwner() || $this->hasRole('Admin');
+    }
+
+    /** 
+     * Centralized permission checker 
+     * Owner bypasses everything; others check against Spatie permissions
+     */
+    public function canManage(string $permission): bool
+    {
+        if ($this->isOwner()) return true;
+        return $this->can($permission);
     }
 
     /** Manager role check */

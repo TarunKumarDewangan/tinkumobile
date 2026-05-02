@@ -16,6 +16,17 @@
   --shadow: 0 4px 20px rgba(0,0,0,0.08);
   --radius: 12px;
   --bg: #f0f2f8;
+  --glass: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.4);
+}
+
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -69,7 +80,8 @@ input, select, textarea { text-transform: uppercase; }
 }
 
 .sidebar-nav a,
-.sidebar-nav .sidebar-link {
+.sidebar-nav .sidebar-link,
+.sidebar-action-btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -85,9 +97,11 @@ input, select, textarea { text-transform: uppercase; }
   width: 100%;
   cursor: pointer;
   white-space: nowrap;
+  text-align: left;
 }
 .sidebar-nav a:hover,
-.sidebar-nav .sidebar-link:hover {
+.sidebar-nav .sidebar-link:hover,
+.sidebar-action-btn:hover {
   background: rgba(108,63,197,0.22);
   color: #fff;
 }
@@ -380,6 +394,7 @@ label.fw-semibold { color: #334155; }
   .sidebar.open {
     transform: translateX(0);
     box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+    padding-bottom: 80px; /* Space for bottom mobile nav */
   }
   .topbar-hamburger { display: flex; }
   .main-content { margin-left: 0; }
@@ -435,3 +450,41 @@ label.fw-semibold { color: #334155; }
 /* Cursor utils */
 .cursor-pointer { cursor: pointer; }
 .cursor-pointer:hover { opacity: 0.8; }
+
+/* ══ SCOPED CUSTOM PAGE STYLES ══════════════════════════════ */
+.x-small { font-size: 0.7rem !important; }
+.fw-black { font-weight: 900 !important; }
+
+/* Sale Details & Invoice View 2 */
+.sale-details-page .tracking-tighter { letter-spacing: -2px; }
+.sale-details-page .italicized { font-style: italic; }
+.sale-details-page .view2-table thead th { font-size: 0.6rem !important; padding: 4px !important; }
+.sale-details-page .view2-table tbody td { font-size: 0.65rem !important; }
+.sale-details-page .view2-table tfoot td { font-size: 0.65rem !important; }
+
+@media print {
+    @page { size: A4; margin: 10mm; }
+    .sale-details-page { 
+        position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; 
+        background: white !important; z-index: 9999;
+    }
+    .sale-details-page .sidebar, 
+    .sale-details-page .topbar, 
+    .sale-details-page .mobile-navbar, 
+    .sale-details-page .d-print-none { display: none !important; }
+    .sale-details-page .col-lg-8 { width: 100% !important; flex: 0 0 100% !important; max-width: 100% !important; }
+    .sale-details-page .invoice-print-container { box-shadow: none !important; border: none !important; }
+    .sale-details-page .card-body { padding: 0 !important; }
+    .sale-details-page .view2-container { 
+      border: 1px solid #000 !important; 
+      border-radius: 0 !important;
+      padding: 20px !important;
+    }
+    .sale-details-page .view2-table { border-collapse: collapse !important; width: 100% !important; }
+    .sale-details-page .view2-table th, 
+    .sale-details-page .view2-table td { border: 1px solid #000 !important; }
+}
+
+/* Airtel Reports Page */
+.airtel-reports-page .cursor-pointer { cursor: pointer; user-select: none; }
+.airtel-reports-page .cursor-pointer:hover { background-color: rgba(0,0,0,0.02); }

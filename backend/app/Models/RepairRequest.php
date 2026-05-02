@@ -7,12 +7,15 @@ use App\Traits\RecordsTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+use App\Traits\SyncsBalances;
+
 class RepairRequest extends Model
 {
+    use SyncsBalances;
     use UppercaseStrings, RecordsTransactions;
     protected $fillable = [
         'shop_id', 'customer_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
-        'device_model', 'quoted_amount', 'service_center_cost', 'advance_amount', 'advance_payment_mode',
+        'device_model', 'quoted_amount', 'is_pay_later', 'service_center_cost', 'advance_amount', 'advance_payment_mode',
         'issue_description', 'status', 'assigned_to',
         'is_forwarded', 'forwarded_to', 'forwarded_phone', 'external_expected_delivery',
         'estimated_delivery_date', 'actual_delivery_date', 'created_by', 'staff_id',
@@ -23,6 +26,7 @@ class RepairRequest extends Model
     protected $casts = [
         'issue_description' => 'array',
         'is_forwarded' => 'boolean',
+        'is_pay_later' => 'boolean',
         'quoted_amount' => 'decimal:2',
         'service_center_cost' => 'decimal:2',
         'advance_amount' => 'decimal:2',

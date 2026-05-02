@@ -8,7 +8,14 @@ use Illuminate\Http\Request;
 
 class OldMobileController extends Controller
 {
-    use \App\Traits\SyncsWithCustomer, \App\Traits\RecordsTransactions;
+    use \App\Traits\SyncsWithCustomer;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -41,15 +48,14 @@ class OldMobileController extends Controller
         $purchase = OldMobilePurchase::create($data);
 
         // Record Expense Transaction
-        if ($purchase->purchase_amount > 0) {
-            $this->recordTransaction([
-                'type' => 'OUT',
-                'category' => 'OLD_MOBILE_PURCHASE',
-                'amount' => $purchase->purchase_amount,
-                'description' => "Purchased old mobile: {$purchase->model_name} from {$purchase->customer_name}",
-                'entity_type' => get_class($purchase),
-                'entity_id' => $purchase->id,
-                'shop_id' => $purchase->shop_id,
+        if ($purchase->purchase_price > 0) {
+            $this->transactionService->recordForModel($purchase, [
+                'type'             => 'OUT',
+                'category'         => 'OLD_MOBILE_PURCHASE',
+                'amount'           => $purchase->purchase_price,
+                'description'      => "Purchased old mobile: {$purchase->model_name} from {$purchase->customer_name}",
+                'transaction_date' => $purchase->purchase_date,
+                'shop_id'          => $purchase->shop_id,
             ]);
         }
 

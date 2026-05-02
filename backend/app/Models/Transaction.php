@@ -5,8 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+use App\Traits\SyncsBalances;
+
 class Transaction extends Model
 {
+    use SyncsBalances;
     use SoftDeletes;
 
     protected $fillable = [
@@ -18,6 +21,7 @@ class Transaction extends Model
         'payment_mode', 
         'entity_type', 
         'entity_id', 
+        'accounting_entity_id',
         'description', 
         'entity_name',
         'ref_id', 

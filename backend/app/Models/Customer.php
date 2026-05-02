@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Customer extends Model
 {
-    use SoftDeletes, UppercaseStrings;
+    use SoftDeletes, UppercaseStrings, \App\Traits\SyncsWithMasterEntity;
 
     protected $fillable = ['name', 'phone', 'email', 'address', 'voucher_code'];
 

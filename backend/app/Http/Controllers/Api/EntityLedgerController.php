@@ -5,137 +5,401 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
 use App\Traits\RecordsTransactions;
+use App\Services\EntityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+
+use App\Services\ReportingService;
+use App\Services\TransactionService;
 
 class EntityLedgerController extends Controller
 {
     use RecordsTransactions;
 
-    /**
-     * Get summary of all entities with balances.
-     */
-    public function index(Request $request)
+    protected $reportingService;
+    protected $transactionService;
+
+    public function __construct(ReportingService $reportingService, TransactionService $transactionService)
     {
-        // 1. Get All Known Entities from the Master Table
-        $entities = \App\Models\Entity::all();
-
-        // 2. Get Summary from Transactions
-        $transSummaries = Transaction::select(
-            'entity_name',
-            DB::raw('SUM(CASE WHEN type = "CASH_IN" THEN amount ELSE 0 END) as total_in'),
-            DB::raw('SUM(CASE WHEN type = "CASH_OUT" THEN amount ELSE 0 END) as total_out')
-        )
-        ->whereNotNull('entity_name')
-        ->where('entity_name', '!=', '')
-        ->groupBy('entity_name')
-        ->get()
-        ->keyBy('entity_name');
-
-        // 3. Get Unpaid Repair Costs
-        $repairDues = DB::table('repair_requests')
-            ->where('is_forwarded', true)
-            ->where('is_cost_paid', false)
-            ->where('service_center_cost', '>', 0)
-            ->select('forwarded_to as entity_name', DB::raw('SUM(service_center_cost) as total_due'))
-            ->groupBy('forwarded_to')
-            ->get();
-
-        // 4. Combine Everything
-        $final = [];
-        
-        // Use the Master Entities list as the base
-        foreach ($entities as $e) {
-            $trans = $transSummaries->get($e->name);
-            $due = $repairDues->where('entity_name', $e->name)->first();
-            
-            $totalIn = (float)($trans->total_in ?? 0);
-            $totalOut = (float)($trans->total_out ?? 0);
-            $totalRepairDue = (float)($due->total_due ?? 0);
-
-            // Starting point from Opening Balance
-            $opening = (float)$e->opening_balance;
-            if ($e->balance_type === 'PAYABLE') {
-                $opening = -$opening; // We owe them initially
-            }
-
-            // Final Calculation: Opening + (Money In - Money Out - Debt Owed)
-            $currentBalance = $opening + ($totalIn - $totalOut - $totalRepairDue);
-
-            $final[] = [
-                'id' => $e->id,
-                'entity_name' => $e->name,
-                'entity_type' => $e->type,
-                'total_in'    => $totalIn,
-                'total_out'   => $totalOut,
-                'repair_dues' => $totalRepairDue,
-                'opening_balance' => $e->opening_balance,
-                'balance_type' => $e->balance_type,
-                'balance'     => $currentBalance
-            ];
-        }
-
-        // Handle string-only entities that might not be in the Master Entity table yet
-        $knownNames = $entities->pluck('name')->toArray();
-        foreach ($transSummaries as $name => $trans) {
-            if (!in_array($name, $knownNames)) {
-                $final[] = [
-                    'entity_name' => $name,
-                    'entity_type' => 'UNREGISTERED',
-                    'total_in'    => (float)$trans->total_in,
-                    'total_out'   => (float)$trans->total_out,
-                    'repair_dues' => 0,
-                    'opening_balance' => 0,
-                    'balance'     => (float)$trans->total_in - (float)$trans->total_out
-                ];
-            }
-        }
-
-        return response()->json($final);
+        $this->reportingService = $reportingService;
+        $this->transactionService = $transactionService;
     }
 
     /**
-     * Get detailed ledger for a specific entity.
+     * Get summary of all entities with balances.
      */
-    public function show($entityName)
+    public function summary()
     {
+        $balances = \App\Models\EntityBalance::all();
+        
+        $overallTotal = $balances->sum('net_balance');
+        $receivable = $balances->where('net_balance', '>', 0)->sum('net_balance');
+        $payable = abs($balances->where('net_balance', '<', 0)->sum('net_balance'));
+
+        return response()->json([
+            'overallTotal' => $overallTotal,
+            'receivable' => $receivable,
+            'payable' => $payable,
+        ]);
+    }
+
+    /**
+     * Get summary of all entities with balances (Searchable).
+     */
+    public function index(Request $request)
+    {
+        $query = $request->query('q');
+        $filterType = $request->query('type', 'ALL'); // ALL, RECEIVABLE, PAYABLE
+
+        // 1. Get Base Entities filtered by query
+        $entityQuery = \App\Models\Entity::query();
+        if ($query) {
+            $entityQuery->where(function($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                  ->orWhere('phone', 'like', "%{$query}%");
+            });
+        }
+        
+        $entities = $entityQuery->limit(50)->get();
+        
+        // 2. Identify unregistered names matched by query if it exists
+        if ($query) {
+            $unregisteredNames = collect()
+                ->merge(Transaction::where('entity_name', 'like', "%{$query}%")->distinct()->pluck('entity_name'))
+                ->merge(\DB::table('repair_requests')->where('forwarded_to', 'like', "%{$query}%")->distinct()->pluck('forwarded_to'))
+                ->unique()
+                ->filter(fn($name) => !$entities->contains('name', $name))
+                ->take(10); // Limit unregistered results to avoid blowup
+
+            foreach ($unregisteredNames as $name) {
+                $entities->push(new \App\Models\Entity(['name' => $name, 'type' => 'UNREGISTERED']));
+            }
+        } else if ($entities->isEmpty()) {
+             // If no query and no entities, maybe show some recent active entities?
+             // For now, we return empty or just recent ones.
+             $entities = \App\Models\Entity::latest()->take(10)->get();
+        }
+
+        // 3. Batch calculate all balances for matched entities
+        $statements = \App\Models\Entity::calculateBalances($entities);
+
+        // 4. Apply Type filtering
+        if ($filterType === 'RECEIVABLE') {
+            $statements = $statements->filter(fn($s) => $s->net_balance > 0);
+        } elseif ($filterType === 'PAYABLE') {
+            $statements = $statements->filter(fn($s) => $s->net_balance < 0);
+        }
+
+        return response()->json($statements->values()->sortByDesc(fn($s) => abs($s->net_balance))->values());
+    }
+
+    /**
+     * Generate a summary report for all entities within a date range.
+     */
+    public function report(Request $request)
+    {
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date', now()->toDateString());
+        $query = $request->query('q');
+        $filterType = $request->query('type', 'ALL');
+
+        // 1. Get Matching Entities
+        $entityQuery = \App\Models\Entity::query();
+        if ($query) {
+            $entityQuery->where(function($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                  ->orWhere('phone', 'like', "%{$query}%");
+            });
+        }
+        $entities = $entityQuery->get();
+
+        // 2. Identify active unregistered entities if searching
+        if ($query) {
+            $unregisteredNames = collect()
+                ->merge(Transaction::where('entity_name', 'like', "%{$query}%")->distinct()->pluck('entity_name'))
+                ->merge(DB::table('repair_requests')->where('forwarded_to', 'like', "%{$query}%")->distinct()->pluck('forwarded_to'))
+                ->unique()
+                ->filter(fn($name) => !$entities->contains('name', $name));
+
+            foreach ($unregisteredNames as $name) {
+                $entities->push(new \App\Models\Entity(['name' => $name, 'type' => 'UNREGISTERED']));
+            }
+        }
+
+        if ($entities->isEmpty()) return response()->json([]);
+
+        // 3. Batch Process Aggregates
+        $ids = $entities->pluck('id')->filter()->toArray();
+        $names = $entities->pluck('name')->toArray();
+
+        // Stats before the period (for Opening Balance)
+        $beforeStats = $startDate 
+            ? $this->reportingService->getAggregatedMovements($ids, $names, null, date('Y-m-d', strtotime($startDate . ' -1 day'))) 
+            : [];
+
+        // Stats within the period (for Movement)
+        $periodStats = $this->reportingService->getAggregatedMovements($ids, $names, $startDate, $endDate);
+        
+        $results = $entities->map(function($entity) use ($beforeStats, $periodStats) {
+            $name = $entity->name;
+            $id = $entity->id;
+
+            $openingBase = ($entity->balance_type == 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance;
+            
+            // Get stats from batches (match by ID first, then Name)
+            $before = $beforeStats[$id] ?? $beforeStats[$name] ?? ['in' => 0, 'out' => 0, 'unrealized' => 0];
+            $period = $periodStats[$id] ?? $periodStats[$name] ?? ['in' => 0, 'out' => 0, 'unrealized' => 0];
+
+            $openingBalance = $openingBase + $before['unrealized'] - $before['in'] + $before['out'];
+            $closingBalance = $openingBalance + $period['unrealized'] - $period['in'] + $period['out'];
+
+            return [
+                'entity_name' => $name,
+                'phone' => $entity->phone,
+                'relation' => $entity->type,
+                'opening_balance' => (float)$openingBalance,
+                'period_in' => (float)$period['in'],
+                'period_out' => (float)$period['out'],
+                'period_unrealized' => (float)$period['unrealized'],
+                'net_balance' => (float)$closingBalance
+            ];
+        })->filter(function($item) use ($filterType) {
+            if ($filterType === 'REC') return $item['net_balance'] > 0;
+            if ($filterType === 'PAY') return $item['net_balance'] < 0;
+            // For 'ALL', show anything that is not zero
+            return round($item['net_balance'], 2) != 0;
+        })->values();
+
+        return response()->json($results->sortByDesc(fn($r) => abs($r['net_balance']))->values());
+    }
+
+    /**
+     * Get detailed ledger for a single entity.
+     */
+    public function show(Request $request, $entityName)
+    {
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+
         $entity = \App\Models\Entity::where('name', $entityName)->first();
-        $transactions = Transaction::where('entity_name', $entityName)
-            ->orderBy('created_at', 'desc')
-            ->get();
+        
+        if (!$entity) {
+            $entity = new \App\Models\Entity([
+                'name' => $entityName, 
+                'opening_balance' => 0, 
+                'balance_type' => 'RECEIVABLE',
+                'type' => 'UNREGISTERED'
+            ]);
+        }
+
+        // Batch calculate for the single entity
+        $entities = collect([$entity]);
+        \App\Models\Entity::calculateBalances($entities);
+        $entity = $entities->first();
+        
+        $ledgerItems = collect();
+
+        // 1. REAL TRANSACTIONS (Money In/Out)
+        $txQuery = Transaction::where('entity_name', $entityName);
+        if ($startDate) $txQuery->where('transaction_date', '>=', $startDate);
+        if ($endDate) $txQuery->where('transaction_date', '<=', $endDate);
+        
+        $transactions = $txQuery->get();
+        foreach ($transactions as $tx) {
+            $ledgerItems->push([
+                'id' => $tx->id,
+                'transaction_date' => $tx->transaction_date,
+                'category' => $tx->category,
+                'description' => $tx->description,
+                'payment_mode' => $tx->payment_mode,
+                'in_worth' => $tx->type === 'IN' ? (float)$tx->amount : 0,
+                'out_worth' => $tx->type === 'OUT' ? (float)$tx->amount : 0,
+                'unrealized_in' => 0,
+                'unrealized_out' => 0,
+                'type' => $tx->type,
+                'entry_type' => 'REAL',
+                'created_at' => $tx->created_at
+            ]);
+        }
+
+        // 2. VIRTUAL CHARGES
+        // Repairs
+        $repQuery = \App\Models\RepairRequest::where('customer_name', $entityName)->where('is_pay_later', true);
+        if ($startDate) $repQuery->where('submitted_date', '>=', $startDate);
+        if ($endDate) $repQuery->where('submitted_date', '<=', $endDate);
+        
+        $repQuery->get()->each(function($r) use ($ledgerItems) {
+            $ledgerItems->push([
+                'id' => 'RC-' . $r->id,
+                'transaction_date' => $r->submitted_date,
+                'category' => 'REPAIR_CHARGE',
+                'description' => "Repair Service: {$r->device_model} - " . (is_array($r->issue_description) ? implode(', ', $r->issue_description) : $r->issue_description) . " (Inv: #{$r->id})",
+                'in_worth' => 0,
+                'out_worth' => (float)$r->quoted_amount,
+                'unrealized_in' => 0,
+                'unrealized_out' => 0,
+                'type' => 'UNREALIZED',
+                'entry_type' => 'UNREALIZED',
+                'created_at' => $r->created_at
+            ]);
+        });
+
+        // Sales
+        $saleQuery = \App\Models\SaleInvoice::whereHas('customer', fn($q) => $q->where('name', $entityName));
+        if ($startDate) $saleQuery->where('sale_date', '>=', $startDate);
+        if ($endDate) $saleQuery->where('sale_date', '<=', $endDate);
+        
+        $saleQuery->with('items.product')->get()->each(function($i) use ($ledgerItems) {
+                $itemNames = $i->items->map(function($it) {
+                    return ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : "");
+                })->implode(', ');
+                
+                $ledgerItems->push([
+                    'id' => 'SL-CHG-' . $i->id,
+                    'transaction_date' => $i->sale_date,
+                    'category' => 'SALE_CHARGE',
+                    'description' => "Sale Invoice: #{$i->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ""),
+                    'in_worth' => 0,
+                    'out_worth' => (float)$i->grand_total,
+                    'unrealized_in' => 0,
+                    'unrealized_out' => 0,
+                    'type' => 'UNREALIZED',
+                    'entry_type' => 'UNREALIZED',
+                    'created_at' => $i->created_at
+                ]);
+            });
+
+        // Loans (Typically we might filter by start date of loan, or just show all outstanding)
+        $loanQuery = \App\Models\Loan::whereHas('customer', fn($q) => $q->where('name', $entityName))
+            ->where('status', '!=', 'closed');
+        // Loans are a bit special, usually we show full balance if its active.
+        
+        $loanQuery->get()->each(function($l) use ($ledgerItems) {
+                $rem = $l->remaining();
+                if ($rem > 0) {
+                    $ledgerItems->push([
+                        'id' => 'LN-REM-' . $l->id,
+                        'transaction_date' => $l->start_date->toDateString(),
+                        'category' => 'LOAN_BALANCE',
+                        'description' => "Outstanding Loan Balance: {$l->loan_type} (Int: {$l->interest_rate}%)",
+                        'in_worth' => 0,
+                        'out_worth' => (float)$rem,
+                        'unrealized_in' => 0,
+                        'unrealized_out' => 0,
+                        'type' => 'UNREALIZED',
+                        'entry_type' => 'UNREALIZED',
+                        'created_at' => $l->created_at
+                    ]);
+                }
+            });
+
+        // Airtel
+        $airtelQuery = \App\Models\AirtelDrop::whereHas('retailer', fn($q) => $q->where('name', $entityName));
+        if ($startDate) $airtelQuery->where('refill_date', '>=', $startDate);
+        if ($endDate) $airtelQuery->where('refill_date', '<=', $endDate);
+        
+        $airtelQuery->get()->each(function($d) use ($ledgerItems) {
+                $ledgerItems->push([
+                    'id' => 'AR-CHG-' . $d->id,
+                    'transaction_date' => $d->refill_date,
+                    'category' => 'AIRTEL_DROP',
+                    'description' => "Airtel Stock Drop: #{$d->id}",
+                    'in_worth' => 0,
+                    'out_worth' => (float)$d->amount,
+                    'unrealized_in' => 0,
+                    'unrealized_out' => 0,
+                    'type' => 'UNREALIZED',
+                    'entry_type' => 'UNREALIZED',
+                    'created_at' => $d->created_at
+                ]);
+            });
+
+        // Forwarding
+        $fwdQuery = \App\Models\RepairRequest::where('forwarded_to', $entityName)->where('service_center_cost', '>', 0);
+        if ($startDate) $fwdQuery->where('submitted_date', '>=', $startDate);
+        if ($endDate) $fwdQuery->where('submitted_date', '<=', $endDate);
+        
+        $fwdQuery->get()->each(function($r) use ($ledgerItems) {
+                $ledgerItems->push([
+                    'id' => 'RFC-CHG-' . $r->id,
+                    'transaction_date' => $r->submitted_date,
+                    'category' => 'REPAIR_FWD',
+                    'description' => "Repair Forwarding: {$r->device_model} (Inv: #{$r->id})",
+                    'in_worth' => (float)$r->service_center_cost,
+                    'out_worth' => 0,
+                    'unrealized_in' => 0,
+                    'unrealized_out' => 0,
+                    'type' => 'UNREALIZED',
+                    'entry_type' => 'UNREALIZED',
+                    'created_at' => $r->created_at
+                ]);
+            });
+
+        // Purchases
+        $purQuery = \App\Models\PurchaseInvoice::whereHas('supplier', fn($q) => $q->where('name', $entityName));
+        if ($startDate) $purQuery->where('purchase_date', '>=', $startDate);
+        if ($endDate) $purQuery->where('purchase_date', '<=', $endDate);
+        
+        $purQuery->with('items.product')->get()->each(function($i) use ($ledgerItems) {
+                $itemNames = $i->items->map(function($it) {
+                    return ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : "");
+                })->implode(', ');
+                
+                $ledgerItems->push([
+                    'id' => 'PR-CHG-' . $i->id,
+                    'transaction_date' => $i->purchase_date,
+                    'category' => 'PURCHASE_CHG',
+                    'description' => "Purchase Transaction: #{$i->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ""),
+                    'in_worth' => (float)$i->grand_total,
+                    'out_worth' => 0,
+                    'unrealized_in' => 0,
+                    'unrealized_out' => 0,
+                    'type' => 'UNREALIZED',
+                    'entry_type' => 'UNREALIZED',
+                    'created_at' => $i->created_at
+                ]);
+            });
 
         return response()->json([
             'entity' => $entity,
-            'transactions' => $transactions
+            'transactions' => $ledgerItems->sortByDesc(function($item) {
+                return $item['transaction_date'] . $item['created_at'];
+            })->values()
         ]);
     }
 
     /**
      * Record a manual settlement for an entity.
      */
-    public function settle(Request $request)
+    public function recordSettlement(Request $request)
     {
-        $request->validate([
+        $user = $request->user();
+        $data = $request->validate([
             'entity_name' => 'required|string',
             'amount' => 'required|numeric|min:0',
-            'type' => 'required|in:CASH_IN,CASH_OUT',
+            'type' => 'required|in:IN,OUT',
             'payment_mode' => 'required|string',
             'description' => 'nullable|string',
             'category' => 'required|string'
         ]);
 
-        $transaction = $this->recordTransaction([
-            'amount' => $request->amount,
-            'type' => $request->type,
-            'category' => $request->category,
-            'description' => $request->description ?? "Manual settlement for {$request->entity_name}",
-            'payment_mode' => $request->payment_mode,
-            'entity_name' => $request->entity_name
+        $entity = \App\Models\Entity::where('name', $data['entity_name'])->first();
+
+        $transaction = $this->transactionService->recordSettlement([
+            'shop_id' => $user->shop_id,
+            'user_id' => $user->id,
+            'type' => $data['type'],
+            'amount' => $data['amount'],
+            'payment_mode' => $data['payment_mode'],
+            'category' => $data['category'],
+            'description' => $data['description'] ?? "Manual settlement for {$data['entity_name']}",
+            'entity_name' => $data['entity_name'],
+            'accounting_entity_id' => $entity ? $entity->id : null,
         ]);
 
         return response()->json([
             'message' => 'Settlement recorded successfully',
             'transaction' => $transaction
-        ]);
+        ], 201);
     }
 }

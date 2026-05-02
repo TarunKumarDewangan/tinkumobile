@@ -136,7 +136,7 @@ export default function SaleForm() {
         sold_by_id: data.sold_by_id || ''
       });
       setIsManualRound(true); 
-      setItems(data.items.map(i => ({
+      setItems(data.items?.map(i => ({
         selection_id: i.product_id,
         product_id: i.product_id,
         imei: i.imei || '',

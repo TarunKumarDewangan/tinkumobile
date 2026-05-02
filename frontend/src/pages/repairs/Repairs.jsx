@@ -311,16 +311,21 @@ export default function Repairs() {
                        <div className="d-flex flex-column x-small text-uppercase gap-1 opacity-75">
                           <div>Quoted: <span className="fw-bold text-dark">₹{parseFloat(r.quoted_amount||0).toLocaleString()}</span></div>
                           <div>Advance: <span className="fw-bold">₹{parseFloat(r.advance_amount||0).toLocaleString()}</span></div>
+                          {(parseFloat(r.balance_amount_received || 0) > 0) && (
+                              <div className="text-success">Settled: <span className="fw-bold">₹{parseFloat(r.balance_amount_received).toLocaleString()}</span></div>
+                          )}
                           {r.is_forwarded && (
                               <div>Cost: <span className={`fw-bold ${r.is_cost_paid ? 'text-success' : 'text-danger'}`}>₹{parseFloat(r.service_center_cost||0).toLocaleString()}</span></div>
                           )}
                           <div className="border-top pt-1 fw-bold text-primary mt-1" style={{ fontSize: '0.75rem' }}>
                              Balance: ₹{Math.max(0, parseFloat(r.quoted_amount || 0) - (parseFloat(r.advance_amount || 0) + parseFloat(r.balance_amount_received || 0))).toLocaleString()}
                           </div>
-                          {r.balance_received_at && (
+                          {(parseFloat(r.balance_amount_received || 0) > 0) && (
                             <div className="text-success fw-bold italic border-top pt-1 mt-1" style={{fontSize:'0.6rem', lineHeight: 1.1}}>
-                                Pending amount ₹{parseFloat(r.balance_amount_received).toLocaleString()} paid at <br/>
-                                {new Date(r.balance_received_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                                Pending amount ₹{parseFloat(r.balance_amount_received).toLocaleString()} paid 
+                                {r.balance_received_at ? (
+                                    <> at <br/> {new Date(r.balance_received_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</>
+                                ) : ' (Timestamp Missing)'}
                             </div>
                           )}
                        </div>

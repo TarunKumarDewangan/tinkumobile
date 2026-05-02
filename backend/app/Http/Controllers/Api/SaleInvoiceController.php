@@ -14,9 +14,17 @@ use App\Traits\RecordsTransactions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+use App\Http\Resources\SaleInvoiceResource;
+
 class SaleInvoiceController extends Controller
 {
-    use \App\Traits\RecordsTransactions, \App\Traits\SyncsWithCustomer;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -40,7 +48,7 @@ class SaleInvoiceController extends Controller
             });
         }
 
-        return response()->json($query->latest()->get());
+        return SaleInvoiceResource::collection($query->latest()->paginate($request->per_page ?? 50));
     }
 
     public function store(Request $request)
@@ -117,9 +125,8 @@ class SaleInvoiceController extends Controller
             if ($roundingMode === 'up') $grandTotal = ceil($rawGrandTotal);
             else if ($roundingMode === 'down') $grandTotal = floor($rawGrandTotal);
             else if ($roundingMode === 'auto') $grandTotal = round($rawGrandTotal);
-            else $grandTotal = $rawGrandTotal + $roundOff; // Manual rounding if not auto/up/down (or just always add roundOff if provided)
+            else $grandTotal = $rawGrandTotal + $roundOff; 
             
-            // Re-evaluating: If the user provides round_off manually, we should use that.
             if ($request->has('round_off')) {
                 $grandTotal = $rawGrandTotal + $roundOff;
             }
@@ -152,19 +159,12 @@ class SaleInvoiceController extends Controller
 
             $invoice->updatePaymentStatus();
 
-            // Record Income Transaction in Cashbook
+            // Record Income Transaction using Service
             if ($invoice->total_paid > 0) {
-                $invoice->recordTransaction([
-                    'type'             => 'IN',
-                    'category'         => 'SALE_INCOME',
-                    'amount'           => $invoice->total_paid,
-                    'payment_mode'     => strtoupper($invoice->payment_method),
-                    'description'      => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
-                    'entity_type'      => get_class($invoice),
-                    'entity_id'        => $invoice->id,
-                    'entity_name'      => $invoice->customer_name,
-                    'shop_id'          => $invoice->shop_id,
-                    'transaction_date' => $invoice->sale_date,
+                $this->transactionService->recordForModel($invoice, [
+                    'type'        => 'IN',
+                    'category'    => 'SALE_INCOME',
+                    'description' => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
                 ]);
             }
 
@@ -229,7 +229,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return response()->json($saleInvoice->load('customer', 'user', 'items.product', 'giftItems.giftProduct', 'shop'));
+        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'items.product', 'giftItems.giftProduct', 'shop'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)
@@ -241,18 +241,12 @@ class SaleInvoiceController extends Controller
         $saleInvoice->total_paid += $data['amount'];
         $saleInvoice->updatePaymentStatus();
 
-        // Record Transaction
-        $saleInvoice->recordTransaction([
+        // Record Transaction using Service
+        $this->transactionService->recordForModel($saleInvoice, [
             'type'             => 'IN',
             'category'         => 'SALE',
             'amount'           => $data['amount'],
-            'payment_mode'     => 'CASH', // Default for addPayment for now
             'description'      => "Partial payment for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})",
-            'entity_type'      => get_class($saleInvoice),
-            'entity_id'        => $saleInvoice->id,
-            'entity_name'      => $saleInvoice->customer_name,
-            'ref_id'           => $saleInvoice->id,
-            'transaction_date' => now()->toDateString(),
         ]);
 
         return response()->json([

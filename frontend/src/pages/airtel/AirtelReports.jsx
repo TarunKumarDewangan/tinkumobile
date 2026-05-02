@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
+const SortIcon = ({ sortField, field, sortOrder }) => {
+    if (sortField !== field) return <span className="ms-1 text-secondary opacity-50">↕</span>;
+    return <span className="ms-1 text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
+};
 
 export default function AirtelReports() {
   const { isManager } = useAuth();
@@ -12,21 +16,11 @@ export default function AirtelReports() {
   const [sortField, setSortField] = useState('pending_total');
   const [sortOrder, setSortOrder] = useState('desc');
 
-  if (isManager()) {
-    return (
-      <div className="container-fluid py-5">
-        <div className="alert alert-danger text-center py-5 shadow-sm">
-          <h1 className="display-1 mb-4">🚫</h1>
-          <h2 className="fw-bold text-uppercase">Access Denied</h2>
-          <p className="lead">Managers are not authorized to view recovery reports.</p>
-        </div>
-      </div>
-    );
-  }
-
   useEffect(() => {
-    fetchReport();
-  }, [fromDate, toDate]);
+    if (!isManager()) {
+        fetchReport();
+    }
+  }, [fromDate, toDate, isManager]);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -62,13 +56,20 @@ export default function AirtelReports() {
     return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
   }) : [];
 
-  const SortIcon = ({ field }) => {
-    if (sortField !== field) return <span className="ms-1 text-secondary opacity-50">↕</span>;
-    return <span className="ms-1 text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
-  };
+  if (isManager()) {
+    return (
+      <div className="container-fluid py-5">
+        <div className="alert alert-danger text-center py-5 shadow-sm">
+          <h1 className="display-1 mb-4">🚫</h1>
+          <h2 className="fw-bold text-uppercase">Access Denied</h2>
+          <p className="lead">Managers are not authorized to view recovery reports.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="container-fluid py-4">
+    <div className="container-fluid py-4 airtel-reports-page">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="h4 mb-0 text-uppercase fw-bold">Airtel Recovery Reports</h2>
         <div className="d-flex align-items-center gap-2">
@@ -173,11 +174,11 @@ export default function AirtelReports() {
                           <table className="table table-hover align-middle mb-0">
                               <thead className="table-light text-uppercase shadow-sm sticky-top">
                                    <tr className="x-small">
-                                       <th className="ps-3 cursor-pointer" style={{minWidth:'140px'}} onClick={() => handleSort('name')}>Retailer <SortIcon field="name" /></th>
-                                       <th className="text-end cursor-pointer" onClick={() => handleSort('opening_bal')}>OB <SortIcon field="opening_bal" /></th>
-                                       <th className="text-end cursor-pointer" onClick={() => handleSort('airdrop_total')}>Drops <SortIcon field="airdrop_total" /></th>
-                                       <th className="text-end cursor-pointer" onClick={() => handleSort('received_total')}>Rec. <SortIcon field="received_total" /></th>
-                                       <th className="text-end pe-3 cursor-pointer" onClick={() => handleSort('pending_total')}>Pending <SortIcon field="pending_total" /></th>
+                                       <th className="ps-3 cursor-pointer" style={{minWidth:'140px'}} onClick={() => handleSort('name')}>Retailer <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('opening_bal')}>OB <SortIcon field="opening_bal" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('airdrop_total')}>Drops <SortIcon field="airdrop_total" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('received_total')}>Rec. <SortIcon field="received_total" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end pe-3 cursor-pointer" onClick={() => handleSort('pending_total')}>Pending <SortIcon field="pending_total" sortField={sortField} sortOrder={sortOrder} /></th>
                                    </tr>
                                </thead>
                                <tbody>
@@ -244,10 +245,6 @@ export default function AirtelReports() {
               </div>
           </div>
       ) : null}
-      <style>{`
-        .cursor-pointer { cursor: pointer; user-select: none; }
-        .cursor-pointer:hover { background-color: rgba(0,0,0,0.02); }
-      `}</style>
     </div>
   );
 }

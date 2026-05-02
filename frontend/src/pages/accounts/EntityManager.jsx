@@ -1,15 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 
 export default function EntityManager() {
   const [entities, setEntities] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
-    type: 'OTHER',
+    type: '',
     phone: '',
     email: '',
     opening_balance: 0,
@@ -79,7 +81,7 @@ export default function EntityManager() {
       setEditingEntity(null);
       setFormData({
         name: '',
-        type: 'OTHER',
+        type: '',
         phone: '',
         email: '',
         opening_balance: 0,
@@ -101,6 +103,17 @@ export default function EntityManager() {
     }
   };
 
+  const filteredEntities = useMemo(() => {
+    return entities.filter(e => {
+      const term = searchTerm.toLowerCase();
+      return (
+        e.name?.toLowerCase().includes(term) ||
+        e.phone?.toLowerCase().includes(term) ||
+        e.type?.toLowerCase().includes(term)
+      );
+    });
+  }, [entities, searchTerm]);
+
   return (
     <div className="container-fluid py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -109,6 +122,18 @@ export default function EntityManager() {
           <p className="text-muted small mb-0">Manage opening balances and contact info for all parties</p>
         </div>
         <div className="d-flex gap-2">
+          <div className="input-group" style={{ width: '300px' }}>
+            <span className="input-group-text bg-white border-end-0">
+              <i className="bi bi-search text-muted" />
+            </span>
+            <input 
+              type="text" 
+              className="form-control border-start-0 ps-0" 
+              placeholder="Search Name, Phone or Type..." 
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
           <button className="btn btn-outline-secondary" onClick={handleSync}>
             <i className="bi bi-arrow-repeat me-1" /> Auto-Sync
           </button>
@@ -126,19 +151,20 @@ export default function EntityManager() {
                 <th className="ps-4">Entity Name</th>
                 <th>Type</th>
                 <th>Contact</th>
-                <th>Opening Balance</th>
+                <th>Opening</th>
+                <th>Net Balance</th>
                 <th className="text-end pe-4">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="5" className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : entities.length === 0 ? (
-                <tr><td colSpan="5" className="text-center py-5 text-muted">No entities found. Use Auto-Sync or Create New.</td></tr>
-              ) : entities.map(e => (
+                <tr><td colSpan="6" className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+              ) : filteredEntities.length === 0 ? (
+                <tr><td colSpan="6" className="text-center py-5 text-muted">No entities found. {searchTerm ? 'Try a different search term.' : 'Use Auto-Sync or Create New.'}</td></tr>
+              ) : filteredEntities.map(e => (
                 <tr key={e.id}>
                   <td className="ps-4">
-                    <div className="fw-bold">{e.name}</div>
+                    <div className="fw-bold">{e.name} <span className="small text-muted fw-normal">({e.type})</span></div>
                     {e.description && <div className="x-small text-muted">{e.description}</div>}
                   </td>
                   <td>
@@ -154,11 +180,23 @@ export default function EntityManager() {
                     <div>{e.phone}</div>
                     <div className="opacity-50">{e.email}</div>
                   </td>
-                  <td className={`fw-bold ${e.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
+                  <td className={`small ${e.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
                     ₹{Number(e.opening_balance).toLocaleString()}
                     <div className="x-small opacity-50">{e.balance_type}</div>
                   </td>
+                  <td>
+                    <div className={`fw-bold ${e.net_balance >= 0 ? 'text-success' : 'text-danger'}`}>
+                      ₹{Math.abs(Number(e.net_balance)).toLocaleString()}
+                    </div>
+                    <div className="x-small opacity-50">{e.net_balance >= 0 ? 'RECEIVABLE' : 'PAYABLE'}</div>
+                  </td>
                   <td className="text-end pe-4">
+                     <Link 
+                        to={`/accounts/entity-ledger?name=${encodeURIComponent(e.name)}`} 
+                        className="btn btn-sm btn-outline-info me-2"
+                     >
+                        Profile
+                     </Link>
                      <button className="btn btn-sm btn-outline-primary me-2" onClick={() => openModal(e)}>Edit</button>
                      <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(e.id)}>Delete</button>
                   </td>
@@ -192,13 +230,17 @@ export default function EntityManager() {
                     </div>
                     <div className="col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Category</label>
-                      <select 
-                        className="form-select"
+                      <input 
+                        type="text" 
+                        list="entityTypeOptions"
+                        className="form-control"
+                        placeholder="Type or select category..."
                         value={formData.type}
                         onChange={e => setFormData({...formData, type: e.target.value})}
-                      >
+                      />
+                      <datalist id="entityTypeOptions">
                         {entityTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                      </datalist>
                     </div>
                     <div className="col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>

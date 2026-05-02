@@ -9,13 +9,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 
+use App\Http\Resources\ProductResource;
+
 class ProductController extends Controller
 {
     public function index(Request $request)
     {
         $user = $request->user();
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
-        // If owner and no shop_id, show all shops (stay as null)
 
         // If user wants ungrouped "every single product" view
         if ($request->group_by_config === 'false' || $request->group_by_config === 'true') {
@@ -55,12 +56,11 @@ class ProductController extends Controller
             $items = $query->get();
 
             // ── Subtract Sold Items Logically ──
-            // For Mobiles (Category 1), we match by IMEI or (Product + Config)
-            $saleItems = \App\Models\SaleItem::all(); // Simplified for now, or filter by shop
+            $saleItems = \App\Models\SaleItem::all(); 
             $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
-            $soldCounts = []; // name_ram_storage_color => quantity
+            $soldCounts = []; 
             foreach ($saleItems as $si) {
-                if ($si->imei) continue; // Tracked by IMEI separately
+                if ($si->imei) continue; 
                 $normName = strtoupper(trim($si->product->name));
                 $normRam  = strtoupper(trim($si->ram ?? '-'));
                 $normStor = strtoupper(trim($si->storage ?? '-'));
@@ -78,7 +78,6 @@ class ProductController extends Controller
                     $normCol  = strtoupper(trim($item->color ?? '-'));
                     $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
                     
-                    // Subtract sold count from available items in this group
                     $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
                     $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
                     $availableImeiCount = count($unsoldImeis);
@@ -86,7 +85,6 @@ class ProductController extends Controller
                     $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
                     $nonImeiQty = ($item->imei) ? 0 : $totalQty;
                     
-                    // Net Non-IMEI available
                     if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
                         $diff = min($nonImeiQty, $soldCounts[$key]);
                         $nonImeiQty -= $diff;
@@ -105,7 +103,7 @@ class ProductController extends Controller
                                 'color' => $item->color,
                                 'ram' => $item->ram,
                                 'storage' => $item->storage,
-                                'imeis' => [] // Will store all IMEIs for this group
+                                'imeis' => [] 
                             ],
                             'current_stock' => 0,
                             'selling_price' => $item->selling_price,
@@ -119,7 +117,6 @@ class ProductController extends Controller
                     
                     $grouped[$key]['current_stock'] += $currentStock;
                     $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
-                    // Take the latest/highest selling price if mismatch
                     if ($item->selling_price > $grouped[$key]['selling_price']) {
                         $grouped[$key]['selling_price'] = $item->selling_price;
                     }
@@ -132,7 +129,6 @@ class ProductController extends Controller
                 $itemImeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
                 $unsoldImeis = array_values(array_filter($itemImeis, fn($id) => !in_array($id, $soldImeis)));
                 
-                // Show IMEI items
                 foreach ($unsoldImeis as $index => $imei) {
                     $expanded[] = [
                         'id' => 'item_' . $item->id . '_' . $index,
@@ -146,7 +142,7 @@ class ProductController extends Controller
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
-                        'purchase_price' => $item->unit_price, // Added for margin calc
+                        'purchase_price' => $item->unit_price, 
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                         'location' => $item->location ?? $item->product->location,
@@ -154,7 +150,6 @@ class ProductController extends Controller
                     ];
                 }
 
-                // Show Non-IMEI items
                 $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
                 $nonImeiQty = ($item->imei) ? 0 : $totalQty;
                 
@@ -191,14 +186,11 @@ class ProductController extends Controller
                     ];
                 }
             }
-
             return response()->json($expanded);
         }
 
-        $query = Product::with('category')->withTrashed()->where('deleted_at', null);
-
+        $query = Product::with('category', 'inventory')->withTrashed()->where('deleted_at', null);
         if ($request->category_id) $query->where('category_id', $request->category_id);
-        
         if ($request->search) {
             $query->where(function($q) use ($request) {
                 $q->where('name', 'like', "%{$request->search}%")
@@ -206,51 +198,23 @@ class ProductController extends Controller
             });
         }
         
-        if ($request->model) $query->where('attributes->model', 'like', "%{$request->model}%");
-        if ($request->color) $query->where('attributes->color', 'like', "%{$request->color}%");
-        if ($request->ram) $query->where('attributes->ram', 'like', "%{$request->ram}%");
-        if ($request->storage) $query->where('attributes->storage', 'like', "%{$request->storage}%");
-        if ($request->imei) {
-            $query->where(function($q) use ($request) {
-                $q->where('attributes->imei', 'like', "%{$request->imei}%")
-                  ->orWhereHas('purchaseItems', fn($pq) => $pq->where('imei', 'like', "%{$request->imei}%"));
-            });
-        }
-
-        $products = $query->get();
-
-        if ($shopId) {
-            $inventoryMap = Inventory::where('shop_id', $shopId)
-                ->pluck('stock', 'product_id');
-
-            $products = $products->map(function ($p) use ($inventoryMap) {
-                return [
-                    'id'            => $p->id,
-                    'category_id'   => $p->category_id,
-                    'name'          => $p->name,
-                    'category'      => $p->category,
-                    'attributes'    => $p->attributes,
-                    'selling_price' => $p->selling_price,
-                    'current_stock' => $inventoryMap[$p->id] ?? 0,
-                    'location'      => $p->location,
-                ];
-            });
-        }
-
-        return response()->json($products);
+        return ProductResource::collection($query->latest()->get());
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'category_id'    => 'required|exists:categories,id',
-            'name'           => 'required|string|max:200',
-            'sku'            => 'required|string|max:100|unique:products,sku',
-            'imei'           => 'nullable|string|max:20|unique:products,imei',
-            'purchase_price' => 'required|numeric|min:0',
-            'selling_price'  => 'required|numeric|min:0',
-            'condition'      => 'in:new,used',
-            'attributes'     => 'nullable|array',
+            'category_id'       => 'required|exists:categories,id',
+            'name'              => 'required|string|max:200',
+            'sku'               => 'required|string|max:100|unique:products,sku',
+            'imei'              => 'nullable|string|max:20|unique:products,imei',
+            'purchase_price'    => 'required|numeric|min:0',
+            'selling_price'     => 'required|numeric|min:0',
+            'wholeseller_price' => 'nullable|numeric|min:0',
+            'min_selling_price' => 'nullable|numeric|min:0',
+            'max_selling_price' => 'nullable|numeric|min:0',
+            'condition'         => 'in:new,used',
+            'attributes'        => 'nullable|array',
         ]);
         return response()->json(Product::create($data), 201);
     }
@@ -263,14 +227,17 @@ class ProductController extends Controller
     public function update(Request $request, Product $product)
     {
         $data = $request->validate([
-            'category_id'    => 'sometimes|exists:categories,id',
-            'name'           => 'sometimes|string|max:200',
-            'sku'            => 'sometimes|string|max:100|unique:products,sku,' . $product->id,
-            'imei'           => 'nullable|string|max:20|unique:products,imei,' . $product->id,
-            'purchase_price' => 'sometimes|numeric|min:0',
-            'selling_price'  => 'sometimes|numeric|min:0',
-            'condition'      => 'in:new,used',
-            'attributes'     => 'nullable|array',
+            'category_id'       => 'sometimes|exists:categories,id',
+            'name'              => 'sometimes|string|max:200',
+            'sku'               => 'sometimes|string|max:100|unique:products,sku,' . $product->id,
+            'imei'              => 'nullable|string|max:20|unique:products,imei,' . $product->id,
+            'purchase_price'    => 'sometimes|numeric|min:0',
+            'selling_price'     => 'sometimes|numeric|min:0',
+            'wholeseller_price' => 'nullable|numeric|min:0',
+            'min_selling_price' => 'nullable|numeric|min:0',
+            'max_selling_price' => 'nullable|numeric|min:0',
+            'condition'         => 'in:new,used',
+            'attributes'        => 'nullable|array',
         ]);
         $product->update($data);
         return response()->json($product);

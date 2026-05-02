@@ -17,9 +17,16 @@ class EntityController extends Controller
     {
         $query = Entity::query();
         if ($request->type) $query->where('type', $request->type);
-        if ($request->search) $query->where('name', 'like', "%{$request->search}%");
+        if ($request->search) {
+            $query->where(function($q) use ($request) {
+                $q->where('name', 'like', "%{$request->search}%")
+                  ->orWhere('phone', 'like', "%{$request->search}%")
+                  ->orWhere('type', 'like', "%{$request->search}%");
+            });
+        }
         
-        return response()->json($query->orderBy('name')->get());
+        $entities = $query->orderBy('name')->get();
+        return response()->json(Entity::calculateBalances($entities));
     }
 
     public function store(Request $request)
@@ -66,68 +73,44 @@ class EntityController extends Controller
     {
         $count = 0;
 
-        // Sync Customers
-        Customer::all()->each(function($c) use (&$count) {
-            $e = Entity::firstOrNew(['name' => $c->name]);
-            if (!$e->exists) {
-                $e->fill([
-                    'type' => 'CUSTOMER',
-                    'relation_type' => Customer::class,
-                    'relation_id' => $c->id,
-                    'phone' => $c->phone,
-                    'email' => $c->email,
-                ]);
-                $e->save();
-                $count++;
-            }
-        });
+        // Sync Models using the trait
+        $models = [
+            \App\Models\Customer::class,
+            \App\Models\Supplier::class,
+            \App\Models\Retailer::class,
+            \App\Models\User::class,
+            \App\Models\Shop::class, // Assuming Shop is also an entity source
+        ];
 
-        // Sync Shops (Forwarding partners)
-        Shop::all()->each(function($s) use (&$count) {
-            $e = Entity::firstOrNew(['name' => $s->name]);
-             if (!$e->exists) {
-                $e->fill([
-                    'type' => 'SHOP',
-                    'relation_type' => Shop::class,
-                    'relation_id' => $s->id,
-                    'phone' => $s->phone,
-                ]);
-                $e->save();
-                $count++;
-            }
-        });
+        foreach ($models as $modelClass) {
+            $modelClass::all()->each(function($model) use (&$count) {
+                // The trait boot method doesn't run on manual iteration if not saved
+                // but syncToMasterEntity() is public.
+                if (method_exists($model, 'syncToMasterEntity')) {
+                    $model->syncToMasterEntity();
+                    $count++;
+                }
+            });
+        }
 
-        // Sync Suppliers
-        Supplier::all()->each(function($s) use (&$count) {
-            $e = Entity::firstOrNew(['name' => $s->name]);
-             if (!$e->exists) {
-                $e->fill([
-                    'type' => 'SUPPLIER',
-                    'relation_type' => Supplier::class,
-                    'relation_id' => $s->id,
-                    'phone' => $s->phone,
-                    'email' => $s->email,
-                ]);
-                $e->save();
-                $count++;
-            }
-        });
+        // Sync Forwarding Service Centers from Repairs (that are just names in repair_requests)
+        DB::table('repair_requests')
+            ->whereNotNull('forwarded_to')
+            ->where('forwarded_to', '!=', '')
+            ->distinct()
+            ->pluck('forwarded_to')
+            ->each(function($name) use (&$count) {
+                $e = Entity::firstOrNew(['name' => $name]);
+                if (!$e->exists) {
+                    $e->fill([
+                        'type' => 'SHOP',
+                        'description' => 'Service Center from Repairs',
+                    ]);
+                    $e->save();
+                    $count++;
+                }
+            });
 
-        // Sync Retailers (Airtel)
-        Retailer::all()->each(function($r) use (&$count) {
-            $e = Entity::firstOrNew(['name' => $r->name]);
-             if (!$e->exists) {
-                $e->fill([
-                    'type' => 'RETAILER',
-                    'relation_type' => Retailer::class,
-                    'relation_id' => $r->id,
-                    'phone' => $r->msisdn,
-                ]);
-                $e->save();
-                $count++;
-            }
-        });
-
-        return response()->json(['message' => "Synced $count new entities."]);
+        return response()->json(['message' => "Synced $count entities from all sources."]);
     }
 }

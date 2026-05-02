@@ -5,12 +5,13 @@ namespace App\Models;
 use App\Traits\UppercaseStrings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\SyncsWithMasterEntity;
 
 class Retailer extends Model
 {
-    use SoftDeletes, UppercaseStrings;
+    use SoftDeletes, UppercaseStrings, SyncsWithMasterEntity;
 
-    protected $fillable = ['name', 'msisdn', 'shop_id', 'balance', 'status'];
+    protected $fillable = ['name', 'msisdn', 'address', 'shop_id', 'balance', 'status'];
 
     public function shop()
     {

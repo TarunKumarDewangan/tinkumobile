@@ -10,7 +10,14 @@ use Illuminate\Http\Request;
 
 class RepairController extends Controller
 {
-    use SyncsWithCustomer, RecordsTransactions;
+    use SyncsWithCustomer;
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -133,6 +140,7 @@ class RepairController extends Controller
             'issue_description.*'       => 'required|string',
             'estimated_delivery_date'   => 'nullable|date',
             'is_forwarded'              => 'boolean',
+            'is_pay_later'              => 'boolean',
             'forwarded_to'              => 'nullable|string|max:255',
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
@@ -152,16 +160,12 @@ class RepairController extends Controller
 
         // Record Advance Payment if any
         if (isset($data['advance_amount']) && $data['advance_amount'] > 0) {
-            $this->recordTransaction([
+            $this->transactionService->recordForModel($repair, [
                 'type' => 'IN',
                 'category' => 'REPAIR_ADVANCE',
                 'amount' => $data['advance_amount'],
                 'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
                 'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
-                'entity_type' => get_class($repair),
-                'entity_id' => $repair->id,
-                'entity_name' => $repair->customer_name,
-                'shop_id' => $shopId,
             ]);
         }
 
@@ -191,6 +195,7 @@ class RepairController extends Controller
             'issue_description.*'       => 'required|string',
             'submitted_date'            => 'nullable|date',
             'is_forwarded'              => 'boolean',
+            'is_pay_later'              => 'boolean',
             'forwarded_to'              => 'nullable|string|max:255',
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
@@ -227,17 +232,21 @@ class RepairController extends Controller
 
         // Record Balance Settlement
         if ($request->filled('balance_amount_received') && $request->balance_amount_received > 0) {
-               $this->recordTransaction([
-                'type' => 'IN',
-                'category' => 'REPAIR_SETTLEMENT',
-                'amount' => $request->balance_amount_received,
-                'payment_mode' => $request->balance_payment_mode ?? $repair->balance_payment_mode ?? 'CASH',
-                'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
-                'entity_type' => get_class($repair),
-                'entity_id' => $repair->id,
-                'entity_name' => $repair->customer_name,
-                'shop_id' => $repair->shop_id,
-            ]);
+            // Prevent duplicate records for the same repair
+            $exists = \App\Models\Transaction::where('entity_type', get_class($repair))
+                ->where('entity_id', $repair->id)
+                ->where('category', 'REPAIR_SETTLEMENT')
+                ->exists();
+
+            if (!$exists) {
+                $this->transactionService->recordForModel($repair, [
+                    'type' => 'IN',
+                    'category' => 'REPAIR_SETTLEMENT',
+                    'amount' => $request->balance_amount_received,
+                    'payment_mode' => $request->balance_payment_mode ?? $repair->balance_payment_mode ?? 'CASH',
+                    'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
+                ]);
+            }
         }
 
         return response()->json($repair->fresh()->load('assignedTo'));
@@ -287,15 +296,12 @@ class RepairController extends Controller
             'cost_paid_at' => now(),
         ]);
 
-        $this->recordTransaction([
+        $this->transactionService->recordForModel($repair, [
             'type' => 'OUT',
             'category' => 'REPAIR_FORWARDING_EXPENSE',
             'amount' => $repair->service_center_cost,
             'description' => "Settled payment to {$repair->forwarded_to} for repair #{$repair->id} ({$repair->device_model})",
-            'entity_type' => get_class($repair),
-            'entity_id' => $repair->id,
             'entity_name' => $repair->forwarded_to,
-            'shop_id' => $repair->shop_id,
         ]);
 
         return response()->json(['message' => 'Cost payment recorded and repair updated', 'repair' => $repair]);
