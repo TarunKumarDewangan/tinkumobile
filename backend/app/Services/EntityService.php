@@ -38,16 +38,16 @@ class EntityService
     {
         if ($entities->isEmpty()) return $entities;
 
-        $entityIds = $entities->pluck('id')->toArray();
-        $allSearchNames = $entities->pluck('name')->toArray();
+        $entityIds = $entities->pluck('id')->filter()->toArray();
+        $allSearchNames = $entities->pluck('name')->filter()->toArray();
 
-        // 1. Get Realized Worth (Transactions)
+        // 1. Realized Worth (Transactions)
         $realized = DB::table('transactions')
-            ->where(function($q) use ($entityIds, $allSearchNames) {
-                $q->whereIn('accounting_entity_id', $entityIds)
-                  ->orWhereIn('entity_name', $allSearchNames);
-            })
             ->whereNull('deleted_at')
+            ->where(function($q) use ($entityIds, $allSearchNames) {
+                if (!empty($entityIds)) $q->whereIn('accounting_entity_id', $entityIds);
+                if (!empty($allSearchNames)) $q->orWhereIn('entity_name', $allSearchNames);
+            })
             ->select('accounting_entity_id as entity_id', 'entity_name', 
                 DB::raw('SUM(CASE WHEN type = "IN" THEN amount ELSE 0 END) as total_in'),
                 DB::raw('SUM(CASE WHEN type = "OUT" THEN amount ELSE 0 END) as total_out')
@@ -55,77 +55,73 @@ class EntityService
             ->groupBy('accounting_entity_id', 'entity_name')
             ->get();
 
-        // 2. Get Repair Charges
+        // 2. Repair Charges
         $repairCharges = DB::table('repair_requests')
-            ->where(function($q) use ($entityIds, $allSearchNames) {
-                 $q->whereIn('accounting_entity_id', $entityIds)
-                   ->orWhereIn('customer_name', $allSearchNames);
-            })
             ->where('is_pay_later', true)
+            ->where(function($q) use ($entityIds, $allSearchNames) {
+                 if (!empty($entityIds)) $q->whereIn('accounting_entity_id', $entityIds);
+                 if (!empty($allSearchNames)) $q->orWhereIn('customer_name', $allSearchNames);
+            })
             ->select('accounting_entity_id as entity_id', 'customer_name', DB::raw('SUM(quoted_amount) as total_charge'))
             ->groupBy('accounting_entity_id', 'customer_name')
             ->get();
 
-        // 3. Get Repair Forwarding Dues
-        $forwardingDues = DB::table('repair_requests')
+        // 3. Repair Forwarding Dues (Matched by name)
+        $forwardingDues = !empty($allSearchNames) ? DB::table('repair_requests')
             ->whereIn('forwarded_to', $allSearchNames)
             ->select('forwarded_to as entity_name', DB::raw('SUM(service_center_cost) as total_due'))
             ->groupBy('forwarded_to')
-            ->get()->keyBy('entity_name');
+            ->get()->keyBy('entity_name') : collect();
 
-        // 4. Get Sales Charges
-        $salesCharges = DB::table('sale_invoices')
-            ->where(function($q) use ($entityIds) {
-                $q->whereIn('accounting_entity_id', $entityIds);
-            })
+        // 4. Sales Charges
+        $salesCharges = !empty($entityIds) ? DB::table('sale_invoices')
             ->whereNull('deleted_at')
-            ->select('accounting_entity_id as entity_id', DB::raw('SUM(grand_total) as total_charge'))
-            ->groupBy('accounting_entity_id')
-            ->get()->keyBy('entity_id');
-
-        // 5. Get Purchase Charges
-        $purchaseCharges = DB::table('purchase_invoices')
-            ->where(function($q) use ($entityIds) {
-                $q->whereIn('accounting_entity_id', $entityIds);
-            })
-            ->whereNull('deleted_at')
-            ->select('accounting_entity_id as entity_id', DB::raw('SUM(grand_total) as total_charge'))
-            ->groupBy('accounting_entity_id')
-            ->get()->keyBy('entity_id');
-
-        // 6. Get Loan Charges
-        $loanCharges = DB::table('loans')
             ->whereIn('accounting_entity_id', $entityIds)
-            ->select('accounting_entity_id as entity_id', DB::raw('SUM(monthly_installment * total_months) as total_interest_loan'))
+            ->select('accounting_entity_id as entity_id', DB::raw('SUM(grand_total) as total_charge'))
             ->groupBy('accounting_entity_id')
-            ->get()->keyBy('entity_id');
+            ->get()->keyBy('entity_id') : collect();
 
-        // 7. Get Airtel Charges (Still linked to Retailers, but we can link by name if needed)
-        $airtelCharges = DB::table('airtel_drops')
+        // 5. Purchase Charges
+        $purchaseCharges = !empty($entityIds) ? DB::table('purchase_invoices')
+            ->whereNull('deleted_at')
+            ->whereIn('accounting_entity_id', $entityIds)
+            ->select('accounting_entity_id as entity_id', DB::raw('SUM(grand_total) as total_charge'))
+            ->groupBy('accounting_entity_id')
+            ->get()->keyBy('entity_id') : collect();
+
+        // 6. Loan Charges
+        $loanCharges = !empty($entityIds) ? DB::table('loans')
+            ->whereIn('accounting_entity_id', $entityIds)
+            ->select('accounting_entity_id as entity_id', DB::raw('SUM(monthly_installment * total_months) as total_charge'))
+            ->groupBy('accounting_entity_id')
+            ->get()->keyBy('entity_id') : collect();
+
+        // 7. Airtel Stock Drops (Matched by retailer name)
+        $airtelCharges = !empty($allSearchNames) ? DB::table('airtel_drops')
             ->join('retailers', 'airtel_drops.retailer_id', '=', 'retailers.id')
             ->whereIn('retailers.name', $allSearchNames)
-            ->select('retailers.name as entity_name', DB::raw('SUM(amount) as total_drop'))
+            ->select('retailers.name as entity_name', DB::raw('SUM(airtel_drops.amount) as total_drop'))
             ->groupBy('retailers.name')
-            ->get()->keyBy('entity_name');
+            ->get()->keyBy('entity_name') : collect();
 
         return $entities->map(function ($entity) use ($realized, $repairCharges, $forwardingDues, $salesCharges, $purchaseCharges, $loanCharges, $airtelCharges) {
             $id = $entity->id;
             $name = $entity->name;
 
-            $opening = ($entity->balance_type == 'RECEIVABLE' ? 1 : -1) * $entity->opening_balance;
+            $opening = ($entity->balance_type == 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance;
             
             // Sum up realized from either ID match or Name match
-            $matchedRealized = $realized->filter(fn($r) => $r->entity_id == $id || $r->entity_name == $name);
+            $matchedRealized = $realized->filter(fn($r) => ($id && $r->entity_id == $id) || ($name && $r->entity_name == $name));
             $inWorth = $matchedRealized->sum('total_in');
             $outWorth = $matchedRealized->sum('total_out');
 
-            $repCharge = $repairCharges->filter(fn($r) => $r->entity_id == $id || $r->customer_name == $name)->sum('total_charge');
+            $repCharge = $repairCharges->filter(fn($r) => ($id && $r->entity_id == $id) || ($name && $r->customer_name == $name))->sum('total_charge');
             
             $unrealized = $repCharge
                         - ($forwardingDues[$name]->total_due ?? 0)
                         + ($salesCharges[$id]->total_charge ?? 0)
                         - ($purchaseCharges[$id]->total_charge ?? 0)
-                        + ($loanCharges[$id]->total_interest_loan ?? 0)
+                        + ($loanCharges[$id]->total_charge ?? 0)
                         + ($airtelCharges[$name]->total_drop ?? 0);
 
             $entity->setAttribute('in_worth', (float)$inWorth);
