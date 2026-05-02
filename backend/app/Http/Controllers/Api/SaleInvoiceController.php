@@ -464,4 +464,60 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => $e->getMessage()], 500);
         }
     }
+
+    public function backup(Request $request)
+    {
+        $query = SaleInvoice::with('items', 'giftItems');
+        
+        if ($request->start_date) $query->where('sale_date', '>=', $request->start_date);
+        if ($request->end_date)   $query->where('sale_date', '<=', $request->end_date);
+        
+        $invoices = $query->get();
+        $data = [
+            'type' => 'SALE_BACKUP',
+            'timestamp' => now()->toDateTimeString(),
+            'sale_invoices' => $invoices
+        ];
+
+        $filename = "sale_backup_" . ($request->start_date ? "{$request->start_date}_to_{$request->end_date}" : "full") . "_" . date('Ymd_His') . ".json";
+        
+        return response()->json($data)
+            ->header('Content-Disposition', "attachment; filename=\"$filename\"");
+    }
+
+    public function restoreBackup(Request $request)
+    {
+        if (!$request->user()->isOwner()) return response()->json(['message' => 'Unauthorized'], 403);
+        
+        $request->validate(['backup_file' => 'required|file']);
+        $data = json_decode(file_get_contents($request->file('backup_file')->getRealPath()), true);
+        
+        if (!isset($data['sale_invoices'])) return response()->json(['message' => 'Invalid backup format'], 422);
+
+        DB::beginTransaction();
+        try {
+            foreach ($data['sale_invoices'] as $invData) {
+                $items = $invData['items'] ?? [];
+                $gifts = $invData['gift_items'] ?? [];
+                unset($invData['items'], $invData['gift_items'], $invData['customer'], $invData['user'], $invData['shop']);
+                
+                $invoice = SaleInvoice::updateOrCreate(['id' => $invData['id']], $invData);
+                
+                foreach ($items as $itemData) {
+                    unset($itemData['product']);
+                    SaleItem::updateOrCreate(['id' => $itemData['id']], $itemData);
+                }
+
+                foreach ($gifts as $giftData) {
+                    unset($giftData['gift_product']);
+                    SaleGiftItem::updateOrCreate(['id' => $giftData['id']], $giftData);
+                }
+            }
+            DB::commit();
+            return response()->json(['message' => 'Sale backup restored successfully']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+        }
+    }
 }

@@ -1,11 +1,18 @@
 import React from 'react';
 
-export default function Modal({ show, onClose, title, children }) {
+export default function Modal({ show, onClose, title, children, size = 'md' }) {
   if (!show) return null;
+
+  const sizeClass = {
+    sm: 'modal-sm',
+    md: '',
+    lg: 'modal-lg',
+    xl: 'modal-xl'
+  }[size] || '';
 
   return (
     <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-      <div className="modal-dialog modal-dialog-centered shadow-lg">
+      <div className={`modal-dialog modal-dialog-centered shadow-lg ${sizeClass}`}>
         <div className="modal-content border-0" style={{ borderRadius: '16px' }}>
           <div className="modal-header border-bottom-0 pt-4 px-4">
             <h5 className="modal-title fw-bold text-uppercase">{title}</h5>

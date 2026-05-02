@@ -5,6 +5,7 @@ import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import { useAuth } from '../../contexts/AuthContext';
+import DataBackupModal from '../../components/DataBackupModal';
 
 export default function Purchases() {
   const [purchases, setPurchases] = useState([]);
@@ -35,6 +36,7 @@ export default function Purchases() {
   const [groupStocks, setGroupStocks] = useState(true);
   const [groupPending, setGroupPending] = useState(true);
   const [imeiList, setImeiList] = useState([]);
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   useEffect(() => {
     loadSuppliers();
@@ -253,8 +255,22 @@ export default function Purchases() {
           <h2>📱 New Mobiles Manager</h2>
           <p>PURCHASES · INVENTORY · STOCK TRACKING</p>
         </div>
-        <Link to="/purchases/new" className="pm-new-btn">+ New Purchase</Link>
+        <div className="d-flex gap-2">
+          <button onClick={() => setShowBackupModal(true)} className="pm-new-btn" style={{background: 'linear-gradient(135deg, #1e293b, #334155)'}}>
+            📥 Backup / Restore
+          </button>
+          <Link to="/purchases/new" className="pm-new-btn">+ New Purchase</Link>
+        </div>
       </div>
+
+      <DataBackupModal 
+        isOpen={showBackupModal} 
+        onClose={() => setShowBackupModal(false)}
+        onRefresh={loadPurchases}
+        title="Purchases Data Backup"
+        endpoint="/purchase-invoices"
+        typeLabel="Purchases"
+      />
 
       {/* Filters */}
       <div className="pm-filters">

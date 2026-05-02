@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import { useAuth } from '../../contexts/AuthContext';
+import DataBackupModal from '../../components/DataBackupModal';
 
 export default function Sales() {
   const [invoices, setInvoices] = useState([]);
@@ -11,6 +12,7 @@ export default function Sales() {
   const [shops, setShops]       = useState([]);
   const { isOwner } = useAuth();
   const navigate = useNavigate();
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   const [filters, setFilters] = useState({ 
     from: '', to: '', bill_type: '', search: '', shop_id: '' 
@@ -79,8 +81,20 @@ export default function Sales() {
            <h2 className="mb-0 fw-bold">🧾 SALES MANAGEMENT</h2>
            <p className="text-muted small mb-0">MANAGE CUSTOMER INVOICES, PAYMENTS AND BILLING</p>
         </div>
-        <button onClick={() => navigate('/sales/new')} className="btn btn-primary shadow-sm text-uppercase fw-bold">+ New Sale</button>
+        <div className="d-flex gap-2">
+          <button onClick={() => setShowBackupModal(true)} className="btn btn-outline-dark shadow-sm text-uppercase fw-bold">Backup / Restore</button>
+          <button onClick={() => navigate('/sales/new')} className="btn btn-primary shadow-sm text-uppercase fw-bold">+ New Sale</button>
+        </div>
       </div>
+
+      <DataBackupModal 
+        isOpen={showBackupModal} 
+        onClose={() => setShowBackupModal(false)}
+        onRefresh={loadInvoices}
+        title="Sales Data Backup"
+        endpoint="/sale-invoices"
+        typeLabel="Sales"
+      />
 
       {/* Filters Card */}
       <div className="card shadow-sm border-0 mb-4 p-3 bg-white rounded-3">

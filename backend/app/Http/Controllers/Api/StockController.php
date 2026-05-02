@@ -72,25 +72,26 @@ class StockController extends Controller
         ]);
     }
 
-    public function backup()
+    public function backup(Request $request)
     {
+        $adjQuery = StockAdjustment::query();
+        if ($request->start_date) $adjQuery->where('adjustment_date', '>=', $request->start_date);
+        if ($request->end_date)   $adjQuery->where('adjustment_date', '<=', $request->end_date);
+
         $data = [
+            'type'              => 'STOCK_BACKUP',
             'timestamp'         => now()->toDateTimeString(),
             'categories'        => Category::all(),
             'suppliers'         => Supplier::all(),
             'products'          => Product::withTrashed()->get(),
-            'purchase_invoices' => PurchaseInvoice::all(),
-            'purchase_items'    => PurchaseItem::all(),
-            'sale_invoices'     => SaleInvoice::all(),
-            'sale_items'        => SaleItem::all(),
             'inventories'       => Inventory::all(),
-            'stock_adjustments' => StockAdjustment::all(),
+            'stock_adjustments' => $adjQuery->get(),
         ];
 
-        $filename = "inventory_full_backup_" . date('Y-m-d_His') . ".json";
+        $filename = "stock_backup_" . ($request->start_date ? "{$request->start_date}_to_{$request->end_date}" : "full") . "_" . date('Ymd_His') . ".json";
         
         return response()->json($data)
-            ->header('Content-Disposition', "attachment; filename=$filename");
+            ->header('Content-Disposition', "attachment; filename=\"$filename\"");
     }
 
     public function restoreBackup(Request $request)

@@ -560,4 +560,56 @@ class PurchaseInvoiceController extends Controller
 
         return response()->json($imeis);
     }
+
+    public function backup(Request $request)
+    {
+        $query = PurchaseInvoice::with('items');
+        
+        if ($request->start_date) $query->where('purchase_date', '>=', $request->start_date);
+        if ($request->end_date)   $query->where('purchase_date', '<=', $request->end_date);
+        
+        $invoices = $query->get();
+        $data = [
+            'type' => 'PURCHASE_BACKUP',
+            'timestamp' => now()->toDateTimeString(),
+            'purchase_invoices' => $invoices
+        ];
+
+        $filename = "purchase_backup_" . ($request->start_date ? "{$request->start_date}_to_{$request->end_date}" : "full") . "_" . date('Ymd_His') . ".json";
+        
+        return response()->json($data)
+            ->header('Content-Disposition', "attachment; filename=\"$filename\"");
+    }
+
+    public function restoreBackup(Request $request)
+    {
+        if (!$request->user()->isOwner()) return response()->json(['message' => 'Unauthorized'], 403);
+        
+        $request->validate(['backup_file' => 'required|file']);
+        $data = json_decode(file_get_contents($request->file('backup_file')->getRealPath()), true);
+        
+        if (!isset($data['purchase_invoices'])) return response()->json(['message' => 'Invalid backup format'], 422);
+
+        DB::beginTransaction();
+        try {
+            foreach ($data['purchase_invoices'] as $invData) {
+                $items = $invData['items'] ?? [];
+                unset($invData['items'], $invData['supplier'], $invData['user']);
+                
+                // Ensure ID preservation or mapping if needed
+                // For simplicity, we'll use updateOrInsert by invoice_no or ID
+                $invoice = PurchaseInvoice::updateOrCreate(['id' => $invData['id']], $invData);
+                
+                foreach ($items as $itemData) {
+                    unset($itemData['product']);
+                    PurchaseItem::updateOrCreate(['id' => $itemData['id']], $itemData);
+                }
+            }
+            DB::commit();
+            return response()->json(['message' => 'Purchase backup restored successfully']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+        }
+    }
 }

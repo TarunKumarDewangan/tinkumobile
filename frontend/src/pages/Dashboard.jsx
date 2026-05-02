@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/axios';
+import DataBackupModal from '../components/DataBackupModal';
 
 export default function Dashboard() {
   const { user, isOwner, can } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showSyncModal, setShowSyncModal] = useState(false);
 
   useEffect(() => {
     api.get('/reports/dashboard').then(r => setStats(r.data)).catch(() => {}).finally(() => setLoading(false));
@@ -104,11 +106,25 @@ export default function Dashboard() {
                   {action.label}
                 </Link>
               ))}
+              {isOwner() && (
+                <button onClick={() => setShowSyncModal(true)} className="btn btn-dark btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
+                  🔄 FULL SYSTEM SYNC
+                </button>
+              )}
               {quickActions.length === 0 && <div className="text-muted small italic">No actions available</div>}
             </div>
           </div>
         </div>
       </div>
+
+      <DataBackupModal 
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        onRefresh={() => window.location.reload()}
+        title="Full System Sync (Master)"
+        endpoint="/system"
+        typeLabel="Entire System"
+      />
     </div>
   );
 }

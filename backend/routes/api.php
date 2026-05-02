@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\EntityLedgerController;
 use App\Http\Controllers\Api\EntityController;
+use App\Http\Controllers\Api\SystemBackupController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
@@ -80,6 +81,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::apiResource('salary-payments', SalaryPaymentController::class);
 
     // Purchases
+    Route::get('purchase-invoices/backup', [PurchaseInvoiceController::class, 'backup']);
+    Route::post('purchase-invoices/restore-backup', [PurchaseInvoiceController::class, 'restoreBackup']);
     Route::get('purchase-invoices/unique-imeis', [PurchaseInvoiceController::class, 'getUniqueImeis']);
     Route::get('purchase-invoices/pending-stocks', [PurchaseInvoiceController::class, 'pendingStocks']);
     Route::apiResource('purchase-invoices', PurchaseInvoiceController::class)->parameters([
@@ -89,6 +92,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/purchase-invoices/{purchaseInvoice}/add-payment', [PurchaseInvoiceController::class, 'addPayment']);
 
     // Sales
+    Route::get('sale-invoices/backup', [SaleInvoiceController::class, 'backup']);
+    Route::post('sale-invoices/restore-backup', [SaleInvoiceController::class, 'restoreBackup']);
     Route::apiResource('sale-invoices', SaleInvoiceController::class);
     Route::post('sale-invoices/{sale_invoice}/add-payment', [SaleInvoiceController::class, 'addPayment']);
     Route::post('/sale-invoices/{saleInvoice}/convert-to-pakka', [SaleInvoiceController::class, 'convertToPakka']);
@@ -205,4 +210,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         app(\App\Services\EntityService::class)->syncAll();
         return response()->json(['message' => 'All balances synced successfully']);
     });
+
+    // Full System Sync
+    Route::get('system/export', [SystemBackupController::class, 'export']);
+    Route::post('system/import', [SystemBackupController::class, 'import']);
 });

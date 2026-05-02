@@ -9,6 +9,7 @@ import OpeningStockForm from './stock/components/OpeningStockForm';
 import StockHistory from './stock/components/StockHistory';
 import EditAdjustmentModal from './stock/components/EditAdjustmentModal';
 import ModelWiseStock from './stock/components/ModelWiseStock';
+import DataBackupModal from '../components/DataBackupModal';
 
 export default function StockEntry() {
   const [tab, setTab] = useState('stocks');
@@ -26,6 +27,7 @@ export default function StockEntry() {
   const [editingAdj, setEditingAdj] = useState(null);
   const [editForm, setEditForm] = useState({ quantity: 1, purchase_price: '', notes: '', adjustment_date: '' });
   const [loading, setLoading] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   const { user, isOwner } = useAuth();
   const inventory = useInventory(filters, form, setForm);
@@ -73,48 +75,6 @@ export default function StockEntry() {
     }
   };
 
-  const handleExportBackup = async () => {
-    if (!window.confirm('Exporting full inventory backup. This may take a moment. Continue?')) return;
-    try {
-        const { data } = await api.get('/stocks/backup', { responseType: 'blob' });
-        const url = window.URL.createObjectURL(new Blob([data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `inventory_backup_${new Date().toISOString().slice(0, 10)}.json`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        toast.success('Backup exported successfully');
-    } catch (e) {
-        toast.error('Export failed');
-    }
-  };
-
-  const handleImportBackup = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!window.confirm('CRITICAL: This will DELETE all existing inventory, products, and related history data and restore from backup. This cannot be undone. Are you ABSOLUTELY sure?')) {
-        e.target.value = '';
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('backup_file', file);
-    setLoading(true);
-    try {
-        await api.post('/stocks/restore-backup', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        toast.success('Inventory restored successfully!');
-        inventory.refresh();
-        if (tab === 'history') loadHistory();
-    } catch (err) {
-        toast.error(err.response?.data?.message || 'Restore failed');
-    } finally {
-        setLoading(false);
-        e.target.value = '';
-    }
-  };
 
   const PS = `
     .pm-wrap{background:#f1f5f9;min-height:100vh;padding:20px;}
@@ -169,15 +129,9 @@ export default function StockEntry() {
         </div>
         <div className="d-flex gap-2 align-items-center">
           {isOwner() && (
-            <>
-              <button className="pf-bulk" onClick={handleExportBackup} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
-                📤 EXPORT BACKUP
-              </button>
-              <label className="pf-bulk" style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', cursor:'pointer', marginBottom:0, padding:'6px 14px'}}>
-                📥 IMPORT BACKUP
-                <input type="file" hidden accept=".json" onChange={handleImportBackup} />
-              </label>
-            </>
+            <button className="pf-bulk" onClick={() => setShowBackupModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
+              📥 BACKUP / RESTORE
+            </button>
           )}
           <div className="d-none d-md-block ms-3">
             <span style={{color:'rgba(255,255,255,.4)',fontSize:'.65rem',fontWeight:700,letterSpacing:1}}>SHORTCUT: ALT + S</span>
@@ -251,6 +205,15 @@ export default function StockEntry() {
         handleUpdate={handleUpdate}
         setEditingAdj={setEditingAdj}
         loading={loading}
+      />
+
+      <DataBackupModal 
+        isOpen={showBackupModal} 
+        onClose={() => setShowBackupModal(false)}
+        onRefresh={() => { inventory.refresh(); if(tab === 'history') loadHistory(); }}
+        title="Inventory & Stock Backup"
+        endpoint="/stocks"
+        typeLabel="Inventory"
       />
     </div>
   );
