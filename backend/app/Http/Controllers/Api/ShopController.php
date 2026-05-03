@@ -20,6 +20,7 @@ class ShopController extends Controller
             'address' => 'required|string',
             'phone' => 'required|string|max:20',
             'email' => 'nullable|email|max:100',
+            'gstin' => 'nullable|string|max:50',
             'is_main' => 'boolean',
         ]);
         return response()->json(Shop::create($data), 201);
@@ -37,6 +38,7 @@ class ShopController extends Controller
             'address' => 'sometimes|string',
             'phone' => 'sometimes|string|max:20',
             'email' => 'nullable|email|max:100',
+            'gstin' => 'nullable|string|max:50',
             'is_main' => 'boolean',
         ]);
         $shop->update($data);

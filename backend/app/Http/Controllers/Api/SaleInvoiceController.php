@@ -97,7 +97,7 @@ class SaleInvoiceController extends Controller
 
         DB::beginTransaction();
         try {
-            $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
+            $inclusiveTotal = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
             $discount    = (float) ($data['discount'] ?? 0);
             $cashDiscount = (float) ($data['cash_discount'] ?? 0);
             $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
@@ -106,13 +106,20 @@ class SaleInvoiceController extends Controller
             if ($calculateGst) {
                 $cgstRate = (float) ($data['cgst_rate'] ?? 9);
                 $sgstRate = (float) ($data['sgst_rate'] ?? 9);
-                $cgstAmount = ($totalAmount * $cgstRate) / 100;
-                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+                
+                $totalGstRate = $cgstRate + $sgstRate;
+                $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
+                $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
+                
+                $cgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($cgstRate / $totalGstRate) : 0;
+                $sgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($sgstRate / $totalGstRate) : 0;
+                $totalAmount = $exclusiveTotal;
             } else {
                 $cgstRate = 0;
                 $sgstRate = 0;
                 $cgstAmount = 0;
                 $sgstAmount = 0;
+                $totalAmount = $inclusiveTotal;
             }
 
             $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
@@ -299,7 +306,7 @@ class SaleInvoiceController extends Controller
             $saleInvoice->items()->delete();
             $saleInvoice->giftItems()->delete(); 
 
-            $totalAmount = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
+            $inclusiveTotal = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
             $discount    = (float) ($data['discount'] ?? 0);
             $cashDiscount = (float) ($data['cash_discount'] ?? 0);
             $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
@@ -308,13 +315,20 @@ class SaleInvoiceController extends Controller
             if ($calculateGst) {
                 $cgstRate = (float) ($data['cgst_rate'] ?? 9);
                 $sgstRate = (float) ($data['sgst_rate'] ?? 9);
-                $cgstAmount = ($totalAmount * $cgstRate) / 100;
-                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+                
+                $totalGstRate = $cgstRate + $sgstRate;
+                $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
+                $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
+                
+                $cgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($cgstRate / $totalGstRate) : 0;
+                $sgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($sgstRate / $totalGstRate) : 0;
+                $totalAmount = $exclusiveTotal;
             } else {
                 $cgstRate = 0;
                 $sgstRate = 0;
                 $cgstAmount = 0;
                 $sgstAmount = 0;
+                $totalAmount = $inclusiveTotal;
             }
 
             $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;

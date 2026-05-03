@@ -230,6 +230,7 @@ class AirtelDropController extends Controller
 
         $success = 0;
         $failed = 0;
+        $duplicates = 0;
         $errors = [];
 
         // To run FIFO efficiently, group by retailer
@@ -241,6 +242,19 @@ class AirtelDropController extends Controller
             if (!$retailer) {
                 $failed++;
                 $errors[] = "MSISDN: " . $payment['msisdn'] . " not found.";
+                continue;
+            }
+
+            // Duplicate Check
+            $recoveredAt = \Carbon\Carbon::parse($payment['recovered_at']);
+            $exists = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)
+                ->where('amount', $payment['amount'])
+                ->where('recovered_at', $recoveredAt)
+                ->where('notes', 'like', 'DIGITAL%')
+                ->exists();
+
+            if ($exists) {
+                $duplicates++;
                 continue;
             }
 
@@ -325,8 +339,9 @@ class AirtelDropController extends Controller
         return response()->json([
             'success' => $success,
             'failed' => $failed,
+            'duplicates' => $duplicates,
             'errors' => array_values(array_unique($errors)),
-            'message' => "Successfully imported $success UPI payments. $failed failed."
+            'message' => "Successfully imported $success UPI payments. $duplicates duplicates skipped. $failed failed."
         ]);
     }
 

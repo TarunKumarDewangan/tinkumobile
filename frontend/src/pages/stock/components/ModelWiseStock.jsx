@@ -43,6 +43,9 @@ export default function ModelWiseStock({ products, loading, filters }) {
   }, {});
 
   const sortedBrands = Object.keys(groupedData).sort();
+  const totalCompanies = sortedBrands.length;
+  const totalModels = Object.values(groupedData).reduce((sum, b) => sum + Object.keys(b.models).length, 0);
+  const grandTotalStock = Object.values(groupedData).reduce((sum, b) => sum + b.total, 0);
 
   return (
     <div className="fade-in">
@@ -89,8 +92,23 @@ export default function ModelWiseStock({ products, loading, filters }) {
                 <tr><td colSpan={3} className="text-center py-5"><div className="spinner-border text-primary"/></td></tr>
               ) : sortedBrands.length === 0 ? (
                 <tr><td colSpan={3} className="text-center py-5 text-muted fw-bold">No stock data available</td></tr>
-              ) : sortedBrands.map(brand => (
-                <React.Fragment key={brand}>
+              ) : (
+                <>
+                  <tr style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', borderBottom: '2px solid #e2e8f0' }}>
+                    <td className="ps-4 text-uppercase" style={{ fontSize: '.8rem', fontWeight: 800, color: '#475569' }}>
+                      📈 SUMMARY: {totalCompanies} COMPANIES
+                    </td>
+                    <td className="text-uppercase" style={{ fontSize: '.8rem', fontWeight: 800, color: '#475569' }}>
+                      {totalModels} TOTAL VARIANTS
+                    </td>
+                    <td className="text-center">
+                      <span className="pm-badge" style={{ background: '#1e293b', color: '#fff', fontSize: '.85rem', padding: '5px 12px' }}>
+                        {grandTotalStock} PCS TOTAL
+                      </span>
+                    </td>
+                  </tr>
+                  {sortedBrands.map(brand => (
+                    <React.Fragment key={brand}>
                   <tr style={{ background: '#f8fafc', borderLeft: '4px solid #6366f1' }}>
                     <td className="ps-4 fw-800 text-primary" style={{ fontSize: '.85rem' }}>
                       🏢 {brand}
@@ -127,6 +145,8 @@ export default function ModelWiseStock({ products, loading, filters }) {
                   ))}
                 </React.Fragment>
               ))}
+              </>
+            )}
             </tbody>
           </table>
         </div>

@@ -94,8 +94,8 @@ class StockAdjustmentController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.is_new' => 'boolean',
-            'items.*.new_product_name' => 'required_if:items.*.is_new,true|string|max:200',
-            'items.*.category_id' => 'required_if:items.*.is_new,true|exists:categories,id',
+            'items.*.new_product_name' => 'required_if:items.*.is_new,true|nullable|string|max:200',
+            'items.*.category_id' => 'required_if:items.*.is_new,true|nullable|exists:categories,id',
             'items.*.imei' => 'nullable|string|max:20',
             'items.*.ram' => 'nullable|string|max:50',
             'items.*.storage' => 'nullable|string|max:50',
@@ -244,6 +244,12 @@ class StockAdjustmentController extends Controller
         $productId = $item['product_id'] ?? null;
 
         if (!empty($item['is_new']) && $item['is_new']) {
+            // Safety check: Prevent duplicate creation if a product with the same name already exists
+            $existingProduct = Product::where('name', $item['new_product_name'])->first();
+            if ($existingProduct) {
+                return $existingProduct->id;
+            }
+
             $product = Product::create([
                 'category_id'    => $item['category_id'],
                 'name'           => $item['new_product_name'],

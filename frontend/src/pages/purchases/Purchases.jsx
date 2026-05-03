@@ -37,6 +37,11 @@ export default function Purchases() {
   const [groupPending, setGroupPending] = useState(true);
   const [imeiList, setImeiList] = useState([]);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [expandedRows, setExpandedRows] = useState({});
+
+  const toggleRowExpand = (id) => {
+    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   useEffect(() => {
     loadSuppliers();
@@ -275,10 +280,35 @@ export default function Purchases() {
       {/* Filters */}
       <div className="pm-filters">
         <div className="row g-2 align-items-end">
-          <div className="col-12 col-md-3">
+          <div className="col-12 col-md-2">
             <span className="pm-flabel">🔍 Search Invoice / Supplier</span>
-            <input className="pm-finput" placeholder="Type to search..." value={filters.search}
+            <input className="pm-finput" placeholder="Invoice or supplier..." value={filters.search}
               onChange={e => handleFilterChange('search', e.target.value.toUpperCase())} />
+          </div>
+          <div className="col-6 col-md-2">
+            <span className="pm-flabel">📱 Model Name</span>
+            <input className="pm-finput" placeholder="e.g. VIVO V70" value={filters.model}
+              onChange={e => handleFilterChange('model', e.target.value.toUpperCase())} />
+          </div>
+          <div className="col-6 col-md-2">
+            <span className="pm-flabel">🆔 IMEI No</span>
+            <input className="pm-finput" placeholder="Search by IMEI" value={filters.imei}
+              onChange={e => handleFilterChange('imei', e.target.value)} />
+          </div>
+          <div className="col-4 col-md-1">
+            <span className="pm-flabel">🎨 Color</span>
+            <input className="pm-finput" placeholder="e.g. BLACK" value={filters.color}
+              onChange={e => handleFilterChange('color', e.target.value.toUpperCase())} />
+          </div>
+          <div className="col-4 col-md-1">
+            <span className="pm-flabel">💾 RAM</span>
+            <input className="pm-finput" placeholder="e.g. 8" value={filters.ram}
+              onChange={e => handleFilterChange('ram', e.target.value)} />
+          </div>
+          <div className="col-4 col-md-1">
+            <span className="pm-flabel">📦 Storage</span>
+            <input className="pm-finput" placeholder="e.g. 128" value={filters.storage}
+              onChange={e => handleFilterChange('storage', e.target.value)} />
           </div>
           {activeTab === 'purchases' && (
             <div className="col-6 col-md-1">
@@ -293,12 +323,7 @@ export default function Purchases() {
             </div>
           )}
           {activeTab === 'purchases' && (
-            <div className="col-auto d-flex align-items-end">
-              <button className="pm-clear-btn" onClick={clearFilters}>✕ Clear</button>
-            </div>
-          )}
-          {activeTab === 'purchases' && (
-            <div className="col-6 col-md-2">
+            <div className="col-6 col-md-1">
               <span className="pm-flabel">📦 Status</span>
               <select className="pm-finput" value={filters.status} onChange={e => handleFilterChange('status', e.target.value)}>
                 <option value="">All Status</option>
@@ -313,6 +338,9 @@ export default function Purchases() {
               <option value="">All Suppliers</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+          </div>
+          <div className="col-auto d-flex align-items-end">
+            <button className="pm-clear-btn" onClick={clearFilters}>✕ Clear All</button>
           </div>
         </div>
       </div>
@@ -331,15 +359,15 @@ export default function Purchases() {
             <thead>
               <tr>
                 <th>Date</th><th>Invoice #</th><th>Supplier</th>
-                <th>Products</th><th>Config</th><th>Status</th>
+                <th>Items</th><th>Status</th>
                 <th>Total</th><th>Paid / Bal</th><th>Notes</th><th style={{textAlign:'right'}}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
+                <tr><td colSpan={9} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
               ) : (purchases||[]).length === 0 ? (
-                <tr><td colSpan={10} style={{textAlign:'center',padding:'40px',color:'#94a3b8'}}>No purchases found</td></tr>
+                <tr><td colSpan={9} style={{textAlign:'center',padding:'40px',color:'#94a3b8'}}>No purchases found</td></tr>
               ) : (purchases||[]).map(p => {
                 const balance = parseFloat(p.grand_total||0) - parseFloat(p.total_paid||0);
                 const ps = p.payment_status;
@@ -348,25 +376,51 @@ export default function Purchases() {
                     <td><span style={{fontSize:'.72rem',color:'#64748b'}}>📅 {formatDate(p.purchase_date)}</span></td>
                     <td><span style={{fontWeight:700,color:'#6366f1',fontSize:'.78rem'}}>{p.invoice_no}</span></td>
                     <td style={{fontWeight:600}}>{p.supplier?.name}</td>
-                    <td style={{fontSize:'.75rem'}}>
-                      {p.items?.map((item,idx) => (
-                        <div key={idx} style={{marginBottom:3,paddingBottom:3,borderBottom:'1px solid #f1f5f9'}}>
-                          <span>{item.product?.name}</span>
-                          <span style={{background:'#e0e7ff',color:'#6366f1',fontSize:'.6rem',fontWeight:700,padding:'1px 7px',borderRadius:10,marginLeft:6}}>{item.quantity}</span>
-                          {p.status==='received' && <div style={{fontSize:'.63rem',marginTop:2}}>
-                            <span style={{color:'#059669',fontWeight:700}}>RCV:{item.received_quantity||0}</span>
-                            {item.damaged_quantity>0 && <span style={{color:'#dc2626',fontWeight:700,marginLeft:5}}>DMG:{item.damaged_quantity}</span>}
-                          </div>}
-                        </div>
-                      ))}
-                    </td>
-                    <td style={{fontSize:'.72rem',color:'#64748b'}}>
-                      {p.items?.map((item,idx) => (
-                        <div key={idx} style={{marginBottom:3,paddingBottom:3,borderBottom:'1px solid #f1f5f9'}}>
-                          {item.ram||'-'}/{item.storage||'-'}/{item.color||'-'}
-                          {item.imei && <div style={{color:'#6366f1',fontWeight:700,fontSize:'.62rem'}}>🆔{item.imei}</div>}
-                        </div>
-                      ))}
+                    <td style={{fontSize:'.75rem',maxWidth:280}}>
+                      {(() => {
+                        // Filter items client-side if any item-level filters are active
+                        const hasItemFilter = filters.model || filters.imei || filters.color || filters.ram || filters.storage;
+                        const filteredAll = hasItemFilter ? (p.items || []).filter(item => {
+                          const name = (item.product?.name || '').toUpperCase();
+                          if (filters.model && !name.includes(filters.model.toUpperCase())) return false;
+                          if (filters.imei && !(item.imei || '').includes(filters.imei)) return false;
+                          if (filters.color && !(item.color || '').toUpperCase().includes(filters.color.toUpperCase())) return false;
+                          if (filters.ram && !(item.ram || '').includes(filters.ram)) return false;
+                          if (filters.storage && !(item.storage || '').includes(filters.storage)) return false;
+                          return true;
+                        }) : (p.items || []);
+                        const isExpanded = expandedRows[p.id];
+                        const items = isExpanded ? filteredAll : filteredAll.slice(0, 3);
+                        const extra = filteredAll.length - 3;
+                        return (
+                          <>
+                            {items?.map((item,idx) => (
+                              <div key={idx} style={{marginBottom:5,paddingBottom:5,borderBottom:'1px solid #f1f5f9'}}>
+                                {/* Row 1: Name + Qty */}
+                                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                                  <span style={{fontWeight:700,color:'#1e293b'}}>{item.product?.name}</span>
+                                  <span style={{background:'#e0e7ff',color:'#6366f1',fontSize:'.6rem',fontWeight:700,padding:'1px 7px',borderRadius:10}}>x{item.quantity}</span>
+                                  {p.status==='received' && <>
+                                    <span style={{color:'#059669',fontSize:'.6rem',fontWeight:700}}>✔{item.received_quantity||0}</span>
+                                    {item.damaged_quantity>0 && <span style={{color:'#dc2626',fontSize:'.6rem',fontWeight:700}}>✖{item.damaged_quantity}</span>}
+                                  </>}
+                                </div>
+                                {/* Row 2: Config */}
+                                <div style={{marginTop:2,color:'#64748b',fontSize:'.65rem'}}>
+                                  {[item.ram, item.storage, item.color].filter(Boolean).join(' / ')}
+                                  {item.imei && <span style={{display:'inline-block',marginLeft:6,color:'#6366f1',fontWeight:700}}>🆔 {item.imei}</span>}
+                                </div>
+                              </div>
+                            ))}
+                            {extra > 0 && (
+                              <button onClick={() => toggleRowExpand(p.id)}
+                                style={{background:'none',border:'none',padding:0,color:'#6366f1',fontWeight:700,fontSize:'.65rem',cursor:'pointer',textDecoration:'underline'}}>
+                                {isExpanded ? '▲ Show less' : `+${extra} more — click to expand`}
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td><span className={p.status==='ordered'?'pm-badge-ordered':'pm-badge-received'}>{p.status?.toUpperCase()}</span></td>
                     <td style={{fontWeight:700,color:'#6366f1'}}>₹{parseFloat(p.grand_total||0).toLocaleString('en-IN')}</td>

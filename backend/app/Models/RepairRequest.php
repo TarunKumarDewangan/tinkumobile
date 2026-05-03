@@ -16,23 +16,51 @@ class RepairRequest extends Model
 
     protected function getLedgerData(): ?array
     {
-        $entity = null;
-        if ($this->customer_name) {
-            $entity = \App\Models\Entity::where('name', $this->customer_name)->first();
-        }
-        if (!$entity) return null;
+        $entries = [];
 
-        // Repair Service = Debit the Customer (they owe us)
-        return [
-            'entity_id' => $entity->id,
-            'date' => $this->submitted_date,
-            'voucher_type' => 'REPAIR',
-            'particulars' => 'Repair Service: #' . $this->id,
-            'debit' => $this->quoted_amount,
-            'credit' => 0,
-            'user_id' => $this->staff_id ?? 1,
-            'shop_id' => $this->shop_id,
-        ];
+        // 1. Customer Ledger Entry
+        if ($this->customer_name) {
+            $customerEntity = \App\Models\Entity::where('name', $this->customer_name)->first();
+            if ($customerEntity) {
+                $entries[] = [
+                    'entity_id' => $customerEntity->id,
+                    'date' => $this->submitted_date,
+                    'voucher_type' => 'REPAIR',
+                    'particulars' => 'Repair Service: #' . $this->id . ' (' . ($this->device_model ?? 'Device') . ')',
+                    'debit' => $this->quoted_amount,
+                    'credit' => 0,
+                    'user_id' => $this->staff_id ?? 1,
+                    'shop_id' => $this->shop_id,
+                ];
+            }
+        }
+
+        // 2. Forwarded Shop Ledger Entry
+        if ($this->is_forwarded && $this->forwarded_to) {
+            $shopEntity = \App\Models\Entity::firstOrCreate(
+                ['name' => $this->forwarded_to],
+                [
+                    'phone' => $this->forwarded_phone,
+                    'group' => 'SUNDRY_CREDITORS',
+                    'balance_type' => 'PAYABLE',
+                    'opening_balance' => 0
+                ]
+            );
+
+            // Forwarding to a shop = Credit the Shop (we owe them money for the repair cost)
+            $entries[] = [
+                'entity_id' => $shopEntity->id,
+                'date' => $this->submitted_date,
+                'voucher_type' => 'REPAIR',
+                'particulars' => 'Forwarded Repair Cost: #' . $this->id . ' (' . ($this->device_model ?? 'Device') . ')',
+                'debit' => 0,
+                'credit' => $this->service_center_cost ?? 0,
+                'user_id' => $this->staff_id ?? 1,
+                'shop_id' => $this->shop_id,
+            ];
+        }
+
+        return empty($entries) ? null : $entries;
     }
 
     protected $fillable = [

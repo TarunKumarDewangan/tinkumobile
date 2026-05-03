@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../../../api/axios';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal';
 import BulkScanModal from '../../../components/BulkScanModal';
+import StockExcelImportModal from '../../../components/StockExcelImportModal';
 
 export default function OpeningStockForm({ 
   openingStockItems, 
@@ -18,6 +19,7 @@ export default function OpeningStockForm({
   onSuccess 
 }) {
   const [showBulkScan, setShowBulkScan] = useState(false);
+  const [showExcelImport, setShowExcelImport] = useState(false);
   const [scanner, setScanner] = useState({ show: false, itemIndex: null });
 
   const updateOpeningItem = (i, field, val) => {
@@ -140,7 +142,10 @@ export default function OpeningStockForm({
       <div className="pf-card">
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="pf-sec mb-0">📦 Stock Items ({openingStockItems.length})</div>
-          <button type="button" className="pf-bulk" onClick={() => setShowBulkScan(true)}>+ Bulk Add Products</button>
+          <div className="d-flex gap-2">
+            <button type="button" className="pf-bulk" style={{background: '#e0f2fe', color: '#0284c7', borderColor: '#bae6fd'}} onClick={() => setShowExcelImport(true)}>📥 Import Excel (Copy Paste)</button>
+            <button type="button" className="pf-bulk" onClick={() => setShowBulkScan(true)}>+ Bulk Add Products</button>
+          </div>
         </div>
 
         {openingStockItems.map((item, i) => {
@@ -282,6 +287,14 @@ export default function OpeningStockForm({
       <BulkScanModal 
         show={showBulkScan} 
         onHide={() => setShowBulkScan(false)}
+        products={baseProducts}
+        categories={categories}
+        onAddItems={handleBulkAddItems}
+      />
+
+      <StockExcelImportModal
+        show={showExcelImport}
+        onHide={() => setShowExcelImport(false)}
         products={baseProducts}
         categories={categories}
         onAddItems={handleBulkAddItems}

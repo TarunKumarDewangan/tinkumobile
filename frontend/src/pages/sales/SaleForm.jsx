@@ -43,7 +43,7 @@ export default function SaleForm() {
   // Customer Search & Add
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustModal, setShowCustModal] = useState(false);
-  const [newCust, setNewCust] = useState({ name: '', phone: '', email: '', address: '', voucher_code: '', events: [] });
+  const [newCust, setNewCust] = useState({ name: '', phone: '', email: '', gst_no: '', address: '', voucher_code: '', events: [] });
   // IMEI Scan Search
   const [scanProductId, setScanProductId] = useState('');
   const [imeiScanner, setImeiScanner] = useState('');
@@ -77,6 +77,10 @@ export default function SaleForm() {
       if (isOwner()) {
         const shopsRes = await api.get('/shops');
         setShops(shopsRes.data);
+        if (!id && shopsRes.data.length > 0) {
+            setForm(prev => ({ ...prev, shop_id: shopsRes.data[0].id }));
+            loadProducts(shopsRes.data[0].id);
+        }
       } else {
         setForm(prev => ({ ...prev, shop_id: user.shop_id }));
         loadProducts(user.shop_id);
@@ -98,6 +102,7 @@ export default function SaleForm() {
       if (data && data.length > 0) {
         const p = data[0];
         setItems([{
+          selection_id: p.id,
           product_id: p.product_id || p.id,
           imei: p.attributes?.imei || imei,
           ram: p.attributes?.ram || '',
@@ -125,8 +130,8 @@ export default function SaleForm() {
         payment_method: data.payment_method,
         discount: data.discount,
         total_paid: data.total_paid,
-        cgst_rate: data.cgst_rate,
-        sgst_rate: data.sgst_rate,
+        cgst_rate: data.cgst_rate || 9,
+        sgst_rate: data.sgst_rate || 9,
         calculate_gst: data.calculate_gst ?? true,
         cash_discount: data.cash_discount || 0,
         is_cash_discount_on_bill: data.is_cash_discount_on_bill ?? true,
@@ -259,9 +264,25 @@ export default function SaleForm() {
   };
 
   // Calculations
-  const subtotal = items.reduce((s, i) => s + (i.quantity * i.unit_price || 0), 0);
-  const cgstAmount = form.calculate_gst ? (subtotal * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
-  const sgstAmount = form.calculate_gst ? (subtotal * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+  const totalInclusive = items.reduce((s, i) => s + (i.quantity * i.unit_price || 0), 0);
+  let subtotal = totalInclusive;
+  let cgstAmount = 0;
+  let sgstAmount = 0;
+
+  if (form.calculate_gst) {
+      const cgstR = parseFloat(form.cgst_rate) || 0;
+      const sgstR = parseFloat(form.sgst_rate) || 0;
+      const totalGstRate = cgstR + sgstR;
+      
+      subtotal = totalInclusive / (1 + (totalGstRate / 100));
+      const totalGstAmount = totalInclusive - subtotal;
+      
+      if (totalGstRate > 0) {
+         cgstAmount = totalGstAmount * (cgstR / totalGstRate);
+         sgstAmount = totalGstAmount * (sgstR / totalGstRate);
+      }
+  }
+
   const rawTotal = subtotal + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0) - (form.is_cash_discount_on_bill ? (parseFloat(form.cash_discount) || 0) : 0);
   
   // Rounding Logic
@@ -311,7 +332,7 @@ export default function SaleForm() {
           setCustomers([...customers, data]);
           handleSelectCustomer(data);
           setShowCustModal(false);
-          setNewCust({ name: '', phone: '', email: '', address: '', voucher_code: '', events: [] });
+          setNewCust({ name: '', phone: '', email: '', gst_no: '', address: '', voucher_code: '', events: [] });
           toast.success('✅ Customer added');
       } catch (e) { toast.error(e.response?.data?.message || 'Error adding customer'); }
   };
@@ -492,15 +513,22 @@ export default function SaleForm() {
                         <thead className="bg-light text-uppercase x-small fw-bold">
                             <tr>
                                 <th className="ps-4">Product & Configuration</th>
-                                <th style={{ width: '100px' }}>Quantity</th>
-                                <th style={{ width: '150px' }} className="text-end">Unit Price</th>
-                                <th style={{ width: '150px' }} className="text-end">Total</th>
+                                <th style={{ width: '80px' }} className="text-center">QTY</th>
+                                <th style={{ width: '130px' }} className="text-end">RATE (INCL)</th>
+                                <th style={{ width: '120px' }} className="text-end">RATE (EXCL)</th>
+                                <th style={{ width: '80px' }} className="text-center">GST %</th>
+                                <th style={{ width: '130px' }} className="text-end">TOTAL (EXCL)</th>
+                                <th style={{ width: '130px' }} className="text-end">NET TOTAL</th>
                                 <th style={{ width: '50px' }}></th>
                             </tr>
                         </thead>
                         <tbody>
                             {items.map((item, i) => {
                                 const pProfit = (item.unit_price - item.base_price) * item.quantity;
+                                const gstRate = form.calculate_gst ? (parseFloat(form.cgst_rate || 0) + parseFloat(form.sgst_rate || 0)) : 0;
+                                const rateExcl = item.unit_price / (1 + (gstRate / 100));
+                                const totalExcl = rateExcl * item.quantity;
+                                const netTotal = item.unit_price * item.quantity;
                                 return (
                                     <tr key={i}>
                                         <td className="ps-4 py-3">
@@ -539,7 +567,7 @@ export default function SaleForm() {
                                             </div>
                                         </td>
                                         <td>
-                                            <input type="number" className="form-control form-control-sm fw-bold border-2" min="1" required value={item.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value))} />
+                                            <input type="number" className="form-control form-control-sm fw-bold border-2 text-center" min="1" required value={item.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value))} />
                                         </td>
                                         <td>
                                             <div className="input-group input-group-sm mb-1">
@@ -550,7 +578,10 @@ export default function SaleForm() {
                                                 RANGE: <span className="text-danger">₹{item.min_selling_price}</span> - <span className="text-info">₹{item.max_selling_price}</span>
                                             </div>
                                         </td>
-                                        <td className="text-end fw-bold text-primary">₹{((item.quantity * item.unit_price) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                        <td className="text-end text-muted fw-bold align-middle">₹{rateExcl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="text-center fw-bold text-muted align-middle">{gstRate}%</td>
+                                        <td className="text-end fw-bold text-dark align-middle">₹{totalExcl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="text-end fw-bold text-primary align-middle fs-6">₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                         <td className="pe-3 text-center" style={{ width: '50px' }}>
                                             <button type="button" className="btn btn-danger btn-sm rounded-3 shadow-sm px-2" onClick={() => removeItem(i)} title="Remove Item">
                                                 ✕
@@ -761,6 +792,10 @@ export default function SaleForm() {
                       <div className="col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Voucher Code</label>
                           <input type="text" className="form-control" value={newCust.voucher_code} onChange={e => setNewCust({...newCust, voucher_code: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-12 text-uppercase">
+                          <label className="form-label small fw-bold">GST Number (Optional)</label>
+                          <input type="text" className="form-control" placeholder="e.g. 22AAAAA0000A1Z5" value={newCust.gst_no} onChange={e => setNewCust({...newCust, gst_no: e.target.value.toUpperCase()})} />
                       </div>
                       <div className="col-12 text-uppercase">
                           <label className="form-label small fw-bold">Address</label>

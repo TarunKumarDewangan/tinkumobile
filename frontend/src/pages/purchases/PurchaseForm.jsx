@@ -38,7 +38,7 @@ export default function PurchaseForm() {
 
   // Quick Add Supplier
   const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [newSupplier, setNewSupplier] = useState({ name: '', phone: '', address: '' });
+  const [newSupplier, setNewSupplier] = useState({ name: '', phone: '', address: '', gst_no: '' });
 
   useEffect(() => {
     loadSuppliers();
@@ -107,7 +107,7 @@ export default function PurchaseForm() {
       setSuppliers(prev => [...prev, data]);
       setForm(prev => ({ ...prev, supplier_id: data.id }));
       setShowSupplierModal(false);
-      setNewSupplier({ name: '', phone: '', address: '' });
+      setNewSupplier({ name: '', phone: '', address: '', gst_no: '' });
     } catch (e) {
       toast.error('Failed to add supplier');
     }
@@ -520,6 +520,11 @@ export default function PurchaseForm() {
               <label className="form-label small fw-bold">Phone / Contact <span className="text-danger">*</span></label>
               <input type="text" className="form-control" required 
                 value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} />
+            </div>
+            <div className="mb-3">
+              <label className="form-label small fw-bold">GST Number (Optional)</label>
+              <input type="text" className="form-control text-uppercase" placeholder="e.g. 22AAAAA0000A1Z5"
+                value={newSupplier.gst_no} onChange={e => setNewSupplier({...newSupplier, gst_no: e.target.value.toUpperCase()})} />
             </div>
             <div className="mb-0">
               <label className="form-label small fw-bold">Address / City <span className="text-danger">*</span></label>

@@ -12,7 +12,7 @@ class Supplier extends Model
 {
     use SoftDeletes, UppercaseStrings, SyncsWithMasterEntity;
 
-    protected $fillable = ['name', 'phone', 'address', 'is_online_shop'];
+    protected $fillable = ['name', 'phone', 'gst_no', 'address', 'is_online_shop'];
     protected $casts = ['is_online_shop' => 'boolean'];
 
     public function purchaseInvoices(): HasMany { return $this->hasMany(PurchaseInvoice::class); }

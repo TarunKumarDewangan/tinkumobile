@@ -13,6 +13,7 @@ class SupplierController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:150',
             'phone' => 'required|string',
+            'gst_no' => 'nullable|string|max:50',
             'address' => 'required|string',
             'is_online_shop' => 'sometimes|boolean'
         ]);
@@ -23,6 +24,7 @@ class SupplierController extends Controller
         $supplier->update($request->validate([
             'name' => 'sometimes|string',
             'phone' => 'sometimes|string',
+            'gst_no' => 'nullable|string|max:50',
             'address' => 'sometimes|string',
             'is_online_shop' => 'sometimes|boolean'
         ]));

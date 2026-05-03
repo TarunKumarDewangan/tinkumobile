@@ -5,35 +5,55 @@ import api from '../../api/axios';
 export default function Shops() {
   const [shops, setShops] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name:'', address:'', phone:'', email:'' });
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name:'', address:'', phone:'', email:'', gstin:'' });
 
   const load = () => api.get('/shops').then(r => setShops(r.data));
   useEffect(() => { load(); }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try { await api.post('/shops', form); toast.success('Shop created'); setShowForm(false); load(); }
+    try { 
+      if (editingId) {
+        await api.put(`/shops/${editingId}`, form);
+        toast.success('Shop updated');
+      } else {
+        await api.post('/shops', form); 
+        toast.success('Shop created'); 
+      }
+      setShowForm(false); 
+      setEditingId(null);
+      setForm({ name:'', address:'', phone:'', email:'', gstin:'' });
+      load(); 
+    }
     catch(e) { toast.error(e.response?.data?.message || 'Error'); }
+  };
+
+  const handleEdit = (shop) => {
+    setForm({ name: shop.name, address: shop.address, phone: shop.phone, email: shop.email || '', gstin: shop.gstin || '' });
+    setEditingId(shop.id);
+    setShowForm(true);
   };
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header d-flex justify-content-between align-items-center">
         <h2>🏪 Shops</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Add Shop</button>
+        <button className="btn btn-primary btn-sm" onClick={() => { setEditingId(null); setForm({ name:'', address:'', phone:'', email:'', gstin:'' }); setShowForm(true); }}>+ Add Shop</button>
       </div>
       {showForm && (
         <div className="table-card p-4 mb-3">
           <form onSubmit={handleSubmit}>
             <div className="row g-3">
-              <div className="col-md-3"><input className="form-control" placeholder="Shop Name *" required value={form.name} onChange={e => setForm({...form, name:e.target.value})} /></div>
-              <div className="col-md-3"><input className="form-control" placeholder="Phone *" required value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} /></div>
-              <div className="col-md-3"><input className="form-control" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} /></div>
-              <div className="col-md-3"><input className="form-control" placeholder="Address *" required value={form.address} onChange={e => setForm({...form, address:e.target.value})} /></div>
+              <div className="col-md-4"><input className="form-control" placeholder="Shop Name *" required value={form.name} onChange={e => setForm({...form, name:e.target.value})} /></div>
+              <div className="col-md-4"><input className="form-control" placeholder="Phone *" required value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} /></div>
+              <div className="col-md-4"><input className="form-control" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} /></div>
+              <div className="col-md-8"><input className="form-control" placeholder="Address *" required value={form.address} onChange={e => setForm({...form, address:e.target.value})} /></div>
+              <div className="col-md-4"><input className="form-control" placeholder="GSTIN" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} /></div>
             </div>
             <div className="mt-3 d-flex gap-2">
-              <button type="submit" className="btn btn-primary btn-sm">Create Shop</button>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary btn-sm">{editingId ? 'Update Shop' : 'Create Shop'}</button>
+              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => { setShowForm(false); setEditingId(null); setForm({ name:'', address:'', phone:'', email:'', gstin:'' }); }}>Cancel</button>
             </div>
           </form>
         </div>
@@ -44,12 +64,16 @@ export default function Shops() {
             <div className="table-card p-4">
               <div className="d-flex justify-content-between align-items-start mb-2">
                 <h6 className="fw-bold mb-0">{s.name}</h6>
-                {s.is_main && <span className="badge bg-primary">Main</span>}
+                <div>
+                    {s.is_main && <span className="badge bg-primary me-2">Main</span>}
+                    <button className="btn btn-xs btn-outline-secondary px-2 py-0" onClick={() => handleEdit(s)}>✎</button>
+                </div>
               </div>
               <div className="text-muted" style={{ fontSize:'0.85rem' }}>
                 <div>📞 {s.phone}</div>
                 <div>📧 {s.email || '—'}</div>
                 <div>📍 {s.address}</div>
+                <div>🏢 GSTIN: <span className="fw-bold">{s.gstin || '—'}</span></div>
               </div>
             </div>
           </div>

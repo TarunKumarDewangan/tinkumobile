@@ -182,6 +182,7 @@ export default function Sales() {
                                     <button onClick={() => navigate(`/sales/${inv.id}`)} className="btn btn-xs btn-outline-info" title="View Details">VIEW</button>
                                     <button onClick={() => navigate(`/sales/${inv.id}/edit`)} className="btn btn-xs btn-outline-primary">EDIT</button>
                                     {inv.bill_type === 'kaccha' && <button onClick={() => convertToPakka(inv.id)} className="btn btn-xs btn-outline-success">PAKKA</button>}
+                                    <button onClick={() => handleCancel(inv.id)} className="btn btn-xs btn-outline-warning">CANCEL</button>
                                 </>
                             )}
                             <button onClick={() => handleDelete(inv.id)} className="btn btn-xs btn-outline-danger">DEL</button>

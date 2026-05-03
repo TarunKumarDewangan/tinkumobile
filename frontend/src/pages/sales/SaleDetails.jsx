@@ -28,7 +28,7 @@ export default function SaleDetails() {
   const [loading, setLoading] = useState(true);
   
   // View Setup
-  const [viewMode, setViewMode] = useState('v1'); // 'v1' or 'v2'
+  const [viewMode, setViewMode] = useState('v2'); // Default to Tax Invoice View ('v2')
   
   // Payment Modal
   const [showPayModal, setShowPayModal] = useState(false);
@@ -75,7 +75,7 @@ export default function SaleDetails() {
         </div>
         <div className="d-flex gap-2">
             <button onClick={() => setViewMode(viewMode === 'v1' ? 'v2' : 'v1')} className={`btn btn-sm fw-bold border-2 text-uppercase ${viewMode === 'v1' ? 'btn-outline-primary' : 'btn-primary'}`}>
-                {viewMode === 'v1' ? '💎 Standard View' : '✨ Tax Invoice View'}
+                {viewMode === 'v1' ? '✨ Switch to Tax Invoice' : '💎 Switch to Standard Bill'}
             </button>
             <button onClick={() => navigate('/sales')} className="btn btn-outline-secondary btn-sm fw-bold border-2 text-uppercase">← List</button>
             <button onClick={handlePrint} className="btn btn-dark btn-sm fw-bold shadow-sm text-uppercase">🖨️ Print</button>
@@ -91,9 +91,8 @@ export default function SaleDetails() {
                           {/* Header Section */}
                           <div className="d-flex justify-content-between align-items-start mb-4 border-bottom pb-4">
                               <div>
-                                  <h1 className="fw-black text-primary mb-1" style={{ fontSize: '2.5rem' }}>TINKU MOBILES</h1>
-                                  <p className="mb-0 fw-bold text-uppercase">{invoice.shop?.name}</p>
-                                  <p className="text-muted small mb-0">{invoice.shop?.address || 'Premium Mobile Solutions'}</p>
+                                  <h1 className="fw-black text-primary mb-1 text-uppercase" style={{ fontSize: '2.5rem' }}>{invoice.shop?.name || 'TINKU MOBILES'}</h1>
+                                  <p className="text-muted small mb-0 text-uppercase">{invoice.shop?.address || 'Premium Mobile Solutions'}</p>
                               </div>
                               <div className="text-end text-uppercase">
                                   <h4 className="fw-bold mb-0">INVOICE</h4>
@@ -172,12 +171,12 @@ export default function SaleDetails() {
                                       <span className="fw-bold">₹{parseFloat(invoice.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
                                   <div className="d-flex justify-content-between mb-2">
-                                      <span className="fw-bold text-muted small">CGST ({parseFloat(invoice.cgst_rate)}%):</span>
-                                      <span className="fw-bold">₹{parseFloat(invoice.cgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      <span className="fw-bold text-muted small">CGST ({parseFloat(invoice.cgst_rate || 0)}%):</span>
+                                      <span className="fw-bold">₹{parseFloat(invoice.cgst_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
                                   <div className="d-flex justify-content-between mb-2">
-                                      <span className="fw-bold text-muted small">SGST ({parseFloat(invoice.sgst_rate)}%):</span>
-                                      <span className="fw-bold">₹{parseFloat(invoice.sgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      <span className="fw-bold text-muted small">SGST ({parseFloat(invoice.sgst_rate || 0)}%):</span>
+                                      <span className="fw-bold">₹{parseFloat(invoice.sgst_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
                                   <div className="d-flex justify-content-between mb-2">
                                       <span className="fw-bold text-muted small">ROUND OFF:</span>
@@ -227,7 +226,7 @@ export default function SaleDetails() {
                                       {/* Logo Placeholder like in Photo */}
                                       <div className="bg-primary text-white p-2 rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', fontSize: '1.5rem', fontWeight: 900 }}>TM</div>
                                       <div>
-                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">TINKU MOBILES</h1>
+                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">{invoice.shop?.name || 'TINKU MOBILES'}</h1>
                                           <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">{invoice.shop?.address || 'Main Road, Local Market, Kanker'}</p>
                                           <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">📞 MOBILE: {invoice.shop?.phone || '9098795200'}</p>
                                           <p className="mb-0 x-small fw-black text-primary text-uppercase">GSTIN: {invoice.shop?.gstin || '22AXIPR7683P1ZJ'}</p>
@@ -280,9 +279,9 @@ export default function SaleDetails() {
                                   </thead>
                                   <tbody>
                                       {invoice.items?.map((item, i) => {
-                                          const taxable = invoice.calculate_gst ? (parseFloat(item.total) / (1 + (parseFloat(invoice.cgst_rate) + parseFloat(invoice.sgst_rate)) / 100)) : parseFloat(item.total);
-                                          const cgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.cgst_rate) / 100) : 0;
-                                          const sgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.sgst_rate) / 100) : 0;
+                                          const taxable = invoice.calculate_gst ? (parseFloat(item.total) / (1 + (parseFloat(invoice.cgst_rate || 0) + parseFloat(invoice.sgst_rate || 0)) / 100)) : parseFloat(item.total);
+                                          const cgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.cgst_rate || 0) / 100) : 0;
+                                          const sgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.sgst_rate || 0) / 100) : 0;
                                           
                                           return (
                                               <tr key={i} className="small text-center align-middle">
@@ -301,7 +300,7 @@ export default function SaleDetails() {
                                                   <td>{parseFloat(item.unit_price).toFixed(2)}</td>
                                                   <td>0.00</td>
                                                   <td className="text-end pe-1">{taxable.toFixed(2)}</td>
-                                                  <td>{parseFloat(invoice.cgst_rate) + parseFloat(invoice.sgst_rate)}</td>
+                                                  <td>{parseFloat(invoice.cgst_rate || 0) + parseFloat(invoice.sgst_rate || 0)}</td>
                                                   <td className="text-end pe-1">{cgstPer.toFixed(2)}</td>
                                                   <td className="text-end pe-1">{sgstPer.toFixed(2)}</td>
                                                   <td className="text-end pe-1 fw-bold">{parseFloat(item.total).toFixed(2)}</td>
@@ -334,17 +333,17 @@ export default function SaleDetails() {
                                       <tr className="small fw-bold text-uppercase">
                                           <td className="text-start ps-2 x-small">Total Discount</td>
                                           <td colSpan="3"></td>
-                                          <td className="text-end pe-2">{(parseFloat(invoice.discount) + parseFloat(invoice.cash_discount)).toFixed(2)}</td>
+                                          <td className="text-end pe-2">{(parseFloat(invoice.discount || 0) + parseFloat(invoice.cash_discount || 0)).toFixed(2)}</td>
                                       </tr>
                                       <tr className="small fw-bold text-uppercase">
                                           <td className="text-start ps-2 x-small">CGST Amount</td>
                                           <td colSpan="3"></td>
-                                          <td className="text-end pe-2">{parseFloat(invoice.cgst_amount).toFixed(2)}</td>
+                                          <td className="text-end pe-2">{parseFloat(invoice.cgst_amount || 0).toFixed(2)}</td>
                                       </tr>
                                       <tr className="small fw-bold text-uppercase">
                                           <td className="text-start ps-2 x-small">SGST Amount</td>
                                           <td colSpan="3"></td>
-                                          <td className="text-end pe-2">{parseFloat(invoice.sgst_amount).toFixed(2)}</td>
+                                          <td className="text-end pe-2">{parseFloat(invoice.sgst_amount || 0).toFixed(2)}</td>
                                       </tr>
                                       <tr className="small fw-bold text-uppercase">
                                           <td className="text-start ps-2 x-small">Round Off</td>
