@@ -28,6 +28,8 @@ class TransactionService
 
     /**
      * Record a transaction linked to a specific model (e.g., Sale, Repair).
+     * Also auto-creates an Entity record if one doesn't exist for the party,
+     * so the payment appears in the Entity Manager / Ledger.
      */
     public function recordForModel($model, array $overrideData = [])
     {
@@ -48,6 +50,38 @@ class TransactionService
             'entity_name' => $model->customer_name ?? $model->supplier_name ?? $model->name ?? null,
         ], $overrideData);
 
+        // Auto-create an Entity if one doesn't exist for this person,
+        // so the payment flows into the Entity Manager / Ledger automatically.
+        if (!empty($data['entity_name']) && empty($data['accounting_entity_id'])) {
+            $entity = \App\Models\Entity::firstOrCreate(
+                ['name' => $data['entity_name']],
+                [
+                    'type'            => $this->guessEntityType($model),
+                    'phone'           => $model->customer_phone ?? $model->phone ?? null,
+                    'email'           => $model->customer_email ?? $model->email ?? null,
+                    'opening_balance' => 0,
+                    'balance_type'    => 'RECEIVABLE',
+                ]
+            );
+            $data['accounting_entity_id'] = $entity->id;
+        }
+
         return Transaction::create($data);
     }
+
+    /**
+     * Guess the entity type based on the model class.
+     */
+    protected function guessEntityType($model): string
+    {
+        $class = class_basename($model);
+        return match($class) {
+            'RepairRequest'   => 'CUSTOMER',
+            'SaleInvoice'     => 'CUSTOMER',
+            'PurchaseInvoice' => 'SUPPLIER',
+            'AirtelDrop'      => 'RETAILER',
+            default           => 'OTHER',
+        };
+    }
+
 }
