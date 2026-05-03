@@ -256,9 +256,12 @@ class ProductController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Parsing ID if it's 'item_123_0' from expanded view
-        if (str_starts_with($id, 'item_')) {
-            $parts = explode('_', $id);
+        if (str_starts_with($id, 'item_ni_')) {
+            $parts = explode('_', $id); // ['item', 'ni', '123', '0']
+            $itemId = $parts[2];
+            $imeiIndex = null;
+        } else if (str_starts_with($id, 'item_')) {
+            $parts = explode('_', $id); // ['item', '123', '0']
             $itemId = $parts[1];
             $imeiIndex = isset($parts[2]) ? $parts[2] : null;
         } else {
@@ -322,7 +325,11 @@ class ProductController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (str_starts_with($id, 'item_')) {
+        if (str_starts_with($id, 'item_ni_')) {
+            $parts = explode('_', $id);
+            $itemId = $parts[2];
+            $imeiIndex = null;
+        } else if (str_starts_with($id, 'item_')) {
             $parts = explode('_', $id);
             $itemId = $parts[1];
             $imeiIndex = isset($parts[2]) ? $parts[2] : null;
