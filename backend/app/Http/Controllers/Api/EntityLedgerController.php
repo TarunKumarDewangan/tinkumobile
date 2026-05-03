@@ -148,7 +148,18 @@ class EntityLedgerController extends Controller
             $name = $entity->name;
             $id = $entity->id;
 
-            $openingBase = ($entity->balance_type == 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance;
+            // Get real opening balance from the linked model (Retailer has 'balance' column)
+            $openingBase = (float)$entity->opening_balance;
+            if ($entity->relation_type && $entity->relation_id) {
+                $linkedModel = \DB::table((new $entity->relation_type)->getTable())
+                    ->where('id', $entity->relation_id)
+                    ->first();
+                if ($linkedModel) {
+                    $openingBase = (float)($linkedModel->balance ?? $linkedModel->opening_balance ?? $entity->opening_balance ?? 0);
+                }
+            }
+            
+            $openingBase = ($entity->balance_type == 'RECEIVABLE' ? 1 : -1) * $openingBase;
             
             // Get stats from batches (match by ID first, then Name)
             $before = $beforeStats[$id] ?? $beforeStats[$name] ?? ['in' => 0, 'out' => 0, 'unrealized' => 0];
@@ -172,9 +183,14 @@ class EntityLedgerController extends Controller
             if ($filterType === 'PAY') return $item['net_balance'] < 0;
             // For 'ALL', show anything that is not zero
             return round($item['net_balance'], 2) != 0;
+        });
+
+        // Deduplicate by name just in case there are double entities
+        $finalResults = $results->groupBy('entity_name')->map(function($group) {
+            return $group->first(); // Take the first one, they should be similar anyway
         })->values();
 
-        return response()->json($results->sortByDesc(fn($r) => abs($r['net_balance']))->values());
+        return response()->json($finalResults->sortByDesc(fn($r) => abs($r['net_balance']))->values());
     }
 
     /**

@@ -11,10 +11,11 @@ use Illuminate\Support\Facades\DB;
 
 echo "=== CHECKING FOR CORRUPT DATA SOURCES ===\n";
 
-$hugeRetailers = Retailer::where('balance', '>', 1000000)->get();
-echo "Retailers with balance > 1M: " . $hugeRetailers->count() . "\n";
+$hugeRetailers = Retailer::where('balance', '>', 1000000)
+    ->get();
+echo "Retailers with huge balance/opening: " . $hugeRetailers->count() . "\n";
 foreach ($hugeRetailers as $r) {
-    echo "  - {$r->name} (MSISDN: {$r->msisdn}): ₹" . number_format($r->balance) . "\n";
+    echo "  - {$r->name}: Bal: ₹" . number_format($r->balance) . " | Opening: ₹" . number_format($r->opening_balance) . "\n";
 }
 
 $hugeEntities = Entity::where('opening_balance', '>', 1000000)->get();
@@ -37,6 +38,39 @@ echo "\nHuge Drops (> 1M): " . $hugeDrops->count() . "\n";
 foreach ($hugeDrops as $d) {
     echo "  - ID: {$d->id} | Amount: ₹" . number_format($d->amount) . "\n";
 }
+
+$hugeTransactions = DB::table('transactions')->where('amount', '>', 1000000)->get();
+echo "\nHuge Transactions (> 1M): " . $hugeTransactions->count() . "\n";
+foreach ($hugeTransactions as $t) {
+    echo "  - ID: {$t->id} | Amount: ₹" . number_format($t->amount) . " | Name: {$t->entity_name}\n";
+}
+
+$hugeRepairs = DB::table('repair_requests')->where('quoted_amount', '>', 1000000)->get();
+echo "\nHuge Repairs (> 1M): " . $hugeRepairs->count() . "\n";
+foreach ($hugeRepairs as $r) {
+    echo "  - ID: {$r->id} | Amount: ₹" . number_format($r->quoted_amount) . " | Name: {$r->customer_name}\n";
+}
+
+$hugeSales = DB::table('sale_invoices')->where('grand_total', '>', 1000000)->get();
+echo "\nHuge Sales (> 1M): " . $hugeSales->count() . "\n";
+foreach ($hugeSales as $s) {
+    echo "  - ID: {$s->id} | Amount: ₹" . number_format($s->grand_total) . " | Name: {$s->customer_name}\n";
+}
+
+$hugeLoans = DB::table('loans')->whereRaw('monthly_installment * total_months > 1000000')->get();
+echo "\nHuge Loans (> 1M): " . $hugeLoans->count() . "\n";
+foreach ($hugeLoans as $l) {
+    echo "  - ID: {$l->id} | Installment: {$l->monthly_installment} | Months: {$l->total_months} | Total: ₹" . number_format($l->monthly_installment * $l->total_months) . "\n";
+}
+
+echo "\n=== ABSOLUTE TOTALS ===\n";
+echo "Total Airtel Drops: " . number_format(DB::table('airtel_drops')->sum('amount')) . "\n";
+echo "Total Transactions IN: " . number_format(DB::table('transactions')->where('type', 'IN')->sum('amount')) . "\n";
+echo "Total Transactions OUT: " . number_format(DB::table('transactions')->where('type', 'OUT')->sum('amount')) . "\n";
+echo "Total Sales: " . number_format(DB::table('sale_invoices')->sum('grand_total')) . "\n";
+echo "Total Purchases: " . number_format(DB::table('purchase_invoices')->sum('grand_total')) . "\n";
+echo "Total Repairs: " . number_format(DB::table('repair_requests')->sum('quoted_amount')) . "\n";
+echo "Total Loans: " . number_format(DB::table('loans')->select(DB::raw('SUM(monthly_installment * total_months) as total'))->first()->total) . "\n";
 
 echo "\n=== SUMMARY ===\n";
 echo "Total Retailers: " . Retailer::count() . "\n";
