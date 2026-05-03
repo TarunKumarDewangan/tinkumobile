@@ -84,7 +84,10 @@ class LedgerController extends Controller
         
         $entities = Entity::query();
         if ($query) {
-            $entities->where('name', 'like', "%{$query}%")->orWhere('phone', 'like', "%{$query}%");
+            $entities->where(function($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                  ->orWhere('phone', 'like', "%{$query}%");
+            });
         }
         if ($type) {
             $entities->where('type', $type);
@@ -104,7 +107,10 @@ class LedgerController extends Controller
                 'balance_type' => $entity->balance_type,
                 'net_balance' => $closing
             ];
-        })->filter(function($e) {
+        })->filter(function($e) use ($query) {
+            // When searching, show ALL matching entities (even fully settled/zero balance)
+            // When browsing without a query, only show those with outstanding balances
+            if ($query) return true;
             return round($e['net_balance'], 2) != 0 || round($e['opening_balance'], 2) != 0;
         })->values();
 
