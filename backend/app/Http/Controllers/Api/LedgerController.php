@@ -43,18 +43,19 @@ class LedgerController extends Controller
     {
         $entity = Entity::findOrFail($entityId);
         
-        $startDate = $request->query('start_date', now()->startOfMonth()->toDateString());
-        $endDate = $request->query('end_date', now()->endOfMonth()->toDateString());
+        $startDate = $request->query('start_date'); // null = all time
+        $endDate = $request->query('end_date');
 
         // Calculate opening balance up to start_date
         $accounting = app(AccountingService::class);
-        $openingBalance = $accounting->getClosingBalance($entity, date('Y-m-d', strtotime($startDate . ' - 1 day')));
+        $openingBalance = $startDate
+            ? $accounting->getClosingBalance($entity, date('Y-m-d', strtotime($startDate . ' - 1 day')))
+            : (($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance);
 
-        $ledgers = Ledger::where('entity_id', $entityId)
-            ->whereBetween('date', [$startDate, $endDate])
-            ->orderBy('date', 'asc')
-            ->orderBy('id', 'asc')
-            ->get();
+        $query = Ledger::where('entity_id', $entityId);
+        if ($startDate) $query->where('date', '>=', $startDate);
+        if ($endDate)   $query->where('date', '<=', $endDate);
+        $ledgers = $query->orderBy('date', 'asc')->orderBy('id', 'asc')->get();
 
         // Calculate running balances
         $runningBalance = $openingBalance;
