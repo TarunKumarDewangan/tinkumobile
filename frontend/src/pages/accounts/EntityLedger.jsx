@@ -364,7 +364,7 @@ export default function EntityLedger() {
                         {ledger.slice(0, visibleItems).map((item) => (
                           <tr key={item.id}>
                             <td className="ps-4">
-                                <span className="x-small text-muted">{new Date(item.date).toLocaleDateString()}</span>
+                                <span className="x-small text-muted">{new Date(item.date).toLocaleDateString('en-GB')}</span>
                             </td>
                             <td>
                                 <div className="d-flex align-items-center">
