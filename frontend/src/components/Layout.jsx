@@ -54,18 +54,6 @@ const NAV = [
     ]
   },
 
-  { 
-    section: 'Accounts', 
-    dropdown: true,
-    children: [
-        { to: '/accounts/cashbook', icon: '📖', label: 'Cashbook', perm: 'view_reports' },
-        { to: '/accounts/entity-ledger', icon: '🧾', label: 'Entity Ledger', perm: 'view_reports' },
-        { to: '/accounts/entity-report', icon: '📊', label: 'Entity Report', perm: 'view_reports' },
-        { to: '/accounts/entity-manager', icon: '👥', label: 'Entity Manager', perm: 'view_reports' },
-        { to: '/accounts/expenses',  icon: '💸', label: 'Overheads', perm: 'view_reports' },
-        { to: '/accounts/categories', icon: '📁', label: 'Categories', perm: 'view_reports' },
-    ]
-  },
 
   { 
     section: 'Airtel Recovery', 
@@ -92,7 +80,7 @@ export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false });
+  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Airtel Recovery': false });
   
   const toggleSection = (section) => {
     setExpanded(prev => ({ ...prev, [section]: !prev[section] }));

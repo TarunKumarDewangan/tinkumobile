@@ -47,14 +47,8 @@ const QuickRecovery = lazy(() => import('./pages/airtel/QuickRecovery'));
 const AirtelReports = lazy(() => import('./pages/airtel/AirtelReports'));
 const RetailerProfile = lazy(() => import('./pages/airtel/RetailerProfile'));
 const PublicRetailerProfile = lazy(() => import('./pages/airtel/PublicRetailerProfile'));
-const Cashbook = lazy(() => import('./pages/accounts/Cashbook'));
-const Overheads = lazy(() => import('./pages/accounts/Overheads'));
-const ExpenseCategories = lazy(() => import('./pages/accounts/ExpenseCategories'));
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
 const CustomerProfile = lazy(() => import('./pages/customer/CustomerProfile'));
-const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
-const EntityReport = lazy(() => import('./pages/accounts/EntityReport'));
-const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
 
 function Loading() {
   return (
@@ -127,13 +121,8 @@ function AppRoutes() {
           <Route path="airtel/drops" element={<AirtelDrops />} />
           <Route path="airtel/recovery" element={<RecoveryDashboard />} />
           <Route path="airtel/reports" element={<AirtelReports />} />
-          {/* Accounts */}
-          <Route path="accounts/cashbook" element={<Cashbook />} />
-          <Route path="accounts/entity-ledger" element={<EntityLedger />} />
-          <Route path="accounts/entity-report" element={<EntityReport />} />
-          <Route path="accounts/entity-manager" element={<EntityManager />} />
-          <Route path="accounts/expenses" element={<Overheads />} />
-          <Route path="accounts/categories" element={<ExpenseCategories />} />
+          <Route path="customer/login" element={<CustomerLogin />} />
+          <Route path="customer/profile/:id" element={<CustomerProfile />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
