@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
+import _ from 'lodash';
 
 export default function EntityManager() {
   const [entities, setEntities] = useState([]);
@@ -22,19 +23,33 @@ export default function EntityManager() {
   const entityTypes = ['CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'OTHER'];
 
   useEffect(() => {
-    fetchEntities();
+    fetchEntities('');
   }, []);
 
-  const fetchEntities = async () => {
+  const fetchEntities = async (q = '') => {
     setLoading(true);
     try {
-      const { data } = await axios.get('/ledgers/entity-balances');
+      const { data } = await axios.get('/ledgers/entity-balances', {
+        params: q ? { q } : {}
+      });
       setEntities(data);
     } catch (error) {
       toast.error('Failed to fetch entities');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Debounced live search — hits the API so zero-balance entities are also found
+  const debouncedSearch = useCallback(
+    _.debounce((q) => fetchEntities(q), 400),
+    []
+  );
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearchTerm(val);
+    debouncedSearch(val);
   };
 
   const handleSubmit = async (e) => {
@@ -48,7 +63,7 @@ export default function EntityManager() {
         toast.success('Entity created');
       }
       setShowModal(false);
-      fetchEntities();
+      fetchEntities(searchTerm);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Action failed');
     }
@@ -86,22 +101,12 @@ export default function EntityManager() {
     try {
       await axios.delete(`/entities/${id}`);
       toast.success('Deleted');
-      fetchEntities();
+      fetchEntities(searchTerm);
     } catch (error) {
       toast.error('Delete failed');
     }
   };
 
-  const filteredEntities = useMemo(() => {
-    return entities.filter(e => {
-      const term = searchTerm.toLowerCase();
-      return (
-        e.name?.toLowerCase().includes(term) ||
-        e.phone?.toLowerCase().includes(term) ||
-        e.type?.toLowerCase().includes(term)
-      );
-    });
-  }, [entities, searchTerm]);
 
   return (
     <div className="container-fluid py-4">
@@ -120,7 +125,7 @@ export default function EntityManager() {
               className="form-control border-start-0 ps-0" 
               placeholder="Search Name, Phone or Type..." 
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
             />
           </div>
           <button className="btn btn-primary" onClick={() => openModal()}>
@@ -145,9 +150,9 @@ export default function EntityManager() {
             <tbody>
               {loading ? (
                 <tr><td colSpan="6" className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : filteredEntities.length === 0 ? (
+              ) : entities.length === 0 ? (
                 <tr><td colSpan="6" className="text-center py-5 text-muted">No entities found. {searchTerm ? 'Try a different search term.' : 'Use Auto-Sync or Create New.'}</td></tr>
-              ) : filteredEntities.map(e => (
+              ) : entities.map(e => (
                 <tr key={e.id}>
                   <td className="ps-4">
                     <div className="fw-bold">{e.name} <span className="small text-muted fw-normal">({e.type})</span></div>
