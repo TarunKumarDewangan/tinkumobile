@@ -202,6 +202,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     Route::apiResource('entities', EntityController::class);
     Route::post('entities-sync', [EntityController::class, 'autoSync']);
+    Route::post('entities-hard-reset', [EntityController::class, 'hardReset']);
 
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
     Route::apiResource('transactions', TransactionController::class);

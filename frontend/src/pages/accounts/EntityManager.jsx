@@ -62,6 +62,20 @@ export default function EntityManager() {
     }
   };
 
+  const handleHardReset = async () => {
+    if (!window.confirm('CRITICAL: This will DELETE ALL Entities and recreate them from scratch. Manual changes to opening balances may be lost. Use this ONLY to fix the billion-level errors. Continue?')) return;
+    setLoading(true);
+    try {
+      const { data } = await axios.post('/entities-hard-reset');
+      toast.success(data.message);
+      fetchEntities();
+    } catch (error) {
+      toast.error('Hard reset failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -152,7 +166,10 @@ export default function EntityManager() {
             <i className="bi bi-arrow-repeat me-1" /> Auto-Sync
           </button>
           <button className="btn btn-outline-danger" onClick={handleRecalculate}>
-            <i className="bi bi-calculator me-1" /> Recalculate Balances
+            <i className="bi bi-calculator me-1" /> Recalculate
+          </button>
+          <button className="btn btn-danger" onClick={handleHardReset}>
+            <i className="bi bi-trash-fill me-1" /> Hard Reset
           </button>
           <button className="btn btn-primary" onClick={() => openModal()}>
              + New Entity

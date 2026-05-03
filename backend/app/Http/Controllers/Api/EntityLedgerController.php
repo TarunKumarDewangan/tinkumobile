@@ -31,27 +31,19 @@ class EntityLedgerController extends Controller
      */
     public function summary()
     {
-        // Calculate live from transactions (avoiding stale entity_balances cache)
-        $txTotals = \Illuminate\Support\Facades\DB::table('transactions')
-            ->whereNull('deleted_at')
+        // Sum up the cached balances (which are now accurate after my fixes)
+        $totals = DB::table('entity_balances')
             ->select(
-                \Illuminate\Support\Facades\DB::raw('SUM(CASE WHEN type = "IN" THEN amount ELSE 0 END) as total_in'),
-                \Illuminate\Support\Facades\DB::raw('SUM(CASE WHEN type = "OUT" THEN amount ELSE 0 END) as total_out')
+                DB::raw('SUM(CASE WHEN net_balance > 0 THEN net_balance ELSE 0 END) as receivable'),
+                DB::raw('SUM(CASE WHEN net_balance < 0 THEN ABS(net_balance) ELSE 0 END) as payable'),
+                DB::raw('SUM(net_balance) as overall_total')
             )
             ->first();
 
-        $totalIn = (float)($txTotals->total_in ?? 0);
-        $totalOut = (float)($txTotals->total_out ?? 0);
-        
-        // Net = what we've paid out - what we've received (outstanding)
-        $overallTotal = $totalOut - $totalIn;
-        $receivable = $overallTotal > 0 ? $overallTotal : 0;
-        $payable = $overallTotal < 0 ? abs($overallTotal) : 0;
-
         return response()->json([
-            'overallTotal' => $overallTotal,
-            'receivable' => $receivable,
-            'payable' => $payable,
+            'overallTotal' => (float)($totals->overall_total ?? 0),
+            'receivable' => (float)($totals->receivable ?? 0),
+            'payable' => (float)($totals->payable ?? 0),
         ]);
     }
 

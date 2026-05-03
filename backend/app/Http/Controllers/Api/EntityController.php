@@ -27,22 +27,14 @@ class EntityController extends Controller
         
         $entities = $query->orderBy('name')->with('balance')->get();
         
-        $service = app(\App\Services\EntityService::class);
-        
-        // Check if we have any corrupt cache values (> 10 million = clearly wrong)
-        $hasCorruptCache = $entities->contains(function($e) {
-            $cached = $e->balance;
-            return $cached && abs((float)$cached->net_balance) > 10000000;
-        });
-        
-        if ($hasCorruptCache) {
-            // Wipe corrupt entity_balances and recalculate all fresh
-            $ids = $entities->pluck('id')->filter()->toArray();
-            if (!empty($ids)) {
-                DB::table('entity_balances')->whereIn('entity_id', $ids)->delete();
-            }
+        // If we have very few balances but many entities, suggest a sync or auto-detect
+        $balanceCount = DB::table('entity_balances')->count();
+        if ($balanceCount < $entities->count() * 0.1 && $entities->count() > 10) {
+             // Automatic sync if cache is mostly empty
+             $service = app(\App\Services\EntityService::class);
+             $service->syncAll();
         }
-        
+
         return response()->json(Entity::calculateBalances($entities));
     }
 
@@ -129,5 +121,27 @@ class EntityController extends Controller
             });
 
         return response()->json(['message' => "Synced $count entities from all sources."]);
+    }
+
+    /**
+     * Complete reset and rebuild of the entity system.
+     * Use this when balances are corrupt or duplicated.
+     */
+    public function hardReset()
+    {
+        // 1. Clear caches and entities
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        DB::table('entity_balances')->truncate();
+        DB::table('entities')->truncate();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+        // 2. Re-sync from all sources
+        $this->autoSync();
+
+        // 3. Recalculate all balances
+        $service = app(\App\Services\EntityService::class);
+        $service->syncAll();
+
+        return response()->json(['message' => 'Account system successfully recreated and all balances recalculated.']);
     }
 }
