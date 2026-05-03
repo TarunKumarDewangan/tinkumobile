@@ -28,49 +28,10 @@ export default function EntityManager() {
   const fetchEntities = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get('/entities');
+      const { data } = await axios.get('/ledgers/entity-balances');
       setEntities(data);
     } catch (error) {
       toast.error('Failed to fetch entities');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSync = async () => {
-    if (!window.confirm('This will import missing Customers, Shops, and Suppliers as Entities. Continue?')) return;
-    try {
-      const { data } = await axios.post('/entities-sync');
-      toast.success(data.message);
-      fetchEntities();
-    } catch (error) {
-      toast.error('Sync failed');
-    }
-  };
-
-  const handleRecalculate = async () => {
-    if (!window.confirm('This will recalculate EVERY balance from scratch to fix any 118 Billion errors. This may take a few seconds. Continue?')) return;
-    setLoading(true);
-    try {
-      const { data } = await axios.post('/entities/sync-all-balances');
-      toast.success(data.message);
-      fetchEntities();
-    } catch (error) {
-      toast.error('Recalculation failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleHardReset = async () => {
-    if (!window.confirm('CRITICAL: This will DELETE ALL Entities and recreate them from scratch. Manual changes to opening balances may be lost. Use this ONLY to fix the billion-level errors. Continue?')) return;
-    setLoading(true);
-    try {
-      const { data } = await axios.post('/entities-hard-reset');
-      toast.success(data.message);
-      fetchEntities();
-    } catch (error) {
-      toast.error('Hard reset failed');
     } finally {
       setLoading(false);
     }
@@ -162,15 +123,6 @@ export default function EntityManager() {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="btn btn-outline-secondary" onClick={handleSync}>
-            <i className="bi bi-arrow-repeat me-1" /> Auto-Sync
-          </button>
-          <button className="btn btn-outline-danger" onClick={handleRecalculate}>
-            <i className="bi bi-calculator me-1" /> Recalculate
-          </button>
-          <button className="btn btn-danger" onClick={handleHardReset}>
-            <i className="bi bi-trash-fill me-1" /> Hard Reset
-          </button>
           <button className="btn btn-primary" onClick={() => openModal()}>
              + New Entity
           </button>
@@ -226,7 +178,7 @@ export default function EntityManager() {
                   </td>
                   <td className="text-end pe-4">
                      <Link 
-                        to={`/accounts/entity-ledger?name=${encodeURIComponent(e.name)}`} 
+                        to={`/accounts/entity-ledger?id=${e.id}&name=${encodeURIComponent(e.name)}`} 
                         className="btn btn-sm btn-outline-info me-2"
                      >
                         Profile

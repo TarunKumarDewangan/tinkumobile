@@ -1,7 +1,49 @@
+import { useState } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../../api/axios';
+import Modal from '../../../components/Modal';
 
 export default function StockList({ products, loading, filters, handleFilterChange, refresh }) {
+  const [editingItem, setEditingItem] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const openEdit = (p) => {
+      setEditingItem(p);
+      setEditForm({
+          imei: p.attributes?.imei || '',
+          color: p.attributes?.color || '',
+          ram: p.attributes?.ram || '',
+          storage: p.attributes?.storage || '',
+          selling_price: p.selling_price || ''
+      });
+  };
+
+  const submitEdit = async (e) => {
+      e.preventDefault();
+      setSaving(true);
+      try {
+          await api.put(`/products/stock/${editingItem.id}`, editForm);
+          toast.success('Stock updated successfully');
+          setEditingItem(null);
+          refresh();
+      } catch (err) {
+          toast.error(err.response?.data?.message || 'Update failed');
+      } finally {
+          setSaving(false);
+      }
+  };
+
+  const handleDelete = async (id) => {
+      if(!window.confirm('WARNING: Are you sure you want to delete this stock item? This will revert the inventory count and update the purchase invoice totals.')) return;
+      try {
+          await api.delete(`/products/stock/${id}`);
+          toast.success('Stock item deleted successfully');
+          refresh();
+      } catch (err) {
+          toast.error(err.response?.data?.message || 'Delete failed');
+      }
+  };
   return (
     <div className="fade-in">
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -107,14 +149,32 @@ export default function StockList({ products, loading, filters, handleFilterChan
                     ₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}
                   </td>
                   <td className="text-end pe-4">
-                    {!filters.group_by_config && p.attributes?.imei && (
-                      <button 
-                        className="pm-clear-btn"
-                        style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#10b981',color:'#10b981',background:'#f0fdf4'}}
-                        onClick={() => window.location.href = `/sales/new?imei=${p.attributes.imei}`}
-                      >
-                        SELL
-                      </button>
+                    {!filters.group_by_config && p.id && (
+                      <div className="d-flex justify-content-end gap-2">
+                        {p.attributes?.imei && (
+                          <button 
+                            className="pm-clear-btn"
+                            style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#10b981',color:'#10b981',background:'#f0fdf4'}}
+                            onClick={() => window.location.href = `/sales/new?imei=${p.attributes.imei}`}
+                          >
+                            SELL
+                          </button>
+                        )}
+                        <button 
+                          className="pm-clear-btn"
+                          style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#3b82f6',color:'#3b82f6',background:'#eff6ff'}}
+                          onClick={() => openEdit(p)}
+                        >
+                          EDIT
+                        </button>
+                        <button 
+                          className="pm-clear-btn"
+                          style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#ef4444',color:'#ef4444',background:'#fef2f2'}}
+                          onClick={() => handleDelete(p.id)}
+                        >
+                          DEL
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -126,6 +186,72 @@ export default function StockList({ products, loading, filters, handleFilterChan
           </table>
         </div>
       </div>
+
+      <Modal show={!!editingItem} onClose={() => setEditingItem(null)} title="EDIT STOCK ITEM">
+        {editingItem && (
+          <form onSubmit={submitEdit}>
+            <div className="row g-3">
+              <div className="col-md-12">
+                <label className="form-label text-uppercase small fw-bold text-muted">IMEI / SN</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={editForm.imei} 
+                  onChange={e => setEditForm({...editForm, imei: e.target.value})} 
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-uppercase small fw-bold text-muted">Color</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={editForm.color} 
+                  onChange={e => setEditForm({...editForm, color: e.target.value})} 
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-uppercase small fw-bold text-muted">RAM</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={editForm.ram} 
+                  onChange={e => setEditForm({...editForm, ram: e.target.value})} 
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-uppercase small fw-bold text-muted">Storage</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={editForm.storage} 
+                  onChange={e => setEditForm({...editForm, storage: e.target.value})} 
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-uppercase small fw-bold text-muted">Selling Price (₹)</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={editForm.selling_price} 
+                  onChange={e => setEditForm({...editForm, selling_price: e.target.value})} 
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="alert alert-warning mt-4 mb-0 x-small py-2 border-warning-subtle text-uppercase fw-bold">
+              Note: Editing configuration (Color, RAM, Storage) will affect all identical units received in the same invoice.
+            </div>
+
+            <div className="d-flex justify-content-end gap-2 mt-4">
+              <button type="button" className="btn btn-light fw-bold" onClick={() => setEditingItem(null)}>CANCEL</button>
+              <button type="submit" className="btn btn-primary fw-bold" disabled={saving}>
+                {saving ? 'SAVING...' : 'SAVE CHANGES'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

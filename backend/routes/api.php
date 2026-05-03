@@ -57,6 +57,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Products
     Route::delete('/products/stock/{id}', [ProductController::class, 'deleteStock']);
+    Route::put('/products/stock/{id}', [ProductController::class, 'updateStock']);
     Route::apiResource('products', ProductController::class);
 
     // Stock Adjustments (opening stock, corrections, backdated purchases)
@@ -180,6 +181,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::apiResource('airtel-retailers', AirtelRetailerController::class);
     Route::get('airtel-drops', [AirtelDropController::class, 'index']);
     Route::post('airtel-drops/import', [AirtelDropController::class, 'import']);
+    Route::post('airtel-drops/import-upi', [AirtelDropController::class, 'importUpi']);
     Route::post('airtel-drops/bulk-delete', [AirtelDropController::class, 'bulkDeleteByDate']);
     Route::post('airtel-drops/mark-recovered', [AirtelDropController::class, 'markAsRecovered']);
     Route::post('airtel-recoveries/bulk-delete', [AirtelRetailerController::class, 'bulkDeleteRecoveries']);
@@ -202,7 +204,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     Route::apiResource('entities', EntityController::class);
     Route::post('entities-sync', [EntityController::class, 'autoSync']);
-    Route::post('entities-hard-reset', [EntityController::class, 'hardReset']);
+    Route::post('/entities-hard-reset', [\App\Http\Controllers\Api\EntityController::class, 'hardReset']);
+    
+    // Accounting Ledger System
+    Route::prefix('ledgers')->group(function () {
+        Route::get('/summary', [\App\Http\Controllers\Api\LedgerController::class, 'summary']);
+        Route::get('/daybook', [\App\Http\Controllers\Api\LedgerController::class, 'daybook']);
+        Route::get('/entity-balances', [\App\Http\Controllers\Api\LedgerController::class, 'entityBalances']);
+        Route::get('/statement/{entityId}', [\App\Http\Controllers\Api\LedgerController::class, 'statement']);
+    });
 
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
     Route::apiResource('transactions', TransactionController::class);

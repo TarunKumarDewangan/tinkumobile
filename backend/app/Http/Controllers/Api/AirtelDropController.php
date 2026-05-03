@@ -219,6 +219,117 @@ class AirtelDropController extends Controller
         ]);
     }
 
+    public function importUpi(Request $request)
+    {
+        $validated = $request->validate([
+            'payments' => 'required|array',
+            'payments.*.msisdn' => 'required|string',
+            'payments.*.amount' => 'required|numeric',
+            'payments.*.recovered_at' => 'required|date',
+        ]);
+
+        $success = 0;
+        $failed = 0;
+        $errors = [];
+
+        // To run FIFO efficiently, group by retailer
+        $retailersToProcess = [];
+
+        foreach ($validated['payments'] as $payment) {
+            $retailer = Retailer::where('msisdn', $payment['msisdn'])->first();
+            
+            if (!$retailer) {
+                $failed++;
+                $errors[] = "MSISDN: " . $payment['msisdn'] . " not found.";
+                continue;
+            }
+
+            // Create recovery record
+            $recovery = \App\Models\AirtelRecovery::create([
+                'retailer_id' => $retailer->id,
+                'amount' => $payment['amount'],
+                'recovered_at' => \Carbon\Carbon::parse($payment['recovered_at']),
+                'recovery_user_id' => $request->user()->id,
+                'notes' => 'DIGITAL - UPI Direct to Airtel'
+            ]);
+
+            // Record Transaction using Service
+            $this->transactionService->recordForModel($recovery, [
+                'type'             => 'IN',
+                'category'         => 'AIRTEL_RECOVERY',
+                'amount'           => $recovery->amount,
+                'payment_mode'     => 'DIGITAL',
+                'description'      => "Direct UPI Payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
+                'entity_name'      => $retailer->name,
+                'transaction_date' => $recovery->recovered_at->toDateString(),
+                'shop_id'          => $retailer->shop_id,
+            ]);
+
+            $retailersToProcess[$retailer->id] = $retailer;
+            $success++;
+        }
+
+        // Re-evaluate FIFO for affected retailers
+        foreach ($retailersToProcess as $retailer) {
+            $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
+            $availableCredit = (float)$totalRecovered - (float)($retailer->balance ?? 0);
+
+            $allDrops = AirtelDrop::where('retailer_id', $retailer->id)
+                ->orderBy('refill_date')
+                ->orderBy('created_at')
+                ->get();
+
+            $now = now()->toDateTimeString();
+
+            foreach ($allDrops as $drop) {
+                $dropAmt = (float)$drop->amount;
+                if ($availableCredit > 0) {
+                    if ($availableCredit >= $dropAmt) {
+                        $recAt = $drop->status === 'recovered' ? $drop->recovered_at : $now;
+                        \Illuminate\Support\Facades\DB::table('airtel_drops')->where('id', $drop->id)->update([
+                            'paid_amount' => $dropAmt,
+                            'status' => 'recovered',
+                            'recovered_at' => $recAt ? \Carbon\Carbon::parse($recAt)->toDateTimeString() : null,
+                            'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id,
+                            'updated_at' => $now
+                        ]);
+                        $availableCredit -= $dropAmt;
+                    } else {
+                        \Illuminate\Support\Facades\DB::table('airtel_drops')->where('id', $drop->id)->update([
+                            'paid_amount' => $availableCredit,
+                            'status' => 'pending',
+                            'recovered_at' => null,
+                            'recovery_user_id' => null,
+                            'updated_at' => $now
+                        ]);
+                        $availableCredit = 0;
+                    }
+                } else {
+                    \Illuminate\Support\Facades\DB::table('airtel_drops')->where('id', $drop->id)->update([
+                        'paid_amount' => 0,
+                        'status' => 'pending', 
+                        'recovered_at' => null, 
+                        'recovery_user_id' => null,
+                        'updated_at' => $now
+                    ]);
+                }
+            }
+
+            // Sync the entity balance ONCE
+            $entity = \App\Models\Entity::where('name', $retailer->name)->first();
+            if ($entity) {
+                app(\App\Services\EntityService::class)->syncBalance($entity);
+            }
+        }
+
+        return response()->json([
+            'success' => $success,
+            'failed' => $failed,
+            'errors' => array_values(array_unique($errors)),
+            'message' => "Successfully imported $success UPI payments. $failed failed."
+        ]);
+    }
+
     public function markAsRecovered(Request $request)
     {
         $validated = $request->validate([

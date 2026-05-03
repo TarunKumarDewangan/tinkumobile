@@ -56,6 +56,14 @@ const NAV = [
 
 
   { 
+    section: 'Accounts', 
+    dropdown: true,
+    children: [
+        { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
+        { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
+    ]
+  },
+  { 
     section: 'Airtel Recovery', 
     dropdown: true,
     children: [
@@ -66,6 +74,7 @@ const NAV = [
         { id: 'airtel-backup', icon: '💾', label: 'Full Backup v3 (JSON)', perm: 'view_reports', action: 'BACKUP_AIRTEL' },
     ]
   },
+
 ];
 
 const BOTTOM_TABS = [

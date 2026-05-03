@@ -8,12 +8,33 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\RecordsTransactions;
 
-use App\Traits\SyncsBalances;
+use App\Traits\PostsToLedger;
 
 class PurchaseInvoice extends Model
 {
-    use SyncsBalances;
+    use PostsToLedger;
     use SoftDeletes, RecordsTransactions;
+
+    protected function getLedgerData(): ?array
+    {
+        $supplier = $this->supplier;
+        if (!$supplier) return null;
+        
+        $entity = \App\Models\Entity::where('name', $supplier->name)->first();
+        if (!$entity) return null;
+
+        // Credit Purchase = Credit the Supplier (we owe them)
+        return [
+            'entity_id' => $entity->id,
+            'date' => $this->purchase_date,
+            'voucher_type' => 'PURCHASE',
+            'particulars' => 'Purchase Invoice: #' . $this->invoice_no,
+            'debit' => 0,
+            'credit' => $this->grand_total,
+            'user_id' => $this->user_id,
+            'shop_id' => $this->shop_id,
+        ];
+    }
 
     protected $fillable = [
         'invoice_no', 'bill_type', 'shop_id', 'supplier_id', 'user_id', 'purchase_date', 'expected_delivery_date',

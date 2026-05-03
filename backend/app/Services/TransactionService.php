@@ -31,8 +31,13 @@ class TransactionService
      */
     public function recordForModel($model, array $overrideData = [])
     {
+        $shopId = $overrideData['shop_id'] ?? $model->shop_id ?? (auth()->check() ? auth()->user()->shop_id : null);
+        if (!$shopId) {
+            $shopId = \App\Models\Shop::first()->id ?? 1;
+        }
+
         $data = array_merge([
-            'shop_id' => $model->shop_id,
+            'shop_id' => $shopId,
             'user_id' => $model->user_id ?? auth()->id(),
             'transaction_date' => $model->sale_date ?? $model->purchase_date ?? $model->submitted_date ?? now()->toDateString(),
             'amount' => $model->total_paid ?? $model->amount ?? 0,

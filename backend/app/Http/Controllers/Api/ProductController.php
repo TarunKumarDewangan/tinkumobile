@@ -260,11 +260,13 @@ class ProductController extends Controller
         if (str_starts_with($id, 'item_')) {
             $parts = explode('_', $id);
             $itemId = $parts[1];
+            $imeiIndex = isset($parts[2]) ? $parts[2] : null;
         } else {
             $itemId = $id;
+            $imeiIndex = null;
         }
 
-        return DB::transaction(function () use ($itemId) {
+        return DB::transaction(function () use ($itemId, $imeiIndex) {
             $item = \App\Models\PurchaseItem::with('invoice')->findOrFail($itemId);
             $invoice = $item->invoice;
 
@@ -273,6 +275,13 @@ class ProductController extends Controller
 
             // 2. Adjust or Delete PurchaseItem
             if ($item->quantity > 1) {
+                if ($imeiIndex !== null && $item->imei) {
+                    $imeis = array_map('trim', explode(',', $item->imei));
+                    if (isset($imeis[$imeiIndex])) {
+                        unset($imeis[$imeiIndex]);
+                        $item->imei = implode(', ', $imeis);
+                    }
+                }
                 $item->decrement('quantity');
                 $item->decrement('received_quantity');
                 $item->total = $item->quantity * $item->unit_price;
@@ -304,5 +313,45 @@ class ProductController extends Controller
 
             return response()->json(['message' => 'Stock item deleted and invoice updated successfully.']);
         });
+    }
+
+    public function updateStock(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (str_starts_with($id, 'item_')) {
+            $parts = explode('_', $id);
+            $itemId = $parts[1];
+            $imeiIndex = isset($parts[2]) ? $parts[2] : null;
+        } else {
+            $itemId = $id;
+            $imeiIndex = null;
+        }
+
+        $item = \App\Models\PurchaseItem::findOrFail($itemId);
+
+        // Update IMEI
+        if ($request->has('imei') && $imeiIndex !== null && $item->imei) {
+            $imeis = array_map('trim', explode(',', $item->imei));
+            if (isset($imeis[$imeiIndex])) {
+                $imeis[$imeiIndex] = $request->imei;
+                $item->imei = implode(', ', $imeis);
+            }
+        } else if ($request->has('imei') && (!$item->imei || $item->quantity == 1)) {
+            $item->imei = $request->imei;
+        }
+
+        // Update other fields
+        if ($request->has('color')) $item->color = $request->color;
+        if ($request->has('ram')) $item->ram = $request->ram;
+        if ($request->has('storage')) $item->storage = $request->storage;
+        if ($request->has('selling_price')) $item->selling_price = $request->selling_price;
+
+        $item->save();
+
+        return response()->json(['message' => 'Stock item updated successfully.']);
     }
 }

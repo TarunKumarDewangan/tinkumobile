@@ -432,8 +432,10 @@ class EntityLedgerController extends Controller
 
         $entity = \App\Models\Entity::where('name', $data['entity_name'])->first();
 
+        $shopId = $user->hasFullAccess() ? ($request->shop_id ?? $user->shop_id ?? \App\Models\Shop::first()->id ?? 1) : $user->shop_id;
+
         $transaction = $this->transactionService->recordSettlement([
-            'shop_id' => $user->shop_id,
+            'shop_id' => $shopId,
             'user_id' => $user->id,
             'type' => $data['type'],
             'amount' => $data['amount'],

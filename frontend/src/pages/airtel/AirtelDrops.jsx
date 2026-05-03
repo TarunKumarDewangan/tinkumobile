@@ -25,6 +25,7 @@ export default function AirtelDrops() {
   const [order, setOrder] = useState('asc');
 
    const [showImport, setShowImport] = useState(false);
+  const [importMode, setImportMode] = useState('DROPS'); // 'DROPS' or 'UPI'
   const [importText, setImportText] = useState('');
   
   const [submitting, setSubmitting] = useState(false);
@@ -85,7 +86,7 @@ export default function AirtelDrops() {
   const handleImport = async (e) => {
     e.preventDefault();
     const lines = importText.split('\n');
-    const parsedDrops = lines.map(line => {
+    const parsedData = lines.map(line => {
       const trimmed = line.trim();
       if (!trimmed) return null;
       
@@ -100,23 +101,23 @@ export default function AirtelDrops() {
       if (/[a-zA-Z]/.test(msisdn)) return null; // Skip header rows
       
       let amount = 0;
-      let refill_date = new Date().toISOString().split('T')[0]; // Default to today if nothing found
+      let dateField = new Date().toISOString().split('T')[0]; // Default to today if nothing found
 
       // Robust parsing
       if (parts.length >= 4 && parts[1].includes('-') && parts[2].includes(':')) {
           // Case 1: MSISDN YYYY-MM-DD HH:MM:SS.SSS AMOUNT
           // Truncate milliseconds (.SSS) to match DB dateTime precision
-          refill_date = `${parts[1].trim()} ${parts[2].trim()}`.split('.')[0];
+          dateField = `${parts[1].trim()} ${parts[2].trim()}`.split('.')[0];
           amount = parseFloat(parts[3].trim());
       } else if (parts.length >= 3) {
           // Case 2: MSISDN TIMESTAMP AMOUNT (timestamp is one part, e.g. from TAB)
           if (parts[1].includes('-') || parts[1].includes(':')) {
-              refill_date = parts[1].trim().split('.')[0];
+              dateField = parts[1].trim().replace(/\.\d{1,3}/, '');
               amount = parseFloat(parts[2].trim());
           } else {
               // Maybe MSISDN AMOUNT TIMESTAMP
               amount = parseFloat(parts[1].trim());
-              refill_date = parts[2].trim().split('.')[0];
+              dateField = parts[2].trim().replace(/\.\d{1,3}/, '');
           }
       } else {
           // Case 3: MSISDN AMOUNT (fallback to manual date)
@@ -125,34 +126,53 @@ export default function AirtelDrops() {
       
       if (!msisdn || isNaN(amount)) return null;
       
-      return { msisdn, amount, refill_date };
+      if (importMode === 'UPI') {
+          return { msisdn, amount, recovered_at: dateField };
+      }
+      return { msisdn, amount, refill_date: dateField };
     }).filter(d => d !== null);
 
-    console.log('Importing Drops:', parsedDrops);
+    console.log(`Importing ${importMode}:`, parsedData);
 
-    if (parsedDrops.length === 0) {
+    if (parsedData.length === 0) {
       toast.error('No valid data found to import');
       return;
     }
 
     try {
-      const { data } = await axios.post('/airtel-drops/import', { drops: parsedDrops });
-      
-      const failures = data.errors ? data.errors.map(err => {
-          const match = err.match(/MSISDN: (\d+)/);
-          return match ? match[1] : err;
-      }) : [];
-      
-      setFailedMsisdns(failures);
+      if (importMode === 'UPI') {
+          const { data } = await axios.post('/airtel-drops/import-upi', { payments: parsedData });
+          const failures = data.errors ? data.errors.map(err => {
+              const match = err.match(/MSISDN: (\d+)/);
+              return match ? match[1] : err;
+          }) : [];
+          setFailedMsisdns(failures);
 
-      if (failures.length > 0) {
-          toast.warning(`Imported ${data.success}, skipped ${data.duplicates || 0} duplicates, but ${data.failed} failed.`);
+          if (failures.length > 0) {
+              toast.warning(`Imported ${data.success}, but ${data.failed} failed.`);
+          } else {
+              toast.success(data.message || `Imported ${data.success} UPI payments.`);
+              setShowImport(false);
+              setImportText('');
+          }
       } else {
-          let msg = `Imported ${data.success} new drops.`;
-          if (data.duplicates > 0) msg += ` (Skipped ${data.duplicates} duplicates)`;
-          toast.success(msg);
-          setShowImport(false);
-          setImportText('');
+          const { data } = await axios.post('/airtel-drops/import', { drops: parsedData });
+          const failures = data.errors ? data.errors.map(err => {
+              const match = err.match(/MSISDN: (\d+)/);
+              return match ? match[1] : err;
+          }) : [];
+          
+          setFailedMsisdns(failures);
+
+          if (failures.length > 0) {
+              toast.warning(`Imported ${data.success}, skipped ${data.duplicates || 0} duplicates, but ${data.failed} failed.`);
+          } else {
+              let msg = `Imported ${data.success} new drops.`;
+              if (data.duplicates > 0) msg += ` (Skipped ${data.duplicates} duplicates)`;
+              toast.success(msg);
+              setShowImport(false);
+              setImportText('');
+          }
       }
       
       fetchDrops();
@@ -314,10 +334,17 @@ export default function AirtelDrops() {
                   </button>
                 </>
               )}
-              <button className="btn btn-primary btn-sm text-uppercase px-4" onClick={() => {
+              <button className="btn btn-primary btn-sm text-uppercase px-3" onClick={() => {
+                  setImportMode('DROPS');
                   setShowImport(true);
               }}>
-                Import
+                Import Drops
+              </button>
+              <button className="btn btn-info btn-sm text-white text-uppercase px-3" onClick={() => {
+                  setImportMode('UPI');
+                  setShowImport(true);
+              }}>
+                Import UPI
               </button>
             </>
           )}
@@ -523,19 +550,21 @@ export default function AirtelDrops() {
           );
       })()}
 
-      <Modal show={showImport} onClose={() => setShowImport(false)} title="IMPORT AIRTEL DROPS">
+      <Modal show={showImport} onClose={() => setShowImport(false)} title={importMode === 'UPI' ? 'IMPORT DIRECT UPI PAYMENTS' : 'IMPORT AIRTEL DROPS'}>
         <form onSubmit={handleImport}>
           <div className="mb-3">
-            <label className="form-label text-uppercase small fw-bold">Paste Data (MSISDN AMOUNT)</label>
+            <label className="form-label text-uppercase small fw-bold">
+              {importMode === 'UPI' ? 'Paste Data (MSISDN AMOUNT SETTLEMENT_DATE)' : 'Paste Data (MSISDN AMOUNT DATE)'}
+            </label>
             <textarea 
               className="form-control font-monospace" 
               rows="10" 
-              placeholder="9109566944 500&#10;9752970291 1000..." 
+              placeholder={importMode === 'UPI' ? "9109566944\t500\t02-05-2026 10:14:11 AM" : "9109566944 500\n9752970291 1000..."} 
               value={importText} 
               onChange={e => setImportText(e.target.value)}
             />
             <div className="form-text text-uppercase x-small mt-2">
-              Supports Space or Underscore separation (9109566944 500 or 9109566944_500)
+              Supports Space, Tab, or Underscore separation. Works with copy-paste directly from Excel.
             </div>
           </div>
           <div className="d-grid mt-4">

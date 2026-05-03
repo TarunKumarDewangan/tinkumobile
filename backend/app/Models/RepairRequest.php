@@ -7,12 +7,34 @@ use App\Traits\RecordsTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-use App\Traits\SyncsBalances;
+use App\Traits\PostsToLedger;
 
 class RepairRequest extends Model
 {
-    use SyncsBalances;
+    use PostsToLedger;
     use UppercaseStrings, RecordsTransactions;
+
+    protected function getLedgerData(): ?array
+    {
+        $entity = null;
+        if ($this->customer_name) {
+            $entity = \App\Models\Entity::where('name', $this->customer_name)->first();
+        }
+        if (!$entity) return null;
+
+        // Repair Service = Debit the Customer (they owe us)
+        return [
+            'entity_id' => $entity->id,
+            'date' => $this->submitted_date,
+            'voucher_type' => 'REPAIR',
+            'particulars' => 'Repair Service: #' . $this->id,
+            'debit' => $this->quoted_amount,
+            'credit' => 0,
+            'user_id' => $this->staff_id ?? 1,
+            'shop_id' => $this->shop_id,
+        ];
+    }
+
     protected $fillable = [
         'shop_id', 'customer_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
         'device_model', 'quoted_amount', 'is_pay_later', 'service_center_cost', 'advance_amount', 'advance_payment_mode',

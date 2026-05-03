@@ -5,6 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+use App\Traits\PostsToLedger;
+use App\Models\Entity;
+
 class AirtelRecovery extends Model
 {
     use SoftDeletes;

@@ -8,12 +8,34 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\RecordsTransactions;
 
-use App\Traits\SyncsBalances;
+use App\Traits\PostsToLedger;
 
 class SaleInvoice extends Model
 {
-    use SyncsBalances;
+    use PostsToLedger;
     use SoftDeletes, RecordsTransactions;
+
+    protected function getLedgerData(): ?array
+    {
+        $customer = $this->customer;
+        if (!$customer) return null;
+        
+        $entity = \App\Models\Entity::where('name', $customer->name)->first();
+        if (!$entity) return null;
+
+        // Credit Sale = Debit the Customer (they owe us)
+        // If it was paid by cash immediately, a Transaction (Receipt) will offset it.
+        return [
+            'entity_id' => $entity->id,
+            'date' => $this->sale_date,
+            'voucher_type' => 'SALE',
+            'particulars' => 'Sale Invoice: #' . $this->invoice_no,
+            'debit' => $this->grand_total,
+            'credit' => 0,
+            'user_id' => $this->user_id,
+            'shop_id' => $this->shop_id,
+        ];
+    }
 
     protected $fillable = [
         'invoice_no', 'shop_id', 'customer_id', 'user_id', 'sold_by_id', 'sale_date',

@@ -8,7 +8,8 @@ import _ from 'lodash'; // Using lodash for debounce
 export default function EntityLedger() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [entities, setEntities] = useState([]);
-  const [selectedEntity, setSelectedEntity] = useState(null);
+  const [selectedEntityId, setSelectedEntityId] = useState(null);
+  const [selectedEntityName, setSelectedEntityName] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
@@ -34,7 +35,7 @@ export default function EntityLedger() {
 
   const fetchSummary = async () => {
     try {
-      const { data } = await api.get('/entities/summary');
+      const { data } = await api.get('/ledgers/summary');
       setSummary(data);
       
       // Also fetch unique categories for the dropdown
@@ -50,7 +51,7 @@ export default function EntityLedger() {
   const loadEntities = useCallback(async (query = '', type = 'ALL') => {
     setLoading(true);
     try {
-      const res = await api.get('/entities/statements', { params: { q: query, type } });
+      const res = await api.get('/ledgers/entity-balances', { params: { q: query, type: type !== 'ALL' ? type : undefined } });
       setEntities(res.data);
     } catch (e) {
       toast.error('Failed to load entities');
@@ -73,21 +74,27 @@ export default function EntityLedger() {
 
   const [visibleItems, setVisibleItems] = useState(50);
 
-  const loadLedger = async (name, dates = dateFilter) => {
-    setSelectedEntity(name);
+  const loadLedger = async (id, name, dates = dateFilter) => {
+    if (!id) return;
+    
+    setSelectedEntityId(id);
+    setSelectedEntityName(name);
     setLedgerLoading(true);
-    setVisibleItems(50); // Reset pagination on new entity
+    setVisibleItems(50);
     try {
-      const { data } = await api.get(`/entities/${name}/ledger`, {
+      const { data } = await api.get(`/ledgers/statement/${id}`, {
         params: {
           start_date: dates.start,
           end_date: dates.end
         }
       });
-      setLedger(data.transactions || []);
-      setTargetEntity(data.entity);
-      // Update URL search params
-      setSearchParams({ name });
+      setLedger(data.entries || []);
+      setTargetEntity({
+          ...data.entity,
+          net_balance: data.closing_balance,
+          opening_balance: data.opening_balance
+      });
+      setSearchParams({ id, name });
     } catch (error) {
       toast.error('Failed to load ledger');
     } finally {
@@ -97,11 +104,11 @@ export default function EntityLedger() {
 
   useEffect(() => {
     fetchSummary();
+    const id = searchParams.get('id');
     const name = searchParams.get('name');
-    if (name) {
-      loadLedger(name);
+    if (id && name) {
+      loadLedger(id, name);
     }
-    // No longer loading all entities by default to comply with "dont show all names"
   }, []);
 
   const handleSettle = async (e) => {
@@ -110,12 +117,12 @@ export default function EntityLedger() {
     try {
       await api.post('/entities/settle', {
         ...settleData,
-        entity_name: selectedEntity
+        entity_name: selectedEntityName
       });
       toast.success('Settlement recorded');
       setShowSettleModal(false);
       setSettleData({ ...settleData, amount: '', description: '' });
-      loadLedger(selectedEntity);
+      loadLedger(selectedEntityId, selectedEntityName);
       fetchSummary();
       if (searchTerm) loadEntities(searchTerm, filterType);
     } catch (e) {
@@ -126,15 +133,15 @@ export default function EntityLedger() {
   const handleDateChange = (field, value) => {
     const newDates = { ...dateFilter, [field]: value };
     setDateFilter(newDates);
-    if (selectedEntity) {
-        loadLedger(selectedEntity, newDates);
+    if (selectedEntityId) {
+        loadLedger(selectedEntityId, selectedEntityName, newDates);
     }
   };
 
   const clearDates = () => {
     const cleared = { start: '', end: '' };
     setDateFilter(cleared);
-    if (selectedEntity) loadLedger(selectedEntity, cleared);
+    if (selectedEntityId) loadLedger(selectedEntityId, selectedEntityName, cleared);
   };
 
   return (
@@ -225,17 +232,17 @@ export default function EntityLedger() {
               ) : (
                 entities.map(ent => (
                   <div 
-                    key={ent.entity_name}
-                    className={`entity-card compact p-2 mb-1 rounded-3 cursor-pointer transition-all ${selectedEntity === ent.entity_name ? 'active shadow-sm' : 'hover-bg'}`}
-                    onClick={() => loadLedger(ent.entity_name)}
+                    key={ent.id}
+                    className={`entity-card compact p-2 mb-1 rounded-3 cursor-pointer transition-all ${selectedEntityId == ent.id ? 'active shadow-sm' : 'hover-bg'}`}
+                    onClick={() => loadLedger(ent.id, ent.name)}
                   >
                     <div className="d-flex justify-content-between align-items-center">
                       <div className="d-flex align-items-center">
                         <div className={`avatar-initial rounded-circle me-2 ${ent.net_balance >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}`}>
-                          {ent.entity_name.charAt(0).toUpperCase()}
+                          {ent.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="overflow-hidden">
-                          <div className="fw-bold text-dark text-truncate x-small" style={{maxWidth: '120px'}}>{ent.entity_name}</div>
+                          <div className="fw-bold text-dark text-truncate x-small" style={{maxWidth: '120px'}}>{ent.name}</div>
                           <div className="xx-small text-muted">{ent.phone || '—'}</div>
                         </div>
                       </div>
@@ -254,12 +261,12 @@ export default function EntityLedger() {
 
         {/* Detailed Ledger Area */}
         <div className="col-lg-9 col-md-7 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
-          {selectedEntity ? (
+          {selectedEntityId ? (
             <div className="glass-card-main flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0 animate-fadeIn">
               {/* Detail Header */}
               <div className="p-3 border-bottom bg-white bg-opacity-50 d-flex flex-wrap justify-content-between align-items-center gap-3">
                 <div>
-                   <h3 className="h5 mb-0 fw-bold">{selectedEntity}</h3>
+                   <h3 className="h5 mb-0 fw-bold">{selectedEntityName}</h3>
                    <div className="d-flex gap-2 align-items-center mt-1">
                       <span className="badge bg-light text-muted fw-normal rounded-pill px-2 xx-small">{targetEntity?.type || 'Entity'}</span>
                       <span className={`xx-small fw-bold text-uppercase ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -337,39 +344,45 @@ export default function EntityLedger() {
                         <tr>
                           <th className="ps-4">Date</th>
                           <th>Particulars</th>
-                          <th className="text-end">In Worth</th>
-                          <th className="text-end pe-4">Out Worth</th>
+                          <th>Vch Type</th>
+                          <th className="text-end">Debit (Dr)</th>
+                          <th className="text-end pe-4">Credit (Cr)</th>
+                          <th className="text-end pe-4">Balance</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr className="opening-balance-row bg-light bg-opacity-50">
                           <td className="ps-4 xx-small text-muted">—</td>
-                          <td className="xx-small italic text-muted">Opening / Previous Balances</td>
+                          <td className="xx-small italic text-muted fw-bold text-primary">Opening Balance</td>
+                          <td>—</td>
                           <td className="text-end">—</td>
                           <td className="text-end pe-4">—</td>
+                          <td className={`text-end pe-4 fw-bold x-small ${(targetEntity?.opening_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                             ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.opening_balance >= 0 ? 'Dr' : 'Cr'}
+                          </td>
                         </tr>
                         {ledger.slice(0, visibleItems).map((item) => (
                           <tr key={item.id}>
                             <td className="ps-4">
-                                <span className="x-small text-muted">{new Date(item.transaction_date || item.created_at).toLocaleDateString()}</span>
+                                <span className="x-small text-muted">{new Date(item.date).toLocaleDateString()}</span>
                             </td>
                             <td>
                                 <div className="d-flex align-items-center">
-                                    <div className={`category-dot me-2 ${item.entry_type === 'UNREALIZED' ? 'bg-warning' : 'bg-primary'}`}></div>
+                                    <div className={`category-dot me-2 bg-primary`}></div>
                                     <div>
-                                        <div className="fw-bold text-dark x-small">{item.description}</div>
-                                        <div className="d-flex gap-2">
-                                            <span className="xx-small text-muted text-uppercase">{item.category}</span>
-                                            {item.payment_mode && <span className="xx-small text-primary opacity-75 fw-bold">{item.payment_mode}</span>}
-                                        </div>
+                                        <div className="fw-bold text-dark x-small">{item.particulars}</div>
                                     </div>
                                 </div>
                             </td>
-                            <td className={`text-end fw-bold x-small ${item.in_worth > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
-                                {item.in_worth > 0 ? `₹${item.in_worth.toLocaleString()}` : '—'}
+                            <td><span className="badge bg-light text-secondary border xx-small">{item.voucher_type}</span></td>
+                            <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-danger' : 'text-muted opacity-25'}`}>
+                                {item.debit > 0 ? `₹${Number(item.debit).toLocaleString()}` : '—'}
                             </td>
-                            <td className={`text-end pe-4 fw-bold x-small ${item.out_worth > 0 ? 'text-danger' : 'text-muted opacity-25'}`}>
-                                {item.out_worth > 0 ? `₹${item.out_worth.toLocaleString()}` : '—'}
+                            <td className={`text-end pe-4 fw-bold x-small ${item.credit > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
+                                {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
+                            </td>
+                            <td className={`text-end pe-4 fw-bold x-small ${item.running_balance >= 0 ? 'text-success' : 'text-danger'}`}>
+                                ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
                             </td>
                           </tr>
                         ))}
@@ -409,7 +422,7 @@ export default function EntityLedger() {
                   <button type="button" className="btn-close shadow-none" onClick={() => setShowSettleModal(false)}></button>
                 </div>
                 <div className="modal-body p-4">
-                   <p className="text-muted small mb-4">Add a transaction for <strong>{selectedEntity}</strong></p>
+                   <p className="text-muted small mb-4">Add a transaction for <strong>{selectedEntityName}</strong></p>
                    <div className="row g-3">
                        <div className="col-12">
                           <div className="d-flex gap-2">
