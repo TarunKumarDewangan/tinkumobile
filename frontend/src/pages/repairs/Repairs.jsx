@@ -25,8 +25,11 @@ export default function Repairs() {
     payment_from: '',
     payment_to: '',
     is_forwarded: '',
-    cost_payment_status: ''
+    cost_payment_status: '',
+    forwarded_to: ''
   });
+
+  const [externalShops, setExternalShops] = useState([]);
 
   const load = () => {
     setLoading(true);
@@ -34,6 +37,11 @@ export default function Repairs() {
   };
 
   useEffect(() => { load(); }, [filters]);
+
+  // Load external shop names for the dropdown filter
+  useEffect(() => {
+    api.get('/repairs/external-shops').then(r => setExternalShops(r.data)).catch(() => {});
+  }, []);
 
   const updateStatus = async (id, status) => {
     if (status === 'delivered') {
@@ -126,6 +134,37 @@ export default function Repairs() {
                   onClick={() => handleFilter('is_forwarded', 'true')}>Forwarded</button>
             </div>
 
+            {/* Forwarded Shop Filter — shown when forwarded tab is active or a shop is selected */}
+            <div className="position-relative" style={{ minWidth: 190 }}>
+              <select
+                className="form-select form-select-sm shadow-sm pe-4"
+                style={{ borderColor: filters.forwarded_to ? '#6366f1' : undefined, fontWeight: filters.forwarded_to ? 700 : undefined }}
+                value={filters.forwarded_to}
+                onChange={e => {
+                  const val = e.target.value;
+                  setFilters(prev => ({
+                    ...prev,
+                    forwarded_to: val,
+                    // auto-switch to Forwarded tab when a shop is selected
+                    is_forwarded: val ? 'true' : prev.is_forwarded
+                  }));
+                }}
+              >
+                <option value="">🏪 All Shops</option>
+                {externalShops.map(s => (
+                  <option key={s.forwarded_to} value={s.forwarded_to}>{s.forwarded_to}</option>
+                ))}
+              </select>
+              {filters.forwarded_to && (
+                <button
+                  className="btn btn-link btn-sm p-0 position-absolute top-50 end-0 translate-middle-y me-1 text-danger"
+                  style={{ fontSize: '0.7rem', zIndex: 5 }}
+                  onClick={() => handleFilter('forwarded_to', '')}
+                  title="Clear shop filter"
+                >✕</button>
+              )}
+            </div>
+
             {/* Cost Status Filter */}
             <select className="form-select form-select-sm shadow-sm" style={{ width: 150 }} 
               value={filters.cost_payment_status} onChange={e => handleFilter('cost_payment_status', e.target.value)}>
@@ -136,7 +175,7 @@ export default function Repairs() {
 
             <div className="ms-auto d-flex gap-2">
                 <button className="btn btn-outline-secondary btn-sm" 
-                  onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'', cost_payment_status:'' })}>
+                  onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'', cost_payment_status:'', forwarded_to:'' })}>
                   Reset
                 </button>
                 <button className="btn btn-info btn-sm text-white shadow-sm" onClick={() => setIsBackupModalOpen(true)}>

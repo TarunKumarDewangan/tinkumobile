@@ -89,6 +89,10 @@ class RepairController extends Controller
             }
         }
 
+        if ($request->filled('forwarded_to')) {
+            $query->where('forwarded_to', $request->forwarded_to);
+        }
+
         $results = $query->latest()->get();
         
         return response()->json($results);
