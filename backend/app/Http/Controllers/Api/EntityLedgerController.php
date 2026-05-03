@@ -328,7 +328,7 @@ class EntityLedgerController extends Controller
                 }
             });
 
-        // Airtel
+        // Airtel Drops (Debit — what they owe)
         $airtelQuery = \App\Models\AirtelDrop::whereHas('retailer', fn($q) => $q->where('name', $entityName));
         if ($startDate) $airtelQuery->where('refill_date', '>=', $startDate);
         if ($endDate) $airtelQuery->where('refill_date', '<=', $endDate);
@@ -348,6 +348,36 @@ class EntityLedgerController extends Controller
                     'created_at' => $d->created_at
                 ]);
             });
+
+        // Airtel Recoveries (Credit — what they paid back)
+        $recoveryQuery = \App\Models\AirtelRecovery::whereHas('retailer', fn($q) => $q->where('name', $entityName));
+        if ($startDate) $recoveryQuery->where('recovered_at', '>=', $startDate);
+        if ($endDate) $recoveryQuery->where('recovered_at', '<=', $endDate);
+
+        $recoveryQuery->get()->each(function($r) use ($ledgerItems) {
+            // Avoid double-counting: skip if there's already a Transaction record for this recovery
+            $alreadyRecorded = \App\Models\Transaction::where('amount', $r->amount)
+                ->whereDate('transaction_date', $r->recovered_at->toDateString())
+                ->where('entity_name', $r->retailer->name ?? '')
+                ->where('category', 'AIRTEL_RECOVERY')
+                ->exists();
+
+            if (!$alreadyRecorded) {
+                $ledgerItems->push([
+                    'id' => 'AR-REC-' . $r->id,
+                    'transaction_date' => $r->recovered_at->toDateString(),
+                    'category' => 'AIRTEL_RECOVERY',
+                    'description' => "Airtel Recovery" . ($r->notes ? ": {$r->notes}" : ''),
+                    'in_worth' => (float)$r->amount,
+                    'out_worth' => 0,
+                    'unrealized_in' => 0,
+                    'unrealized_out' => 0,
+                    'type' => 'IN',
+                    'entry_type' => 'REAL',
+                    'created_at' => $r->created_at
+                ]);
+            }
+        });
 
         // Forwarding
         $fwdQuery = \App\Models\RepairRequest::where('forwarded_to', $entityName)->where('service_center_cost', '>', 0);
