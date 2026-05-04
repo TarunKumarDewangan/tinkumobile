@@ -32,6 +32,23 @@ export default function QuickRecovery() {
         }).toUpperCase();
     };
 
+    // Extract date string (YYYY-MM-DD) from a DB datetime WITHOUT timezone conversion
+    // DB stores IST datetimes — JS would shift them to UTC causing wrong date display
+    const localDateStr = (dateStr) => {
+        if (!dateStr) return '';
+        // If it's already a date-only string (YYYY-MM-DD), return as-is
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+        // Take only the date part before 'T' or space
+        return dateStr.split('T')[0].split(' ')[0];
+    };
+
+    const formatDisplayDate = (dateStr) => {
+        if (!dateStr) return '';
+        const [year, month, day] = localDateStr(dateStr).split('-');
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return `${day} ${months[parseInt(month, 10) - 1]}`;
+    };
+
     // Auto-fetch when query is 10 digits, otherwise search by name
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -246,13 +263,14 @@ export default function QuickRecovery() {
                                                 refill_date: '1970-01-01T00:00:00Z' 
                                             }] : [])
                                         ].sort((a,b) => {
-                                            const dateA = new Date(a.entryType === 'DROP' ? a.refill_date : a.recovered_at);
-                                            const dateB = new Date(b.entryType === 'DROP' ? b.refill_date : b.recovered_at);
-                                            return dateB - dateA;
+                                            const dateA = localDateStr(a.entryType === 'DROP' ? a.refill_date : a.recovered_at);
+                                            const dateB = localDateStr(b.entryType === 'DROP' ? b.refill_date : b.recovered_at);
+                                            if (dateB !== dateA) return dateB > dateA ? 1 : -1;
+                                            return new Date(b.created_at||0) - new Date(a.created_at||0);
                                         })
                                         : [
-                                            ...(data.drops || []).map(d => ({ ...d, entryType: 'DROP' })).sort((a,b) => new Date(b.refill_date) - new Date(a.refill_date)),
-                                            ...(data.recoveries || []).map(r => ({ ...r, entryType: 'RECOVERY' })).sort((a,b) => new Date(b.recovered_at) - new Date(a.recovered_at)),
+                                            ...(data.drops || []).map(d => ({ ...d, entryType: 'DROP' })).sort((a,b) => localDateStr(b.refill_date) > localDateStr(a.refill_date) ? 1 : -1),
+                                            ...(data.recoveries || []).map(r => ({ ...r, entryType: 'RECOVERY' })).sort((a,b) => localDateStr(b.recovered_at) > localDateStr(a.recovered_at) ? 1 : -1),
                                             ...(parseFloat(data.stats.opening_balance) > 0 ? [{ 
                                                 amount: data.stats.opening_balance, 
                                                 entryType: 'OPENING BALANCE'
@@ -262,7 +280,7 @@ export default function QuickRecovery() {
                                         <tr key={idx} className={item.entryType === 'RECOVERY' ? 'bg-success-light' : (item.entryType === 'OPENING BALANCE' ? 'bg-light fw-bold' : '')}>
                                             <td className="ps-4">
                                                 <div className="fw-bold small">
-                                                    {item.entryType === 'OPENING BALANCE' ? 'STARTING' : new Date(item.entryType === 'DROP' ? item.refill_date : item.recovered_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short'})}
+                                                    {item.entryType === 'OPENING BALANCE' ? 'STARTING' : formatDisplayDate(item.entryType === 'DROP' ? item.refill_date : item.recovered_at)}
                                                     {item.entryType !== 'OPENING BALANCE' && <span className="ms-1 x-small text-muted font-monospace opacity-75">@{formatTime(item.entryType === 'DROP' ? item.refill_date : item.recovered_at)}</span>}
                                                 </div>
                                                 <div className="x-small text-muted text-uppercase">{item.entryType}</div>
