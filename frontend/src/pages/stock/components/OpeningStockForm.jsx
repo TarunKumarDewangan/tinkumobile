@@ -97,6 +97,21 @@ export default function OpeningStockForm({
     }
   };
 
+  const handleClearExcel = () => {
+    const hasExcelItems = openingStockItems.some(i => i._from_excel);
+    if (!hasExcelItems) {
+      toast.info("No Excel items to clear.");
+      return;
+    }
+    const pin = window.prompt("Enter Admin PIN to Clear Excel Imports:");
+    if (pin === "71727378") {
+      setOpeningStockItems(prev => prev.filter(i => !i._from_excel));
+      toast.success("Cleared all items imported from Excel.");
+    } else if (pin !== null) {
+      toast.error("Incorrect PIN");
+    }
+  };
+
   const handleBulkSubmit = async (e) => {
     e.preventDefault();
     if (openingStockItems.length === 0) return;
@@ -157,6 +172,9 @@ export default function OpeningStockForm({
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="pf-sec mb-0">📦 Stock Items ({openingStockItems.length})</div>
           <div className="d-flex gap-2">
+            <button type="button" className="pf-bulk shadow-sm" style={{background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca', letterSpacing: 0.5}} onClick={handleClearExcel}>
+              🗑️ Clear Excel Imports
+            </button>
             <button type="button" className="pf-bulk shadow-sm" style={{background: '#e0f2fe', color: '#0284c7', border: '1px solid #bae6fd', letterSpacing: 0.5}} onClick={handleExcelImportClick}>
               📥 Import Excel (PIN)
             </button>
@@ -318,7 +336,7 @@ export default function OpeningStockForm({
         onHide={() => setShowExcelImport(false)}
         products={baseProducts}
         categories={categories}
-        onAddItems={handleBulkAddItems}
+        onAddItems={(items) => handleBulkAddItems(items.map(i => ({...i, _from_excel: true})))}
       />
     </form>
   );
