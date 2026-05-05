@@ -91,11 +91,11 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
       new_product_name: isNew ? (selectedBrand ? `${selectedBrand} ${newProductName}`.trim() : newProductName) : '',
       category_id: isNew ? mobileNewCatId : (product?.category_id || mobileNewCatId),
       imei, ram, storage, color, quantity: 1,
-      unit_price: finalAmountNum || unitPrice || product?.purchase_price || 0,
+      unit_price: rateIncTax ? rateExclTaxAfterDiscNum : (unitPrice || product?.purchase_price || 0),
       selling_price: sellingPrice || product?.selling_price || 0,
       wholeseller_price: wholesellerPrice || product?.wholeseller_price || 0,
       min_selling_price: minSellingPrice || product?.min_selling_price || 0,
-      max_selling_price: finalAmountNum || 0,
+      max_selling_price: rateIncTax ? finalAmountNum : 0,
       incentive_amount: incentive || product?.incentive_amount || 0
     }));
     setBatchItems(prev => [...prev, ...newItems]);
@@ -120,11 +120,11 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
         new_product_name: isNew ? (selectedBrand ? `${selectedBrand} ${newProductName}`.trim() : newProductName) : '',
         category_id: isNew ? mobileNewCatId : (product?.category_id || mobileNewCatId),
         imei, ram, storage, color, quantity: 1,
-        unit_price: finalAmountNum || unitPrice || product?.purchase_price || 0,
+        unit_price: rateIncTax ? rateExclTaxAfterDiscNum : (unitPrice || product?.purchase_price || 0),
         selling_price: sellingPrice || product?.selling_price || 0,
         wholeseller_price: wholesellerPrice || product?.wholeseller_price || 0,
         min_selling_price: minSellingPrice || product?.min_selling_price || 0,
-        max_selling_price: finalAmountNum || 0,
+        max_selling_price: rateIncTax ? finalAmountNum : 0,
         incentive_amount: incentive || product?.incentive_amount || 0
       }));
       allItems = [...allItems, ...currentItems];

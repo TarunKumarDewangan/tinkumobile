@@ -366,7 +366,7 @@ export default function PurchaseForm() {
                               <input type="number" className="pf-inp" style={{textAlign:'center',fontWeight:700}} min="1" value={item.quantity} readOnly={!!item.imei} onChange={e=>updateItem(i,'quantity',parseInt(e.target.value))}/>
                             </div>
                             <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl">DP (Final) ₹</span>
+                              <span className="pf-price-lbl">Rate (ex-GST) ₹</span>
                               <input type="number" className="pf-inp" style={{fontWeight:700}} step=".01" value={item.unit_price} onChange={e=>updateItem(i,'unit_price',parseFloat(e.target.value))}/>
                             </div>
                             <div className="col-4 col-md-2">
