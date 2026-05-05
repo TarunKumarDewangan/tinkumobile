@@ -13,6 +13,7 @@ class Entity extends Model
         'relation_id',
         'phone',
         'email',
+        'gst_number',
         'opening_balance',
         'balance_type',
         'description'

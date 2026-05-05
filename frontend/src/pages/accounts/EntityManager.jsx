@@ -15,6 +15,7 @@ export default function EntityManager() {
     type: '',
     phone: '',
     email: '',
+    gst_number: '',
     opening_balance: 0,
     balance_type: 'RECEIVABLE',
     description: ''
@@ -77,6 +78,7 @@ export default function EntityManager() {
         type: entity.type,
         phone: entity.phone || '',
         email: entity.email || '',
+        gst_number: entity.gst_number || '',
         opening_balance: entity.opening_balance || 0,
         balance_type: entity.balance_type || 'RECEIVABLE',
         description: entity.description || ''
@@ -88,6 +90,7 @@ export default function EntityManager() {
         type: '',
         phone: '',
         email: '',
+        gst_number: '',
         opening_balance: 0,
         balance_type: 'RECEIVABLE',
         description: ''
@@ -240,6 +243,16 @@ export default function EntityManager() {
                         className="form-control"
                         value={formData.phone}
                         onChange={e => setFormData({...formData, phone: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        placeholder="Optional"
+                        value={formData.gst_number}
+                        onChange={e => setFormData({...formData, gst_number: e.target.value})}
                       />
                     </div>
                     <div className="col-md-6">

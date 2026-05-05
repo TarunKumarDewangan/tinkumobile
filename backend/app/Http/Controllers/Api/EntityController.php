@@ -47,6 +47,7 @@ class EntityController extends Controller
             'email' => 'nullable|string',
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
+            'gst_number' => 'nullable|string',
             'description' => 'nullable|string'
         ]);
 
@@ -62,6 +63,7 @@ class EntityController extends Controller
             'email' => 'nullable|string',
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
+            'gst_number' => 'nullable|string',
             'description' => 'nullable|string'
         ]);
 
