@@ -366,7 +366,7 @@ export default function PurchaseForm() {
                               <input type="number" className="pf-inp" style={{textAlign:'center',fontWeight:700}} min="1" value={item.quantity} readOnly={!!item.imei} onChange={e=>updateItem(i,'quantity',parseInt(e.target.value))}/>
                             </div>
                             <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl">DP ₹</span>
+                              <span className="pf-price-lbl">DP (Final) ₹</span>
                               <input type="number" className="pf-inp" style={{fontWeight:700}} step=".01" value={item.unit_price} onChange={e=>updateItem(i,'unit_price',parseFloat(e.target.value))}/>
                             </div>
                             <div className="col-4 col-md-2">
@@ -378,14 +378,10 @@ export default function PurchaseForm() {
                               <input type="number" className="pf-inp" style={{borderColor:'#a5b4fc',color:'#6366f1'}} step=".01" value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))}/>
                             </div>
                             <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl" style={{color:'#0284c7'}}>CUST ₹</span>
-                              <input type="number" className="pf-inp" style={{borderColor:'#93c5fd',color:'#0284c7'}} step=".01" value={item.max_selling_price} onChange={e=>updateItem(i,'max_selling_price',parseFloat(e.target.value))}/>
-                            </div>
-                            <div className="col-4 col-md-1">
                               <span className="pf-price-lbl" style={{color:'#dc2626'}}>MIN ₹</span>
                               <input type="number" className="pf-inp" style={{borderColor:'#fca5a5',color:'#dc2626'}} step=".01" value={item.min_selling_price} onChange={e=>updateItem(i,'min_selling_price',parseFloat(e.target.value))}/>
                             </div>
-                            <div className="col-4 col-md-1">
+                            <div className="col-4 col-md-2">
                               <span className="pf-price-lbl" style={{color:'#6366f1'}}>COM ₹</span>
                               <input type="number" className="pf-inp" style={{borderColor:'#a5b4fc',color:'#6366f1'}} step=".01" value={item.incentive_amount} onChange={e=>updateItem(i,'incentive_amount',parseFloat(e.target.value))}/>
                             </div>
