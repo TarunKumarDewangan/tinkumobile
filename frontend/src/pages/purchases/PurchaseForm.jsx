@@ -9,6 +9,7 @@ import BulkScanModal from '../../components/BulkScanModal';
 
 export default function PurchaseForm() {
   const [suppliers, setSuppliers] = useState([]);
+  const [entitySuppliers, setEntitySuppliers] = useState([]);
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [shops, setShops]           = useState([]);
@@ -95,8 +96,16 @@ export default function PurchaseForm() {
   }, [isOwner, id]);
 
   const loadSuppliers = async () => {
-    const r = await api.get('/suppliers');
-    setSuppliers(r.data);
+    const [suppRes, entRes] = await Promise.all([
+      api.get('/suppliers'),
+      api.get('/entities').catch(() => ({ data: [] }))
+    ]);
+    setSuppliers(suppRes.data);
+    // Entities with SUPPLIER or DISTRIBUTOR type appear in a separate group
+    const entityList = (entRes.data || []).filter(e =>
+      ['SUPPLIER', 'DISTRIBUTOR'].includes((e.type || '').toUpperCase())
+    );
+    setEntitySuppliers(entityList);
   };
 
   const handleQuickSupplierAdd = async (e) => {
@@ -270,7 +279,16 @@ export default function PurchaseForm() {
                 </span>
                 <select className="pf-inp" required value={form.supplier_id} onChange={e=>setForm({...form,supplier_id:e.target.value})}>
                   <option value="">— Select Supplier —</option>
-                  {suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  {suppliers.length > 0 && (
+                    <optgroup label="📋 Registered Suppliers">
+                      {suppliers.map(s=><option key={`sup-${s.id}`} value={s.id}>{s.name}</option>)}
+                    </optgroup>
+                  )}
+                  {entitySuppliers.length > 0 && (
+                    <optgroup label="🏢 Distributors / Entities">
+                      {entitySuppliers.map(e=><option key={`ent-${e.id}`} value={`entity-${e.id}`}>{e.name} ({e.type})</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div className="col-6 col-md-2">
