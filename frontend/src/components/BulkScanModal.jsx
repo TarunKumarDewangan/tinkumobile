@@ -17,8 +17,14 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
   const [sellingPrice, setSellingPrice] = useState('');
   const [wholesellerPrice, setWholesellerPrice] = useState('');
   const [minSellingPrice, setMinSellingPrice] = useState('');
-  const [maxSellingPrice, setMaxSellingPrice] = useState('');
   const [incentive, setIncentive] = useState('');
+  // New price flow
+  const [rateIncTax, setRateIncTax] = useState('');
+  const [discountPct, setDiscountPct] = useState('');
+  const [cashDiscount, setCashDiscount] = useState('');
+  const [gstRate, setGstRate] = useState('18');
+  // Multi-product batch
+  const [batchItems, setBatchItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const manualInputRef = useRef(null);
@@ -50,32 +56,84 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
     if (manualImei.trim()) { handleAddImei(manualImei.trim()); setManualImei(''); }
   };
 
+  // Derived price calculations
+  const rateExclTaxNum = rateIncTax ? (parseFloat(rateIncTax) / (1 + parseFloat(gstRate || 0) / 100)) : 0;
+  const rateExclTax = rateIncTax ? rateExclTaxNum.toFixed(2) : '';
+  
+  const discountAmtNum = (rateExclTaxNum && discountPct) ? (rateExclTaxNum * parseFloat(discountPct) / 100) : 0;
+  const cashDiscNum = parseFloat(cashDiscount || 0);
+  
+  const rateExclTaxAfterDiscNum = rateIncTax ? (rateExclTaxNum - discountAmtNum - cashDiscNum) : 0;
+  const rateExclTaxAfterDisc = rateIncTax ? rateExclTaxAfterDiscNum.toFixed(2) : '';
+  
+  const gstAmtNum = rateExclTaxAfterDiscNum * (parseFloat(gstRate || 0) / 100);
+  const gstAmt = rateIncTax ? gstAmtNum.toFixed(2) : '0.00';
+  
+  const finalAmountNum = rateExclTaxAfterDiscNum + gstAmtNum;
+  const finalAmount = rateIncTax ? finalAmountNum.toFixed(2) : '';
+
   const handleReset = () => {
     setScannedImeis([]); setSelectedProductId(''); setIsNew(false); setNewProductName('');
     setRam(''); setStorage(''); setColor('');
     setUnitPrice(''); setSellingPrice(''); setWholesellerPrice(''); setSearchTerm('');
-    setMinSellingPrice(''); setMaxSellingPrice(''); setIncentive(''); setShowDropdown(false);
+    setMinSellingPrice(''); setIncentive(''); setShowDropdown(false);
     setSelectedBrand(''); setBrandInput(''); setShowBrandDropdown(false);
+    setRateIncTax(''); setDiscountPct(''); setCashDiscount(''); setGstRate('18');
   };
 
-  const handleFinish = () => {
-    if (isNew && !newProductName) return;
-    if (!isNew && !selectedProductId) return;
+  // Commit current product's IMEIs to batch, reset for next product
+  const handleAddAnother = () => {
+    if (!scannedImeis.length || (isNew ? !newProductName : !selectedProductId)) return;
     const product = isNew ? null : products.find(p => p.id == selectedProductId);
-    const items = scannedImeis.map(imei => ({
+    const newItems = scannedImeis.map(imei => ({
       product_id: isNew ? '' : selectedProductId,
       is_new: isNew,
       new_product_name: isNew ? (selectedBrand ? `${selectedBrand} ${newProductName}`.trim() : newProductName) : '',
       category_id: isNew ? mobileNewCatId : (product?.category_id || mobileNewCatId),
       imei, ram, storage, color, quantity: 1,
-      unit_price: unitPrice || product?.purchase_price || 0,
+      unit_price: finalAmountNum || unitPrice || product?.purchase_price || 0,
       selling_price: sellingPrice || product?.selling_price || 0,
       wholeseller_price: wholesellerPrice || product?.wholeseller_price || 0,
       min_selling_price: minSellingPrice || product?.min_selling_price || 0,
-      max_selling_price: maxSellingPrice || product?.max_selling_price || 0,
+      max_selling_price: finalAmountNum || 0,
       incentive_amount: incentive || product?.incentive_amount || 0
     }));
-    onAddItems(items); handleReset(); onHide();
+    setBatchItems(prev => [...prev, ...newItems]);
+    // Reset only product/IMEI part, keep modal open
+    setScannedImeis([]); setSelectedProductId(''); setIsNew(false); setNewProductName('');
+    setRam(''); setStorage(''); setColor(''); setSearchTerm(''); setShowDropdown(false);
+    setUnitPrice(''); setSellingPrice(''); setWholesellerPrice('');
+    setMinSellingPrice(''); setIncentive('');
+    setRateIncTax(''); setDiscountPct(''); setCashDiscount('');
+  };
+
+  const handleFinish = () => {
+    if (isNew && !newProductName && !batchItems.length) return;
+    if (!isNew && !selectedProductId && !batchItems.length) return;
+    let allItems = [...batchItems];
+    // Include current product if it has IMEIs
+    if (scannedImeis.length && (isNew ? newProductName : selectedProductId)) {
+      const product = isNew ? null : products.find(p => p.id == selectedProductId);
+      const currentItems = scannedImeis.map(imei => ({
+        product_id: isNew ? '' : selectedProductId,
+        is_new: isNew,
+        new_product_name: isNew ? (selectedBrand ? `${selectedBrand} ${newProductName}`.trim() : newProductName) : '',
+        category_id: isNew ? mobileNewCatId : (product?.category_id || mobileNewCatId),
+        imei, ram, storage, color, quantity: 1,
+        unit_price: finalAmountNum || unitPrice || product?.purchase_price || 0,
+        selling_price: sellingPrice || product?.selling_price || 0,
+        wholeseller_price: wholesellerPrice || product?.wholeseller_price || 0,
+        min_selling_price: minSellingPrice || product?.min_selling_price || 0,
+        max_selling_price: finalAmountNum || 0,
+        incentive_amount: incentive || product?.incentive_amount || 0
+      }));
+      allItems = [...allItems, ...currentItems];
+    }
+    if (!allItems.length) return;
+    onAddItems(allItems);
+    setBatchItems([]);
+    handleReset();
+    onHide();
   };
 
   const handleProductChange = (id) => {
@@ -85,12 +143,13 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
       if (p) {
         setUnitPrice(p.purchase_price || ''); setSellingPrice(p.selling_price || '');
         setWholesellerPrice(p.wholeseller_price || '');
-        setMinSellingPrice(p.min_selling_price || ''); setMaxSellingPrice(p.max_selling_price || '');
-        setIncentive(p.incentive_amount || '');
+        setMinSellingPrice(p.min_selling_price || ''); setIncentive(p.incentive_amount || '');
+        setRateIncTax(p.purchase_price || '');
         if (p.attributes) { setRam(p.attributes.ram||''); setStorage(p.attributes.storage||''); setColor(p.attributes.color||''); }
       }
     } else {
-      setUnitPrice(''); setSellingPrice(''); setWholesellerPrice(''); setMinSellingPrice(''); setMaxSellingPrice(''); setIncentive('');
+      setUnitPrice(''); setSellingPrice(''); setWholesellerPrice(''); setMinSellingPrice(''); setIncentive('');
+      setRateIncTax(''); setDiscountPct(''); setCashDiscount('');
       setRam(''); setStorage(''); setColor(''); setSearchTerm('');
     }
   };
@@ -326,15 +385,75 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
             {/* Prices */}
             <div className="bm-card mb-3">
               <div className="row g-2">
+                {/* Row 1: Rate Inc Tax + GST % */}
+                <div className="col-7">
+                  <label style={{color:'#1e293b',fontWeight:800}}>Rate (Inc. Tax) — DP</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text">₹</span>
+                    <input type="number" className="form-control fw-bold" step=".01" placeholder="0"
+                      value={rateIncTax}
+                      onChange={e => { setRateIncTax(e.target.value); setUnitPrice(e.target.value); }} />
+                  </div>
+                </div>
+                <div className="col-5">
+                  <label className="text-muted">GST %</label>
+                  <select className="form-select form-select-sm" value={gstRate} onChange={e => setGstRate(e.target.value)}>
+                    <option value="0">0% (No GST)</option>
+                    <option value="5">5%</option>
+                    <option value="12">12%</option>
+                    <option value="18">18%</option>
+                    <option value="28">28%</option>
+                  </select>
+                </div>
+                {/* Row 2: Rate Excl Tax (auto) */}
                 <div className="col-6">
-                  <label className="text-muted">DP(DealerPrice)</label>
-                  <div className="input-group input-group-sm"><span className="input-group-text">₹</span>
-                    <input type="number" className="form-control" step=".01" placeholder="0" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} /></div>
+                  <label className="text-muted">Rate w/o Tax (auto)</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text">₹</span>
+                    <input type="number" className="form-control bg-light text-muted" readOnly value={rateExclTax} />
+                  </div>
+                </div>
+                {/* Row 3: Discount % + CD */}
+                <div className="col-3">
+                  <label className="text-warning">Disc %</label>
+                  <input type="number" className="form-control form-control-sm border-warning" step=".01" placeholder="0"
+                    value={discountPct} onChange={e => setDiscountPct(e.target.value)} />
+                </div>
+                <div className="col-3">
+                  <label className="text-danger" style={{fontSize:'.65rem'}}>CD (Cash Disc)</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text text-danger">₹</span>
+                    <input type="number" className="form-control border-danger" step=".01" placeholder="0"
+                      value={cashDiscount} onChange={e => setCashDiscount(e.target.value)} />
+                  </div>
+                </div>
+                {/* Row 4: Amount after discounts (w/o tax) */}
+                <div className="col-6">
+                  <label style={{color:'#059669',fontWeight:800}}>Rate w/o Tax (After Disc)</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text text-success">₹</span>
+                    <input type="number" className="form-control border-success fw-bold text-success bg-white" readOnly value={rateExclTaxAfterDisc} />
+                  </div>
                 </div>
                 <div className="col-6">
-                  <label className="text-success">Sell Price(MOP)</label>
+                  <label className="text-muted">GST Amount</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text">₹</span>
+                    <input type="number" className="form-control bg-light text-muted" readOnly value={gstAmt} />
+                  </div>
+                </div>
+                {/* Final Unit Price */}
+                <div className="col-12 mt-2 mb-2">
+                  <div className="p-2 rounded-2 d-flex justify-content-between align-items-center" style={{background:'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', color:'#fff'}}>
+                    <span className="fw-bold" style={{fontSize:'.8rem'}}>FINAL AMOUNT PER UNIT:</span>
+                    <span className="fs-5 fw-bold">₹{finalAmount || '0.00'}</span>
+                  </div>
+                </div>
+                {/* Sell Price + Commission */}
+                <div className="col-6">
+                  <label className="text-success">Sell Price (MOP)</label>
                   <div className="input-group input-group-sm"><span className="input-group-text text-success">₹</span>
-                    <input type="number" className="form-control border-success text-success fw-bold" step=".01" placeholder="0" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} /></div>
+                    <input type="number" className="form-control border-success fw-bold" step=".01" placeholder="0" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} /></div>
                 </div>
                 <div className="col-6">
                   <label className="text-primary">Whole Seller Price</label>
@@ -342,17 +461,12 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
                     <input type="number" className="form-control border-primary" step=".01" placeholder="0" value={wholesellerPrice} onChange={e => setWholesellerPrice(e.target.value)} /></div>
                 </div>
                 <div className="col-6">
-                  <label className="text-info">Customer Price</label>
-                  <div className="input-group input-group-sm"><span className="input-group-text text-info">₹</span>
-                    <input type="number" className="form-control border-info" step=".01" placeholder="0" value={maxSellingPrice} onChange={e => setMaxSellingPrice(e.target.value)} /></div>
-                </div>
-                <div className="col-6">
                   <label className="text-danger">Min Price</label>
                   <div className="input-group input-group-sm"><span className="input-group-text text-danger">₹</span>
                     <input type="number" className="form-control border-danger" step=".01" placeholder="0" value={minSellingPrice} onChange={e => setMinSellingPrice(e.target.value)} /></div>
                 </div>
                 <div className="col-6">
-                  <label style={{color:'#6366f1'}}>Commission (Salesman)</label>
+                  <label style={{color:'#6366f1'}}>Commission</label>
                   <div className="input-group input-group-sm"><span className="input-group-text" style={{color:'#6366f1',borderColor:'#a5b4fc'}}>₹</span>
                     <input type="number" className="form-control" style={{borderColor:'#a5b4fc'}} step=".01" placeholder="0" value={incentive} onChange={e => setIncentive(e.target.value)} /></div>
                 </div>
@@ -379,6 +493,14 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
               onClick={() => setShowScanner(true)}>
               📷 Use Camera Scanner
             </Button>
+            {/* Add Another Product */}
+            <button type="button"
+              className="btn btn-outline-primary w-100 fw-bold mb-2"
+              style={{fontSize:'.78rem',borderRadius:8}}
+              disabled={!scannedImeis.length || (isNew ? !newProductName : !selectedProductId)}
+              onClick={handleAddAnother}>
+              ➕ Done — Add Another Product
+            </button>
             <div className="bm-tip">
               <strong>📟 Physical Scanner?</strong> Click the IMEI box above and scan — items add automatically.
             </div>
@@ -389,16 +511,24 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
             <div className="d-flex justify-content-between align-items-center mb-3">
               <div className="bm-lbl mb-0">
                 📋 Entry List&nbsp;
-                <span className="badge rounded-pill" style={{background:'#6366f1',fontSize:'.7rem',padding:'3px 9px'}}>{scannedImeis.length}</span>
+                <span className="badge rounded-pill" style={{background:'#6366f1',fontSize:'.7rem',padding:'3px 9px'}}>
+                  {scannedImeis.length + batchItems.length}
+                </span>
               </div>
-              {scannedImeis.length > 0 && (
+              {(scannedImeis.length > 0 || batchItems.length > 0) && (
                 <button className="btn btn-link btn-sm p-0 text-danger text-decoration-none" style={{fontSize:'.75rem'}}
-                  onClick={() => setScannedImeis([])}>Clear All</button>
+                  onClick={() => { setScannedImeis([]); setBatchItems([]); }}>Clear All</button>
               )}
             </div>
 
             <div className="bm-sc d-flex flex-column gap-2" style={{maxHeight:430,overflowY:'auto'}}>
-              {scannedImeis.length === 0 ? (
+              {/* Batched products from previous "Add Another" */}
+              {batchItems.length > 0 && (
+                <div className="px-2 py-1 rounded-3 mb-1" style={{background:'#e0e7ff',fontSize:'.68rem',color:'#6366f1',fontWeight:700}}>
+                  ✅ {batchItems.length} phone{batchItems.length!==1?'s':''} from previous product(s) added
+                </div>
+              )}
+              {scannedImeis.length === 0 && batchItems.length === 0 ? (
                 <div className="text-center py-5 text-muted">
                   <div style={{fontSize:'2.8rem',marginBottom:10,opacity:.4}}>📥</div>
                   <div className="fw-bold small">No IMEIs yet</div>
@@ -428,12 +558,12 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
         <Button variant="outline-secondary" className="px-4 fw-bold" onClick={onHide}>Cancel</Button>
         <Button className="px-5 fw-bold shadow"
           style={{
-            background: scannedImeis.length > 0 ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#adb5bd',
+            background: (scannedImeis.length + batchItems.length) > 0 ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#adb5bd',
             borderColor: 'transparent', letterSpacing: .5
           }}
-          disabled={scannedImeis.length===0 || (isNew ? !newProductName : !selectedProductId)}
+          disabled={(scannedImeis.length + batchItems.length) === 0}
           onClick={handleFinish}>
-          ✅ Add {scannedImeis.length} Phone{scannedImeis.length!==1?'s':''} to Purchase
+          ✅ Add {scannedImeis.length + batchItems.length} Phone{(scannedImeis.length + batchItems.length)!==1?'s':''} to Purchase
         </Button>
       </Modal.Footer>
 
