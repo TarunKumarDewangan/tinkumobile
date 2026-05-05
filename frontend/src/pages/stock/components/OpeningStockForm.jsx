@@ -88,6 +88,15 @@ export default function OpeningStockForm({
     }
   };
 
+  const handleExcelImportClick = () => {
+    const pin = window.prompt("Enter Admin PIN to Import Excel:");
+    if (pin === "71727378") {
+      setShowExcelImport(true);
+    } else if (pin !== null) {
+      toast.error("Incorrect PIN");
+    }
+  };
+
   const handleBulkSubmit = async (e) => {
     e.preventDefault();
     if (openingStockItems.length === 0) return;
@@ -148,8 +157,11 @@ export default function OpeningStockForm({
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="pf-sec mb-0">📦 Stock Items ({openingStockItems.length})</div>
           <div className="d-flex gap-2">
+            <button type="button" className="pf-bulk shadow-sm" style={{background: '#e0f2fe', color: '#0284c7', border: '1px solid #bae6fd', letterSpacing: 0.5}} onClick={handleExcelImportClick}>
+              📥 Import Excel (PIN)
+            </button>
             <button type="button" className="pf-bulk shadow-sm" style={{background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 'none', letterSpacing: 0.5}} onClick={handleBulkAddClick}>
-              + Bulk Add Products (PIN Required)
+              + Bulk Add Products (PIN)
             </button>
           </div>
         </div>
