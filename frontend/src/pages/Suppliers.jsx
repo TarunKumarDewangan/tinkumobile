@@ -162,18 +162,18 @@ export default function Suppliers() {
                     <td className="text-end pe-4">
                       <div className="d-flex justify-content-end gap-2">
                         <button 
-                          className="btn btn-sm btn-outline-primary border-0 bg-primary bg-opacity-10" 
-                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                          className="btn btn-sm btn-outline-secondary fw-semibold" 
+                          style={{ fontSize: '0.75rem', minWidth: '55px' }}
                           onClick={() => { setEditId(s.id); setForm(s); setShowForm(true); }}
                         >
-                          Edit
+                          ✏️ Edit
                         </button>
                         <button 
-                          className="btn btn-sm btn-outline-danger border-0 bg-danger bg-opacity-10" 
-                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                          className="btn btn-sm btn-outline-danger fw-semibold" 
+                          style={{ fontSize: '0.75rem', minWidth: '65px' }}
                           onClick={() => handleDelete(s.id)}
                         >
-                          Delete
+                          🗑️ Delete
                         </button>
                       </div>
                     </td>
