@@ -332,7 +332,7 @@ export default function EntityLedger() {
                    <div className="text-center py-5">
                        <div className="spinner-border text-primary opacity-50 pulse-animation"></div>
                    </div>
-                ) : ledger.length === 0 ? (
+                ) : (ledger.length === 0 && parseFloat(targetEntity?.opening_balance || 0) === 0) ? (
                     <div className="text-center py-5 mt-4">
                        <div className="display-4 opacity-10 mb-3"><i className="bi bi-journal-x"></i></div>
                        <h6 className="text-muted">No transactions recorded for this period.</h6>
@@ -351,16 +351,18 @@ export default function EntityLedger() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="opening-balance-row bg-light bg-opacity-50">
-                          <td className="ps-4 xx-small text-muted">—</td>
-                          <td className="xx-small italic text-muted fw-bold text-primary">Opening Balance</td>
-                          <td>—</td>
-                          <td className="text-end">—</td>
-                          <td className="text-end pe-4">—</td>
-                          <td className={`text-end pe-4 fw-bold x-small ${(targetEntity?.opening_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                             ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.opening_balance >= 0 ? 'Dr' : 'Cr'}
-                          </td>
-                        </tr>
+                        {parseFloat(targetEntity?.opening_balance || 0) !== 0 && (
+                          <tr className="opening-balance-row bg-light bg-opacity-50">
+                            <td className="ps-4 xx-small text-muted">—</td>
+                            <td className="xx-small italic text-muted fw-bold text-primary">Opening Balance</td>
+                            <td>—</td>
+                            <td className="text-end">—</td>
+                            <td className="text-end pe-4">—</td>
+                            <td className={`text-end pe-4 fw-bold x-small ${targetEntity?.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
+                               ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
+                            </td>
+                          </tr>
+                        )}
                         {ledger.slice(0, visibleItems).map((item) => (
                           <tr key={item.id}>
                             <td className="ps-4">
