@@ -75,12 +75,17 @@ export default function OpeningStockForm({
     });
   };
 
-  const addOpeningItem = () => {
-    setOpeningStockItems([...openingStockItems, { product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', selling_price: '', wholeseller_price: '', min_selling_price: '', max_selling_price: '', incentive_amount: '' }]);
-  };
-
   const removeOpeningItem = (i) => {
     setOpeningStockItems(openingStockItems.filter((_, idx) => idx !== i));
+  };
+
+  const handleBulkAddClick = () => {
+    const pin = window.prompt("Enter Admin PIN to Bulk Add Products:");
+    if (pin === "71727378") {
+      setShowBulkScan(true);
+    } else if (pin !== null) {
+      toast.error("Incorrect PIN");
+    }
   };
 
   const handleBulkSubmit = async (e) => {
@@ -104,7 +109,7 @@ export default function OpeningStockForm({
         };
         await api.post('/stock-adjustments/bulk', payload);
         toast.success(`✅ Successfully added items to stock!`);
-        setOpeningStockItems([{ product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', selling_price: '', wholeseller_price: '', min_selling_price: '', max_selling_price: '', incentive_amount: '' }]);
+        setOpeningStockItems([]);
         onSuccess && onSuccess();
     } catch (e) {
         toast.error(e.response?.data?.message || 'Error saving stock');
@@ -143,12 +148,22 @@ export default function OpeningStockForm({
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="pf-sec mb-0">📦 Stock Items ({openingStockItems.length})</div>
           <div className="d-flex gap-2">
-            <button type="button" className="pf-bulk" style={{background: '#e0f2fe', color: '#0284c7', borderColor: '#bae6fd'}} onClick={() => setShowExcelImport(true)}>📥 Import Excel (Copy Paste)</button>
-            <button type="button" className="pf-bulk" onClick={() => setShowBulkScan(true)}>+ Bulk Add Products</button>
+            <button type="button" className="pf-bulk shadow-sm" style={{background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 'none', letterSpacing: 0.5}} onClick={handleBulkAddClick}>
+              + Bulk Add Products (PIN Required)
+            </button>
           </div>
         </div>
 
-        {openingStockItems.map((item, i) => {
+        {openingStockItems.length === 0 ? (
+          <div className="text-center py-5" style={{background:'#f8fafc', borderRadius:12, border:'2px dashed #cbd5e1'}}>
+            <div style={{fontSize:'3rem', opacity:0.4, marginBottom:10}}>📥</div>
+            <div className="fw-bold" style={{color:'#64748b'}}>No items added yet.</div>
+            <div className="small text-muted mb-3">Use the Bulk Add button above to scan and add inventory.</div>
+            <button type="button" className="btn btn-sm text-white fw-bold shadow-sm px-4" style={{background:'#6366f1', borderRadius:20}} onClick={handleBulkAddClick}>
+              Start Bulk Entry
+            </button>
+          </div>
+        ) : openingStockItems.map((item, i) => {
           const marginVal = parseFloat(item.selling_price || 0) - parseFloat(item.unit_price || 0);
           const marginPer = item.unit_price > 0 ? (marginVal / item.unit_price) * 100 : 0;
           
@@ -251,20 +266,15 @@ export default function OpeningStockForm({
                     <span style={{fontSize:'.62rem',fontWeight:700,color:'#94a3b8',textTransform:'uppercase'}}>Margin</span>
                     <span style={{fontWeight:700,color:marginVal>=0?'#059669':'#dc2626',fontSize:'.78rem'}}>₹{marginVal.toLocaleString('en-IN')} ({marginPer.toFixed(1)}%)</span>
                   </div>
-                  <div style={{background:'#e2e8f0',height:3,borderRadius:4,marginTop:3}}>
-                    <div style={{background:marginVal>=0?'#059669':'#dc2626',width:`${Math.min(100,Math.max(0,marginPer))}%`,height:'100%',borderRadius:4}}/>
+                    <div style={{textAlign:'right',marginTop:4,fontSize:'.75rem',color:'#64748b'}}>
+                      Item Total: <span style={{fontWeight:700,color:'#6366f1',fontSize:'.88rem'}}>₹{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toLocaleString('en-IN')}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           );
         })}
-
-        <div style={{textAlign:'center',marginTop:16}}>
-          <button type="button" className="pf-bulk" style={{background:'#f1f5f9',color:'#6366f1',border:'1.5px dashed #a5b4fc',padding:'8px 24px'}} onClick={addOpeningItem}>
-            + Add Another Item Manually
-          </button>
-        </div>
       </div>
 
       <div style={{marginTop:24,textAlign:'right'}}>

@@ -19,9 +19,7 @@ export default function StockEntry() {
   const [form, setForm] = useState({
     product_id: '', quantity: 1, reason: 'opening_stock', purchase_price: '', notes: '', adjustment_date: new Date().toISOString().slice(0,10), shop_id: '',
   });
-  const [openingStockItems, setOpeningStockItems] = useState([
-    { product_id: '', is_new: false, new_product_name: '', category_id: 1, imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', selling_price: '', min_selling_price: '', max_selling_price: '' }
-  ]);
+  const [openingStockItems, setOpeningStockItems] = useState([]);
   const [history, setHistory] = useState([]);
   const [histLoading, setHistLoading] = useState(false);
   const [editingAdj, setEditingAdj] = useState(null);
