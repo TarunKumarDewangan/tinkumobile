@@ -272,7 +272,6 @@ export default function OpeningStockForm({
                   </div>
                 </div>
               </div>
-            </div>
           );
         })}
       </div>
