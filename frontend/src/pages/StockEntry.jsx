@@ -73,6 +73,21 @@ export default function StockEntry() {
     }
   };
 
+  const handleBulkDelete = async (ids) => {
+    if (!window.confirm(`Are you sure you want to delete ${ids.length} selected adjustments? Inventory will be reverted.`)) return;
+    setLoading(true);
+    try {
+        await api.post('/stock-adjustments/bulk-delete', { ids });
+        toast.success(`Successfully deleted ${ids.length} adjustments!`);
+        loadHistory();
+        inventory.refresh();
+    } catch (e) {
+        toast.error(e.response?.data?.message || 'Error bulk deleting adjustments');
+    } finally {
+        setLoading(false);
+    }
+  };
+
 
   const PS = `
     .pm-wrap{background:#f1f5f9;min-height:100vh;padding:20px;}
@@ -194,6 +209,7 @@ export default function StockEntry() {
             setEditingAdj={setEditingAdj}
             setEditForm={setEditForm}
             handleDelete={handleDelete}
+            handleBulkDelete={handleBulkDelete}
         />
       )}
 

@@ -339,6 +339,34 @@ class StockAdjustmentController extends Controller
     }
 
     /**
+     * Bulk delete stock adjustments
+     */
+    public function bulkDestroy(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'exists:stock_adjustments,id'
+        ]);
+
+        return DB::transaction(function () use ($request) {
+            $adjustments = StockAdjustment::whereIn('id', $request->ids)->get();
+            $count = 0;
+
+            foreach ($adjustments as $adjustment) {
+                if ($adjustment->type === 'add') {
+                    Inventory::removeStock($adjustment->shop_id, $adjustment->product_id, $adjustment->quantity);
+                } else {
+                    Inventory::addStock($adjustment->shop_id, $adjustment->product_id, $adjustment->quantity);
+                }
+                $adjustment->delete();
+                $count++;
+            }
+
+            return response()->json(['message' => "Successfully deleted $count adjustments and reverted inventory."]);
+        });
+    }
+
+    /**
      * Current stock levels for all products in a shop
      */
     public function stockLevels(Request $request)
