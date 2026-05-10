@@ -22,8 +22,9 @@ export default function SaleForm() {
     customer_id: '', 
     sold_by_id: '',
     sale_date: new Date().toISOString().slice(0,10), 
-    bill_type: 'kaccha', 
-    payment_method: 'cash', 
+    bill_type: 'pakka', 
+    payment_method: 'CASH',
+    other_mode: '',
     discount: 0,
     total_paid: 0,
     cgst_rate: 9,
@@ -33,7 +34,7 @@ export default function SaleForm() {
     is_cash_discount_on_bill: true,
     rounding_mode: 'auto',
     round_off: 0,
-    notes: '' 
+    notes: '',
   });
   const [items, setItems] = useState([]);
   
@@ -128,6 +129,7 @@ export default function SaleForm() {
         sale_date: data.sale_date,
         bill_type: data.bill_type,
         payment_method: data.payment_method,
+        other_mode: data.other_mode || '',
         discount: data.discount,
         total_paid: data.total_paid,
         cgst_rate: data.cgst_rate || 9,
@@ -278,8 +280,11 @@ export default function SaleForm() {
       const totalGstAmount = totalInclusive - subtotal;
       
       if (totalGstRate > 0) {
-         cgstAmount = totalGstAmount * (cgstR / totalGstRate);
-         sgstAmount = totalGstAmount * (sgstR / totalGstRate);
+         // Round taxes to 2 decimals
+         cgstAmount = Math.round(totalGstAmount * (cgstR / totalGstRate) * 100) / 100;
+         sgstAmount = Math.round(totalGstAmount * (sgstR / totalGstRate) * 100) / 100;
+         // Recalculate subtotal to be exactly the remainder
+         subtotal = Math.round((totalInclusive - cgstAmount - sgstAmount) * 100) / 100;
       }
   }
 
@@ -289,8 +294,8 @@ export default function SaleForm() {
   useEffect(() => {
     if (!isManualRound) {
         let roundedValue = rawTotal;
-        if (form.rounding_mode === 'up') roundedValue = Math.ceil(rawTotal);
-        else if (form.rounding_mode === 'down') roundedValue = Math.floor(rawTotal);
+        if (form.rounding_mode === 'up') roundedValue = Math.floor(rawTotal + 1);
+        else if (form.rounding_mode === 'down') roundedValue = Math.ceil(rawTotal - 1);
         else if (form.rounding_mode === 'auto') roundedValue = Math.round(rawTotal);
         
         const diff = roundedValue - rawTotal;
@@ -305,13 +310,8 @@ export default function SaleForm() {
   const profitColor = totalProfit > 0 ? 'text-success' : 'text-danger';
 
   const handleRoundClick = (type) => {
-      let roundedValue = rawTotal;
-      if (type === 'up') roundedValue = Math.ceil(rawTotal);
-      else if (type === 'down') roundedValue = Math.floor(rawTotal);
-      
-      const diff = roundedValue - rawTotal;
-      setForm({ ...form, round_off: parseFloat(diff.toFixed(2)), rounding_mode: 'manual' });
-      setIsManualRound(true);
+    setForm(prev => ({ ...prev, rounding_mode: type }));
+    setIsManualRound(false);
   };
 
   // Customer Handling
@@ -350,12 +350,16 @@ export default function SaleForm() {
     if (!form.customer_id) return toast.warning('Please select a customer');
     
     try {
-      const payload = { ...form, items, round_off: form.round_off };
+      let finalForm = { ...form, items };
+      if (form.payment_method === 'OTHER' && form.other_mode) {
+          finalForm.payment_method = form.other_mode;
+      }
+      
       if (id) {
-        await api.put(`/sale-invoices/${id}`, payload);
-        toast.success('✅ Sale updated');
+        await api.put(`/sale-invoices/${id}`, finalForm);
+        toast.success('✅ Sale updated successfully');
       } else {
-        await api.post('/sale-invoices', payload);
+        await api.post('/sale-invoices', finalForm);
         toast.success('✅ Sale recorded successfully');
       }
       navigate('/sales');
@@ -390,7 +394,7 @@ export default function SaleForm() {
                         )}
 
                         <div className="col-12">
-                            <label className="form-label small fw-bold text-success">SOLD BY / DEALING PERSON <span className="text-danger">*</span></label>
+                            <label className="form-label small fw-bold text-success">SOLD BY / DEALER PERSON <span className="text-danger">*</span></label>
                             <select className="form-select border-success fw-bold" required value={form.sold_by_id} onChange={e => setForm({...form, sold_by_id: e.target.value})}>
                                 <option value="">— SELECT STAFF —</option>
                                 {staff.filter(s => {
@@ -514,11 +518,11 @@ export default function SaleForm() {
                             <tr>
                                 <th className="ps-4">Product & Configuration</th>
                                 <th style={{ width: '80px' }} className="text-center">QTY</th>
-                                <th style={{ width: '130px' }} className="text-end">RATE (INCL)</th>
+                                <th style={{ width: '150px' }} className="text-end">RATE (INCL)</th>
                                 <th style={{ width: '120px' }} className="text-end">RATE (EXCL)</th>
                                 <th style={{ width: '80px' }} className="text-center">GST %</th>
-                                <th style={{ width: '130px' }} className="text-end">TOTAL (EXCL)</th>
-                                <th style={{ width: '130px' }} className="text-end">NET TOTAL</th>
+                                <th style={{ width: '150px' }} className="text-end">TOTAL (EXCL)</th>
+                                <th style={{ width: '150px' }} className="text-end">NET TOTAL</th>
                                 <th style={{ width: '50px' }}></th>
                             </tr>
                         </thead>
@@ -644,8 +648,23 @@ export default function SaleForm() {
                                 <option value="cash">CASH</option>
                                 <option value="card">CARD</option>
                                 <option value="mobile">UPI / MOBILE</option>
+                                <option value="bank">BANK / NEFT</option>
+                                <option value="other">OTHER</option>
                             </select>
                         </div>
+                        {form.payment_method === 'other' && (
+                            <div className="col-12 mt-2">
+                                <label className="form-label x-small fw-bold text-danger animate-pulse">SPECIFY PAYMENT MODE *</label>
+                                <input 
+                                    type="text" 
+                                    className="form-control form-control-sm border-danger fw-bold text-uppercase" 
+                                    placeholder="E.G. CHEQUE, EXCHANGE, ETC..." 
+                                    required
+                                    value={form.other_payment_mode} 
+                                    onChange={e => setForm({...form, other_payment_mode: e.target.value.toUpperCase()})} 
+                                />
+                            </div>
+                        )}
                         <div className="col-6">
                              <label className="form-label x-small fw-bold text-muted">ROUNDING</label>
                              <select className="form-select form-select-sm" value={form.rounding_mode} onChange={e => {
@@ -677,19 +696,14 @@ export default function SaleForm() {
                             <div className="w-100">
                                 <div className="d-flex justify-content-between align-items-center mb-1">
                                     <span className="small text-muted fw-bold">CASH DISCOUNT:</span>
-                                    <div className="form-check form-switch p-0 m-0 d-flex align-items-center gap-2">
-                                        <label className="form-check-label x-small text-muted" htmlFor="saleOnBill">ON BILL?</label>
-                                        <input className="form-check-input ms-0" type="checkbox" id="saleOnBill" 
-                                            checked={form.is_cash_discount_on_bill} onChange={e => setForm({...form, is_cash_discount_on_bill: e.target.checked})} />
-                                    </div>
                                 </div>
                                 <input type="number" className="form-control form-control-sm text-end fw-black text-info border-info"
                                     value={form.cash_discount === 0 ? '' : form.cash_discount} 
                                     onFocus={e => e.target.select()}
                                     onChange={e => setForm({...form, cash_discount: e.target.value})} 
                                 />
-                                <div className="x-small text-muted mt-1" style={{fontSize:'0.6rem'}}>
-                                    {form.is_cash_discount_on_bill ? '✅ DEDUCTED FROM BILL' : 'ℹ️ SEPARATE LEDGER ENTRY'}
+                                <div className="x-small text-muted mt-1 fw-bold" style={{fontSize:'0.6rem'}}>
+                                    ✅ DEDUCTED FROM BILL
                                 </div>
                             </div>
                         </div>
@@ -714,20 +728,26 @@ export default function SaleForm() {
                              </div>
                              <div className="d-flex align-items-center gap-2">
                                 <span className="x-small text-muted fw-bold">ADJUST PAISE (₹):</span>
-                                <input 
-                                    type="number" 
-                                    step="0.01" 
-                                    className="form-control form-control-sm text-end fw-black text-primary border-primary" 
-                                    style={{ width: '120px' }} 
-                                    value={form.round_off === 0 ? '' : form.round_off} 
-                                    onFocus={e => e.target.select()}
-                                    onChange={e => {
-                                        setForm({...form, round_off: parseFloat(e.target.value) || 0, rounding_mode: 'manual'});
-                                        setIsManualRound(true);
-                                    }} 
-                                />
-                                {form.round_off !== 0 && (
-                                    <button type="button" className="btn btn-link btn-sm p-0 m-0 text-decoration-none" onClick={() => setIsManualRound(false)} title="Reset to Auto">↺ RESET</button>
+                                <div className="d-flex align-items-center gap-1">
+                                    <button type="button" className="btn btn-xs btn-light border fw-bold" onClick={() => { setForm(f => ({...f, round_off: (parseFloat(f.round_off) || 0) - 1, rounding_mode: 'manual'})); setIsManualRound(true); }}>-1</button>
+                                    <input 
+                                        type="number" 
+                                        step="0.01" 
+                                        className="form-control form-control-sm text-end fw-black text-primary border-primary" 
+                                        style={{ width: '80px' }} 
+                                        value={form.round_off === 0 ? '' : form.round_off} 
+                                        onFocus={e => e.target.select()}
+                                        onChange={e => {
+                                            setForm({...form, round_off: parseFloat(e.target.value) || 0, rounding_mode: 'manual'});
+                                            setIsManualRound(true);
+                                        }} 
+                                    />
+                                    <button type="button" className="btn btn-xs btn-light border fw-bold" onClick={() => { setForm(f => ({...f, round_off: (parseFloat(f.round_off) || 0) + 1, rounding_mode: 'manual'})); setIsManualRound(true); }}>+1</button>
+                                </div>
+                                {(form.round_off !== 0 || form.rounding_mode !== 'auto') && (
+                                    <button type="button" className="btn btn-link btn-sm p-0 m-0 text-decoration-none" 
+                                        onClick={() => { setIsManualRound(false); setForm(f => ({...f, rounding_mode: 'auto'})); }} 
+                                        title="Reset to Auto">↺ RESET</button>
                                 )}
                              </div>
                         </div>
@@ -750,6 +770,26 @@ export default function SaleForm() {
                             onFocus={e => e.target.select()}
                             onChange={e => setForm({...form, total_paid: e.target.value})} 
                         />
+                        {parseFloat(form.total_paid) > 0 && (
+                            <div className="mt-2 animate-fade-in">
+                                <label className="form-label x-small fw-bold text-muted mb-1">PAYMENT MODE</label>
+                                <select className="form-select form-select-sm fw-bold text-uppercase border-success" value={form.payment_method} onChange={e => setForm({...form, payment_method: e.target.value})}>
+                                    <option value="CASH">CASH</option>
+                                    <option value="PHONEPE">PHONEPE</option>
+                                    <option value="GPAY">GPAY</option>
+                                    <option value="BANK / NEFT">BANK / NEFT</option>
+                                    <option value="OTHER">OTHER</option>
+                                </select>
+                                {form.payment_method === 'OTHER' && (
+                                    <input 
+                                        className="form-control form-control-sm mt-1 text-uppercase fw-bold border-primary" 
+                                        placeholder="SPECIFY MODE (E.G. CHEQUE)" 
+                                        value={form.other_mode}
+                                        onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})}
+                                    />
+                                )}
+                            </div>
+                        )}
                         {grandTotal - form.total_paid > 0 && (
                             <div className="small text-danger mt-1 fw-bold">PENDING BALANCE: ₹{(grandTotal - form.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                         )}

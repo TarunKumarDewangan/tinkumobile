@@ -58,6 +58,7 @@ class SaleInvoiceController extends Controller
 
         $data = $request->validate([
             'shop_id'          => $user->hasFullAccess() ? 'required|exists:shops,id' : 'nullable',
+            'sold_by_id'       => 'nullable|exists:users,id',
             'customer_id'      => 'nullable|exists:customers,id',
             'customer_name'    => 'nullable|string|max:150',
             'customer_phone'   => 'nullable|string|max:20',
@@ -65,7 +66,7 @@ class SaleInvoiceController extends Controller
             'customer_address' => 'nullable|string',
             'sale_date'        => 'required|date',
             'bill_type'        => 'in:kaccha,pakka',
-            'payment_method'   => 'in:cash,card,mobile',
+            'payment_method'   => 'nullable|string',
             'discount'         => 'nullable|numeric|min:0',
             'total_paid'       => 'nullable|numeric|min:0',
             'cgst_rate'        => 'nullable|numeric|min:0',
@@ -111,9 +112,9 @@ class SaleInvoiceController extends Controller
                 $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
                 $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
                 
-                $cgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($cgstRate / $totalGstRate) : 0;
-                $sgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($sgstRate / $totalGstRate) : 0;
-                $totalAmount = $exclusiveTotal;
+                $cgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
+                $sgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
+                $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
             } else {
                 $cgstRate = 0;
                 $sgstRate = 0;
@@ -145,6 +146,7 @@ class SaleInvoiceController extends Controller
                 'shop_id'        => $shopId,
                 'customer_id'    => $customerId,
                 'user_id'        => $user->id,
+                'sold_by_id'     => $data['sold_by_id'] ?? null,
                 'sale_date'      => $data['sale_date'],
                 'total_amount'   => $totalAmount,
                 'cgst_rate'      => $cgstRate,
@@ -236,7 +238,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'items.product', 'giftItems.giftProduct', 'shop'));
+        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product', 'giftItems.giftProduct', 'shop'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)
@@ -276,6 +278,7 @@ class SaleInvoiceController extends Controller
 
         $data = $request->validate([
             'customer_id'    => 'required|exists:customers,id',
+            'sold_by_id'     => 'nullable|exists:users,id',
             'sale_date'      => 'required|date',
             'discount'       => 'nullable|numeric|min:0',
             'calculate_gst'  => 'nullable|boolean',
@@ -285,7 +288,7 @@ class SaleInvoiceController extends Controller
             'sgst_rate'      => 'nullable|numeric|min:0',
             'rounding_mode'  => 'nullable|in:auto,up,down,manual',
             'round_off'      => 'nullable|numeric',
-            'payment_method' => 'in:cash,card,mobile',
+            'payment_method' => 'nullable|string',
             'notes'          => 'nullable|string',
             'items'          => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
@@ -320,9 +323,9 @@ class SaleInvoiceController extends Controller
                 $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
                 $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
                 
-                $cgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($cgstRate / $totalGstRate) : 0;
-                $sgstAmount = $totalGstRate > 0 ? $totalGstAmount * ($sgstRate / $totalGstRate) : 0;
-                $totalAmount = $exclusiveTotal;
+                $cgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
+                $sgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
+                $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
             } else {
                 $cgstRate = 0;
                 $sgstRate = 0;
@@ -349,6 +352,7 @@ class SaleInvoiceController extends Controller
 
             $saleInvoice->update([
                 'customer_id'    => $data['customer_id'],
+                'sold_by_id'     => $data['sold_by_id'] ?? $saleInvoice->sold_by_id,
                 'sale_date'      => $data['sale_date'],
                 'total_amount'   => $totalAmount,
                 'cgst_rate'      => $cgstRate,

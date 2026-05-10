@@ -14,6 +14,7 @@ class SalaryPayment extends Model
     protected $fillable = [
         'user_id',
         'amount',
+        'payment_mode',
         'type',
         'for_month',
         'payment_date',

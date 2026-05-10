@@ -58,6 +58,16 @@ class SaleInvoice extends Model
         'grand_total'  => 'decimal:2',
         'round_off'    => 'decimal:2',
     ];
+    
+    public function getCustomerNameAttribute()
+    {
+        return $this->customer?->name;
+    }
+    
+    public function getCustomerPhoneAttribute()
+    {
+        return $this->customer?->phone;
+    }
 
     public function updatePaymentStatus()
     {

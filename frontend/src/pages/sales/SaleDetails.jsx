@@ -91,7 +91,7 @@ export default function SaleDetails() {
                           {/* Header Section */}
                           <div className="d-flex justify-content-between align-items-start mb-4 border-bottom pb-4">
                               <div>
-                                  <h1 className="fw-black text-primary mb-1 text-uppercase" style={{ fontSize: '2.5rem' }}>{invoice.shop?.name || 'TINKU MOBILES'}</h1>
+                                  <h1 className="fw-black text-primary mb-1 text-uppercase" style={{ fontSize: '2.5rem' }}>TINKU MOBILE</h1>
                                   <p className="text-muted small mb-0 text-uppercase">{invoice.shop?.address || 'Premium Mobile Solutions'}</p>
                               </div>
                               <div className="text-end text-uppercase">
@@ -182,7 +182,7 @@ export default function SaleDetails() {
                                       <span className="fw-bold text-muted small">ROUND OFF:</span>
                                       <span className="fw-bold">₹{parseFloat(invoice.round_off || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                   </div>
-                                  {parseFloat(invoice.cash_discount) > 0 && (
+                                  {parseFloat(invoice.cash_discount) > 0 && invoice.is_cash_discount_on_bill && (
                                       <div className="d-flex justify-content-between mb-2">
                                           <span className="fw-bold text-muted small">CASH DISCOUNT:</span>
                                           <span className="fw-bold text-success">- ₹{parseFloat(invoice.cash_discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
@@ -226,7 +226,7 @@ export default function SaleDetails() {
                                       {/* Logo Placeholder like in Photo */}
                                       <div className="bg-primary text-white p-2 rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', fontSize: '1.5rem', fontWeight: 900 }}>TM</div>
                                       <div>
-                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">{invoice.shop?.name || 'TINKU MOBILES'}</h1>
+                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">TINKU MOBILE</h1>
                                           <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">{invoice.shop?.address || 'Main Road, Local Market, Kanker'}</p>
                                           <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">📞 MOBILE: {invoice.shop?.phone || '9098795200'}</p>
                                           <p className="mb-0 x-small fw-black text-primary text-uppercase">GSTIN: {invoice.shop?.gstin || '22AXIPR7683P1ZJ'}</p>
@@ -237,7 +237,7 @@ export default function SaleDetails() {
                                   <h5 className="fw-black text-muted mb-1 text-uppercase border-bottom pb-1">TAX INVOICE</h5>
                                   <div className="small fw-bold mt-2">Inv No: <span className="text-primary">{invoice.invoice_no}</span></div>
                                   <div className="small fw-bold">Date: {formatDate(invoice.sale_date)}</div>
-                                  <div className="small fw-bold">Deal By: <span className="text-uppercase">{invoice.creator?.name || 'ADMIN'}</span></div>
+                                  <div className="small fw-bold">Sales By Dealer Person: <span className="text-uppercase">{(invoice.sold_by?.name || invoice.user?.name || 'ADMIN').split(' ' )[0]}</span></div>
                               </div>
                           </div>
 
@@ -333,7 +333,7 @@ export default function SaleDetails() {
                                       <tr className="small fw-bold text-uppercase">
                                           <td className="text-start ps-2 x-small">Total Discount</td>
                                           <td colSpan="3"></td>
-                                          <td className="text-end pe-2">{(parseFloat(invoice.discount || 0) + parseFloat(invoice.cash_discount || 0)).toFixed(2)}</td>
+                                          <td className="text-end pe-2">{(parseFloat(invoice.discount || 0) + (invoice.is_cash_discount_on_bill ? parseFloat(invoice.cash_discount || 0) : 0)).toFixed(2)}</td>
                                       </tr>
                                       <tr className="small fw-bold text-uppercase">
                                           <td className="text-start ps-2 x-small">CGST Amount</td>

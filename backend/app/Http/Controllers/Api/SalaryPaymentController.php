@@ -39,6 +39,7 @@ class SalaryPaymentController extends Controller
         $data = $request->validate([
             'user_id'      => 'required|exists:users,id',
             'amount'       => 'required|numeric|min:0.01',
+            'payment_mode' => 'required|string',
             'type'         => 'required|in:salary,advance,bonus',
             'for_month'    => 'nullable|string|max:7', // e.g. "2026-04"
             'payment_date' => 'required|date',
@@ -60,7 +61,7 @@ class SalaryPaymentController extends Controller
             'type'             => 'OUT',
             'category'         => 'SALARY',
             'amount'           => $payment->amount,
-            'payment_mode'     => 'CASH', // Default for now
+            'payment_mode'     => $payment->payment_mode,
             'description'      => "{$data['type']} payment for {$targetUser->name} (" . ($data['for_month'] ?? 'N/A') . ")",
             'entity_id'        => $payment->id,
             'entity_type'      => \App\Models\SalaryPayment::class,

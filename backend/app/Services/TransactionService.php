@@ -47,7 +47,7 @@ class TransactionService
             'entity_type' => get_class($model),
             'entity_id' => $model->id,
             'accounting_entity_id' => $model->accounting_entity_id ?? null,
-            'entity_name' => $model->customer_name ?? $model->supplier_name ?? $model->name ?? null,
+            'entity_name' => $model->customer?->name ?? $model->supplier?->name ?? $model->name ?? $overrideData['entity_name'] ?? null,
         ], $overrideData);
 
         // Auto-create an Entity if one doesn't exist for this person,

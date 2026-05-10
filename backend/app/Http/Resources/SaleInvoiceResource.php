@@ -23,6 +23,7 @@ class SaleInvoiceResource extends JsonResource
             'customer' => $this->whenLoaded('customer'),
             'user_id' => $this->user_id,
             'user' => $this->whenLoaded('user'),
+            'sold_by' => $this->whenLoaded('soldBy'),
             'sale_date' => $this->sale_date,
             'total_amount' => $this->total_amount,
             'discount' => $this->discount,

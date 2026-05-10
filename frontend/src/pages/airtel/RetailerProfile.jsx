@@ -333,17 +333,17 @@ export default function RetailerProfile() {
                                         {formatSystemDate(item.next_recovery_date)}
                                     </td>
                                     <td>
-                                        <span className={`badge rounded-pill text-uppercase x-small ${item.status === 'recovered' || item.entryType === 'RECOVERY' ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning'}`}>
-                                            {item.entryType === 'RECOVERY' ? 'PAID' : item.status}
+                                        <span className={`badge rounded-pill text-uppercase x-small ${item.entryType === 'RECOVERY' ? 'bg-success-subtle text-success' : 'bg-primary-subtle text-primary'}`}>
+                                            {item.entryType === 'RECOVERY' ? 'PAYMENT' : 'ADDED'}
                                         </span>
                                     </td>
                                     <td>
                                         <div className="small font-monospace fw-bold">
-                                            {item.entryType === 'RECOVERY' || item.status === 'recovered' ? (
+                                            {item.entryType === 'RECOVERY' ? (
                                                 <>
                                                     <div className="text-success fw-bold">
-                                                        {formatSystemDate(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at)}
-                                                        <span className="ms-1 x-small text-muted font-monospace">@{formatSystemTime(item.entryType === 'RECOVERY' ? item.recovered_at : item.recovered_at)}</span>
+                                                        {formatSystemDate(item.recovered_at)}
+                                                        <span className="ms-1 x-small text-muted font-monospace">@{formatSystemTime(item.recovered_at)}</span>
                                                     </div>
                                                     <div className="x-small text-muted">{item.recovery_user?.name || 'Staff'}</div>
                                                 </>
@@ -351,7 +351,7 @@ export default function RetailerProfile() {
                                         </div>
                                     </td>
                                     <td className="text-end pe-4">
-                                        {item.entryType === 'DROP' && item.status === 'pending' && (
+                                        {item.entryType === 'DROP' && (
                                             <span className="text-muted small">-</span>
                                         )}
                                         {item.entryType === 'RECOVERY' && hasFullAccess() && (
@@ -445,6 +445,7 @@ export default function RetailerProfile() {
                                         <option value="CASH">CASH</option>
                                         <option value="PHONE PE">PHONE PE</option>
                                         <option value="GPAY">GPAY</option>
+                                        <option value="BANK / NEFT">BANK / NEFT</option>
                                         <option value="DIGITAL">DIGITAL</option>
                                         <option value="OTHER">OTHER</option>
                                     </select>

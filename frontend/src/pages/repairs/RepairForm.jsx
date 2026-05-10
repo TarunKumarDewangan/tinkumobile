@@ -23,8 +23,10 @@ export default function RepairForm() {
     forwarded_phone: '',
     external_expected_delivery: '',
     advance_payment_mode: 'CASH',
+    other_advance_mode: '',
     balance_amount_received: 0,
     balance_payment_mode: 'CASH',
+    other_balance_mode: '',
     is_pay_later: false
   });
   const [externalShops, setExternalShops] = useState([]);
@@ -102,11 +104,21 @@ export default function RepairForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      let finalForm = { ...form };
+      
+      // If OTHER is selected, replace mode with the specific value
+      if (form.advance_payment_mode === 'OTHER' && form.other_advance_mode) {
+        finalForm.advance_payment_mode = form.other_advance_mode;
+      }
+      if (form.balance_payment_mode === 'OTHER' && form.other_balance_mode) {
+        finalForm.balance_payment_mode = form.other_balance_mode;
+      }
+
       if (id) {
-        await api.put(`/repairs/${id}`, form);
+        await api.put(`/repairs/${id}`, finalForm);
         toast.success('Repair updated successfully');
       } else {
-        await api.post('/repairs', form);
+        await api.post('/repairs', finalForm);
         toast.success('Repair request created');
       }
       navigate('/repairs');
@@ -297,12 +309,20 @@ export default function RepairForm() {
               <div className="mb-2">
                 <select className="form-select form-select-sm x-small py-0" style={{ height: '24px' }} {...f('advance_payment_mode')}>
                   <option value="CASH">ADVANCE MODE: CASH</option>
-                  <option value="ONLINE">ADVANCE MODE: ONLINE PAYMENT</option>
                   <option value="PHONEPE">ADVANCE MODE: PHONEPE</option>
                   <option value="GPAY">ADVANCE MODE: GPAY</option>
-                  <option value="PAYTM">ADVANCE MODE: PAYTM</option>
+                  <option value="BANK/NEFT">ADVANCE MODE: BANK/NEFT</option>
                   <option value="CARD">ADVANCE MODE: CARD</option>
+                  <option value="OTHER">ADVANCE MODE: OTHER</option>
                 </select>
+                {form.advance_payment_mode === 'OTHER' && (
+                    <input 
+                        className="form-control form-control-sm x-small mt-1 text-uppercase fw-bold border-primary" 
+                        placeholder="SPECIFY MODE (e.g. CHEQUE)" 
+                        value={form.other_advance_mode}
+                        onChange={e => setForm({...form, other_advance_mode: e.target.value.toUpperCase()})}
+                    />
+                )}
               </div>
 
               <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
@@ -330,12 +350,20 @@ export default function RepairForm() {
                   {!form.balance_received_at && (
                     <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
                         <option value="CASH">PAYMENT MODE: CASH</option>
-                        <option value="ONLINE">PAYMENT MODE: ONLINE PAYMENT</option>
                         <option value="PHONEPE">PAYMENT MODE: PHONEPE</option>
                         <option value="GPAY">PAYMENT MODE: GPAY</option>
-                        <option value="PAYTM">PAYMENT MODE: PAYTM</option>
+                        <option value="BANK/NEFT">PAYMENT MODE: BANK/NEFT</option>
                         <option value="CARD">PAYMENT MODE: CARD</option>
+                        <option value="OTHER">PAYMENT MODE: OTHER</option>
                     </select>
+                  )}
+                  {!form.balance_received_at && form.balance_payment_mode === 'OTHER' && (
+                    <input 
+                        className="form-control form-control-sm x-small mt-1 text-uppercase fw-bold border-primary" 
+                        placeholder="SPECIFY MODE (e.g. EXCHANGE)" 
+                        value={form.other_balance_mode}
+                        onChange={e => setForm({...form, other_balance_mode: e.target.value.toUpperCase()})}
+                    />
                   )}
                   {form.balance_received_at && (
                     <div className="x-small opacity-75 mt-1 fw-bold text-success text-center">

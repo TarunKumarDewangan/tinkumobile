@@ -31,6 +31,8 @@ export default function PurchaseForm() {
     notes: '',
     expected_delivery_date: '',
     rounding_mode: 'auto',
+    payment_method: 'CASH',
+    other_payment_mode: ''
   });
   const navigate = useNavigate();
   const { id }     = useParams();
@@ -73,6 +75,8 @@ export default function PurchaseForm() {
           notes: p.notes || '',
           expected_delivery_date: p.expected_delivery_date || '',
           rounding_mode: p.rounding_mode || 'auto',
+          payment_method: p.payment_method || 'CASH',
+          other_payment_mode: p.other_payment_mode || ''
         });
         setItems(p.items.map(i => ({
           product_id: i.product_id,
@@ -173,16 +177,28 @@ export default function PurchaseForm() {
   
   const [scanner, setScanner] = useState({ show: false, itemIndex: null });
   const [showBulkScan, setShowBulkScan] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState(null);
 
   const handleAddBulkItems = (newItems) => {
     setItems(prev => {
       let current = [...prev];
+      if (editingItemIndex !== null) {
+        // Edit mode: replace the single item
+        current[editingItemIndex] = newItems[0];
+        setEditingItemIndex(null);
+        return current;
+      }
       // If the first item is empty/default, remove it before merging
       if (current.length === 1 && !current[0].product_id && !current[0].imei && !current[0].new_product_name) {
         current = [];
       }
       return [...current, ...newItems];
     });
+  };
+
+  const handleOpenBulkEdit = (index) => {
+    setEditingItemIndex(index);
+    setShowBulkScan(true);
   };
 
   const getFieldConfig = (item) => {
@@ -222,11 +238,17 @@ export default function PurchaseForm() {
     }
 
     try {
+      let finalForm = { ...form, items };
+      
+      if (form.payment_method === 'OTHER' && form.other_payment_mode) {
+        finalForm.payment_method = form.other_payment_mode;
+      }
+
       if (id) {
-        await api.put(`/purchase-invoices/${id}`, { ...form, items });
+        await api.put(`/purchase-invoices/${id}`, finalForm);
         toast.success('✅ Purchase updated successfully!');
       } else {
-        await api.post('/purchase-invoices', { ...form, items });
+        await api.post('/purchase-invoices', finalForm);
         toast.success(form.status === 'received' ? '✅ Purchase saved and stock updated!' : '📦 Purchase Order saved!');
       }
       navigate('/purchases');
@@ -341,7 +363,10 @@ export default function PurchaseForm() {
                       const marginPer=item.unit_price>0?(marginVal/item.unit_price)*100:0;
                       return (
                         <div key={i} className="pf-item">
-                          <button type="button" onClick={()=>removeItem(i)} style={{position:'absolute',top:8,right:10,background:'none',border:'none',color:'#94a3b8',cursor:'pointer',fontSize:'.9rem',fontWeight:700,lineHeight:1}}>✕</button>
+                          <div style={{position:'absolute',top:8,right:10,display:'flex',gap:12,alignItems:'center'}}>
+                            <button type="button" onClick={()=>handleOpenBulkEdit(i)} style={{background:'none',border:'none',color:'#6366f1',cursor:'pointer',fontSize:'.85rem',fontWeight:700,padding:0,opacity:.8}}>✏️ Edit</button>
+                            <button type="button" onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'#94a3b8',cursor:'pointer',fontSize:'.9rem',fontWeight:700,lineHeight:1}}>✕</button>
+                          </div>
                           <div className="row g-2 mb-2">
                             <div className="col-12 col-md-3">
                               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
@@ -354,7 +379,13 @@ export default function PurchaseForm() {
                                 ? <input type="text" className="pf-inp" placeholder="e.g. Vivo V70" required value={item.new_product_name} onChange={e=>updateItem(i,'new_product_name',e.target.value)}/>
                                 : <select className="pf-inp" required value={item.product_id} onChange={e=>updateItem(i,'product_id',e.target.value)}>
                                     <option value="">— Choose Product —</option>
-                                    {products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                    {products.map(p=>(
+                                      <option key={p.id} value={p.id}>
+                                        {p.name} 
+                                        {p.attributes?.ram || p.attributes?.storage ? ` (${p.attributes.ram || ''}/${p.attributes.storage || ''})` : ''}
+                                        {p.attributes?.color ? ` - ${p.attributes.color}` : ''}
+                                      </option>
+                                    ))}
                                   </select>
                               }
                             </div>
@@ -367,15 +398,24 @@ export default function PurchaseForm() {
                             </div>
                             <div className="col-4 col-md-2">
                               <span className="pf-lbl">RAM</span>
-                              <input type="text" className="pf-inp" placeholder="8GB" value={item.ram} onChange={e=>updateItem(i,'ram',e.target.value)}/>
+                              <input type="text" list="ramOptions" className="pf-inp" placeholder="8GB" value={item.ram} onChange={e=>updateItem(i,'ram',e.target.value)}/>
+                              <datalist id="ramOptions">
+                                {['2GB','3GB','4GB','6GB','8GB','12GB','16GB'].map(v => <option key={v} value={v} />)}
+                              </datalist>
                             </div>
                             <div className="col-4 col-md-2">
                               <span className="pf-lbl">Storage</span>
-                              <input type="text" className="pf-inp" placeholder="128GB" value={item.storage} onChange={e=>updateItem(i,'storage',e.target.value)}/>
+                              <input type="text" list="storageOptions" className="pf-inp" placeholder="128GB" value={item.storage} onChange={e=>updateItem(i,'storage',e.target.value)}/>
+                              <datalist id="storageOptions">
+                                {['16GB','32GB','64GB','128GB','256GB','512GB','1TB'].map(v => <option key={v} value={v} />)}
+                              </datalist>
                             </div>
                             <div className="col-4 col-md-1">
                               <span className="pf-lbl">Color</span>
-                              <input type="text" className="pf-inp" placeholder="Red" value={item.color} onChange={e=>updateItem(i,'color',e.target.value)}/>
+                              <input type="text" list="colorOptions" className="pf-inp" placeholder="Red" value={item.color} onChange={e=>updateItem(i,'color',e.target.value)}/>
+                              <datalist id="colorOptions">
+                                {['Black','White','Blue','Red','Gold','Silver','Grey'].map(v => <option key={v} value={v} />)}
+                              </datalist>
                             </div>
                           </div>
                            <div className="row g-2 align-items-end">
@@ -442,6 +482,26 @@ export default function PurchaseForm() {
                       <input type="number" className="pf-inp" style={{borderRadius:'0 7px 7px 0',borderLeft:'none',color:'#059669',fontWeight:700,borderColor:'#6ee7b7'}}
                         placeholder="0.00" value={form.total_paid===0?'':form.total_paid} onFocus={e=>e.target.select()} onChange={e=>setForm({...form,total_paid:parseFloat(e.target.value)||0})}/>
                     </div>
+                    {parseFloat(form.total_paid) > 0 && (
+                      <>
+                        <select className="pf-inp mt-1" style={{fontSize:'.7rem',height:'28px',padding:'2px 8px'}} value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
+                          <option value="CASH">CASH</option>
+                          <option value="PHONEPE">PHONEPE</option>
+                          <option value="GPAY">GPAY</option>
+                          <option value="BANK / NEFT">BANK / NEFT</option>
+                          <option value="OTHER">OTHER</option>
+                        </select>
+                        {form.payment_method === 'OTHER' && (
+                          <input 
+                            className="pf-inp mt-1" 
+                            style={{fontSize:'.7rem',height:'28px',padding:'2px 8px',borderColor:'#6366f1',color:'#6366f1',fontWeight:700}}
+                            placeholder="SPECIFY MODE..."
+                            value={form.other_payment_mode}
+                            onChange={e=>setForm({...form,other_payment_mode:e.target.value.toUpperCase()})}
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="col-12 col-md-3">
                     <span className="pf-lbl" style={{color:'#dc2626'}}>Pending Balance</span>
@@ -564,10 +624,11 @@ export default function PurchaseForm() {
 
       <BulkScanModal 
         show={showBulkScan} 
-        onHide={() => setShowBulkScan(false)}
+        onHide={() => { setShowBulkScan(false); setEditingItemIndex(null); }}
         products={products}
         categories={categories}
         onAddItems={handleAddBulkItems}
+        initialData={editingItemIndex !== null ? items[editingItemIndex] : null}
       />
     </div>
   );

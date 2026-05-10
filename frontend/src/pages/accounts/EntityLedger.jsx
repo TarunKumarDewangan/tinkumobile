@@ -115,8 +115,12 @@ export default function EntityLedger() {
     e.preventDefault();
     if (!settleData.amount || settleData.amount <= 0) return toast.error('Enter valid amount');
     try {
+      let finalData = { ...settleData };
+      if (settleData.payment_mode === 'OTHER' && settleData.other_mode) {
+        finalData.payment_mode = settleData.other_mode;
+      }
       await api.post('/entities/settle', {
-        ...settleData,
+        ...finalData,
         entity_name: selectedEntityName
       });
       toast.success('Settlement recorded');
@@ -440,9 +444,19 @@ export default function EntityLedger() {
                             <label className="xx-small fw-bold text-uppercase text-muted">Payment Mode</label>
                             <select className="form-select border-0 bg-light x-small" value={settleData.payment_mode} onChange={e => setSettleData({ ...settleData, payment_mode: e.target.value })}>
                                 <option value="CASH">Cash</option>
-                                <option value="GPay">GPay</option>
-                                <option value="Online">Online</option>
+                                <option value="PHONEPE">PhonePe</option>
+                                <option value="GPAY">GPay</option>
+                                <option value="BANK / NEFT">Bank / NEFT</option>
+                                <option value="OTHER">Other</option>
                             </select>
+                            {settleData.payment_mode === 'OTHER' && (
+                                <input 
+                                    className="form-control form-control-sm mt-1 text-uppercase fw-bold border-primary x-small" 
+                                    placeholder="Specify Mode..." 
+                                    value={settleData.other_mode || ''}
+                                    onChange={e => setSettleData({...settleData, other_mode: e.target.value.toUpperCase()})}
+                                />
+                            )}
                        </div>
                        <div className="col-12">
                             <label className="xx-small fw-bold text-uppercase text-muted">Category</label>

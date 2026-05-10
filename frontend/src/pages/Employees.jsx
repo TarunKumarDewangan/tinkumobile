@@ -26,6 +26,8 @@ export default function Employees() {
     employee_id: '', amount: '', type: 'salary', 
     for_month: new Date().toISOString().slice(0, 7), 
     payment_date: new Date().toISOString().slice(0, 10), 
+    payment_mode: 'CASH',
+    other_mode: '',
     notes: ''
   });
 
@@ -115,6 +117,8 @@ export default function Employees() {
           type: 'salary',
           for_month: new Date().toISOString().slice(0, 7),
           payment_date: new Date().toISOString().slice(0, 10),
+          payment_mode: 'CASH',
+          other_mode: '',
           notes: ''
       });
       setShowPaymentModal(true);
@@ -123,7 +127,11 @@ export default function Employees() {
   const handleSavePayment = async (e) => {
       e.preventDefault();
       try {
-          await api.post('/salary-payments', paymentData);
+          let finalData = { ...paymentData };
+          if (paymentData.payment_mode === 'OTHER' && paymentData.other_mode) {
+              finalData.payment_mode = paymentData.other_mode;
+          }
+          await api.post('/salary-payments', finalData);
           toast.success('✅ Payment recorded successfully');
           setShowPaymentModal(false);
           loadEmployees();
@@ -337,9 +345,27 @@ export default function Employees() {
                             <input type="month" className="form-control" required value={paymentData.for_month} onChange={e => setPaymentData({...paymentData, for_month: e.target.value})} />
                       </div>
                   )}
+                  <div className="mb-3">
+                      <label className="form-label small fw-bold">Payment Mode</label>
+                      <select className="form-select border-success fw-bold" value={paymentData.payment_mode} onChange={e => setPaymentData({...paymentData, payment_mode: e.target.value})}>
+                          <option value="CASH">CASH</option>
+                          <option value="PHONEPE">PHONEPE</option>
+                          <option value="GPAY">GPAY</option>
+                          <option value="BANK / NEFT">BANK / NEFT</option>
+                          <option value="OTHER">OTHER</option>
+                      </select>
+                      {paymentData.payment_mode === 'OTHER' && (
+                          <input 
+                              className="form-control form-control-sm mt-1 text-uppercase fw-bold border-success" 
+                              placeholder="SPECIFY MODE..." 
+                              value={paymentData.other_mode}
+                              onChange={e => setPaymentData({...paymentData, other_mode: e.target.value.toUpperCase()})}
+                          />
+                      )}
+                  </div>
                   <div className="mb-0">
                       <label className="form-label small fw-bold">Notes / Reference</label>
-                      <textarea className="form-control text-uppercase" rows={2} placeholder="E.G. PAID VIA CASH, PHONEPE, ETC..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
+                      <textarea className="form-control text-uppercase" rows={2} placeholder="E.G. CHEQUE NO, REMARKS, ETC..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
                   </div>
               </Modal.Body>
               <Modal.Footer>

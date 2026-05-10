@@ -283,53 +283,7 @@ class AirtelDropController extends Controller
             $success++;
         }
 
-        // Re-evaluate FIFO for affected retailers
         foreach ($retailersToProcess as $retailer) {
-            $totalRecovered = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
-            $availableCredit = (float)$totalRecovered - (float)($retailer->balance ?? 0);
-
-            $allDrops = AirtelDrop::where('retailer_id', $retailer->id)
-                ->orderBy('refill_date')
-                ->orderBy('created_at')
-                ->get();
-
-            $now = now()->toDateTimeString();
-
-            foreach ($allDrops as $drop) {
-                $dropAmt = (float)$drop->amount;
-                if ($availableCredit > 0) {
-                    if ($availableCredit >= $dropAmt) {
-                        $recAt = $drop->status === 'recovered' ? $drop->recovered_at : $now;
-                        \Illuminate\Support\Facades\DB::table('airtel_drops')->where('id', $drop->id)->update([
-                            'paid_amount' => $dropAmt,
-                            'status' => 'recovered',
-                            'recovered_at' => $recAt ? \Carbon\Carbon::parse($recAt)->toDateTimeString() : null,
-                            'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id,
-                            'updated_at' => $now
-                        ]);
-                        $availableCredit -= $dropAmt;
-                    } else {
-                        \Illuminate\Support\Facades\DB::table('airtel_drops')->where('id', $drop->id)->update([
-                            'paid_amount' => $availableCredit,
-                            'status' => 'pending',
-                            'recovered_at' => null,
-                            'recovery_user_id' => null,
-                            'updated_at' => $now
-                        ]);
-                        $availableCredit = 0;
-                    }
-                } else {
-                    \Illuminate\Support\Facades\DB::table('airtel_drops')->where('id', $drop->id)->update([
-                        'paid_amount' => 0,
-                        'status' => 'pending', 
-                        'recovered_at' => null, 
-                        'recovery_user_id' => null,
-                        'updated_at' => $now
-                    ]);
-                }
-            }
-
-            // Sync the entity balance ONCE
             $entity = \App\Models\Entity::where('name', $retailer->name)->first();
             if ($entity) {
                 app(\App\Services\EntityService::class)->syncBalance($entity);
@@ -379,14 +333,7 @@ class AirtelDropController extends Controller
                 'shop_id'          => $drop->retailer->shop_id,
             ]);
 
-            // Update the drop status (Simplified: if amount matches, mark recovered)
-            if ($amount >= (float)$drop->amount) {
-                $drop->update([
-                    'status' => 'recovered',
-                    'recovered_at' => now(),
-                    'recovery_user_id' => $request->user()->id
-                ]);
-            }
+            // Drop status is no longer updated as we use global ledger
         }
 
         return response()->json(['message' => 'Recoveries recorded successfully']);

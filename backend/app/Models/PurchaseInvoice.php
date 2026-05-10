@@ -58,6 +58,11 @@ class PurchaseInvoice extends Model
         }
         $this->save();
     }
+
+    public function getSupplierNameAttribute()
+    {
+        return $this->supplier?->name;
+    }
     protected $casts = [
         'expected_delivery_date' => 'date',
         'received_at' => 'datetime'

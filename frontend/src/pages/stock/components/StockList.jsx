@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../../api/axios';
 import Modal from '../../../components/Modal';
@@ -7,6 +8,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
   const [editingItem, setEditingItem] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const navigate = useNavigate();
 
   const openEdit = (p) => {
       setEditingItem(p);
@@ -101,7 +103,11 @@ export default function StockList({ products, loading, filters, handleFilterChan
                       {filters.group_by_config ? (
                         p.attributes?.imeis?.length > 0 ? (
                           p.attributes.imeis.map((imei, idx) => (
-                            <span key={idx} className="pm-badge" style={{background:'#f8fafc',color:'#6366f1',border:'1px solid #e2e8f0',fontSize:'.58rem'}}>
+                            <span key={idx} className="pm-badge" 
+                                  style={{background:'#f8fafc',color:'#6366f1',border:'1px solid #e2e8f0',fontSize:'.58rem', cursor:'pointer'}}
+                                  onClick={() => navigate(`/sales/new?imei=${imei}`)}
+                                  title="Click to sell this IMEI"
+                            >
                               {imei}
                             </span>
                           ))
@@ -110,7 +116,11 @@ export default function StockList({ products, loading, filters, handleFilterChan
                         )
                       ) : (
                         p.attributes?.imei ? (
-                          <span className="pm-badge" style={{background:'#eff6ff',color:'#2563eb',border:'1px solid #bfdbfe'}}>
+                          <span className="pm-badge" 
+                                style={{background:'#eff6ff',color:'#2563eb',border:'1px solid #bfdbfe', cursor:'pointer'}}
+                                onClick={() => navigate(`/sales/new?imei=${p.attributes.imei}`)}
+                                title="Click to sell this IMEI"
+                          >
                             {p.attributes.imei}
                           </span>
                         ) : (
@@ -155,7 +165,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                           <button 
                             className="pm-clear-btn"
                             style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#10b981',color:'#10b981',background:'#f0fdf4'}}
-                            onClick={() => window.location.href = `/sales/new?imei=${p.attributes.imei}`}
+                            onClick={() => navigate(`/sales/new?imei=${p.attributes.imei}`)}
                           >
                             SELL
                           </button>

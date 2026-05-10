@@ -179,50 +179,7 @@ class AirtelRetailerController extends Controller
 
                 ActivityLog::log('RECORD_RECOVERY', $retailer, 'Recorded recovery of ₹' . number_format($validated['amount']) . ' for ' . $retailer->name);
 
-                // FIFO: Re-evaluate all drops for this retailer
-                $totalRecovered = AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
-                $availableCredit = (float)$totalRecovered - (float)($retailer->balance ?? 0);
 
-                $allDrops = AirtelDrop::where('retailer_id', $retailer->id)
-                    ->orderBy('refill_date')
-                    ->orderBy('created_at')
-                    ->get();
-
-                $now = now()->toDateTimeString();
-
-                foreach ($allDrops as $drop) {
-                    $dropAmt = (float)$drop->amount;
-                    if ($availableCredit > 0) {
-                        if ($availableCredit >= $dropAmt) {
-                            $recAt = $drop->status === 'recovered' ? $drop->recovered_at : $recoveredAt;
-                            DB::table('airtel_drops')->where('id', $drop->id)->update([
-                                'paid_amount' => $dropAmt,
-                                'status' => 'recovered',
-                                'recovered_at' => $recAt ? Carbon::parse($recAt)->toDateTimeString() : null,
-                                'recovery_user_id' => $drop->status === 'recovered' ? $drop->recovery_user_id : $request->user()->id,
-                                'updated_at' => $now
-                            ]);
-                            $availableCredit -= $dropAmt;
-                        } else {
-                            DB::table('airtel_drops')->where('id', $drop->id)->update([
-                                'paid_amount' => $availableCredit,
-                                'status' => 'pending',
-                                'recovered_at' => null,
-                                'recovery_user_id' => null,
-                                'updated_at' => $now
-                            ]);
-                            $availableCredit = 0;
-                        }
-                    } else {
-                        DB::table('airtel_drops')->where('id', $drop->id)->update([
-                            'paid_amount' => 0,
-                            'status' => 'pending', 
-                            'recovered_at' => null, 
-                            'recovery_user_id' => null,
-                            'updated_at' => $now
-                        ]);
-                    }
-                }
 
                 // Sync the entity balance ONCE
                 $entity = \App\Models\Entity::where('name', $retailer->name)->first();
@@ -420,43 +377,7 @@ class AirtelRetailerController extends Controller
         
         ActivityLog::log('DELETE_RECOVERY', $retailer, 'Deleted recovery payment of ₹' . number_format($amount) . ' for ' . ($retailer->name ?? 'Unknown'));
 
-        // Re-evaluate FIFO after deletion
-        $retailer = Retailer::find($retailerId);
-        $totalRecovered = AirtelRecovery::where('retailer_id', $retailerId)->sum('amount');
-        $availableCredit = (float)$totalRecovered - (float)$retailer->balance;
 
-        $allDrops = AirtelDrop::where('retailer_id', $retailerId)
-            ->orderBy('refill_date')
-            ->orderBy('created_at')
-            ->get();
-
-        foreach ($allDrops as $drop) {
-            $dropAmt = (float)$drop->amount;
-            if ($availableCredit > 0) {
-                if ($availableCredit >= $dropAmt) {
-                    $drop->update([
-                        'paid_amount' => $dropAmt,
-                        'status' => 'recovered'
-                    ]);
-                    $availableCredit -= $dropAmt;
-                } else {
-                    $drop->update([
-                        'paid_amount' => $availableCredit,
-                        'status' => 'pending',
-                        'recovered_at' => null,
-                        'recovery_user_id' => null
-                    ]);
-                    $availableCredit = 0;
-                }
-            } else {
-                $drop->update([
-                    'paid_amount' => 0,
-                    'status' => 'pending',
-                    'recovered_at' => null,
-                    'recovery_user_id' => null
-                ]);
-            }
-        }
 
         return response()->json(null, 204);
     }

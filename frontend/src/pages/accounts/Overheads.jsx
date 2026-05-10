@@ -60,7 +60,11 @@ export default function Overheads() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await api.post('/transactions', form);
+            let finalForm = { ...form };
+            if (form.payment_mode === 'OTHER' && form.other_mode) {
+                finalForm.payment_mode = form.other_mode;
+            }
+            await api.post('/transactions', finalForm);
             toast.success('Record saved');
             setShowModal(false);
             setForm(initialForm);
@@ -171,8 +175,17 @@ export default function Overheads() {
                                                 <option value="CASH">Cash</option>
                                                 <option value="PHONEPE">PhonePe</option>
                                                 <option value="GPAY">GPay</option>
-                                                <option value="BANK_TRANSFER">Bank Transfer</option>
+                                                <option value="BANK / NEFT">Bank / NEFT</option>
+                                                <option value="OTHER">Other</option>
                                             </select>
+                                            {form.payment_mode === 'OTHER' && (
+                                                <input 
+                                                    className="form-control form-control-sm mt-2 text-uppercase fw-bold border-primary" 
+                                                    placeholder="Specify Mode (e.g. CHEQUE, EXCHANGE)" 
+                                                    value={form.other_mode || ''}
+                                                    onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})}
+                                                />
+                                            )}
                                         </div>
                                         {hasFullAccess() && (
                                             <div className="col-12">
