@@ -60,6 +60,7 @@ const NAV = [
     dropdown: true,
     children: [
         { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
+        { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
         { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
     ]
   },
@@ -72,6 +73,13 @@ const NAV = [
         { to: '/airtel/drops',     icon: '📉', label: 'Daily Drops', perm: 'view_airtel_recovery' },
         { to: '/airtel/reports',   icon: '📊', label: 'Reports',    perm: 'view_reports' },
         { id: 'airtel-backup', icon: '💾', label: 'Full Backup v3 (JSON)', perm: 'view_reports', action: 'BACKUP_AIRTEL' },
+    ]
+  },
+  { 
+    section: 'Settings', 
+    dropdown: true,
+    children: [
+        { to: '/admin/whatsapp-config', icon: '⚙️', label: 'WhatsApp Config', perm: 'manage_users' },
     ]
   },
 
@@ -89,7 +97,7 @@ export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Airtel Recovery': false });
+  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
   
   const toggleSection = (section) => {
     setExpanded(prev => ({ ...prev, [section]: !prev[section] }));

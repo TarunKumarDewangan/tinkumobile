@@ -457,7 +457,8 @@ class EntityLedgerController extends Controller
             'type' => 'required|in:IN,OUT',
             'payment_mode' => 'required|string',
             'description' => 'nullable|string',
-            'category' => 'required|string'
+            'category' => 'required|string',
+            'transaction_date' => 'nullable|date'
         ]);
 
         $entity = \App\Models\Entity::where('name', $data['entity_name'])->first();
@@ -467,6 +468,7 @@ class EntityLedgerController extends Controller
         $transaction = $this->transactionService->recordSettlement([
             'shop_id' => $shopId,
             'user_id' => $user->id,
+            'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
             'type' => $data['type'],
             'amount' => $data['amount'],
             'payment_mode' => $data['payment_mode'],

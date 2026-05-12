@@ -11,7 +11,7 @@ class Customer extends Model
 {
     use SoftDeletes, UppercaseStrings, \App\Traits\SyncsWithMasterEntity;
 
-    protected $fillable = ['name', 'phone', 'email', 'gst_no', 'address', 'voucher_code'];
+    protected $fillable = ['name', 'phone', 'email', 'gst_no', 'address', 'voucher_code', 'category'];
 
     public function events(): HasMany { return $this->hasMany(CustomerEvent::class); }
     public function rechargeS(): HasMany { return $this->hasMany(RechargeSale::class); }

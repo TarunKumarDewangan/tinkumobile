@@ -10,6 +10,7 @@ import StockHistory from './stock/components/StockHistory';
 import EditAdjustmentModal from './stock/components/EditAdjustmentModal';
 import ModelWiseStock from './stock/components/ModelWiseStock';
 import DataBackupModal from '../components/DataBackupModal';
+import DuplicateImeiModal from '../components/DuplicateImeiModal';
 
 export default function StockEntry() {
   const [tab, setTab] = useState('stocks');
@@ -26,6 +27,7 @@ export default function StockEntry() {
   const [editForm, setEditForm] = useState({ quantity: 1, purchase_price: '', notes: '', adjustment_date: '' });
   const [loading, setLoading] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   const { user, isOwner } = useAuth();
   const inventory = useInventory(filters, form, setForm);
@@ -142,9 +144,14 @@ export default function StockEntry() {
         </div>
         <div className="d-flex gap-2 align-items-center">
           {isOwner() && (
-            <button className="pf-bulk" onClick={() => setShowBackupModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
-              📥 BACKUP / RESTORE
-            </button>
+            <>
+              <button className="pf-bulk me-2" onClick={() => setShowDuplicateModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
+                🔍 CHECK DUPLICATES
+              </button>
+              <button className="pf-bulk" onClick={() => setShowBackupModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
+                📥 BACKUP / RESTORE
+              </button>
+            </>
           )}
           <div className="d-none d-md-block ms-3">
             <span style={{color:'rgba(255,255,255,.4)',fontSize:'.65rem',fontWeight:700,letterSpacing:1}}>SHORTCUT: ALT + S</span>
@@ -230,6 +237,12 @@ export default function StockEntry() {
         title="Inventory & Stock Backup"
         endpoint="/stocks"
         typeLabel="Inventory"
+      />
+
+      <DuplicateImeiModal 
+        show={showDuplicateModal}
+        onHide={() => setShowDuplicateModal(false)}
+        onRefresh={() => { inventory.refresh(); if(tab === 'history') loadHistory(); }}
       />
     </div>
   );

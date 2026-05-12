@@ -66,6 +66,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/stock-adjustments', [StockAdjustmentController::class, 'store']);
     Route::post('/stock-adjustments/bulk', [StockAdjustmentController::class, 'bulkStore']);
     Route::post('/stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDestroy']);
+    Route::get('/stock-adjustments/duplicates', [StockAdjustmentController::class, 'duplicatesReport']);
+    Route::post('/stock-adjustments/clear-duplicates', [StockAdjustmentController::class, 'clearDuplicates']);
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
     Route::get('/stocks/backup', [StockController::class, 'backup']);
@@ -213,6 +215,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         Route::get('/daybook', [\App\Http\Controllers\Api\LedgerController::class, 'daybook']);
         Route::get('/entity-balances', [\App\Http\Controllers\Api\LedgerController::class, 'entityBalances']);
         Route::get('/statement/{entityId}', [\App\Http\Controllers\Api\LedgerController::class, 'statement']);
+        Route::get('/breakdown', [\App\Http\Controllers\Api\LedgerController::class, 'breakdown']);
     });
 
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
@@ -227,4 +230,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Full System Sync
     Route::get('system/backup', [SystemBackupController::class, 'backup']);
     Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup']);
+    // Settings
+    Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
+    Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
+    Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
 });

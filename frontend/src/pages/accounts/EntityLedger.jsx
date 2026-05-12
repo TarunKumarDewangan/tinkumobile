@@ -24,12 +24,20 @@ export default function EntityLedger() {
     end: ''
   });
 
+  const [breakdown, setBreakdown] = useState({
+    show: false,
+    type: 'OVERALL',
+    data: [],
+    loading: false
+  });
+
   const [settleData, setSettleData] = useState({
     amount: '',
     type: 'OUT',
     payment_mode: 'CASH',
     category: 'ENTITY_SETTLEMENT',
-    description: ''
+    description: '',
+    transaction_date: new Date().toISOString().split('T')[0]
   });
   const [categories, setCategories] = useState(['ENTITY_SETTLEMENT', 'SHOP_EXPENSE', 'PERSONAL', 'LOAN_PAYMENT']);
 
@@ -125,7 +133,7 @@ export default function EntityLedger() {
       });
       toast.success('Settlement recorded');
       setShowSettleModal(false);
-      setSettleData({ ...settleData, amount: '', description: '' });
+      setSettleData({ ...settleData, amount: '', description: '', transaction_date: new Date().toISOString().split('T')[0] });
       loadLedger(selectedEntityId, selectedEntityName);
       fetchSummary();
       if (searchTerm) loadEntities(searchTerm, filterType);
@@ -146,6 +154,17 @@ export default function EntityLedger() {
     const cleared = { start: '', end: '' };
     setDateFilter(cleared);
     if (selectedEntityId) loadLedger(selectedEntityId, selectedEntityName, cleared);
+  };
+
+  const handleShowBreakdown = async (type) => {
+    setBreakdown({ ...breakdown, show: true, type, loading: true, data: [] });
+    try {
+      const { data } = await api.get('/ledgers/breakdown', { params: { type } });
+      setBreakdown(prev => ({ ...prev, data, loading: false }));
+    } catch (e) {
+      toast.error('Failed to load breakdown');
+      setBreakdown(prev => ({ ...prev, show: false, loading: false }));
+    }
   };
 
   return (
@@ -187,7 +206,7 @@ export default function EntityLedger() {
           </div>
           
           <div className="col-md-2">
-            <div className="stat-card">
+            <div className="stat-card clickable hover-lift" onClick={() => handleShowBreakdown('OVERALL')}>
               <span className="xx-small text-uppercase fw-bold opacity-50 d-block">Overall Total</span>
               <span className={`h5 mb-0 fw-bold ${summary.overallTotal >= 0 ? 'text-primary' : 'text-danger'}`}>
                 ₹{parseFloat(summary.overallTotal).toLocaleString()}
@@ -195,13 +214,13 @@ export default function EntityLedger() {
             </div>
           </div>
           <div className="col-md-2">
-            <div className="stat-card">
+            <div className="stat-card clickable hover-lift success" onClick={() => handleShowBreakdown('RECEIVABLE')}>
               <span className="xx-small text-uppercase fw-bold text-success opacity-50 d-block">Receivable</span>
               <span className="h5 mb-0 fw-bold text-success">₹{parseFloat(summary.receivable).toLocaleString()}</span>
             </div>
           </div>
           <div className="col-md-2">
-            <div className="stat-card">
+            <div className="stat-card clickable hover-lift danger" onClick={() => handleShowBreakdown('PAYABLE')}>
               <span className="xx-small text-uppercase fw-bold text-danger opacity-50 d-block">Payable</span>
               <span className="h5 mb-0 fw-bold text-danger">₹{parseFloat(summary.payable).toLocaleString()}</span>
             </div>
@@ -300,7 +319,18 @@ export default function EntityLedger() {
                         )}
                     </div>
                     
-                    <button className="btn btn-primary btn-sm rounded-pill px-3 fw-bold" onClick={() => setShowSettleModal(true)}>
+                    <button 
+                      className="btn btn-primary btn-sm rounded-pill px-3 fw-bold shadow-sm" 
+                      onClick={() => {
+                        const isRecv = parseFloat(targetEntity?.net_balance || 0) >= 0;
+                        setSettleData(prev => ({ 
+                          ...prev, 
+                          type: isRecv ? 'IN' : 'OUT',
+                          transaction_date: new Date().toISOString().split('T')[0]
+                        }));
+                        setShowSettleModal(true);
+                      }}
+                    >
                       Settle
                     </button>
                 </div>
@@ -417,70 +447,219 @@ export default function EntityLedger() {
         </div>
       </div>
 
-      {/* MODAL & STYLES (Keep same but adjusted for compactness) */}
+      {/* SETTLEMENT MODAL */}
       {showSettleModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)' }}>
+        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1060 }}>
           <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div className="modal-content border-0 shadow-2xl rounded-4 overflow-hidden">
+              <div className="modal-header border-0 p-4 bg-primary text-white">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0">Record Settlement</h5>
+                  <p className="xx-small text-white-50 mb-0 text-uppercase tracking-wider mt-1">
+                    Settle outstanding dues for {selectedEntityName}
+                  </p>
+                </div>
+                <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setShowSettleModal(false)}></button>
+              </div>
+              
               <form onSubmit={handleSettle}>
-                <div className="modal-header border-0 p-4 pb-0">
-                  <h5 className="modal-title fw-bold">Record Settlement</h5>
-                  <button type="button" className="btn-close shadow-none" onClick={() => setShowSettleModal(false)}></button>
-                </div>
                 <div className="modal-body p-4">
-                   <p className="text-muted small mb-4">Add a transaction for <strong>{selectedEntityName}</strong></p>
-                   <div className="row g-3">
-                       <div className="col-12">
-                          <div className="d-flex gap-2">
-                             <button type="button" className={`btn flex-fill rounded-3 x-small fw-bold ${settleData.type === 'OUT' ? 'btn-danger' : 'btn-outline-secondary'}`} onClick={() => setSettleData({ ...settleData, type: 'OUT' })}>Paid Out</button>
-                             <button type="button" className={`btn flex-fill rounded-3 x-small fw-bold ${settleData.type === 'IN' ? 'btn-success' : 'btn-outline-secondary'}`} onClick={() => setSettleData({ ...settleData, type: 'IN' })}>Received</button>
-                          </div>
-                       </div>
-                       <div className="col-md-6">
-                            <label className="xx-small fw-bold text-uppercase text-muted">Amount (₹)</label>
-                            <input type="number" className="form-control border-0 bg-light fw-bold" required value={settleData.amount} onChange={e => setSettleData({ ...settleData, amount: e.target.value })} />
-                       </div>
-                       <div className="col-md-6">
-                            <label className="xx-small fw-bold text-uppercase text-muted">Payment Mode</label>
-                            <select className="form-select border-0 bg-light x-small" value={settleData.payment_mode} onChange={e => setSettleData({ ...settleData, payment_mode: e.target.value })}>
-                                <option value="CASH">Cash</option>
-                                <option value="PHONEPE">PhonePe</option>
-                                <option value="GPAY">GPay</option>
-                                <option value="BANK / NEFT">Bank / NEFT</option>
-                                <option value="OTHER">Other</option>
-                            </select>
-                            {settleData.payment_mode === 'OTHER' && (
-                                <input 
-                                    className="form-control form-control-sm mt-1 text-uppercase fw-bold border-primary x-small" 
-                                    placeholder="Specify Mode..." 
-                                    value={settleData.other_mode || ''}
-                                    onChange={e => setSettleData({...settleData, other_mode: e.target.value.toUpperCase()})}
-                                />
-                            )}
-                       </div>
-                       <div className="col-12">
-                            <label className="xx-small fw-bold text-uppercase text-muted">Category</label>
-                            <input 
-                              type="text" 
-                              list="categoryOptions"
-                              className="form-control border-0 bg-light x-small" 
-                              placeholder="e.g. SETTLEMENT, EXPENSE..." 
-                              value={settleData.category} 
-                              onChange={e => setSettleData({ ...settleData, category: e.target.value })} 
-                            />
-                            <datalist id="categoryOptions">
-                               {categories.map(c => <option key={c} value={c} />)}
-                            </datalist>
-                       </div>
-                       <div className="col-12">
-                          <textarea className="form-control border-0 bg-light x-small" rows="2" placeholder="Description..." value={settleData.description} onChange={e => setSettleData({ ...settleData, description: e.target.value })}></textarea>
-                       </div>
-                   </div>
+                  {/* Current Balance Hint */}
+                  <div className="d-flex justify-content-between align-items-center bg-light p-3 rounded-3 mb-4 border">
+                     <span className="x-small text-muted fw-bold">Current Outstanding:</span>
+                     <span className={`fw-bold x-small ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)'}
+                     </span>
+                  </div>
+
+                  <div className="row g-3">
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-dark">SETTLEMENT TYPE</label>
+                      <div className="d-flex gap-3">
+                        <label className={`btn btn-outline-success flex-grow-1 text-start p-2 rounded-3 ${settleData.type === 'IN' ? 'active fw-bold' : ''}`}>
+                          <input 
+                            type="radio" 
+                            name="settle_type" 
+                            className="d-none" 
+                            checked={settleData.type === 'IN'} 
+                            onChange={() => setSettleData({...settleData, type: 'IN'})} 
+                          />
+                          <div className="x-small">📥 Received In</div>
+                          <div className="xx-small text-muted">Customer paying us</div>
+                        </label>
+                        <label className={`btn btn-outline-danger flex-grow-1 text-start p-2 rounded-3 ${settleData.type === 'OUT' ? 'active fw-bold' : ''}`}>
+                          <input 
+                            type="radio" 
+                            name="settle_type" 
+                            className="d-none" 
+                            checked={settleData.type === 'OUT'} 
+                            onChange={() => setSettleData({...settleData, type: 'OUT'})} 
+                          />
+                          <div className="x-small">📤 Paid Out</div>
+                          <div className="xx-small text-muted">Paying supplier/party</div>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">AMOUNT (₹) <span className="text-danger">*</span></label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        className="form-control fw-bold border-primary" 
+                        placeholder="0.00" 
+                        required
+                        autoFocus
+                        value={settleData.amount}
+                        onChange={e => setSettleData({...settleData, amount: e.target.value})}
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
+                      <select 
+                        className="form-select x-small"
+                        value={settleData.payment_mode}
+                        onChange={e => setSettleData({...settleData, payment_mode: e.target.value})}
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="UPI">UPI / Digital</option>
+                        <option value="BANK_TRANSFER">Bank Transfer</option>
+                        <option value="ADJUSTMENT">Discount / Adjustment</option>
+                        <option value="OTHER">Other Mode</option>
+                      </select>
+                    </div>
+
+                    {settleData.payment_mode === 'OTHER' && (
+                      <div className="col-12 animate-fadeIn">
+                         <input 
+                           type="text" 
+                           className="form-control form-control-sm x-small" 
+                           placeholder="Specify custom payment mode..." 
+                           required 
+                           value={settleData.other_mode || ''}
+                           onChange={e => setSettleData({...settleData, other_mode: e.target.value})}
+                         />
+                      </div>
+                    )}
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">SETTLEMENT DATE</label>
+                      <input 
+                        type="date" 
+                        className="form-control x-small" 
+                        required 
+                        value={settleData.transaction_date}
+                        onChange={e => setSettleData({...settleData, transaction_date: e.target.value})}
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">CATEGORY</label>
+                      <select 
+                        className="form-select x-small text-uppercase"
+                        value={settleData.category}
+                        onChange={e => setSettleData({...settleData, category: e.target.value})}
+                      >
+                        {categories.map((c, idx) => (
+                          <option key={idx} value={c}>{c.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-muted mb-1">PARTICULARS / NOTES</label>
+                      <textarea 
+                        className="form-control x-small" 
+                        rows="2" 
+                        placeholder="E.g. Settle old bill balance..."
+                        value={settleData.description}
+                        onChange={e => setSettleData({...settleData, description: e.target.value})}
+                      ></textarea>
+                    </div>
+                  </div>
                 </div>
-                <div className="modal-footer border-0 p-4 pt-0">
-                  <button type="submit" className="btn btn-primary w-100 rounded-pill py-2 fw-bold shadow">Save Transaction</button>
+                
+                <div className="modal-footer border-0 p-3 bg-light justify-content-end gap-2">
+                  <button type="button" className="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-bold" onClick={() => setShowSettleModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary btn-sm rounded-pill px-4 fw-bold">Confirm Settlement</button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {breakdown.show && (
+        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)', zIndex: 1060 }}>
+          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content border-0 shadow-2xl rounded-4 overflow-hidden" style={{ background: 'rgba(255,255,255,0.95)' }}>
+              <div className="modal-header border-0 p-4 bg-white">
+                <div>
+                  <h5 className="modal-title fw-bold">
+                    {breakdown.type === 'RECEIVABLE' ? '📈 Accounts Receivable' : 
+                     breakdown.type === 'PAYABLE' ? '📉 Accounts Payable' : '🏛️ Overall Account Summary'}
+                  </h5>
+                  <p className="xx-small text-muted mb-0 text-uppercase tracking-wider">
+                    Detailed list of all contributing accounts
+                  </p>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setBreakdown({ ...breakdown, show: false })}></button>
+              </div>
+              
+              <div className="modal-body p-0">
+                {breakdown.loading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary opacity-50"></div>
+                    <div className="mt-2 xx-small text-muted fw-bold">CALCULATING BALANCES...</div>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0">
+                      <thead className="bg-light sticky-top">
+                        <tr>
+                          <th className="ps-4 py-3 xx-small text-uppercase fw-bold text-muted">Account Name</th>
+                          <th className="py-3 xx-small text-uppercase fw-bold text-muted">Type</th>
+                          <th className="text-end py-3 xx-small text-uppercase fw-bold text-muted">Balance</th>
+                          <th className="text-center py-3 xx-small text-uppercase fw-bold text-muted">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {breakdown.data.map(item => (
+                          <tr key={item.id} className="hover-bg transition-all">
+                            <td className="ps-4">
+                              <div className="fw-bold x-small">{item.name}</div>
+                              <div className="xx-small text-muted">{item.phone || 'No Phone'}</div>
+                            </td>
+                            <td><span className="badge bg-light text-secondary border xx-small">{item.type}</span></td>
+                            <td className={`text-end fw-bold x-small ${item.balance > 0 ? 'text-success' : 'text-danger'}`}>
+                              ₹{Math.abs(item.balance).toLocaleString()} {item.balance > 0 ? 'Dr' : 'Cr'}
+                            </td>
+                            <td className="text-center">
+                              <button 
+                                className="btn btn-glass-primary btn-xs rounded-pill" 
+                                onClick={() => { 
+                                  loadLedger(item.id, item.name); 
+                                  setBreakdown({ ...breakdown, show: false }); 
+                                }}
+                              >
+                                <i className="bi bi-eye-fill me-1"></i> View Ledger
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+              
+              <div className="modal-footer border-0 p-4 bg-light bg-opacity-50 justify-content-between">
+                <div className="xx-small text-muted fw-bold">
+                  TOTAL ACCOUNTS: {breakdown.data.length}
+                </div>
+                <button className="btn btn-secondary btn-sm rounded-pill px-4" onClick={() => setBreakdown({ ...breakdown, show: false })}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -503,6 +682,40 @@ export default function EntityLedger() {
             padding: 8px 12px;
             border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.6);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .stat-card.clickable {
+            cursor: pointer;
+        }
+        .stat-card.hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+            background: rgba(255,255,255,0.9);
+            border-color: var(--primary);
+        }
+        .stat-card.hover-lift.success:hover {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.05);
+        }
+        .stat-card.hover-lift.danger:hover {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.05);
+        }
+        .btn-xs {
+            padding: 0.25rem 0.6rem;
+            font-size: 0.6rem;
+        }
+        .btn-glass-primary {
+            background: rgba(var(--primary-rgb), 0.1);
+            color: var(--primary);
+            border: 1px solid rgba(var(--primary-rgb), 0.2);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .btn-glass-primary:hover {
+            background: var(--primary);
+            color: #fff;
         }
         .glass-card {
             background: rgba(255, 255, 255, 0.8);

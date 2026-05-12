@@ -116,6 +116,7 @@ class StockAdjustmentController extends Controller
 
         return DB::transaction(function () use ($request, $shopId) {
             $created = [];
+            $ignoredImeis = [];
 
             // ── Create a Dummy Invoice for Legacy Stock ──
             $supplier = \App\Models\Supplier::firstOrCreate(
@@ -148,6 +149,13 @@ class StockAdjustmentController extends Controller
 
                 if (count($imeis) > 0) {
                     foreach ($imeis as $imei) {
+                        // Check if IMEI already exists in the system
+                        $exists = \App\Models\PurchaseItem::where('imei', $imei)->exists();
+                        if ($exists) {
+                            $ignoredImeis[] = $imei;
+                            continue; // Skip this IMEI and continue with others
+                        }
+
                         $productId = $this->getOrCreateProduct($item, $imei);
                         if (!$productId) continue;
 
@@ -225,14 +233,31 @@ class StockAdjustmentController extends Controller
                 }
             }
 
+            // If no items were created but there were ignored items
+            if (count($created) === 0 && count($ignoredImeis) > 0) {
+                // We should rollback the dummy invoice since it's empty
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'No items were added. All provided IMEIs were duplicates.',
+                    'ignored_imeis' => $ignoredImeis,
+                    'adjustments' => []
+                ], 200); // Return 200 so frontend doesn't throw a red error
+            }
+
             // Update invoice total
             $invoice->update([
                 'total_amount' => $invoice->items()->sum('total'),
                 'grand_total'  => $invoice->items()->sum('total'),
             ]);
 
+            $message = 'Successfully added ' . count($created) . ' entries to stock.';
+            if (count($ignoredImeis) > 0) {
+                $message .= ' Skipped ' . count($ignoredImeis) . ' duplicate IMEIs.';
+            }
+
             return response()->json([
-                'message' => 'Successfully added ' . count($created) . ' entries to stock.',
+                'message' => $message,
+                'ignored_imeis' => $ignoredImeis,
                 'adjustments' => $created
             ], 201);
         });
@@ -381,5 +406,90 @@ class StockAdjustmentController extends Controller
         }
 
         return response()->json($query->get());
+    }
+
+    /**
+     * Get a report of duplicate IMEIs in the system
+     */
+    public function duplicatesReport(Request $request)
+    {
+        $duplicates = DB::table('purchase_items')
+            ->select('imei', DB::raw('COUNT(*) as count'))
+            ->whereNotNull('imei')
+            ->where('imei', '!=', '')
+            ->groupBy('imei')
+            ->having('count', '>', 1)
+            ->get();
+
+        $details = [];
+        foreach ($duplicates as $dup) {
+            $items = \App\Models\PurchaseItem::with(['product', 'invoice.shop'])
+                ->where('imei', $dup->imei)
+                ->get();
+            
+            $details[] = [
+                'imei' => $dup->imei,
+                'count' => $dup->count,
+                'occurrences' => $items->map(fn($i) => [
+                    'id' => $i->id,
+                    'product' => $i->product->name ?? 'Unknown',
+                    'shop' => $i->invoice->shop->name ?? 'Unknown',
+                    'date' => $i->invoice->purchase_date ?? 'Unknown',
+                    'invoice' => $i->invoice->invoice_no ?? 'Unknown'
+                ])
+            ];
+        }
+
+        return response()->json($details);
+    }
+
+    /**
+     * Clear all duplicate IMEIs, keeping only the first one
+     */
+    public function clearDuplicates(Request $request)
+    {
+        return DB::transaction(function () {
+            $duplicates = DB::table('purchase_items')
+                ->select('imei', DB::raw('MIN(id) as keep_id'), DB::raw('COUNT(*) as count'))
+                ->whereNotNull('imei')
+                ->where('imei', '!=', '')
+                ->groupBy('imei')
+                ->having('count', '>', 1)
+                ->get();
+
+            $deletedCount = 0;
+            foreach ($duplicates as $dup) {
+                // Get all occurrences except the one we keep
+                $toDelete = \App\Models\PurchaseItem::with('invoice')
+                    ->where('imei', $dup->imei)
+                    ->where('id', '!=', $dup->keep_id)
+                    ->get();
+
+                foreach ($toDelete as $item) {
+                    if (!$item->invoice) continue;
+
+                    // Reduce inventory stock
+                    Inventory::removeStock($item->invoice->shop_id, $item->product_id, 1);
+                    
+                    // Also find and delete the corresponding StockAdjustment if it exists
+                    StockAdjustment::where('product_id', $item->product_id)
+                        ->where('shop_id', $item->invoice->shop_id)
+                        ->where('reason', 'opening_stock')
+                        ->where('quantity', 1)
+                        ->where('adjustment_date', $item->invoice->purchase_date)
+                        ->orderBy('id', 'desc')
+                        ->limit(1)
+                        ->delete();
+
+                    $item->delete();
+                    $deletedCount++;
+                }
+            }
+
+            return response()->json([
+                'message' => "Successfully cleared $deletedCount duplicate IMEI entries.",
+                'deleted_count' => $deletedCount
+            ]);
+        });
     }
 }

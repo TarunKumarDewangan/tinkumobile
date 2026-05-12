@@ -225,6 +225,17 @@ class SaleInvoiceController extends Controller
             }
 
             DB::commit();
+
+            // Send WhatsApp Notification
+            try {
+                $customerName = $invoice->customer_name ?? 'Walk-in';
+                $amount = number_format($grandTotal, 2);
+                $msg = "🛍️ *New Sale!*\nInvoice: #{$invoiceNo}\nAmount: ₹{$amount}\nCustomer: {$customerName}";
+                app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
+            } catch (\Exception $waEx) {
+                \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Sale', ['error' => $waEx->getMessage()]);
+            }
+
             return response()->json($invoice->load('items.product', 'giftItems.giftProduct', 'customer'), 201);
         } catch (\Exception $e) {
             DB::rollBack();

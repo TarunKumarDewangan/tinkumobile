@@ -21,7 +21,7 @@ export default function EntityManager() {
     description: ''
   });
 
-  const entityTypes = ['CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'OTHER'];
+  const entityTypes = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'OTHER'];
 
   useEffect(() => {
     fetchEntities('');
@@ -165,7 +165,8 @@ export default function EntityManager() {
                     <span className={`badge rounded-pill ${
                       e.type === 'SHOP' ? 'bg-info' : 
                       e.type === 'SUPPLIER' ? 'bg-warning' : 
-                      e.type === 'CUSTOMER' ? 'bg-success' : 'bg-secondary'
+                      e.type === 'CUSTOMER' ? 'bg-success' : 
+                      e.type === 'SHOP_CUSTOMER' ? 'bg-primary' : 'bg-secondary'
                     }`}>
                       {e.type}
                     </span>

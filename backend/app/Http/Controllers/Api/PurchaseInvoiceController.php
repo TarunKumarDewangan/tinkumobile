@@ -218,8 +218,17 @@ class PurchaseInvoiceController extends Controller
                     Inventory::addStock($shopId, $productId, $item['quantity']);
                 }
             }
+            // Send WhatsApp Notification
+            try {
+                $amount = number_format($invoice->grand_total, 2);
+                $supplierName = $invoice->supplier->name ?? 'Unknown Supplier';
+                $msg = "📦 *New Purchase*\nInvoice: #{$invoice->invoice_no}\nAmount: ₹{$amount}\nSupplier: {$supplierName}";
+                app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
+            } catch (\Exception $waEx) {
+                \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Purchase', ['error' => $waEx->getMessage()]);
+            }
 
-            return response()->json($invoice->load('items.product'), 201);
+            return response()->json($invoice->load('items.product', 'supplier'), 201);
         });
     }
 

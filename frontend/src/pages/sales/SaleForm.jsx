@@ -43,8 +43,10 @@ export default function SaleForm() {
 
   // Customer Search & Add
   const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [priceMode, setPriceMode] = useState('RETAIL');
   const [showCustModal, setShowCustModal] = useState(false);
-  const [newCust, setNewCust] = useState({ name: '', phone: '', email: '', gst_no: '', address: '', voucher_code: '', events: [] });
+  const [newCust, setNewCust] = useState({ name: '', phone: '', email: '', gst_no: '', address: '', voucher_code: '', category: 'REGULAR', events: [] });
   // IMEI Scan Search
   const [scanProductId, setScanProductId] = useState('');
   const [imeiScanner, setImeiScanner] = useState('');
@@ -157,6 +159,8 @@ export default function SaleForm() {
         max_selling_price: i.product?.max_selling_price || 0
       })));
       setCustomerSearch(data.customer?.name || '');
+      setSelectedCustomer(data.customer || null);
+      if (data.customer?.category === 'SHOP') setPriceMode('WHOLESALE');
       loadProducts(data.shop_id);
     } catch (e) { toast.error('Error loading sale'); }
     finally { setLoading(false); }
@@ -197,7 +201,7 @@ export default function SaleForm() {
         storage: p.attributes?.storage || '',
         color: p.attributes?.color || '',
         quantity: 1,
-        unit_price: p.selling_price || 0,
+        unit_price: (priceMode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0),
         base_price: p.purchase_price || 0,
         min_selling_price: p.min_selling_price || 0,
         max_selling_price: p.max_selling_price || 0
@@ -250,9 +254,9 @@ export default function SaleForm() {
       if (p) {
           arr[i].selection_id = p.id;
           arr[i].product_id = p.product_id || p.id;
-          arr[i].unit_price = p.selling_price;
+          arr[i].unit_price = (priceMode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0);
           arr[i].base_price = p.purchase_price || 0;
-          arr[i].min_selling_price = p.min_selling_price || 0;
+          arr[i].min_selling_price = p.min_selling_price || 0,
           arr[i].max_selling_price = p.max_selling_price || 0;
           if (p.attributes) {
               arr[i].ram = p.attributes.ram || '';
@@ -323,6 +327,20 @@ export default function SaleForm() {
   const handleSelectCustomer = (c) => {
     setForm({ ...form, customer_id: c.id });
     setCustomerSearch(c.name);
+    setSelectedCustomer(c);
+    setPriceMode(c.category === 'SHOP' ? 'WHOLESALE' : 'RETAIL');
+  };
+
+  const handlePriceModeToggle = (mode) => {
+      setPriceMode(mode);
+      setItems(prevItems => prevItems.map(it => {
+          if (!it.selection_id) return it;
+          const p = products.find(px => px.id == it.selection_id);
+          if (!p) return it;
+          const newPrice = (mode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0);
+          return { ...it, unit_price: newPrice };
+      }));
+      toast.info(`🏷️ Switched to ${mode} pricing mode`);
   };
 
   const handleAddCustomer = async (e) => {
@@ -349,6 +367,7 @@ export default function SaleForm() {
     e.preventDefault();
     if (!form.customer_id) return toast.warning('Please select a customer');
     
+    setLoading(true);
     try {
       let finalForm = { ...form, items };
       if (form.payment_method === 'OTHER' && form.other_mode) {
@@ -363,7 +382,11 @@ export default function SaleForm() {
         toast.success('✅ Sale recorded successfully');
       }
       navigate('/sales');
-    } catch (e) { toast.error(e.response?.data?.message || 'Error saving sale'); }
+    } catch (e) { 
+        toast.error(e.response?.data?.message || 'Error saving sale'); 
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
@@ -430,6 +453,33 @@ export default function SaleForm() {
                                 </div>
                             )}
                         </div>
+
+                        {/* Price Mode Toggle Block */}
+                        <div className="col-12 mt-3 pt-3 border-top">
+                            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 bg-light p-3 rounded-3 border">
+                                <div>
+                                    <label className="form-label small fw-bold text-dark mb-0 d-block">🏷️ APPLIED PRICING MODE</label>
+                                    <span className="x-small text-muted">Toggling automatically updates the item prices below</span>
+                                </div>
+                                <div className="btn-group shadow-sm" role="group">
+                                    <button 
+                                        type="button" 
+                                        className={`btn btn-sm fw-bold px-3 ${priceMode === 'RETAIL' ? 'btn-primary' : 'btn-outline-secondary bg-white'}`}
+                                        onClick={() => handlePriceModeToggle('RETAIL')}
+                                    >
+                                        RETAIL RATE
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        className={`btn btn-sm fw-bold px-3 ${priceMode === 'WHOLESALE' ? 'btn-warning text-dark' : 'btn-outline-secondary bg-white'}`}
+                                        onClick={() => handlePriceModeToggle('WHOLESALE')}
+                                    >
+                                        WHOLESALE RATE
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
              </div>
@@ -578,6 +628,11 @@ export default function SaleForm() {
                                                 <span className="input-group-text">₹</span>
                                                 <input type="number" step="0.01" className="form-control text-end fw-bold" required value={item.unit_price} onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value))} />
                                             </div>
+                                            {priceMode === 'WHOLESALE' && (
+                                                <div className="text-center text-warning text-dark x-small fw-bold mb-1" style={{ fontSize: '10px' }}>
+                                                    <i className="bi bi-tag-fill me-1"></i>WHOLESALE
+                                                </div>
+                                            )}
                                             <div className="x-small fw-bold text-muted text-center border rounded bg-light px-1" style={{ fontSize: '10px' }}>
                                                 RANGE: <span className="text-danger">₹{item.min_selling_price}</span> - <span className="text-info">₹{item.max_selling_price}</span>
                                             </div>
@@ -832,6 +887,13 @@ export default function SaleForm() {
                       <div className="col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Voucher Code</label>
                           <input type="text" className="form-control" value={newCust.voucher_code} onChange={e => setNewCust({...newCust, voucher_code: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Customer Type <span className="text-danger">*</span></label>
+                          <select className="form-select" value={newCust.category} onChange={e => setNewCust({...newCust, category: e.target.value})}>
+                              <option value="REGULAR">NORMAL CUSTOMER</option>
+                              <option value="SHOP">SHOP CUSTOMER</option>
+                          </select>
                       </div>
                       <div className="col-12 text-uppercase">
                           <label className="form-label small fw-bold">GST Number (Optional)</label>

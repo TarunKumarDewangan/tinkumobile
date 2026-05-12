@@ -51,6 +51,8 @@ const PublicRetailerProfile = lazy(() => import('./pages/airtel/PublicRetailerPr
 const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
 const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
 const Daybook = lazy(() => import('./pages/accounts/Daybook'));
+const GroupSummary = lazy(() => import('./pages/accounts/GroupSummary'));
+const WhatsAppConfig = lazy(() => import('./pages/admin/WhatsAppConfig'));
 
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
 const CustomerProfile = lazy(() => import('./pages/customer/CustomerProfile'));
@@ -130,6 +132,8 @@ function AppRoutes() {
           <Route path="accounts/entity-manager" element={<EntityManager />} />
           <Route path="accounts/entity-ledger" element={<EntityLedger />} />
           <Route path="accounts/daybook" element={<Daybook />} />
+          <Route path="accounts/group-summary" element={<GroupSummary />} />
+          <Route path="admin/whatsapp-config" element={<WhatsAppConfig />} />
 
           <Route path="customer/login" element={<CustomerLogin />} />
           <Route path="customer/profile/:id" element={<CustomerProfile />} />

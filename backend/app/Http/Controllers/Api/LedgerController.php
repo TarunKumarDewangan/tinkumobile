@@ -20,6 +20,9 @@ class LedgerController extends Controller
         $endDate = $request->query('end_date', now()->endOfMonth()->toDateString());
 
         $ledgers = Ledger::with('entity:id,name,type')
+            ->whereHas('entity', function($q) {
+                $q->where('type', '!=', 'RETAILER');
+            })
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
@@ -92,6 +95,8 @@ class LedgerController extends Controller
         }
         if ($type) {
             $entities->where('type', $type);
+        } else {
+            $entities->where('type', '!=', 'RETAILER');
         }
 
         $entities = $entities->get();
@@ -131,6 +136,7 @@ class LedgerController extends Controller
                 COALESCE(SUM(l.credit), 0) as total_credit
             FROM entities e
             LEFT JOIN ledgers l ON e.id = l.entity_id
+            WHERE e.type != 'RETAILER'
             GROUP BY e.id, e.opening_balance, e.balance_type
         ");
 
@@ -148,5 +154,41 @@ class LedgerController extends Controller
             'receivable' => $receivable,
             'payable' => $payable,
         ]);
+    }
+
+    /**
+     * Get detailed breakdown of accounts contributing to summary totals
+     */
+    public function breakdown(Request $request)
+    {
+        $type = $request->query('type', 'OVERALL'); // RECEIVABLE, PAYABLE, OVERALL
+        
+        $entities = Entity::where('type', '!=', 'RETAILER')->get();
+        $accounting = app(AccountingService::class);
+        
+        $results = [];
+        foreach($entities as $entity) {
+            $balance = $accounting->getClosingBalance($entity);
+            
+            if (round($balance, 2) == 0) continue;
+            
+            if ($type === 'RECEIVABLE' && $balance <= 0) continue;
+            if ($type === 'PAYABLE' && $balance >= 0) continue;
+            
+            $results[] = [
+                'id' => $entity->id,
+                'name' => $entity->name,
+                'phone' => $entity->phone,
+                'type' => $entity->type,
+                'balance' => (float)$balance
+            ];
+        }
+        
+        // Sort by magnitude of balance
+        usort($results, function($a, $b) {
+            return abs($b['balance']) <=> abs($a['balance']);
+        });
+        
+        return response()->json($results);
     }
 }

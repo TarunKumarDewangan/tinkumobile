@@ -24,6 +24,12 @@ trait SyncsWithMasterEntity
         ];
 
         $type = $typeMap[get_class($this)] ?? 'OTHER';
+        
+        // Handle Customer Sub-types
+        if (get_class($this) === \App\Models\Customer::class && ($this->category ?? '') === 'SHOP') {
+            $type = 'SHOP_CUSTOMER';
+        }
+
         $phoneField = get_class($this) === \App\Models\Retailer::class ? 'msisdn' : 'phone';
 
         // 1. Try finding by relation first

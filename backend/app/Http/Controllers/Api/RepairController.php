@@ -173,6 +173,15 @@ class RepairController extends Controller
             ]);
         }
 
+        // Send WhatsApp Notification
+        try {
+            $issues = is_array($data['issue_description']) ? implode(', ', $data['issue_description']) : $data['issue_description'];
+            $msg = "🔧 *New Repair Entry*\nJob ID: #{$repair->id}\nDevice: {$repair->device_model}\nProblem: {$issues}\nCustomer: {$repair->customer_name}";
+            app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
+        } catch (\Exception $waEx) {
+            \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Repair', ['error' => $waEx->getMessage()]);
+        }
+
         return response()->json($repair, 201);
     }
 

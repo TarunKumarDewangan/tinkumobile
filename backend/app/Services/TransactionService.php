@@ -15,7 +15,7 @@ class TransactionService
         return Transaction::create([
             'shop_id' => $data['shop_id'],
             'user_id' => $data['user_id'],
-            'transaction_date' => now()->toDateString(),
+            'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
             'type' => $data['type'], // IN or OUT
             'category' => $data['category'] ?? 'ENTITY_SETTLEMENT',
             'amount' => $data['amount'],

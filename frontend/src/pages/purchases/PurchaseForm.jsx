@@ -238,6 +238,7 @@ export default function PurchaseForm() {
     }
 
     try {
+      setLoading(true);
       let finalForm = { ...form, items };
       
       if (form.payment_method === 'OTHER' && form.other_payment_mode) {
@@ -254,6 +255,8 @@ export default function PurchaseForm() {
       navigate('/purchases');
     } catch (e) {
       toast.error(e.response?.data?.message || 'Error saving purchase');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -567,8 +570,8 @@ export default function PurchaseForm() {
                   <span className="pf-grand">₹{grandTotal.toLocaleString('en-IN')}</span>
                 </div>
                 <div style={{marginTop:14,display:'flex',flexDirection:'column',gap:8}}>
-                  <button type="submit" className={`pf-submit${form.status==='received'?' green':''}`} style={{width:'100%'}}>
-                    {id?`Update ${form.bill_type} Purchase`:(form.status==='received'?`✅ Save & Add Stock`:`📦 Save Order`)}
+                  <button type="submit" disabled={loading} className={`pf-submit${form.status==='received'?' green':''}`} style={{width:'100%'}}>
+                    {loading ? 'Processing...' : id ? `Update ${form.bill_type} Purchase` : (form.status==='received'?`✅ Save & Add Stock`:`📦 Save Order`)}
                   </button>
                   <button type="button" onClick={()=>navigate('/purchases')} style={{width:'100%',background:'rgba(255,255,255,.08)',border:'1.5px solid rgba(255,255,255,.15)',color:'rgba(255,255,255,.7)',fontWeight:700,fontSize:'.8rem',padding:'8px',borderRadius:10,cursor:'pointer'}}>Cancel</button>
                 </div>

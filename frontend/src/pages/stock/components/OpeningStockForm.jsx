@@ -71,8 +71,49 @@ export default function OpeningStockForm({
         if (current.length === 1 && !current[0].product_id && !current[0].imei && !current[0].new_product_name) {
             current = [];
         }
-        return [...current, ...newItems];
+
+        // Prevent adding items that already exist in the list (by IMEI)
+        const existingImeis = new Set(current.map(i => i.imei).filter(Boolean));
+        const filteredNewItems = newItems.filter(item => {
+            if (!item.imei) return true;
+            if (existingImeis.has(item.imei)) {
+                console.warn(`Skipping duplicate IMEI during import: ${item.imei}`);
+                return false;
+            }
+            return true;
+        });
+
+        const skippedCount = newItems.length - filteredNewItems.length;
+        if (skippedCount > 0) {
+            toast.warning(`Skipped ${skippedCount} duplicate IMEI numbers.`);
+        }
+
+        return [...current, ...filteredNewItems];
     });
+  };
+
+  const handleFindEraseDuplicates = () => {
+    const imeis = new Set();
+    const uniqueItems = [];
+    let duplicateCount = 0;
+
+    openingStockItems.forEach(item => {
+        if (item.imei && imeis.has(item.imei)) {
+            duplicateCount++;
+        } else {
+            if (item.imei) imeis.add(item.imei);
+            uniqueItems.push(item);
+        }
+    });
+
+    if (duplicateCount > 0) {
+        if (window.confirm(`Found ${duplicateCount} duplicate IMEI entries. Erase them?`)) {
+            setOpeningStockItems(uniqueItems);
+            toast.success(`Erased ${duplicateCount} duplicate entries.`);
+        }
+    } else {
+        toast.info("No duplicate IMEIs found in the current list.");
+    }
   };
 
   const removeOpeningItem = (i) => {
@@ -131,8 +172,14 @@ export default function OpeningStockForm({
             shop_id: form.shop_id,
             notes: form.notes
         };
-        await api.post('/stock-adjustments/bulk', payload);
-        toast.success(`✅ Successfully added items to stock!`);
+        const response = await api.post('/stock-adjustments/bulk', payload);
+        
+        if (response.data.ignored_imeis && response.data.ignored_imeis.length > 0) {
+             toast.warning(response.data.message, { autoClose: 8000 });
+        } else {
+             toast.success(response.data.message || `✅ Successfully added items to stock!`);
+        }
+        
         setOpeningStockItems([]);
         onSuccess && onSuccess();
     } catch (e) {
@@ -172,6 +219,9 @@ export default function OpeningStockForm({
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="pf-sec mb-0">📦 Stock Items ({openingStockItems.length})</div>
           <div className="d-flex gap-2">
+            <button type="button" className="pf-bulk shadow-sm" style={{background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', letterSpacing: 0.5}} onClick={handleFindEraseDuplicates}>
+              🔍 Find & Erase Duplicates
+            </button>
             <button type="button" className="pf-bulk shadow-sm" style={{background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca', letterSpacing: 0.5}} onClick={handleClearExcel}>
               🗑️ Clear Excel Imports
             </button>

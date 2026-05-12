@@ -16,7 +16,11 @@ class EntityController extends Controller
     public function index(Request $request)
     {
         $query = Entity::query();
-        if ($request->type) $query->where('type', $request->type);
+        if ($request->type) {
+            $query->where('type', $request->type);
+        } else {
+            $query->where('type', '!=', 'RETAILER');
+        }
         if ($request->search) {
             $query->where(function($q) use ($request) {
                 $q->where('name', 'like', "%{$request->search}%")

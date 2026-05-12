@@ -56,7 +56,9 @@ class ProductController extends Controller
             $items = $query->get();
 
             // ── Subtract Sold Items Logically ──
-            $saleItems = \App\Models\SaleItem::all(); 
+            $saleItems = \App\Models\SaleItem::whereHas('invoice', function($q) {
+                $q->where('is_cancelled', false);
+            })->get(); 
             $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
             $soldCounts = []; 
             foreach ($saleItems as $si) {
@@ -107,6 +109,7 @@ class ProductController extends Controller
                             ],
                             'current_stock' => 0,
                             'selling_price' => $item->selling_price,
+                            'wholeseller_price' => $item->wholeseller_price,
                             'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                             'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                             'location' => $item->location ?? $item->product->location,
@@ -142,6 +145,7 @@ class ProductController extends Controller
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
+                        'wholeseller_price' => $item->wholeseller_price,
                         'purchase_price' => $item->unit_price, 
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
@@ -178,6 +182,7 @@ class ProductController extends Controller
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
+                        'wholeseller_price' => $item->wholeseller_price,
                         'purchase_price' => $item->unit_price,
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,

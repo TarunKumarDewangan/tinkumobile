@@ -51,6 +51,7 @@ class ReportController extends Controller
             ->join('products', 'sale_items.product_id', '=', 'products.id')
             ->join('sale_invoices', 'sale_items.sale_invoice_id', '=', 'sale_invoices.id')
             ->where('sale_invoices.is_cancelled', false)
+            ->whereNull('sale_invoices.deleted_at')
             ->with('product.category')
             ->groupBy('sale_items.product_id');
 
