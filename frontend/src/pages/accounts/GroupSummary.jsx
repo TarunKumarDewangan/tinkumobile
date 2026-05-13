@@ -2,24 +2,34 @@ import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+
+const ENTITY_TYPES = ['CUSTOMER', 'SHOP_CUSTOMER', 'SUPPLIER', 'AIRTEL_RETAILER', 'SHOP', 'OTHER'];
+const BALANCE_TYPES = ['RECEIVABLE', 'PAYABLE'];
 
 export default function GroupSummary() {
+    const { isOwner } = useAuth();
     const [entities, setEntities] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState('ALL');
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    // Edit Modal state
+    const [editEntity, setEditEntity] = useState(null);
+    const [editForm, setEditForm] = useState({});
+    const [saving, setSaving] = useState(false);
+
+    // Delete state
+    const [deleting, setDeleting] = useState(null); // entity id being deleted
+
+    useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            // Reusing entity-balances endpoint
             const { data } = await api.get('/ledgers/entity-balances');
             setEntities(data);
-        } catch (error) {
+        } catch {
             toast.error('Failed to load group summary');
         } finally {
             setLoading(false);
@@ -32,42 +42,82 @@ export default function GroupSummary() {
         return matchesSearch && matchesType;
     });
 
-    const totalDebit = filteredEntities.reduce((sum, ent) => sum + (ent.net_balance > 0 ? ent.net_balance : 0), 0);
-    const totalCredit = filteredEntities.reduce((sum, ent) => sum + (ent.net_balance < 0 ? Math.abs(ent.net_balance) : 0), 0);
+    const totalDebit  = filteredEntities.reduce((s, e) => s + (e.net_balance > 0 ? e.net_balance : 0), 0);
+    const totalCredit = filteredEntities.reduce((s, e) => s + (e.net_balance < 0 ? Math.abs(e.net_balance) : 0), 0);
 
-    const handlePrint = () => {
-        window.print();
+    /* ── Edit ── */
+    const openEdit = (ent) => {
+        setEditEntity(ent);
+        setEditForm({
+            name:            ent.name,
+            type:            ent.type,
+            phone:           ent.phone ?? '',
+            opening_balance: ent.opening_balance ?? 0,
+            balance_type:    ent.balance_type ?? 'RECEIVABLE',
+        });
+    };
+
+    const handleEditSave = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            await api.put(`/entities/${editEntity.id}`, editForm);
+            toast.success(`${editForm.name} updated`);
+            setEditEntity(null);
+            loadData();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Update failed');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    /* ── Delete ── */
+    const handleDelete = async (ent) => {
+        if (!window.confirm(`Delete "${ent.name}" from accounts? This removes the entity record but NOT its transaction history.`)) return;
+        setDeleting(ent.id);
+        try {
+            await api.delete(`/entities/${ent.id}`);
+            toast.success(`"${ent.name}" deleted`);
+            setEntities(prev => prev.filter(e => e.id !== ent.id));
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Delete failed');
+        } finally {
+            setDeleting(null);
+        }
     };
 
     return (
         <div className="container-fluid py-4 print-container">
+            {/* Header */}
             <div className="d-flex justify-content-between align-items-center mb-4 no-print">
                 <h4 className="fw-bold mb-0">🏛️ Group Summary</h4>
                 <div className="d-flex gap-2">
                     <button className="btn btn-outline-secondary btn-sm" onClick={loadData}>
                         <i className="bi bi-arrow-clockwise"></i> Refresh
                     </button>
-                    <button className="btn btn-primary btn-sm" onClick={handlePrint}>
-                        <i className="bi bi-printer"></i> Print Report
+                    <button className="btn btn-primary btn-sm" onClick={() => window.print()}>
+                        <i className="bi bi-printer"></i> Print
                     </button>
                 </div>
             </div>
 
+            {/* Filters */}
             <div className="card shadow-sm border-0 mb-4 no-print">
                 <div className="card-body p-3">
                     <div className="row g-3">
                         <div className="col-md-4">
-                            <input 
-                                type="text" 
-                                className="form-control form-control-sm" 
-                                placeholder="Search by name..." 
+                            <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                placeholder="Search by name..."
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
                         </div>
                         <div className="col-md-3">
-                            <select 
-                                className="form-select form-select-sm" 
+                            <select
+                                className="form-select form-select-sm"
                                 value={typeFilter}
                                 onChange={e => setTypeFilter(e.target.value)}
                             >
@@ -83,16 +133,19 @@ export default function GroupSummary() {
                 </div>
             </div>
 
+            {/* Table */}
             <div className="card shadow-sm border-0 overflow-hidden tally-theme">
+                {/* Column Header */}
                 <div className="card-header bg-light py-3 border-bottom no-print">
-                    <div className="row fw-bold text-uppercase x-small text-muted">
-                        <div className="col-6">Particulars</div>
-                        <div className="col-3 text-end">Debit (Receivable)</div>
-                        <div className="col-3 text-end">Credit (Payable)</div>
+                    <div className="row fw-bold text-uppercase x-small text-muted align-items-center">
+                        <div className="col-5">Particulars</div>
+                        <div className="col-2 text-end">Debit (Receivable)</div>
+                        <div className="col-2 text-end">Credit (Payable)</div>
+                        <div className="col-3 text-end">Actions</div>
                     </div>
                 </div>
-                
-                {/* Print Header (Visible only when printing) */}
+
+                {/* Print Header */}
                 <div className="d-none d-print-block text-center mb-4">
                     <h2 className="fw-bold mb-1">Tinku Mobiles</h2>
                     <h5 className="text-muted">Group Summary Report</h5>
@@ -107,22 +160,57 @@ export default function GroupSummary() {
                                 <div className="spinner-border text-primary opacity-50"></div>
                             </div>
                         ) : filteredEntities.length === 0 ? (
-                            <div className="text-center py-5 text-muted italic">No accounts with outstanding balances found.</div>
+                            <div className="text-center py-5 text-muted italic">No accounts found.</div>
                         ) : (
                             filteredEntities.map((ent, idx) => (
                                 <div key={ent.id} className={`tally-row border-bottom py-2 px-3 ${idx % 2 === 0 ? '' : 'bg-light bg-opacity-10'}`}>
                                     <div className="row align-items-center">
-                                        <div className="col-6">
-                                            <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`} className="fw-bold text-primary text-decoration-none d-block">
+                                        {/* Name + Type */}
+                                        <div className="col-5">
+                                            <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`}
+                                                className="fw-bold text-primary text-decoration-none d-block">
                                                 {ent.name}
                                             </Link>
                                             <div className="xx-small text-muted text-uppercase">{ent.type}</div>
                                         </div>
-                                        <div className="col-3 text-end fw-bold">
-                                            {ent.net_balance > 0 ? `₹${ent.net_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+
+                                        {/* Debit */}
+                                        <div className="col-2 text-end fw-bold">
+                                            {ent.net_balance > 0
+                                                ? `₹${ent.net_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                : '—'}
                                         </div>
-                                        <div className="col-3 text-end fw-bold text-danger">
-                                            {ent.net_balance < 0 ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+
+                                        {/* Credit */}
+                                        <div className="col-2 text-end fw-bold text-danger">
+                                            {ent.net_balance < 0
+                                                ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                : '—'}
+                                        </div>
+
+                                        {/* CRUD Buttons */}
+                                        <div className="col-3 text-end no-print d-flex gap-1 justify-content-end">
+                                            <button
+                                                className="btn btn-outline-primary btn-xs px-2 py-0"
+                                                style={{ fontSize: '0.7rem' }}
+                                                title="Edit account"
+                                                onClick={() => openEdit(ent)}
+                                            >
+                                                <i className="bi bi-pencil"></i> Edit
+                                            </button>
+                                            {isOwner() && (
+                                                <button
+                                                    className="btn btn-outline-danger btn-xs px-2 py-0"
+                                                    style={{ fontSize: '0.7rem' }}
+                                                    title="Delete account"
+                                                    disabled={deleting === ent.id}
+                                                    onClick={() => handleDelete(ent)}
+                                                >
+                                                    {deleting === ent.id
+                                                        ? <span className="spinner-border spinner-border-sm"></span>
+                                                        : <><i className="bi bi-trash"></i> Del</>}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -130,31 +218,113 @@ export default function GroupSummary() {
                         )}
                     </div>
                 </div>
-                
+
+                {/* Footer Totals */}
                 <div className="card-footer bg-dark text-white py-3 border-0">
                     <div className="row fw-bold">
-                        <div className="col-6 text-uppercase">Grand Total</div>
-                        <div className="col-3 text-end">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-3 text-end">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-5 text-uppercase">Grand Total</div>
+                        <div className="col-2 text-end">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-3"></div>
                     </div>
                 </div>
             </div>
 
+            {/* ── Edit Modal ── */}
+            {editEntity && (
+                <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1055 }}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content border-0 shadow-lg rounded-4">
+                            <div className="modal-header border-0 bg-primary text-white rounded-top-4 px-4 pt-4 pb-3">
+                                <div>
+                                    <h5 className="modal-title fw-bold mb-0">✏️ Edit Account</h5>
+                                    <div className="small opacity-75">{editEntity.name}</div>
+                                </div>
+                                <button className="btn-close btn-close-white" onClick={() => setEditEntity(null)} disabled={saving}></button>
+                            </div>
+
+                            <form onSubmit={handleEditSave}>
+                                <div className="modal-body px-4 py-3">
+                                    <div className="mb-3">
+                                        <label className="form-label fw-bold x-small text-uppercase text-muted">Account Name</label>
+                                        <input
+                                            className="form-control"
+                                            value={editForm.name}
+                                            onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div className="row g-3 mb-3">
+                                        <div className="col-6">
+                                            <label className="form-label fw-bold x-small text-uppercase text-muted">Account Type</label>
+                                            <select
+                                                className="form-select"
+                                                value={editForm.type}
+                                                onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}
+                                            >
+                                                {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="col-6">
+                                            <label className="form-label fw-bold x-small text-uppercase text-muted">Balance Direction</label>
+                                            <select
+                                                className="form-select"
+                                                value={editForm.balance_type}
+                                                onChange={e => setEditForm(f => ({ ...f, balance_type: e.target.value }))}
+                                            >
+                                                {BALANCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="row g-3 mb-3">
+                                        <div className="col-6">
+                                            <label className="form-label fw-bold x-small text-uppercase text-muted">Opening Balance (₹)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                className="form-control"
+                                                value={editForm.opening_balance}
+                                                onChange={e => setEditForm(f => ({ ...f, opening_balance: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="col-6">
+                                            <label className="form-label fw-bold x-small text-uppercase text-muted">Phone</label>
+                                            <input
+                                                className="form-control"
+                                                value={editForm.phone}
+                                                onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="modal-footer border-0 px-4 pb-4 pt-2 gap-2">
+                                    <button type="button" className="btn btn-light fw-bold px-4" onClick={() => setEditEntity(null)} disabled={saving}>
+                                        Cancel
+                                    </button>
+                                    <button type="submit" className="btn btn-primary fw-bold px-4" disabled={saving}>
+                                        {saving ? <><span className="spinner-border spinner-border-sm me-2"></span>Saving...</> : '💾 Save Changes'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <style>{`
-                .tally-theme {
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                }
-                .tally-row:hover {
-                    background-color: #f8f9fa;
-                }
-                .x-small { font-size: 0.75rem; }
+                .tally-theme { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+                .tally-row:hover { background-color: #f0f4ff; }
+                .x-small  { font-size: 0.75rem; }
                 .xx-small { font-size: 0.65rem; }
-                
+                .btn-xs   { font-size: 0.7rem; padding: 2px 6px; }
                 @media print {
-                    .no-print { display: none !important; }
-                    .card { border: none !important; box-shadow: none !important; }
+                    .no-print  { display: none !important; }
+                    .card      { border: none !important; box-shadow: none !important; }
                     .card-footer { background-color: #000 !important; color: #fff !important; }
-                    body { background: #fff !important; }
+                    body       { background: #fff !important; }
                 }
             `}</style>
         </div>
