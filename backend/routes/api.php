@@ -207,6 +207,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
 
     Route::apiResource('entities', EntityController::class);
+    Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory']);
     Route::post('entities-sync', [EntityController::class, 'autoSync']);
     Route::post('/entities-hard-reset', [\App\Http\Controllers\Api\EntityController::class, 'hardReset']);
     

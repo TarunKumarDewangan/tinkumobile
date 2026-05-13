@@ -82,6 +82,34 @@ class EntityController extends Controller
     }
 
     /**
+     * Completely purge an entity AND all its transaction history.
+     * Matches transactions by both entity ID and entity name for full coverage.
+     */
+    public function destroyWithHistory(Entity $entity)
+    {
+        return DB::transaction(function () use ($entity) {
+            $name = $entity->name;
+            $id   = $entity->id;
+
+            // 1. Delete all transactions linked to this entity (by ID or by name)
+            \App\Models\Transaction::where(function ($q) use ($id, $name) {
+                $q->where('accounting_entity_id', $id)
+                  ->orWhere('entity_name', $name);
+            })->forceDelete();
+
+            // 2. Remove cached balance row
+            DB::table('entity_balances')->where('entity_id', $id)->delete();
+
+            // 3. Delete the entity itself
+            $entity->delete();
+
+            return response()->json([
+                'message' => "\"$name\" and all its transaction history have been permanently deleted."
+            ]);
+        });
+    }
+
+    /**
      * Auto-sync entities from other tables.
      */
     public function autoSync()

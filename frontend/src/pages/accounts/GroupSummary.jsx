@@ -20,7 +20,8 @@ export default function GroupSummary() {
     const [saving, setSaving] = useState(false);
 
     // Delete state
-    const [deleting, setDeleting] = useState(null); // entity id being deleted
+    const [deleting, setDeleting] = useState(null);         // entity id being deleted
+    const [deletingHistory, setDeletingHistory] = useState(null); // entity id — del with history
 
     useEffect(() => { loadData(); }, []);
 
@@ -72,9 +73,9 @@ export default function GroupSummary() {
         }
     };
 
-    /* ── Delete ── */
+    /* ── Delete (entity only) ── */
     const handleDelete = async (ent) => {
-        if (!window.confirm(`Delete "${ent.name}" from accounts? This removes the entity record but NOT its transaction history.`)) return;
+        if (!window.confirm(`Delete "${ent.name}" from accounts?\n\nThis removes the entity record but KEEPS transaction history.`)) return;
         setDeleting(ent.id);
         try {
             await api.delete(`/entities/${ent.id}`);
@@ -84,6 +85,27 @@ export default function GroupSummary() {
             toast.error(err.response?.data?.message || 'Delete failed');
         } finally {
             setDeleting(null);
+        }
+    };
+
+    /* ── Delete with full history ── */
+    const handleDeleteWithHistory = async (ent) => {
+        const first = window.confirm(
+            `⚠️ DELETE "${ent.name}" WITH ALL TRANSACTION HISTORY?\n\nThis will permanently erase:\n• The account record\n• ALL ledger transactions for this account\n• Balance history\n\nThis CANNOT be undone. Confirm?`
+        );
+        if (!first) return;
+        const second = window.confirm(`FINAL WARNING: Completely erase "${ent.name}" and every transaction linked to it?`);
+        if (!second) return;
+
+        setDeletingHistory(ent.id);
+        try {
+            const { data } = await api.delete(`/entities/${ent.id}/with-history`);
+            toast.success(data.message || `"${ent.name}" and its history deleted`);
+            setEntities(prev => prev.filter(e => e.id !== ent.id));
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Delete with history failed');
+        } finally {
+            setDeletingHistory(null);
         }
     };
 
@@ -189,7 +211,7 @@ export default function GroupSummary() {
                                         </div>
 
                                         {/* CRUD Buttons */}
-                                        <div className="col-3 text-end no-print d-flex gap-1 justify-content-end">
+                                        <div className="col-3 text-end no-print d-flex gap-1 justify-content-end flex-wrap">
                                             <button
                                                 className="btn btn-outline-primary btn-xs px-2 py-0"
                                                 style={{ fontSize: '0.7rem' }}
@@ -198,11 +220,11 @@ export default function GroupSummary() {
                                             >
                                                 <i className="bi bi-pencil"></i> Edit
                                             </button>
-                                            {isOwner() && (
+                                            {isOwner() && (<>
                                                 <button
                                                     className="btn btn-outline-danger btn-xs px-2 py-0"
                                                     style={{ fontSize: '0.7rem' }}
-                                                    title="Delete account"
+                                                    title="Delete account only (keeps transaction history)"
                                                     disabled={deleting === ent.id}
                                                     onClick={() => handleDelete(ent)}
                                                 >
@@ -210,7 +232,18 @@ export default function GroupSummary() {
                                                         ? <span className="spinner-border spinner-border-sm"></span>
                                                         : <><i className="bi bi-trash"></i> Del</>}
                                                 </button>
-                                            )}
+                                                <button
+                                                    className="btn btn-xs px-2 py-0 text-white"
+                                                    style={{ fontSize: '0.7rem', backgroundColor: '#7c0000', border: '1px solid #7c0000' }}
+                                                    title="Delete account AND all transaction history (irreversible)"
+                                                    disabled={deletingHistory === ent.id}
+                                                    onClick={() => handleDeleteWithHistory(ent)}
+                                                >
+                                                    {deletingHistory === ent.id
+                                                        ? <span className="spinner-border spinner-border-sm"></span>
+                                                        : <><i className="bi bi-trash-fill"></i> Del+History</>}
+                                                </button>
+                                            </>)}
                                         </div>
                                     </div>
                                 </div>
