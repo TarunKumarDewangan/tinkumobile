@@ -514,35 +514,34 @@ class StockAdjustmentController extends Controller
             return response()->json(['message' => 'Invalid PIN provided. Access denied.'], 403);
         }
 
-        DB::transaction(function () {
-            // Disable foreign key checks temporarily to allow aggressive cleanup
-            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        // NOTE: TRUNCATE in MySQL issues an implicit commit and cannot run inside a
+        // transactional block. We disable FK checks, run all truncates, then re-enable.
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
-            // 1. Wipe Stock Adjustments and Inventory counts
-            DB::table('stock_adjustments')->truncate();
-            DB::table('inventory')->truncate();
+        // 1. Wipe Stock Adjustments and Inventory counts
+        DB::table('stock_adjustments')->truncate();
+        DB::table('inventory')->truncate();
 
-            // 2. Wipe Purchase Invoices and Items (Supplier Bills)
-            DB::table('purchase_items')->truncate();
-            DB::table('purchase_invoices')->truncate();
+        // 2. Wipe Purchase Invoices and Items (Supplier Bills)
+        DB::table('purchase_items')->truncate();
+        DB::table('purchase_invoices')->truncate();
 
-            // 3. Wipe Sale Invoices and Items (Customer Bills)
-            DB::table('sale_items')->truncate();
-            DB::table('sale_invoices')->truncate();
+        // 3. Wipe Sale Invoices and Items (Customer Bills)
+        DB::table('sale_items')->truncate();
+        DB::table('sale_invoices')->truncate();
 
-            // 4. Delete ledger transactions specifically linked to Purchase/Sale
-            \App\Models\Transaction::whereIn('entity_type', [
-                'App\Models\PurchaseInvoice', 
-                'App\Models\SaleInvoice'
-            ])->delete();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
-            // Re-enable foreign key checks
-            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        // 4. Delete ledger transactions specifically linked to Purchase/Sale
+        // (DELETE is transactional — safe to run normally)
+        \App\Models\Transaction::whereIn('entity_type', [
+            'App\Models\PurchaseInvoice',
+            'App\Models\SaleInvoice'
+        ])->delete();
 
-            // 5. Recalculate and Sync all Entity Balances to reflect the wiped bills
-            $entityService = app(\App\Services\EntityService::class);
-            $entityService->syncAll();
-        });
+        // 5. Recalculate and sync all entity balances after the wipe
+        $entityService = app(\App\Services\EntityService::class);
+        $entityService->syncAll();
 
         return response()->json(['message' => 'All New Mobile stocks and related bills have been permanently cleared!']);
     }
