@@ -11,6 +11,7 @@ import EditAdjustmentModal from './stock/components/EditAdjustmentModal';
 import ModelWiseStock from './stock/components/ModelWiseStock';
 import DataBackupModal from '../components/DataBackupModal';
 import DuplicateImeiModal from '../components/DuplicateImeiModal';
+import ClearStockModal from './stock/components/ClearStockModal';
 
 export default function StockEntry() {
   const [tab, setTab] = useState('stocks');
@@ -28,6 +29,7 @@ export default function StockEntry() {
   const [loading, setLoading] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
 
   const { user, isOwner } = useAuth();
   const inventory = useInventory(filters, form, setForm);
@@ -148,8 +150,11 @@ export default function StockEntry() {
               <button className="pf-bulk me-2" onClick={() => setShowDuplicateModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
                 🔍 CHECK DUPLICATES
               </button>
-              <button className="pf-bulk" onClick={() => setShowBackupModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
+              <button className="pf-bulk me-2" onClick={() => setShowBackupModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
                 📥 BACKUP / RESTORE
+              </button>
+              <button className="pf-bulk" onClick={() => setShowClearModal(true)} style={{background:'rgba(239,68,68,0.15)', border:'1.5px solid rgba(239,68,68,0.4)', color:'#fca5a5', padding:'6px 14px'}}>
+                🔥 CLEAR ALL STOCKS
               </button>
             </>
           )}
@@ -243,6 +248,12 @@ export default function StockEntry() {
         show={showDuplicateModal}
         onHide={() => setShowDuplicateModal(false)}
         onRefresh={() => { inventory.refresh(); if(tab === 'history') loadHistory(); }}
+      />
+
+      <ClearStockModal
+        show={showClearModal}
+        onClose={() => setShowClearModal(false)}
+        onClearSuccess={() => { inventory.refresh(); if(tab === 'history') loadHistory(); }}
       />
     </div>
   );

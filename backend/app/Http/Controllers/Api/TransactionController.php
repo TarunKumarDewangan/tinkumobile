@@ -79,7 +79,9 @@ class TransactionController extends Controller
             $data['entity_type'] = \App\Models\ExpenseCategory::class;
         }
 
-        $transaction = Transaction::create($data);
+        $transaction = DB::transaction(function () use ($data) {
+            return Transaction::create($data);
+        });
 
         return response()->json($transaction, 201);
     }

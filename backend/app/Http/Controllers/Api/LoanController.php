@@ -119,25 +119,35 @@ class LoanController extends Controller
             'notes'     => 'nullable|string',
         ]);
 
-        $loanPayment->update(array_merge($data, ['status' => 'paid']));
+        return DB::transaction(function () use ($data, $loanPayment) {
+            // Lock target payment record safely
+            $payment = LoanPayment::lockForUpdate()->findOrFail($loanPayment->id);
 
-        // Record Transaction (Repayment) using Service
-        $this->transactionService->recordForModel($loanPayment, [
-            'type'             => 'IN',
-            'category'         => 'LOAN_REPAYMENT',
-            'amount'           => $loanPayment->amount + ($data['penalty'] ?? 0),
-            'description'      => "Loan repayment from {$loanPayment->loan->customer->name} (EMI)",
-            'transaction_date' => Carbon::parse($loanPayment->paid_date)->toDateString(),
-            'shop_id'          => $loanPayment->shop_id,
-        ]);
+            // Short-circuit if prior request successfully processed this record
+            if ($payment->status === 'paid') {
+                return response()->json($payment->load('loan.customer'));
+            }
 
-        // Check if all paid → close loan
-        $loan = $loanPayment->loan;
-        $pendingCount = $loan->payments()->where('status', 'pending')->count();
-        if ($pendingCount === 0) {
-            $loan->update(['status' => 'closed']);
-        }
+            $payment->update(array_merge($data, ['status' => 'paid']));
 
-        return response()->json($loanPayment->fresh());
+            // Record Transaction (Repayment) using Service
+            $this->transactionService->recordForModel($payment, [
+                'type'             => 'IN',
+                'category'         => 'LOAN_REPAYMENT',
+                'amount'           => $payment->amount + ($data['penalty'] ?? 0),
+                'description'      => "Loan repayment from {$payment->loan->customer->name} (EMI)",
+                'transaction_date' => Carbon::parse($payment->paid_date)->toDateString(),
+                'shop_id'          => $payment->shop_id,
+            ]);
+
+            // Check if all paid → close loan
+            $loan = $payment->loan;
+            $pendingCount = $loan->payments()->where('status', 'pending')->count();
+            if ($pendingCount === 0) {
+                $loan->update(['status' => 'closed']);
+            }
+
+            return response()->json($payment->fresh()->load('loan.customer'));
+        });
     }
 }

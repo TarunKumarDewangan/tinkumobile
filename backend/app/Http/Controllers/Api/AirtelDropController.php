@@ -175,48 +175,50 @@ class AirtelDropController extends Controller
             'drops.*.refill_date' => 'required|date',
         ]);
 
-        $success = 0;
-        $failed = 0;
-        $duplicates = 0;
-        $errors = [];
+        return DB::transaction(function () use ($validated) {
+            $success = 0;
+            $failed = 0;
+            $duplicates = 0;
+            $errors = [];
 
-        foreach ($validated['drops'] as $dropData) {
-            $retailer = Retailer::where('msisdn', $dropData['msisdn'])->first();
-            
-            if (!$retailer) {
-                $failed++;
-                $errors[] = "MSISDN: " . $dropData['msisdn'] . " not found.";
-                continue;
+            foreach ($validated['drops'] as $dropData) {
+                $retailer = Retailer::where('msisdn', $dropData['msisdn'])->first();
+                
+                if (!$retailer) {
+                    $failed++;
+                    $errors[] = "MSISDN: " . $dropData['msisdn'] . " not found.";
+                    continue;
+                }
+
+                // Duplicate Check: Same retailer, same amount, same exact refill_date
+                $exists = AirtelDrop::where('retailer_id', $retailer->id)
+                    ->where('amount', $dropData['amount'])
+                    ->where('refill_date', $dropData['refill_date'])
+                    ->exists();
+
+                if ($exists) {
+                    $duplicates++;
+                    continue;
+                }
+
+                AirtelDrop::create([
+                    'retailer_id' => $retailer->id,
+                    'amount' => $dropData['amount'],
+                    'refill_date' => $dropData['refill_date'],
+                    'status' => 'pending'
+                ]);
+
+                $success++;
             }
 
-            // Duplicate Check: Same retailer, same amount, same exact refill_date
-            $exists = AirtelDrop::where('retailer_id', $retailer->id)
-                ->where('amount', $dropData['amount'])
-                ->where('refill_date', $dropData['refill_date'])
-                ->exists();
-
-            if ($exists) {
-                $duplicates++;
-                continue;
-            }
-
-            AirtelDrop::create([
-                'retailer_id' => $retailer->id,
-                'amount' => $dropData['amount'],
-                'refill_date' => $dropData['refill_date'],
-                'status' => 'pending'
+            return response()->json([
+                'success' => $success,
+                'failed' => $failed,
+                'duplicates' => $duplicates,
+                'errors' => $errors,
+                'message' => "Successfully imported $success new drops. $duplicates duplicates skipped. $failed failed."
             ]);
-
-            $success++;
-        }
-
-        return response()->json([
-            'success' => $success,
-            'failed' => $failed,
-            'duplicates' => $duplicates,
-            'errors' => $errors,
-            'message' => "Successfully imported $success new drops. $duplicates duplicates skipped. $failed failed."
-        ]);
+        });
     }
 
     public function importUpi(Request $request)
@@ -228,75 +230,77 @@ class AirtelDropController extends Controller
             'payments.*.recovered_at' => 'required|date',
         ]);
 
-        $success = 0;
-        $failed = 0;
-        $duplicates = 0;
-        $errors = [];
+        return DB::transaction(function () use ($validated, $request) {
+            $success = 0;
+            $failed = 0;
+            $duplicates = 0;
+            $errors = [];
 
-        // To run FIFO efficiently, group by retailer
-        $retailersToProcess = [];
+            // To run FIFO efficiently, group by retailer
+            $retailersToProcess = [];
 
-        foreach ($validated['payments'] as $payment) {
-            $retailer = Retailer::where('msisdn', $payment['msisdn'])->first();
-            
-            if (!$retailer) {
-                $failed++;
-                $errors[] = "MSISDN: " . $payment['msisdn'] . " not found.";
-                continue;
+            foreach ($validated['payments'] as $payment) {
+                $retailer = Retailer::where('msisdn', $payment['msisdn'])->first();
+                
+                if (!$retailer) {
+                    $failed++;
+                    $errors[] = "MSISDN: " . $payment['msisdn'] . " not found.";
+                    continue;
+                }
+
+                // Duplicate Check
+                $recoveredAt = \Carbon\Carbon::parse($payment['recovered_at']);
+                $exists = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)
+                    ->where('amount', $payment['amount'])
+                    ->where('recovered_at', $recoveredAt)
+                    ->where('notes', 'like', 'DIGITAL%')
+                    ->exists();
+
+                if ($exists) {
+                    $duplicates++;
+                    continue;
+                }
+
+                // Create recovery record
+                $recovery = \App\Models\AirtelRecovery::create([
+                    'retailer_id' => $retailer->id,
+                    'amount' => $payment['amount'],
+                    'recovered_at' => \Carbon\Carbon::parse($payment['recovered_at']),
+                    'recovery_user_id' => $request->user()->id,
+                    'notes' => 'DIGITAL - UPI Direct to Airtel'
+                ]);
+
+                // Record Transaction using Service
+                $this->transactionService->recordForModel($recovery, [
+                    'type'             => 'IN',
+                    'category'         => 'AIRTEL_RECOVERY',
+                    'amount'           => $recovery->amount,
+                    'payment_mode'     => 'DIGITAL',
+                    'description'      => "Direct UPI Payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
+                    'entity_name'      => $retailer->name,
+                    'transaction_date' => $recovery->recovered_at->toDateString(),
+                    'shop_id'          => $retailer->shop_id,
+                ]);
+
+                $retailersToProcess[$retailer->id] = $retailer;
+                $success++;
             }
 
-            // Duplicate Check
-            $recoveredAt = \Carbon\Carbon::parse($payment['recovered_at']);
-            $exists = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)
-                ->where('amount', $payment['amount'])
-                ->where('recovered_at', $recoveredAt)
-                ->where('notes', 'like', 'DIGITAL%')
-                ->exists();
-
-            if ($exists) {
-                $duplicates++;
-                continue;
+            foreach ($retailersToProcess as $retailer) {
+                $entity = \App\Models\Entity::where('name', $retailer->name)->first();
+                if ($entity) {
+                    app(\App\Services\EntityService::class)->syncBalance($entity);
+                }
             }
 
-            // Create recovery record
-            $recovery = \App\Models\AirtelRecovery::create([
-                'retailer_id' => $retailer->id,
-                'amount' => $payment['amount'],
-                'recovered_at' => \Carbon\Carbon::parse($payment['recovered_at']),
-                'recovery_user_id' => $request->user()->id,
-                'notes' => 'DIGITAL - UPI Direct to Airtel'
+            return response()->json([
+                'success' => $success,
+                'failed' => $failed,
+                'duplicates' => $duplicates,
+                'errors' => array_values(array_unique($errors)),
+                'message' => "Successfully imported $success UPI payments. $duplicates duplicates skipped. $failed failed."
             ]);
-
-            // Record Transaction using Service
-            $this->transactionService->recordForModel($recovery, [
-                'type'             => 'IN',
-                'category'         => 'AIRTEL_RECOVERY',
-                'amount'           => $recovery->amount,
-                'payment_mode'     => 'DIGITAL',
-                'description'      => "Direct UPI Payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
-                'entity_name'      => $retailer->name,
-                'transaction_date' => $recovery->recovered_at->toDateString(),
-                'shop_id'          => $retailer->shop_id,
-            ]);
-
-            $retailersToProcess[$retailer->id] = $retailer;
-            $success++;
-        }
-
-        foreach ($retailersToProcess as $retailer) {
-            $entity = \App\Models\Entity::where('name', $retailer->name)->first();
-            if ($entity) {
-                app(\App\Services\EntityService::class)->syncBalance($entity);
-            }
-        }
-
-        return response()->json([
-            'success' => $success,
-            'failed' => $failed,
-            'duplicates' => $duplicates,
-            'errors' => array_values(array_unique($errors)),
-            'message' => "Successfully imported $success UPI payments. $duplicates duplicates skipped. $failed failed."
-        ]);
+        });
     }
 
     public function markAsRecovered(Request $request)
@@ -307,36 +311,40 @@ class AirtelDropController extends Controller
             'recoveries.*.amount' => 'required|numeric'
         ]);
 
-        foreach ($validated['recoveries'] as $rec) {
-            $drop = AirtelDrop::find($rec['id']);
-            if (!$drop || $drop->status === 'recovered') continue;
+        return DB::transaction(function () use ($validated, $request) {
+            foreach ($validated['recoveries'] as $rec) {
+                // Fetch drop row with pessimistic lock to serialize concurrent matching actions
+                $drop = AirtelDrop::lockForUpdate()->find($rec['id']);
+                if (!$drop || $drop->status === 'recovered') continue;
 
-            $amount = (float)$rec['amount'];
-            
-            // Create a recovery record in the ledger
-            $recovery = \App\Models\AirtelRecovery::create([
-                'retailer_id' => $drop->retailer_id,
-                'amount' => $amount,
-                'recovered_at' => now(),
-                'recovery_user_id' => $request->user()->id,
-                'notes' => 'Bulk recover from Dashboard'
-            ]);
+                $amount = (float)$rec['amount'];
+                
+                // Re-enable status assignment to guarantee physical structural idempotency guards
+                $drop->update(['status' => 'recovered']);
 
-            // Record Transaction using Service
-            $this->transactionService->recordForModel($recovery, [
-                'type'             => 'IN',
-                'category'         => 'AIRTEL_RECOVERY',
-                'amount'           => $recovery->amount,
-                'payment_mode'     => 'CASH',
-                'description'      => "Bulk recovery from Dashboard for {$drop->retailer->name}",
-                'entity_name'      => $drop->retailer->name,
-                'shop_id'          => $drop->retailer->shop_id,
-            ]);
+                // Create a recovery record in the ledger
+                $recovery = \App\Models\AirtelRecovery::create([
+                    'retailer_id' => $drop->retailer_id,
+                    'amount' => $amount,
+                    'recovered_at' => now(),
+                    'recovery_user_id' => $request->user()->id,
+                    'notes' => "Bulk recover from Dashboard (Drop #{$drop->id})"
+                ]);
 
-            // Drop status is no longer updated as we use global ledger
-        }
+                // Record Transaction using Service
+                $this->transactionService->recordForModel($recovery, [
+                    'type'             => 'IN',
+                    'category'         => 'AIRTEL_RECOVERY',
+                    'amount'           => $recovery->amount,
+                    'payment_mode'     => 'CASH',
+                    'description'      => "Bulk recovery from Dashboard for {$drop->retailer->name}",
+                    'entity_name'      => $drop->retailer->name,
+                    'shop_id'          => $drop->retailer->shop_id,
+                ]);
+            }
 
-        return response()->json(['message' => 'Recoveries recorded successfully']);
+            return response()->json(['message' => 'Recoveries recorded successfully']);
+        });
     }
 
     public function summary(Request $request)

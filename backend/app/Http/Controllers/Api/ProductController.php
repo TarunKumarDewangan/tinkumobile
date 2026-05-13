@@ -110,6 +110,8 @@ class ProductController extends Controller
                             'current_stock' => 0,
                             'selling_price' => $item->selling_price,
                             'wholeseller_price' => $item->wholeseller_price,
+                            'purchase_price' => $item->unit_price,
+                            'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
                             'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                             'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                             'location' => $item->location ?? $item->product->location,
@@ -147,6 +149,7 @@ class ProductController extends Controller
                         'selling_price' => $item->selling_price,
                         'wholeseller_price' => $item->wholeseller_price,
                         'purchase_price' => $item->unit_price, 
+                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                         'location' => $item->location ?? $item->product->location,
@@ -184,6 +187,7 @@ class ProductController extends Controller
                         'selling_price' => $item->selling_price,
                         'wholeseller_price' => $item->wholeseller_price,
                         'purchase_price' => $item->unit_price,
+                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                         'location' => $item->location ?? $item->product->location,
@@ -194,7 +198,11 @@ class ProductController extends Controller
             return response()->json($expanded);
         }
 
-        $query = Product::with('category', 'inventory')->withTrashed()->where('deleted_at', null);
+        $query = Product::with(['category', 'inventory' => function($q) use ($shopId) {
+            if ($shopId) {
+                $q->where('shop_id', $shopId);
+            }
+        }])->withTrashed()->where('deleted_at', null);
         if ($request->category_id) $query->where('category_id', $request->category_id);
         if ($request->search) {
             $query->where(function($q) use ($request) {
@@ -224,9 +232,16 @@ class ProductController extends Controller
         return response()->json(Product::create($data), 201);
     }
 
-    public function show(Product $product)
+    public function show(Request $request, Product $product)
     {
-        return response()->json($product->load('category', 'inventory.shop'));
+        $user = $request->user();
+        $shopId = $user->hasFullAccess() ? null : $user->shop_id;
+
+        return response()->json($product->load(['category', 'inventory' => function($q) use ($shopId) {
+            if ($shopId) {
+                $q->where('shop_id', $shopId);
+            }
+        }, 'inventory.shop']));
     }
 
     public function update(Request $request, Product $product)
@@ -343,27 +358,64 @@ class ProductController extends Controller
             $imeiIndex = null;
         }
 
-        $item = \App\Models\PurchaseItem::findOrFail($itemId);
+        return DB::transaction(function () use ($request, $itemId, $imeiIndex) {
+            $item = \App\Models\PurchaseItem::with('invoice')->findOrFail($itemId);
 
-        // Update IMEI
-        if ($request->has('imei') && $imeiIndex !== null && $item->imei) {
-            $imeis = array_map('trim', explode(',', $item->imei));
-            if (isset($imeis[$imeiIndex])) {
-                $imeis[$imeiIndex] = $request->imei;
-                $item->imei = implode(', ', $imeis);
+            // Update IMEI
+            if ($request->has('imei') && $imeiIndex !== null && $item->imei) {
+                $imeis = array_map('trim', explode(',', $item->imei));
+                if (isset($imeis[$imeiIndex])) {
+                    $imeis[$imeiIndex] = $request->imei;
+                    $item->imei = implode(', ', $imeis);
+                }
+            } else if ($request->has('imei') && (!$item->imei || $item->quantity == 1)) {
+                $item->imei = $request->imei;
             }
-        } else if ($request->has('imei') && (!$item->imei || $item->quantity == 1)) {
-            $item->imei = $request->imei;
-        }
 
-        // Update other fields
-        if ($request->has('color')) $item->color = $request->color;
-        if ($request->has('ram')) $item->ram = $request->ram;
-        if ($request->has('storage')) $item->storage = $request->storage;
-        if ($request->has('selling_price')) $item->selling_price = $request->selling_price;
+            // Update other fields
+            if ($request->has('color')) $item->color = $request->color;
+            if ($request->has('ram')) $item->ram = $request->ram;
+            if ($request->has('storage')) $item->storage = $request->storage;
+            if ($request->has('selling_price')) $item->selling_price = $request->selling_price;
+            if ($request->has('wholeseller_price')) $item->wholeseller_price = $request->wholeseller_price;
+            if ($request->has('min_selling_price')) $item->min_selling_price = $request->min_selling_price;
+            if ($request->has('incentive_amount')) $item->incentive_amount = $request->incentive_amount;
 
-        $item->save();
+            $recalcInvoice = false;
+            if ($request->has('unit_price') && $request->unit_price !== null && $request->unit_price !== '') {
+                if ($item->unit_price != $request->unit_price) {
+                    $item->unit_price = $request->unit_price;
+                    $item->total = $item->quantity * $item->unit_price;
+                    $recalcInvoice = true;
+                }
+            }
 
-        return response()->json(['message' => 'Stock item updated successfully.']);
+            $item->save();
+
+            if ($recalcInvoice && $item->invoice) {
+                $invoice = $item->invoice;
+                $invoice->refresh();
+                $items = $invoice->items;
+                $totalAmount = $items->sum(fn($i) => $i->quantity * $i->unit_price);
+                
+                $cgstAmount = ($totalAmount * ($invoice->cgst_rate ?? 9)) / 100;
+                $sgstAmount = ($totalAmount * ($invoice->sgst_rate ?? 9)) / 100;
+                $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - ($invoice->discount ?? 0);
+                
+                if ($invoice->rounding_mode === 'up') $grandTotal = ceil($rawGrandTotal);
+                else if ($invoice->rounding_mode === 'down') $grandTotal = floor($rawGrandTotal);
+                else $grandTotal = round($rawGrandTotal);
+
+                $invoice->update([
+                    'total_amount' => $totalAmount,
+                    'cgst_amount'  => $cgstAmount,
+                    'sgst_amount'  => $sgstAmount,
+                    'grand_total'  => $grandTotal,
+                ]);
+                $invoice->updatePaymentStatus();
+            }
+
+            return response()->json(['message' => 'Stock item updated successfully.']);
+        });
     }
 }

@@ -17,7 +17,11 @@ export default function StockList({ products, loading, filters, handleFilterChan
           color: p.attributes?.color || '',
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
-          selling_price: p.selling_price || ''
+          selling_price: p.selling_price || '',
+          wholeseller_price: p.wholeseller_price || '',
+          min_selling_price: p.min_selling_price || '',
+          incentive_amount: p.incentive_amount || '',
+          unit_price: p.purchase_price || ''
       });
   };
 
@@ -210,7 +214,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                   onChange={e => setEditForm({...editForm, imei: e.target.value})} 
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-md-4">
                 <label className="form-label text-uppercase small fw-bold text-muted">Color</label>
                 <input 
                   type="text" 
@@ -219,7 +223,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                   onChange={e => setEditForm({...editForm, color: e.target.value})} 
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-md-4">
                 <label className="form-label text-uppercase small fw-bold text-muted">RAM</label>
                 <input 
                   type="text" 
@@ -228,7 +232,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                   onChange={e => setEditForm({...editForm, ram: e.target.value})} 
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-md-4">
                 <label className="form-label text-uppercase small fw-bold text-muted">Storage</label>
                 <input 
                   type="text" 
@@ -237,14 +241,59 @@ export default function StockList({ products, loading, filters, handleFilterChan
                   onChange={e => setEditForm({...editForm, storage: e.target.value})} 
                 />
               </div>
-              <div className="col-md-6">
-                <label className="form-label text-uppercase small fw-bold text-muted">Selling Price (₹)</label>
+              
+              <div className="col-md-12 pt-2"><hr className="my-0 text-muted" style={{opacity:0.15}} /></div>
+              
+              <div className="col-md-4">
+                <label className="form-label text-uppercase small fw-bold" style={{color:'#059669'}}>MOP (Selling) ₹</label>
                 <input 
                   type="number" 
-                  className="form-control" 
+                  className="form-control fw-bold" 
+                  style={{borderColor:'#6ee7b7',color:'#059669'}}
                   value={editForm.selling_price} 
                   onChange={e => setEditForm({...editForm, selling_price: e.target.value})} 
                   required
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label text-uppercase small fw-bold" style={{color:'#6366f1'}}>Wholesale ₹</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  style={{borderColor:'#a5b4fc'}}
+                  value={editForm.wholeseller_price} 
+                  onChange={e => setEditForm({...editForm, wholeseller_price: e.target.value})} 
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label text-uppercase small fw-bold" style={{color:'#dc2626'}}>Min Price ₹</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  style={{borderColor:'#fca5a5'}}
+                  value={editForm.min_selling_price} 
+                  onChange={e => setEditForm({...editForm, min_selling_price: e.target.value})} 
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label className="form-label text-uppercase small fw-bold" style={{color:'#d97706'}}>Margin / Com ₹</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  style={{borderColor:'#fcd34d'}}
+                  value={editForm.incentive_amount} 
+                  onChange={e => setEditForm({...editForm, incentive_amount: e.target.value})} 
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-uppercase small fw-bold text-muted">Purchase Rate (ex-GST) ₹</label>
+                <input 
+                  type="number" 
+                  className="form-control bg-light" 
+                  value={editForm.unit_price} 
+                  onChange={e => setEditForm({...editForm, unit_price: e.target.value})} 
+                  placeholder="Keep unchanged"
                 />
               </div>
             </div>

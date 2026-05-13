@@ -85,6 +85,8 @@ export default function AirtelDrops() {
 
   const handleImport = async (e) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     const lines = importText.split('\n');
     const parsedData = lines.map(line => {
       const trimmed = line.trim();
@@ -136,6 +138,7 @@ export default function AirtelDrops() {
 
     if (parsedData.length === 0) {
       toast.error('No valid data found to import');
+      setSubmitting(false);
       return;
     }
 
@@ -180,6 +183,8 @@ export default function AirtelDrops() {
     } catch (error) {
       console.error('Import Error:', error.response?.data);
       toast.error(error.response?.data?.message || 'Import failed');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -568,8 +573,8 @@ export default function AirtelDrops() {
             </div>
           </div>
           <div className="d-grid mt-4">
-            <button type="submit" className="btn btn-primary text-uppercase fw-bold py-2">
-              Process Import
+            <button type="submit" className="btn btn-primary text-uppercase fw-bold py-2" disabled={submitting}>
+              {submitting ? 'Processing...' : 'Process Import'}
             </button>
           </div>
 

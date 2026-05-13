@@ -258,22 +258,27 @@ class SaleInvoiceController extends Controller
             'amount' => 'required|numeric|min:0.01'
         ]);
 
-        $saleInvoice->total_paid += $data['amount'];
-        $saleInvoice->updatePaymentStatus();
+        return DB::transaction(function () use ($data, $saleInvoice) {
+            // Re-fetch lock to serialize simultaneous payment requests safely
+            $invoice = SaleInvoice::lockForUpdate()->findOrFail($saleInvoice->id);
 
-        // Record Transaction using Service
-        $this->transactionService->recordForModel($saleInvoice, [
-            'type'             => 'IN',
-            'category'         => 'SALE',
-            'amount'           => $data['amount'],
-            'description'      => "Partial payment for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})",
-        ]);
+            $invoice->total_paid += $data['amount'];
+            $invoice->updatePaymentStatus();
 
-        return response()->json([
-            'message' => 'Payment added successfully',
-            'total_paid' => $saleInvoice->total_paid,
-            'payment_status' => $saleInvoice->payment_status
-        ]);
+            // Record Transaction using Service
+            $this->transactionService->recordForModel($invoice, [
+                'type'             => 'IN',
+                'category'         => 'SALE',
+                'amount'           => $data['amount'],
+                'description'      => "Partial payment for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
+            ]);
+
+            return response()->json([
+                'message' => 'Payment added successfully',
+                'total_paid' => $invoice->total_paid,
+                'payment_status' => $invoice->payment_status
+            ]);
+        });
     }
 
     public function update(Request $request, SaleInvoice $saleInvoice)

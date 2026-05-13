@@ -68,6 +68,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDestroy']);
     Route::get('/stock-adjustments/duplicates', [StockAdjustmentController::class, 'duplicatesReport']);
     Route::post('/stock-adjustments/clear-duplicates', [StockAdjustmentController::class, 'clearDuplicates']);
+    Route::post('/stock-adjustments/clear-all', [StockAdjustmentController::class, 'clearAllStocks']);
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
     Route::get('/stocks/backup', [StockController::class, 'backup']);

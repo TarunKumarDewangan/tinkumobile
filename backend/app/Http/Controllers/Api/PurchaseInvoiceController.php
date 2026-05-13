@@ -285,7 +285,7 @@ class PurchaseInvoiceController extends Controller
             // 2. Clear old items
             $purchaseInvoice->items()->delete();
 
-            $calc = app(InvoiceService::class)->calculateTotals($data['items'], $data);
+            $calc = app(\App\Services\InvoiceService::class)->calculateTotals($data['items'], $data);
 
             $purchaseInvoice->update(array_merge($calc, [
                 'supplier_id'   => $data['supplier_id'],

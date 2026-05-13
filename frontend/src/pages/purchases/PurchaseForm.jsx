@@ -42,6 +42,7 @@ export default function PurchaseForm() {
   // Quick Add Supplier
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [newSupplier, setNewSupplier] = useState({ name: '', phone: '', address: '', gst_no: '' });
+  const [supplierSubmitting, setSupplierSubmitting] = useState(false);
 
   useEffect(() => {
     loadSuppliers();
@@ -114,6 +115,8 @@ export default function PurchaseForm() {
 
   const handleQuickSupplierAdd = async (e) => {
     e.preventDefault();
+    if (supplierSubmitting) return;
+    setSupplierSubmitting(true);
     try {
       const { data } = await api.post('/suppliers', newSupplier);
       toast.success('✅ Supplier added!');
@@ -123,6 +126,8 @@ export default function PurchaseForm() {
       setNewSupplier({ name: '', phone: '', address: '', gst_no: '' });
     } catch (e) {
       toast.error('Failed to add supplier');
+    } finally {
+      setSupplierSubmitting(false);
     }
   };
 
@@ -132,25 +137,13 @@ export default function PurchaseForm() {
     const a = [...items];
     a[i][field] = val;
     
-    // Auto-split IMEIs if they are comma-separated
-    if (field === 'imei' && val.includes(',')) {
+    // Auto-calculate quantity based on comma-separated IMEIs
+    if (field === 'imei') {
       const imeis = val.split(',').map(s => s.trim()).filter(Boolean);
-      if (imeis.length > 1) {
-        const baseItem = { ...a[i] };
-        // Update first item
-        a[i].imei = imeis[0];
+      if (imeis.length > 0) {
+        a[i].quantity = imeis.length;
+      } else {
         a[i].quantity = 1;
-        
-        // Add new items for the rest
-        const newRows = imeis.slice(1).map(imei => ({
-          ...baseItem,
-          imei: imei,
-          quantity: 1
-        }));
-        
-        a.splice(i + 1, 0, ...newRows);
-        setItems(a);
-        return;
       }
     }
 
@@ -178,21 +171,66 @@ export default function PurchaseForm() {
   const [scanner, setScanner] = useState({ show: false, itemIndex: null });
   const [showBulkScan, setShowBulkScan] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState(null);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [bulkEditFields, setBulkEditFields] = useState({ selling_price: '', wholeseller_price: '', min_selling_price: '', color: '', ram: '', storage: '' });
+
+  const handleBulkEditApply = () => {
+    setItems(prev => prev.map(item => {
+      const updated = { ...item };
+      if (bulkEditFields.selling_price !== '') updated.selling_price = bulkEditFields.selling_price;
+      if (bulkEditFields.wholeseller_price !== '') updated.wholeseller_price = bulkEditFields.wholeseller_price;
+      if (bulkEditFields.min_selling_price !== '') updated.min_selling_price = bulkEditFields.min_selling_price;
+      if (bulkEditFields.color !== '') updated.color = bulkEditFields.color;
+      if (bulkEditFields.ram !== '') updated.ram = bulkEditFields.ram;
+      if (bulkEditFields.storage !== '') updated.storage = bulkEditFields.storage;
+      return updated;
+    }));
+    setBulkEditFields({ selling_price: '', wholeseller_price: '', min_selling_price: '', color: '', ram: '', storage: '' });
+    setShowBulkEditModal(false);
+    toast.success(`✅ Applied to all ${items.length} items!`);
+  };
 
   const handleAddBulkItems = (newItems) => {
     setItems(prev => {
       let current = [...prev];
       if (editingItemIndex !== null) {
-        // Edit mode: replace the single item
         current[editingItemIndex] = newItems[0];
         setEditingItemIndex(null);
         return current;
       }
-      // If the first item is empty/default, remove it before merging
+      
       if (current.length === 1 && !current[0].product_id && !current[0].imei && !current[0].new_product_name) {
         current = [];
       }
-      return [...current, ...newItems];
+
+      // Group new items with existing items if all specs match perfectly
+      newItems.forEach(ni => {
+        let match = current.find(c => 
+          c.product_id == ni.product_id && 
+          c.is_new === ni.is_new &&
+          c.new_product_name === ni.new_product_name &&
+          c.ram === ni.ram && 
+          c.storage === ni.storage && 
+          c.color === ni.color && 
+          c.unit_price == ni.unit_price
+        );
+
+        if (match) {
+          if (ni.imei) {
+            let existingImeis = match.imei ? match.imei.split(',').map(x=>x.trim()).filter(Boolean) : [];
+            if (!existingImeis.includes(ni.imei)) {
+              existingImeis.push(ni.imei);
+              match.imei = existingImeis.join(', ');
+              match.quantity = existingImeis.length;
+            }
+          } else {
+            match.quantity += Number(ni.quantity) || 1;
+          }
+        } else {
+          current.push(ni);
+        }
+      });
+      return current;
     });
   };
 
@@ -239,8 +277,23 @@ export default function PurchaseForm() {
 
     try {
       setLoading(true);
-      let finalForm = { ...form, items };
+      let finalForm = { ...form };
       
+      // Flatten grouped items so backend receives exactly 1 item per IMEI as expected
+      let flatItems = [];
+      items.forEach(it => {
+        let imeiList = (it.imei || '').split(',').map(x => x.trim()).filter(Boolean);
+        if (imeiList.length > 0) {
+          imeiList.forEach(imei => {
+            flatItems.push({ ...it, imei: imei, quantity: 1 });
+          });
+        } else {
+          flatItems.push({ ...it, imei: '', quantity: it.quantity || 1 });
+        }
+      });
+      
+      finalForm.items = flatItems;
+
       if (form.payment_method === 'OTHER' && form.other_payment_mode) {
         finalForm.payment_method = form.other_payment_mode;
       }
@@ -347,7 +400,15 @@ export default function PurchaseForm() {
               <div className="pf-card">
                 <div className="d-flex justify-content-between align-items-center mb-2">
                   <div className="pf-sec mb-0">📦 Purchase Items ({items.length})</div>
-                  <button type="button" className="pf-bulk" onClick={()=>setShowBulkScan(true)}>+ Bulk Add</button>
+                  <div className="d-flex gap-2">
+                    {items.length > 0 && (
+                      <button type="button" style={{background:'linear-gradient(135deg,#0ea5e9,#0284c7)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
+                        onClick={() => { setBulkEditFields({ selling_price:'',wholeseller_price:'',min_selling_price:'',color:'',ram:'',storage:'' }); setShowBulkEditModal(true); }}>
+                        ✏️ Bulk Edit
+                      </button>
+                    )}
+                    <button type="button" className="pf-bulk" onClick={()=>setShowBulkScan(true)}>+ Bulk Add</button>
+                  </div>
                 </div>
 
                 {items.length===0 ? (
@@ -366,9 +427,12 @@ export default function PurchaseForm() {
                       const marginPer=item.unit_price>0?(marginVal/item.unit_price)*100:0;
                       return (
                         <div key={i} className="pf-item">
-                          <div style={{position:'absolute',top:8,right:10,display:'flex',gap:12,alignItems:'center'}}>
-                            <button type="button" onClick={()=>handleOpenBulkEdit(i)} style={{background:'none',border:'none',color:'#6366f1',cursor:'pointer',fontSize:'.85rem',fontWeight:700,padding:0,opacity:.8}}>✏️ Edit</button>
-                            <button type="button" onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'#94a3b8',cursor:'pointer',fontSize:'.9rem',fontWeight:700,lineHeight:1}}>✕</button>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,paddingBottom:8,borderBottom:'1px solid #e2e8f0'}}>
+                            <span style={{fontSize:'.68rem',fontWeight:800,color:'#475569',letterSpacing:'.5px'}}>🏷️ ITEM #{i+1}</span>
+                            <div style={{display:'flex',gap:16,alignItems:'center'}}>
+                              <button type="button" onClick={()=>handleOpenBulkEdit(i)} style={{background:'none',border:'none',color:'#6366f1',cursor:'pointer',fontSize:'.78rem',fontWeight:700,padding:0}}>✏️ Edit Details</button>
+                              <button type="button" onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'.78rem',fontWeight:700,padding:0}}>✕ Remove</button>
+                            </div>
                           </div>
                           <div className="row g-2 mb-2">
                             <div className="col-12 col-md-3">
@@ -392,28 +456,28 @@ export default function PurchaseForm() {
                                   </select>
                               }
                             </div>
-                            <div className="col-12 col-md-4">
+                            <div className="col-12 col-md-5">
                               <span className="pf-lbl">IMEI / Serial</span>
                               <div style={{display:'flex',gap:4}}>
                                 <input type="text" className="pf-imei" placeholder="Scan or type..." value={item.imei} onChange={e=>updateItem(i,'imei',e.target.value)}/>
                                 <button type="button" onClick={()=>setScanner({show:true,itemIndex:i})} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:7,padding:'0 9px',cursor:'pointer',fontSize:'.8rem'}}>📷</button>
                               </div>
                             </div>
-                            <div className="col-4 col-md-2">
+                            <div className="col-4 col-md-1">
                               <span className="pf-lbl">RAM</span>
                               <input type="text" list="ramOptions" className="pf-inp" placeholder="8GB" value={item.ram} onChange={e=>updateItem(i,'ram',e.target.value)}/>
                               <datalist id="ramOptions">
                                 {['2GB','3GB','4GB','6GB','8GB','12GB','16GB'].map(v => <option key={v} value={v} />)}
                               </datalist>
                             </div>
-                            <div className="col-4 col-md-2">
-                              <span className="pf-lbl">Storage</span>
+                            <div className="col-4 col-md-1">
+                              <span className="pf-lbl">ROM</span>
                               <input type="text" list="storageOptions" className="pf-inp" placeholder="128GB" value={item.storage} onChange={e=>updateItem(i,'storage',e.target.value)}/>
                               <datalist id="storageOptions">
                                 {['16GB','32GB','64GB','128GB','256GB','512GB','1TB'].map(v => <option key={v} value={v} />)}
                               </datalist>
                             </div>
-                            <div className="col-4 col-md-1">
+                            <div className="col-4 col-md-2">
                               <span className="pf-lbl">Color</span>
                               <input type="text" list="colorOptions" className="pf-inp" placeholder="Red" value={item.color} onChange={e=>updateItem(i,'color',e.target.value)}/>
                               <datalist id="colorOptions">
@@ -462,6 +526,10 @@ export default function PurchaseForm() {
                         </div>
                       );
                     })}
+                    <div style={{background:'#eff6ff',borderRadius:10,padding:'12px 18px',border:'1.5px solid #bfdbfe',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                      <div style={{fontSize:'.75rem',fontWeight:800,color:'#1e3a8a',letterSpacing:'.5px'}}>TOTAL QUANTITY: <span style={{color:'#2563eb',fontSize:'1.05rem',marginLeft:6}}>{items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)} Units</span></div>
+                      <div style={{fontSize:'.75rem',fontWeight:800,color:'#1e3a8a',letterSpacing:'.5px'}}>ITEMS SUB-TOTAL: <span style={{color:'#059669',fontSize:'1.05rem',marginLeft:6}}>₹{total.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
+                    </div>
                     <div style={{textAlign:'center',marginTop:4}}>
                       <button type="button" className="pf-bulk" style={{background:'#f1f5f9',color:'#6366f1',border:'1.5px dashed #a5b4fc'}}
                         onClick={()=>setItems([...items,{product_id:'',is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0}])}>
@@ -611,7 +679,9 @@ export default function PurchaseForm() {
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" className="fw-bold" onClick={() => setShowSupplierModal(false)}>CANCEL</Button>
-            <Button type="submit" variant="primary" className="fw-bold px-4">SAVE SUPPLIER</Button>
+            <Button type="submit" variant="primary" className="fw-bold px-4" disabled={supplierSubmitting}>
+              {supplierSubmitting ? 'SAVING...' : 'SAVE SUPPLIER'}
+            </Button>
           </Modal.Footer>
         </form>
       </Modal>
@@ -633,6 +703,76 @@ export default function PurchaseForm() {
         onAddItems={handleAddBulkItems}
         initialData={editingItemIndex !== null ? items[editingItemIndex] : null}
       />
+
+      {/* ── BULK EDIT MODAL ── */}
+      <Modal show={showBulkEditModal} onHide={() => setShowBulkEditModal(false)} centered size="md">
+        <Modal.Header closeButton style={{background:'linear-gradient(135deg,#0f172a,#1e3a5f)',border:'none',padding:'18px 24px'}}>
+          <Modal.Title className="text-white fw-bold d-flex align-items-center gap-2" style={{fontSize:'.95rem'}}>
+            <span style={{background:'rgba(255,255,255,.15)',borderRadius:10,padding:'6px 10px'}}>✏️</span>
+            Bulk Edit — {items.length} Item{items.length !== 1 ? 's' : ''}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{background:'#f8fafc',padding:'20px 24px'}}>
+          <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10,padding:'10px 14px',marginBottom:18,fontSize:'.75rem',color:'#1d4ed8',fontWeight:600}}>
+            💡 Only filled fields will be updated. Leave blank to keep existing values.
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+            <div>
+              <label style={{fontSize:'.65rem',fontWeight:800,letterSpacing:'.7px',textTransform:'uppercase',color:'#16a34a',display:'block',marginBottom:5}}>MOP (Selling Price) ₹</label>
+              <input type="number" placeholder="e.g. 18999"
+                style={{border:'1.5px solid #86efac',borderRadius:9,padding:'9px 12px',width:'100%',fontSize:'.85rem',fontWeight:700,background:'#fff',outline:'none',color:'#1e293b'}}
+                value={bulkEditFields.selling_price}
+                onChange={e => setBulkEditFields(p => ({...p, selling_price: e.target.value}))} />
+            </div>
+            <div>
+              <label style={{fontSize:'.65rem',fontWeight:800,letterSpacing:'.7px',textTransform:'uppercase',color:'#6366f1',display:'block',marginBottom:5}}>Wholesale Price ₹</label>
+              <input type="number" placeholder="e.g. 17500"
+                style={{border:'1.5px solid #a5b4fc',borderRadius:9,padding:'9px 12px',width:'100%',fontSize:'.85rem',fontWeight:700,background:'#fff',outline:'none',color:'#1e293b'}}
+                value={bulkEditFields.wholeseller_price}
+                onChange={e => setBulkEditFields(p => ({...p, wholeseller_price: e.target.value}))} />
+            </div>
+            <div>
+              <label style={{fontSize:'.65rem',fontWeight:800,letterSpacing:'.7px',textTransform:'uppercase',color:'#dc2626',display:'block',marginBottom:5}}>Min Selling Price ₹</label>
+              <input type="number" placeholder="e.g. 17000"
+                style={{border:'1.5px solid #fca5a5',borderRadius:9,padding:'9px 12px',width:'100%',fontSize:'.85rem',fontWeight:700,background:'#fff',outline:'none',color:'#1e293b'}}
+                value={bulkEditFields.min_selling_price}
+                onChange={e => setBulkEditFields(p => ({...p, min_selling_price: e.target.value}))} />
+            </div>
+            <div>
+              <label style={{fontSize:'.65rem',fontWeight:800,letterSpacing:'.7px',textTransform:'uppercase',color:'#7c3aed',display:'block',marginBottom:5}}>Color</label>
+              <input type="text" list="beColorOpts" placeholder="e.g. Starry Night"
+                style={{border:'1.5px solid #ddd6fe',borderRadius:9,padding:'9px 12px',width:'100%',fontSize:'.85rem',fontWeight:700,background:'#fff',outline:'none',color:'#1e293b'}}
+                value={bulkEditFields.color}
+                onChange={e => setBulkEditFields(p => ({...p, color: e.target.value}))} />
+              <datalist id="beColorOpts">{['Black','White','Blue','Gold','Silver','Red','Grey'].map(v => <option key={v} value={v} />)}</datalist>
+            </div>
+            <div>
+              <label style={{fontSize:'.65rem',fontWeight:800,letterSpacing:'.7px',textTransform:'uppercase',color:'#0369a1',display:'block',marginBottom:5}}>RAM</label>
+              <input type="text" list="beRamOpts" placeholder="e.g. 8GB"
+                style={{border:'1.5px solid #bae6fd',borderRadius:9,padding:'9px 12px',width:'100%',fontSize:'.85rem',fontWeight:700,background:'#fff',outline:'none',color:'#1e293b'}}
+                value={bulkEditFields.ram}
+                onChange={e => setBulkEditFields(p => ({...p, ram: e.target.value}))} />
+              <datalist id="beRamOpts">{['2GB','4GB','6GB','8GB','12GB','16GB'].map(v => <option key={v} value={v} />)}</datalist>
+            </div>
+            <div>
+              <label style={{fontSize:'.65rem',fontWeight:800,letterSpacing:'.7px',textTransform:'uppercase',color:'#0369a1',display:'block',marginBottom:5}}>Storage (ROM)</label>
+              <input type="text" list="beStorOpts" placeholder="e.g. 128GB"
+                style={{border:'1.5px solid #bae6fd',borderRadius:9,padding:'9px 12px',width:'100%',fontSize:'.85rem',fontWeight:700,background:'#fff',outline:'none',color:'#1e293b'}}
+                value={bulkEditFields.storage}
+                onChange={e => setBulkEditFields(p => ({...p, storage: e.target.value}))} />
+              <datalist id="beStorOpts">{['32GB','64GB','128GB','256GB','512GB'].map(v => <option key={v} value={v} />)}</datalist>
+            </div>
+          </div>
+        </Modal.Body>
+        <Modal.Footer style={{background:'#fff',borderTop:'1px solid #e2e8f0',padding:'14px 24px'}}>
+          <Button variant="outline-secondary" className="fw-bold px-4" onClick={() => setShowBulkEditModal(false)}>Cancel</Button>
+          <Button className="fw-bold px-5" onClick={handleBulkEditApply}
+            style={{background:'linear-gradient(135deg,#0ea5e9,#0284c7)',border:'none',letterSpacing:.4}}>
+            ✅ Apply to All {items.length} Items
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

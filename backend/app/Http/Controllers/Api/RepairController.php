@@ -296,6 +296,11 @@ class RepairController extends Controller
 
     public function payForwardCost(Request $request, RepairRequest $repair)
     {
+        $user = $request->user();
+        if (! $user->hasFullAccess() && $repair->shop_id !== $user->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if (!$repair->is_forwarded || $repair->service_center_cost <= 0) {
             return response()->json(['message' => 'This repair is not forwarded or has no cost defined.'], 422);
         }

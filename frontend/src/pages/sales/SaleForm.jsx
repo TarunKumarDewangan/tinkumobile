@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
+import debounce from 'lodash/debounce';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -42,7 +43,12 @@ export default function SaleForm() {
   const [isManualRound, setIsManualRound] = useState(false);
 
   // Customer Search & Add
+  const [customerInputText, setCustomerInputText] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
+  const debouncedCustomerSearch = useMemo(
+    () => debounce((val) => setCustomerSearch(val), 350),
+    []
+  );
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [priceMode, setPriceMode] = useState('RETAIL');
   const [showCustModal, setShowCustModal] = useState(false);
@@ -159,6 +165,7 @@ export default function SaleForm() {
         max_selling_price: i.product?.max_selling_price || 0
       })));
       setCustomerSearch(data.customer?.name || '');
+      setCustomerInputText(data.customer?.name || '');
       setSelectedCustomer(data.customer || null);
       if (data.customer?.category === 'SHOP') setPriceMode('WHOLESALE');
       loadProducts(data.shop_id);
@@ -175,19 +182,31 @@ export default function SaleForm() {
     } catch (e) { toast.error('Error loading products'); }
   };
 
+  const fetchScannedProduct = async (val, shopId, prodId) => {
+    try {
+      const params = { imei: val, group_by_config: 'false', shop_id: shopId };
+      if (prodId) params.product_id = prodId;
+      
+      const { data } = await api.get('/products', { params });
+      if (data && data.length > 0) {
+          setScanResult(data[0]);
+      } else { setScanResult(null); }
+    } catch (e) { setScanResult(null); }
+  };
+
+  const debouncedImeiSearch = useMemo(
+    () => debounce((val, shopId, prodId) => fetchScannedProduct(val, shopId, prodId), 400),
+    []
+  );
+
   const handleImeiScan = async (val) => {
     setImeiScanner(val);
     if (val.length >= 4) { // Faster search threshold
-        try {
-            const params = { imei: val, group_by_config: 'false', shop_id: form.shop_id };
-            if (scanProductId) params.product_id = scanProductId;
-            
-            const { data } = await api.get('/products', { params });
-            if (data && data.length > 0) {
-                setScanResult(data[0]);
-            } else { setScanResult(null); }
-        } catch (e) { setScanResult(null); }
-    } else { setScanResult(null); }
+        debouncedImeiSearch(val, form.shop_id, scanProductId);
+    } else { 
+        debouncedImeiSearch.cancel();
+        setScanResult(null); 
+    }
   };
 
   const addScannedItem = (existing = null) => {
@@ -327,6 +346,7 @@ export default function SaleForm() {
   const handleSelectCustomer = (c) => {
     setForm({ ...form, customer_id: c.id });
     setCustomerSearch(c.name);
+    setCustomerInputText(c.name);
     setSelectedCustomer(c);
     setPriceMode(c.category === 'SHOP' ? 'WHOLESALE' : 'RETAIL');
   };
@@ -437,8 +457,12 @@ export default function SaleForm() {
                                     type="text" 
                                     className="form-control border-start-0 text-uppercase" 
                                     placeholder="TYPE NAME OR PHONE TO SEARCH..." 
-                                    value={customerSearch}
-                                    onChange={e => { setCustomerSearch(e.target.value); setForm({...form, customer_id: ''}); }}
+                                    value={customerInputText}
+                                    onChange={e => { 
+                                        setCustomerInputText(e.target.value); 
+                                        debouncedCustomerSearch(e.target.value); 
+                                        setForm({...form, customer_id: ''}); 
+                                    }}
                                 />
                                 <button type="button" className="btn btn-primary fw-bold" onClick={() => setShowCustModal(true)} title="Add New Customer">+</button>
                             </div>

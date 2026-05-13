@@ -114,8 +114,9 @@ class StockAdjustmentController extends Controller
 
         $shopId = $request->shop_id;
 
-        return DB::transaction(function () use ($request, $shopId) {
-            $created = [];
+        try {
+            return DB::transaction(function () use ($request, $shopId) {
+                $created = [];
             $ignoredImeis = [];
 
             // ── Create a Dummy Invoice for Legacy Stock ──
@@ -235,13 +236,12 @@ class StockAdjustmentController extends Controller
 
             // If no items were created but there were ignored items
             if (count($created) === 0 && count($ignoredImeis) > 0) {
-                // We should rollback the dummy invoice since it's empty
-                DB::rollBack();
-                return response()->json([
+                // Throw clean exception to trigger standard outer transaction rolling automatically
+                throw new \RuntimeException(json_encode([
                     'message' => 'No items were added. All provided IMEIs were duplicates.',
                     'ignored_imeis' => $ignoredImeis,
                     'adjustments' => []
-                ], 200); // Return 200 so frontend doesn't throw a red error
+                ]));
             }
 
             // Update invoice total
@@ -261,6 +261,13 @@ class StockAdjustmentController extends Controller
                 'adjustments' => $created
             ], 201);
         });
+        } catch (\RuntimeException $ex) {
+            $decoded = json_decode($ex->getMessage(), true);
+            if (is_array($decoded) && isset($decoded['ignored_imeis'])) {
+                return response()->json($decoded, 200);
+            }
+            throw $ex;
+        }
     }
 
     /** Helper for bulkStore */
@@ -491,5 +498,52 @@ class StockAdjustmentController extends Controller
                 'deleted_count' => $deletedCount
             ]);
         });
+    }
+
+    /**
+     * Clear all stocks specifically for New Mobiles.
+     * This wipes all stock adjustments, purchase invoices, and sale invoices.
+     */
+    public function clearAllStocks(Request $request)
+    {
+        $request->validate([
+            'pin' => 'required|string'
+        ]);
+
+        if ($request->pin !== '71727378') {
+            return response()->json(['message' => 'Invalid PIN provided. Access denied.'], 403);
+        }
+
+        DB::transaction(function () {
+            // Disable foreign key checks temporarily to allow aggressive cleanup
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+            // 1. Wipe Stock Adjustments and Inventory counts
+            DB::table('stock_adjustments')->truncate();
+            DB::table('inventory')->truncate();
+
+            // 2. Wipe Purchase Invoices and Items (Supplier Bills)
+            DB::table('purchase_items')->truncate();
+            DB::table('purchase_invoices')->truncate();
+
+            // 3. Wipe Sale Invoices and Items (Customer Bills)
+            DB::table('sale_items')->truncate();
+            DB::table('sale_invoices')->truncate();
+
+            // 4. Delete ledger transactions specifically linked to Purchase/Sale
+            \App\Models\Transaction::whereIn('entity_type', [
+                'App\Models\PurchaseInvoice', 
+                'App\Models\SaleInvoice'
+            ])->delete();
+
+            // Re-enable foreign key checks
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+            // 5. Recalculate and Sync all Entity Balances to reflect the wiped bills
+            $entityService = app(\App\Services\EntityService::class);
+            $entityService->syncAll();
+        });
+
+        return response()->json(['message' => 'All New Mobile stocks and related bills have been permanently cleared!']);
     }
 }
