@@ -9,6 +9,7 @@ use App\Models\AirtelDrop;
 use App\Models\Retailer;
 use App\Models\ActivityLog;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class AirtelDropController extends Controller
 {
