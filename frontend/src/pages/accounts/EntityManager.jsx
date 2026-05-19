@@ -224,18 +224,21 @@ export default function EntityManager() {
                       />
                     </div>
                     <div className="col-md-6">
-                      <label className="form-label fw-bold small text-muted text-uppercase">Category</label>
-                      <input 
-                        type="text" 
-                        list="entityTypeOptions"
-                        className="form-control"
-                        placeholder="Type or select category..."
+                      <label className="form-label fw-bold small text-muted text-uppercase">Category *</label>
+                      <select 
+                        className="form-select fw-semibold"
+                        required
                         value={formData.type}
                         onChange={e => setFormData({...formData, type: e.target.value})}
-                      />
-                      <datalist id="entityTypeOptions">
-                        {entityTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                      </datalist>
+                      >
+                        <option value="">Select Category...</option>
+                        <option value="CUSTOMER">NORMAL CUSTOMER</option>
+                        <option value="SHOP_CUSTOMER">SHOP CUSTOMER</option>
+                        <option value="SHOP">SHOP</option>
+                        <option value="SUPPLIER">SUPPLIER</option>
+                        <option value="RETAILER">RETAILER</option>
+                        <option value="OTHER">OTHER</option>
+                      </select>
                     </div>
                     <div className="col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
