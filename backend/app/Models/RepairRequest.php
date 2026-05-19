@@ -14,6 +14,20 @@ class RepairRequest extends Model
     use PostsToLedger;
     use UppercaseStrings, RecordsTransactions;
 
+    public static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($model) {
+            if ($model->customer_name && !$model->accounting_entity_id) {
+                $entity = \App\Models\Entity::where('name', $model->customer_name)->first();
+                if ($entity) {
+                    $model->accounting_entity_id = $entity->id;
+                }
+            }
+        });
+    }
+
     protected function getLedgerData(): ?array
     {
         $entries = [];
@@ -64,6 +78,7 @@ class RepairRequest extends Model
     }
 
     protected $fillable = [
+        'accounting_entity_id',
         'shop_id', 'customer_id', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'submitted_date',
         'device_model', 'quoted_amount', 'is_pay_later', 'service_center_cost', 'advance_amount', 'advance_payment_mode',
         'issue_description', 'status', 'assigned_to',
