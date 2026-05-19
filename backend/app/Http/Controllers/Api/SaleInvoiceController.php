@@ -76,6 +76,9 @@ class SaleInvoiceController extends Controller
             'is_cash_discount_on_bill' => 'nullable|boolean',
             'rounding_mode'    => 'nullable|in:auto,up,down,manual',
             'round_off'        => 'nullable|numeric',
+            'cgst_amount'      => 'nullable|numeric',
+            'sgst_amount'      => 'nullable|numeric',
+            'is_gst_manual'    => 'nullable|boolean',
             'notes'            => 'nullable|string',
             'items'            => 'required|array|min:1',
             'items.*.product_id'  => 'required|exists:products,id',
@@ -108,13 +111,19 @@ class SaleInvoiceController extends Controller
                 $cgstRate = (float) ($data['cgst_rate'] ?? 9);
                 $sgstRate = (float) ($data['sgst_rate'] ?? 9);
                 
-                $totalGstRate = $cgstRate + $sgstRate;
-                $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
-                $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
-                
-                $cgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
-                $sgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
-                $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
+                if (isset($data['is_gst_manual']) && $data['is_gst_manual'] && isset($data['cgst_amount']) && isset($data['sgst_amount'])) {
+                    $cgstAmount = (float) $data['cgst_amount'];
+                    $sgstAmount = (float) $data['sgst_amount'];
+                    $totalAmount = $inclusiveTotal - $cgstAmount - $sgstAmount;
+                } else {
+                    $totalGstRate = $cgstRate + $sgstRate;
+                    $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
+                    $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
+                    
+                    $cgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
+                    $sgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
+                    $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
+                }
             } else {
                 $cgstRate = 0;
                 $sgstRate = 0;
@@ -304,6 +313,9 @@ class SaleInvoiceController extends Controller
             'sgst_rate'      => 'nullable|numeric|min:0',
             'rounding_mode'  => 'nullable|in:auto,up,down,manual',
             'round_off'      => 'nullable|numeric',
+            'cgst_amount'    => 'nullable|numeric',
+            'sgst_amount'    => 'nullable|numeric',
+            'is_gst_manual'  => 'nullable|boolean',
             'payment_method' => 'nullable|string',
             'notes'          => 'nullable|string',
             'items'          => 'required|array|min:1',
@@ -335,13 +347,19 @@ class SaleInvoiceController extends Controller
                 $cgstRate = (float) ($data['cgst_rate'] ?? 9);
                 $sgstRate = (float) ($data['sgst_rate'] ?? 9);
                 
-                $totalGstRate = $cgstRate + $sgstRate;
-                $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
-                $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
-                
-                $cgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
-                $sgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
-                $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
+                if (isset($data['is_gst_manual']) && $data['is_gst_manual'] && isset($data['cgst_amount']) && isset($data['sgst_amount'])) {
+                    $cgstAmount = (float) $data['cgst_amount'];
+                    $sgstAmount = (float) $data['sgst_amount'];
+                    $totalAmount = $inclusiveTotal - $cgstAmount - $sgstAmount;
+                } else {
+                    $totalGstRate = $cgstRate + $sgstRate;
+                    $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
+                    $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
+                    
+                    $cgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
+                    $sgstAmount = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
+                    $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
+                }
             } else {
                 $cgstRate = 0;
                 $sgstRate = 0;

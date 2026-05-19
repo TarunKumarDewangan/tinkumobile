@@ -38,31 +38,41 @@ class ReportController extends Controller
         return response()->json($query->latest('sale_date')->get());
     }
 
-    /** 2. Profit Report */
+    /** 2. Profit Report — Invoice Level (discounts accounted for) */
     public function profit(Request $request)
     {
         $shopId = $this->shopFilter($request);
-        $query = SaleItem::select(
-                'sale_items.product_id',
-                DB::raw('SUM(sale_items.quantity) as qty_sold'),
-                DB::raw('SUM(sale_items.total) as revenue'),
-                DB::raw('SUM(sale_items.quantity * products.purchase_price) as cost')
-            )
-            ->join('products', 'sale_items.product_id', '=', 'products.id')
-            ->join('sale_invoices', 'sale_items.sale_invoice_id', '=', 'sale_invoices.id')
-            ->where('sale_invoices.is_cancelled', false)
-            ->whereNull('sale_invoices.deleted_at')
-            ->with('product.category')
-            ->groupBy('sale_items.product_id');
 
-        if ($shopId) $query->where('sale_invoices.shop_id', $shopId);
-        if ($request->from) $query->where('sale_invoices.sale_date', '>=', $request->from);
-        if ($request->to) $query->where('sale_invoices.sale_date', '<=', $request->to);
+        $query = SaleInvoice::with('customer', 'items.product')
+            ->where('is_cancelled', false)
+            ->whereNull('deleted_at');
 
-        $rows = $query->get()->map(function ($r) {
-            $r->profit = $r->revenue - $r->cost;
-            $r->margin = $r->revenue > 0 ? round(($r->profit / $r->revenue) * 100, 2) : 0;
-            return $r;
+        if ($shopId)         $query->where('shop_id', $shopId);
+        if ($request->from)  $query->where('sale_date', '>=', $request->from);
+        if ($request->to)    $query->where('sale_date', '<=', $request->to);
+
+        $rows = $query->latest('sale_date')->get()->map(function ($inv) {
+            $totalItemCost = $inv->items->sum(fn($item) =>
+                ($item->quantity ?? 0) * (($item->product->purchase_price ?? 0))
+            );
+
+            $discountGiven = (float)($inv->discount ?? 0)
+                + ($inv->is_cash_discount_on_bill ? (float)($inv->cash_discount ?? 0) : 0);
+
+            $grandTotal  = (float)$inv->grand_total;
+            $profit      = $grandTotal - $totalItemCost;
+            $margin      = $grandTotal > 0 ? round(($profit / $grandTotal) * 100, 2) : 0;
+
+            return [
+                'invoice_no'      => $inv->invoice_no,
+                'sale_date'       => $inv->sale_date,
+                'customer_name'   => $inv->customer?->name ?? '—',
+                'grand_total'     => $grandTotal,
+                'total_item_cost' => round($totalItemCost, 2),
+                'discount_given'  => round($discountGiven, 2),
+                'profit'          => round($profit, 2),
+                'margin_pct'      => $margin,
+            ];
         });
 
         return response()->json($rows);

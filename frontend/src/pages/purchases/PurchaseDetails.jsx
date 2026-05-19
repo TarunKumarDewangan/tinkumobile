@@ -35,7 +35,7 @@ export default function PurchaseDetails() {
       show: true, 
       items: purchase.items.map(item => ({
         id: item.id,
-        product_name: item.product?.name,
+        product_name: (item.product?.brand ? item.product.brand.name.toUpperCase() + ' ' : '') + item.product?.name,
         ordered_quantity: item.quantity,
         received_quantity: item.quantity,
         damaged_quantity: 0
@@ -239,7 +239,7 @@ export default function PurchaseDetails() {
                   {purchase.items?.map(item => (
                     <tr key={item.id}>
                       <td>
-                        <div className="fw-bold text-dark">{item.product?.name.toUpperCase()}</div>
+                        <div className="fw-bold text-dark">{(item.product?.brand ? item.product.brand.name.toUpperCase() + ' ' : '') + item.product?.name.toUpperCase()}</div>
                         <div className="d-flex gap-2 mt-1" style={{ fontSize: '0.7rem' }}>
                             {item.imei && <span className="text-muted border-end pe-2">IMEI: {item.imei}</span>}
                             {item.ram && <span className="text-muted border-end pe-2">RAM: {item.ram}</span>}

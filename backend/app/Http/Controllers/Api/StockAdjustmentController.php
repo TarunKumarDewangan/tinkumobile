@@ -17,7 +17,7 @@ class StockAdjustmentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = StockAdjustment::with(['product.category', 'shop', 'user'])
+        $query = StockAdjustment::with(['product.category', 'product.brand', 'shop', 'user'])
             ->orderBy('created_at', 'desc');
 
         if ($request->filled('product_id')) {

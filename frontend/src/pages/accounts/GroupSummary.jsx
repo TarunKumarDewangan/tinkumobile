@@ -13,6 +13,7 @@ export default function GroupSummary() {
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState('ALL');
+    const [showOpeningStock, setShowOpeningStock] = useState(false);
 
     // Edit Modal state
     const [editEntity, setEditEntity] = useState(null);
@@ -23,12 +24,13 @@ export default function GroupSummary() {
     const [deleting, setDeleting] = useState(null);         // entity id being deleted
     const [deletingHistory, setDeletingHistory] = useState(null); // entity id — del with history
 
-    useEffect(() => { loadData(); }, []);
-
-    const loadData = async () => {
+    const loadData = async (query = '', type = 'ALL') => {
         setLoading(true);
         try {
-            const { data } = await api.get('/ledgers/entity-balances');
+            const params = {};
+            if (query) params.q = query;
+            if (type !== 'ALL') params.type = type;
+            const { data } = await api.get('/ledgers/entity-balances', { params });
             setEntities(data);
         } catch {
             toast.error('Failed to load group summary');
@@ -37,10 +39,21 @@ export default function GroupSummary() {
         }
     };
 
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(() => {
+            loadData(searchTerm, typeFilter);
+        }, 300);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm, typeFilter]);
+
     const filteredEntities = entities.filter(ent => {
-        const matchesSearch = ent.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesType = typeFilter === 'ALL' || ent.type === typeFilter;
-        return matchesSearch && matchesType;
+        if (!showOpeningStock && ent.name === 'OPENING STOCK') return false;
+        return true;
+    }).sort((a, b) => {
+        if (a.name === 'OPENING STOCK') return -1;
+        if (b.name === 'OPENING STOCK') return 1;
+        return 0;
     });
 
     const totalDebit  = filteredEntities.reduce((s, e) => s + (e.net_balance > 0 ? e.net_balance : 0), 0);
@@ -115,7 +128,7 @@ export default function GroupSummary() {
             <div className="d-flex justify-content-between align-items-center mb-4 no-print">
                 <h4 className="fw-bold mb-0">🏛️ Group Summary</h4>
                 <div className="d-flex gap-2">
-                    <button className="btn btn-outline-secondary btn-sm" onClick={loadData}>
+                    <button className="btn btn-outline-secondary btn-sm" onClick={() => loadData(searchTerm, typeFilter)}>
                         <i className="bi bi-arrow-clockwise"></i> Refresh
                     </button>
                     <button className="btn btn-primary btn-sm" onClick={() => window.print()}>
@@ -132,7 +145,7 @@ export default function GroupSummary() {
                             <input
                                 type="text"
                                 className="form-control form-control-sm"
-                                placeholder="Search by name..."
+                                placeholder="Search by name or mobile..."
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
@@ -151,6 +164,15 @@ export default function GroupSummary() {
                                 <option value="SHOP">Shops</option>
                             </select>
                         </div>
+                        <div className="col-md-5 d-flex align-items-center justify-content-end">
+                            <div className="form-check form-switch mb-0">
+                                <input className="form-check-input" type="checkbox" role="switch" id="showOpeningStockSwitch" style={{ cursor: 'pointer' }}
+                                    checked={showOpeningStock} onChange={e => setShowOpeningStock(e.target.checked)} />
+                                <label className="form-check-label ms-2 small fw-bold text-muted" htmlFor="showOpeningStockSwitch" style={{ cursor: 'pointer' }}>
+                                    Show Opening Stock
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -164,6 +186,16 @@ export default function GroupSummary() {
                         <div className="col-2 text-end">Debit (Receivable)</div>
                         <div className="col-2 text-end">Credit (Payable)</div>
                         <div className="col-3 text-end">Actions</div>
+                    </div>
+                </div>
+
+                {/* Top Grand Total */}
+                <div className="bg-dark text-white py-2 px-3 no-print border-bottom">
+                    <div className="row fw-bold">
+                        <div className="col-5 text-uppercase">Grand Total</div>
+                        <div className="col-2 text-end text-success">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-danger">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-3"></div>
                     </div>
                 </div>
 
@@ -256,8 +288,8 @@ export default function GroupSummary() {
                 <div className="card-footer bg-dark text-white py-3 border-0">
                     <div className="row fw-bold">
                         <div className="col-5 text-uppercase">Grand Total</div>
-                        <div className="col-2 text-end">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-2 text-end">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-success">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-danger">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                         <div className="col-3"></div>
                     </div>
                 </div>

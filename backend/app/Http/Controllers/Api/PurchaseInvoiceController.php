@@ -25,7 +25,7 @@ class PurchaseInvoiceController extends Controller
     public function index(Request $request)
     {
         $user  = $request->user();
-        $query = PurchaseInvoice::with('supplier', 'user', 'items.product');
+        $query = PurchaseInvoice::with('supplier', 'user', 'items.product.brand');
 
         if (! $user->hasFullAccess()) {
             $query->where('shop_id', $user->shop_id);
@@ -88,12 +88,17 @@ class PurchaseInvoiceController extends Controller
             'calculate_gst'      => 'nullable|boolean',
             'cash_discount'      => 'nullable|numeric|min:0',
             'is_cash_discount_on_bill' => 'nullable|boolean',
-            'rounding_mode'      => 'nullable|in:auto,up,down',
+            'rounding_mode'      => 'nullable|in:auto,up,down,manual',
+            'round_off'          => 'nullable|numeric',
+            'cgst_amount'        => 'nullable|numeric',
+            'sgst_amount'        => 'nullable|numeric',
+            'is_gst_manual'      => 'nullable|boolean',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.new_product_name' => 'nullable|string|max:255',
             'items.*.category_id'      => 'nullable|exists:categories,id',
+            'items.*.brand_id'         => 'nullable|exists:brands,id',
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
@@ -162,6 +167,7 @@ class PurchaseInvoiceController extends Controller
                         $product = Product::create([
                             'name'           => $item['new_product_name'],
                             'category_id'    => $item['category_id'],
+                            'brand_id'       => $item['brand_id'] ?? null,
                             'sku'            => 'AUTO-' . strtoupper(substr(uniqid(), -6)),
                             'purchase_price' => $item['unit_price'],
                             'selling_price'  => $item['selling_price'] ?? ($item['unit_price'] * 1.2),
@@ -253,12 +259,17 @@ class PurchaseInvoiceController extends Controller
             'calculate_gst'      => 'nullable|boolean',
             'cash_discount'      => 'nullable|numeric|min:0',
             'is_cash_discount_on_bill' => 'nullable|boolean',
-            'rounding_mode'      => 'nullable|in:auto,up,down',
+            'rounding_mode'      => 'nullable|in:auto,up,down,manual',
+            'round_off'          => 'nullable|numeric',
+            'cgst_amount'        => 'nullable|numeric',
+            'sgst_amount'        => 'nullable|numeric',
+            'is_gst_manual'      => 'nullable|boolean',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.new_product_name' => 'nullable|string|max:255',
             'items.*.category_id'      => 'nullable|exists:categories,id',
+            'items.*.brand_id'         => 'nullable|exists:brands,id',
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
@@ -313,6 +324,7 @@ class PurchaseInvoiceController extends Controller
                         $product = Product::create([
                             'name'           => $item['new_product_name'],
                             'category_id'    => $item['category_id'],
+                            'brand_id'       => $item['brand_id'] ?? null,
                             'sku'            => 'AUTO-' . strtoupper(substr(uniqid(), -6)),
                             'purchase_price' => $item['unit_price'],
                             'selling_price'  => $item['selling_price'] ?? ($item['unit_price'] * 1.2),
@@ -480,7 +492,7 @@ class PurchaseInvoiceController extends Controller
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         if ($user->hasFullAccess() && !$shopId) $shopId = 1;
 
-        $query = PurchaseItem::with(['product.category', 'invoice.supplier'])
+        $query = PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
             ->whereHas('invoice', function ($q) use ($shopId, $request) {
                 $q->where('status', 'ordered');
                 if ($shopId) $q->where('shop_id', $shopId);

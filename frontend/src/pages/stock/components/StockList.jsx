@@ -89,7 +89,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                 <tr key={p.id}>
                   <td className="ps-4">
                     <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '.88rem' }}>
-                      {p.name.toUpperCase()}
+                      {p.brand ? p.brand.name.toUpperCase() + ' ' : ''}{p.name.toUpperCase()}
                     </div>
                   </td>
                   <td>

@@ -24,8 +24,13 @@ class InvoiceService
         if ($calculateGst) {
             $cgstRate = (float) ($data['cgst_rate'] ?? 9);
             $sgstRate = (float) ($data['sgst_rate'] ?? 9);
-            $cgstAmount = ($totalAmount * $cgstRate) / 100;
-            $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            if (isset($data['is_gst_manual']) && $data['is_gst_manual'] && isset($data['cgst_amount']) && isset($data['sgst_amount'])) {
+                $cgstAmount = (float) $data['cgst_amount'];
+                $sgstAmount = (float) $data['sgst_amount'];
+            } else {
+                $cgstAmount = ($totalAmount * $cgstRate) / 100;
+                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+            }
         }
 
         $roundingMode = $data['rounding_mode'] ?? 'auto';
@@ -35,7 +40,13 @@ class InvoiceService
             $rawGrandTotal -= $cashDiscount;
         }
 
-        $grandTotal = $this->applyRounding($rawGrandTotal, $roundingMode);
+        if ($roundingMode === 'manual') {
+            $roundOff = (float) ($data['round_off'] ?? 0);
+            $grandTotal = $rawGrandTotal + $roundOff;
+        } else {
+            $grandTotal = $this->applyRounding($rawGrandTotal, $roundingMode);
+            $roundOff = $grandTotal - $rawGrandTotal;
+        }
 
         return [
             'total_amount'  => $totalAmount,
@@ -47,6 +58,7 @@ class InvoiceService
             'cash_discount' => $cashDiscount,
             'grand_total'   => $grandTotal,
             'rounding_mode' => $roundingMode,
+            'round_off'     => $roundOff,
             'calculate_gst' => $calculateGst,
             'is_cash_discount_on_bill' => $isCashDiscOnBill,
         ];

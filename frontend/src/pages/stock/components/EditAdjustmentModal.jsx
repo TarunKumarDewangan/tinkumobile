@@ -13,7 +13,7 @@ export default function EditAdjustmentModal({ editingAdj, editForm, setEditForm,
             <div className="mb-3">
               <span className="pf-lbl">Product</span>
               <div style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontWeight: 800, color: '#1e293b', fontSize: '.88rem' }}>
-                {editingAdj.product?.name?.toUpperCase()}
+                {(editingAdj.product?.brand ? editingAdj.product.brand.name.toUpperCase() + ' ' : '') + editingAdj.product?.name?.toUpperCase()}
               </div>
             </div>
             <div className="row g-3 mb-3">

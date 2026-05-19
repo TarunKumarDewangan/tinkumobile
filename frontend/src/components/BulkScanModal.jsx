@@ -135,11 +135,11 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
       new_product_name: isNew ? (selectedBrand ? `${selectedBrand} ${newProductName}`.trim() : newProductName) : '',
       category_id: isNew ? mobileNewCatId : (product?.category_id || mobileNewCatId),
       imei, ram, storage, color, quantity: 1,
-      unit_price: rateIncTax ? adjustedTaxableNum : (unitPrice || product?.purchase_price || 0),
+      unit_price: rateIncTax ? parseFloat(taxableValueNum.toFixed(2)) : (unitPrice || product?.purchase_price || 0),
       selling_price: sellingPrice || product?.selling_price || 0,
       wholeseller_price: wholesellerPrice || product?.wholeseller_price || 0,
       min_selling_price: minSellingPrice || product?.min_selling_price || 0,
-      max_selling_price: rateIncTax ? finalAmountNum : 0,
+      max_selling_price: rateIncTax ? parseFloat(finalAmountNum.toFixed(2)) : 0,
       incentive_amount: incentive || product?.incentive_amount || 0
     }));
     setBatchItems(prev => [...prev, ...newItems]);
@@ -164,11 +164,11 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
         new_product_name: isNew ? (selectedBrand ? `${selectedBrand} ${newProductName}`.trim() : newProductName) : '',
         category_id: isNew ? mobileNewCatId : (product?.category_id || mobileNewCatId),
         imei, ram, storage, color, quantity: 1,
-        unit_price: rateIncTax ? adjustedTaxableNum : (unitPrice || product?.purchase_price || 0),
+        unit_price: rateIncTax ? parseFloat(taxableValueNum.toFixed(2)) : (unitPrice || product?.purchase_price || 0),
         selling_price: sellingPrice || product?.selling_price || 0,
         wholeseller_price: wholesellerPrice || product?.wholeseller_price || 0,
         min_selling_price: minSellingPrice || product?.min_selling_price || 0,
-        max_selling_price: rateIncTax ? finalAmountNum : 0,
+        max_selling_price: rateIncTax ? parseFloat(finalAmountNum.toFixed(2)) : 0,
         incentive_amount: incentive || product?.incentive_amount || 0
       }));
       allItems = [...allItems, ...currentItems];
@@ -230,7 +230,7 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
   );
 
   const S = `
-    .bm-modal-wide .modal-dialog{max-width:1400px !important;width:96vw !important;}
+    .bm-modal-wide .modal-dialog{max-width:98vw !important;width:98vw !important;margin:1vh auto !important;}
     /* ── Modal Shell ── */
     .bm-hdr{background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 60%,#312e81 100%);padding:20px 28px !important;}
     .bm-modal-body{background:#f8fafc;min-height:600px;}
@@ -596,6 +596,9 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
                           {scannedImeis.length > 1 ? `Total for ${scannedImeis.length} phones` : 'Final Purchase Price'}
                         </div>
                         <div style={{fontSize:'1.5rem',fontWeight:800,letterSpacing:'-0.5px'}}>₹{batchTotal || '0.00'}</div>
+                        <div style={{fontSize:'.85rem',fontWeight:600,color:'#dbeafe',marginTop:2}}>
+                          Taxable Total: ₹{(taxableValueNum * count).toFixed(2)}
+                        </div>
                       </div>
                       <div style={{display:'flex',gap:4,flexDirection:'column',alignItems:'flex-end'}}>
                         <span style={{fontSize:'.6rem',opacity:.6,textTransform:'uppercase',letterSpacing:'.5px'}}>Rounding</span>
@@ -611,10 +614,10 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
                     </div>
                     {rateIncTax && (
                       <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(255,255,255,.2)',fontSize:'.68rem',display:'flex',flexWrap:'wrap',gap:'6px 16px',opacity:.8}}>
-                        <span>Base: ₹{rateExclTax}</span>
-                        <span>Disc: -₹{(discountAmtNum + cashDiscAmtNum).toFixed(2)}</span>
-                        <span>CGST: ₹{(gstAmtNum/2).toFixed(2)}</span>
-                        <span>SGST: ₹{(gstAmtNum/2).toFixed(2)}</span>
+                        <span>Base: ₹{(rateExclTaxNum * count).toFixed(2)}</span>
+                        <span>Disc: -₹{((discountAmtNum + cashDiscAmtNum) * count).toFixed(2)}</span>
+                        <span>CGST: ₹{((gstAmtNum * count) / 2).toFixed(2)}</span>
+                        <span>SGST: ₹{((gstAmtNum * count) / 2).toFixed(2)}</span>
                         {Math.abs(roundDiff) > 0 && <span style={{color:'#fde68a'}}>Round: {roundDiff > 0 ? '+' : ''}{roundDiff.toFixed(2)}</span>}
                       </div>
                     )}

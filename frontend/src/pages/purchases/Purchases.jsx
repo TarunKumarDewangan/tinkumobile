@@ -398,7 +398,9 @@ export default function Purchases() {
                               <div key={idx} style={{marginBottom:5,paddingBottom:5,borderBottom:'1px solid #f1f5f9'}}>
                                 {/* Row 1: Name + Qty */}
                                 <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                                  <span style={{fontWeight:700,color:'#1e293b'}}>{item.product?.name}</span>
+                                  <span style={{fontWeight:700,color:'#1e293b'}}>
+                                    {(item.product?.brand ? item.product.brand.name.toUpperCase() + ' ' : '') + (item.product?.name?.toUpperCase() || '')}
+                                  </span>
                                   <span style={{background:'#e0e7ff',color:'#6366f1',fontSize:'.6rem',fontWeight:700,padding:'1px 7px',borderRadius:10}}>x{item.quantity}</span>
                                   {p.status==='received' && <>
                                     <span style={{color:'#059669',fontSize:'.6rem',fontWeight:700}}>✔{item.received_quantity||0}</span>
@@ -466,7 +468,9 @@ export default function Purchases() {
                   <tr><td colSpan={6} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
                 ) : availableStock.map((p,idx) => (
                   <tr key={p.id||idx}>
-                    <td style={{fontWeight:700,color:'#6366f1'}}>{p.name}</td>
+                    <td style={{fontWeight:700,color:'#6366f1'}}>
+                      {p.brand ? p.brand.name.toUpperCase() + ' ' : ''}{p.name}
+                    </td>
                     <td style={{fontSize:'.75rem'}}>
                       <span style={{background:'#f1f5f9',borderRadius:6,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{p.attributes?.color||'-'}</span>
                       <span style={{color:'#64748b'}}>{p.attributes?.ram||'-'}/{p.attributes?.storage||'-'}</span>
@@ -513,7 +517,9 @@ export default function Purchases() {
                   <tr><td colSpan={6} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
                 ) : pendingStock.map((item,idx) => (
                   <tr key={item.id||idx}>
-                    <td style={{fontWeight:700,color:'#6366f1'}}>{item.product?.name}</td>
+                    <td style={{fontWeight:700,color:'#6366f1'}}>
+                      {(item.product?.brand ? item.product.brand.name.toUpperCase() + ' ' : '') + (item.product?.name || '')}
+                    </td>
                     <td style={{fontSize:'.75rem'}}>
                       <span style={{background:'#fef3c7',borderRadius:6,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{item.color||'-'}</span>
                       <span style={{color:'#64748b'}}>{item.ram||'-'}/{item.storage||'-'}</span>

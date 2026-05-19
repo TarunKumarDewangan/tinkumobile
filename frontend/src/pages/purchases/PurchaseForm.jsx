@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
+import Select from 'react-select';
+import CreatableSelect from 'react-select/creatable';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api/axios';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
@@ -12,6 +14,7 @@ export default function PurchaseForm() {
   const [entitySuppliers, setEntitySuppliers] = useState([]);
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
+  const [brands, setBrands]         = useState([]);
   const [shops, setShops]           = useState([]);
   const [items, setItems]         = useState([]);
   const [form, setForm] = useState({
@@ -31,13 +34,21 @@ export default function PurchaseForm() {
     notes: '',
     expected_delivery_date: '',
     rounding_mode: 'auto',
+    round_off: 0,
+    cgst_amount: 0,
+    sgst_amount: 0,
+    is_gst_manual: false,
+    gst_rounding_mode: '2pt',
     payment_method: 'CASH',
     other_payment_mode: ''
   });
+  const [isManualRound, setIsManualRound] = useState(false);
+  const [isManualGst, setIsManualGst] = useState(false);
   const navigate = useNavigate();
   const { id }     = useParams();
   const { isOwner } = useAuth();
   const [loading, setLoading] = useState(false);
+  const enableBulkAdd = false; // Set to true to show "+ Bulk Add" button later
 
   // Quick Add Supplier
   const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -51,6 +62,7 @@ export default function PurchaseForm() {
       setProducts(r.data.filter(p => p.category_id == 1));
     });
     api.get('/categories').then(r => setCategories(r.data));
+    api.get('/brands').then(r => setBrands(r.data));
     if (isOwner()) {
       api.get('/shops').then(r => setShops(r.data));
     }
@@ -76,14 +88,22 @@ export default function PurchaseForm() {
           notes: p.notes || '',
           expected_delivery_date: p.expected_delivery_date || '',
           rounding_mode: p.rounding_mode || 'auto',
+          round_off: p.round_off || 0,
+          cgst_amount: p.cgst_amount || 0,
+          sgst_amount: p.sgst_amount || 0,
+          is_gst_manual: p.is_gst_manual ?? false,
+          gst_rounding_mode: p.gst_rounding_mode || '2pt',
           payment_method: p.payment_method || 'CASH',
           other_payment_mode: p.other_payment_mode || ''
         });
+        if (p.rounding_mode === 'manual') setIsManualRound(true);
+        if (p.is_gst_manual) setIsManualGst(true);
         setItems(p.items.map(i => ({
           product_id: i.product_id,
+          brand_id: i.product?.brand_id || '',
           is_new: false,
           new_product_name: '',
-          category_id: '',
+          category_id: i.product?.category_id || '',
           imei: i.imei || '',
           ram: i.ram || '',
           storage: i.storage || '',
@@ -133,9 +153,50 @@ export default function PurchaseForm() {
 
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
   
+  const handleCreateBrand = async (inputValue) => {
+    try {
+      const res = await api.post('/brands', { name: inputValue.toUpperCase() });
+      setBrands(prev => [...prev, res.data]);
+      return res.data.id;
+    } catch (e) {
+      toast.error('Failed to create company/brand');
+      return null;
+    }
+  };
+
+  const duplicateRow = (i, type) => {
+    const item = { ...items[i] };
+    if (type === 'color') {
+      item.imei = '';
+      item.color = '';
+    } else if (type === 'specs') {
+      item.imei = '';
+      item.color = '';
+      item.ram = '';
+      item.storage = '';
+    }
+    const newItems = [...items];
+    newItems.splice(i + 1, 0, item);
+    setItems(newItems);
+  };
+  
   const updateItem = (i, field, val) => {
     const a = [...items];
     a[i][field] = val;
+
+    if (['dp_inc_gst', 'calc_gst_rate', 'trade_disc_pct', 'cash_disc_pct'].includes(field)) {
+      const dp = parseFloat(a[i].dp_inc_gst) || 0;
+      const gst = parseFloat(a[i].calc_gst_rate ?? 18) || 0;
+      const tDisc = parseFloat(a[i].trade_disc_pct ?? 3.85) || 0;
+      const cDisc = parseFloat(a[i].cash_disc_pct ?? 2) || 0;
+
+      if (dp > 0) {
+        const baseExGst = dp / (1 + (gst / 100));
+        const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
+        const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
+        a[i].unit_price = parseFloat(afterCDisc.toFixed(2));
+      }
+    }
     
     // Auto-calculate quantity based on comma-separated IMEIs
     if (field === 'imei') {
@@ -250,14 +311,46 @@ export default function PurchaseForm() {
   };
 
   const total      = items.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)), 0);
-  const cgstAmount = form.calculate_gst ? (total * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
-  const sgstAmount = form.calculate_gst ? (total * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+  
+  let rawCgstAmount = form.calculate_gst ? (total * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
+  let rawSgstAmount = form.calculate_gst ? (total * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+
+  if (form.gst_rounding_mode === '2pt') {
+    rawCgstAmount = parseFloat(rawCgstAmount.toFixed(2));
+    rawSgstAmount = parseFloat(rawSgstAmount.toFixed(2));
+  } else if (form.gst_rounding_mode === 'up') {
+    rawCgstAmount = Math.ceil(rawCgstAmount);
+    rawSgstAmount = Math.ceil(rawSgstAmount);
+  } else if (form.gst_rounding_mode === 'down') {
+    rawCgstAmount = Math.floor(rawCgstAmount);
+    rawSgstAmount = Math.floor(rawSgstAmount);
+  }
+
+  const autoCgstAmount = rawCgstAmount;
+  const autoSgstAmount = rawSgstAmount;
+
+  const cgstAmount = isManualGst ? (parseFloat(form.cgst_amount) || 0) : autoCgstAmount;
+  const sgstAmount = isManualGst ? (parseFloat(form.sgst_amount) || 0) : autoSgstAmount;
+
   const rawGrandTotal = total + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0) - (form.is_cash_discount_on_bill ? (parseFloat(form.cash_discount) || 0) : 0);
+  
   let grandTotal = Math.round(rawGrandTotal);
   if (form.rounding_mode === 'up') grandTotal = Math.ceil(rawGrandTotal);
   if (form.rounding_mode === 'down') grandTotal = Math.floor(rawGrandTotal);
+  if (form.rounding_mode === 'manual') grandTotal = rawGrandTotal + (parseFloat(form.round_off) || 0);
 
-  const roundOff = (grandTotal - rawGrandTotal).toFixed(3);
+  const roundOff = form.rounding_mode === 'manual' ? (parseFloat(form.round_off) || 0).toFixed(3) : (grandTotal - rawGrandTotal).toFixed(3);
+
+  useEffect(() => {
+    if (!isManualRound) {
+        let roundedValue = Math.round(rawGrandTotal);
+        if (form.rounding_mode === 'up') roundedValue = Math.ceil(rawGrandTotal);
+        else if (form.rounding_mode === 'down') roundedValue = Math.floor(rawGrandTotal);
+        
+        const diff = roundedValue - rawGrandTotal;
+        setForm(f => ({ ...f, round_off: parseFloat(diff.toFixed(3)) }));
+    }
+  }, [rawGrandTotal, form.rounding_mode, isManualRound]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -277,7 +370,13 @@ export default function PurchaseForm() {
 
     try {
       setLoading(true);
-      let finalForm = { ...form };
+      let finalForm = {
+        ...form,
+        cgst_amount: cgstAmount,
+        sgst_amount: sgstAmount,
+        round_off: parseFloat(roundOff),
+        is_gst_manual: isManualGst
+      };
       
       // Flatten grouped items so backend receives exactly 1 item per IMEI as expected
       let flatItems = [];
@@ -313,7 +412,36 @@ export default function PurchaseForm() {
     }
   };
 
-  const S=`.pf-wrap{background:#f1f5f9;min-height:100vh;padding:16px 20px}.pf-hero{background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);border-radius:14px;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.pf-hero h2{color:#fff;font-size:1rem;font-weight:800;letter-spacing:.8px;margin:0}.pf-hero p{color:rgba(255,255,255,.45);font-size:.65rem;margin:1px 0 0}.pf-back{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.2);color:#fff;font-size:.7rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s}.pf-back:hover{background:rgba(255,255,255,.22)}.pf-card{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.06)}.pf-sec{font-size:.62rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;display:flex;align-items:center;gap:6px}.pf-lbl{font-size:.62rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px}.pf-inp{font-size:.78rem;border:1.5px solid #e2e8f0;border-radius:7px;padding:5px 9px;width:100%;background:#f8fafc;transition:border-color .15s;color:#334155}.pf-inp:focus{outline:none;border-color:#6366f1;background:#fff}.pf-item{background:#f8fafc;border-radius:10px;border:1.5px solid #e2e8f0;padding:12px 14px;margin-bottom:8px;position:relative}.pf-item:hover{border-color:#a5b4fc}.pf-imei{font-size:.72rem;border:1.5px solid #e2e8f0;border-radius:7px;padding:4px 8px;flex:1;background:#fff}.pf-price-lbl{font-size:.58rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;display:block}.pf-bulk{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.72rem;padding:7px 16px;border-radius:9px;cursor:pointer;transition:opacity .15s}.pf-bulk:hover{opacity:.87}.pf-sum{background:linear-gradient(135deg,#1e293b,#0f172a);border-radius:12px;padding:16px}.pf-sum-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.78rem}.pf-sum-row:last-child{border-bottom:none}.pf-grand{font-size:1.3rem;font-weight:800;color:#818cf8}.pf-submit{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.85rem;padding:10px 28px;border-radius:10px;cursor:pointer;transition:opacity .15s;letter-spacing:.5px}.pf-submit:hover{opacity:.88}.pf-submit.green{background:linear-gradient(135deg,#059669,#10b981)}`;
+  const S=`
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    .pf-wrap{background:linear-gradient(160deg,#f0f4ff 0%,#f8faff 60%,#fafbfe 100%);min-height:100vh;padding:20px 24px;font-family:'Inter',sans-serif}
+    .pf-hero{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);border-radius:18px;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;box-shadow:0 8px 32px rgba(15,52,96,.35)}
+    .pf-hero h2{color:#fff;font-size:1.1rem;font-weight:800;letter-spacing:.5px;margin:0}
+    .pf-hero p{color:rgba(255,255,255,.45);font-size:.68rem;margin:3px 0 0;letter-spacing:.3px}
+    .pf-back{background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);color:#fff;font-size:.72rem;font-weight:700;padding:8px 18px;border-radius:10px;cursor:pointer;transition:all .2s;letter-spacing:.3px}
+    .pf-back:hover{background:rgba(255,255,255,.2);transform:translateX(-2px)}
+    .pf-card{background:#fff;border-radius:16px;padding:20px 22px;margin-bottom:14px;box-shadow:0 2px 16px rgba(0,0,0,.06);border:1px solid rgba(226,232,240,.8)}
+    .pf-sec{font-size:.62rem;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#94a3b8;margin-bottom:14px;display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1.5px dashed #f1f5f9}
+    .pf-lbl{font-size:.62rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px;display:block;margin-bottom:5px}
+    .pf-inp{font-size:.8rem;border:1.5px solid #e2e8f0;border-radius:9px;padding:8px 11px;width:100%;background:#f8fafc;transition:all .18s;color:#1e293b;font-weight:500}
+    .pf-inp:focus{outline:none;border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,.1)}
+    .pf-inp::placeholder{color:#cbd5e1;font-weight:400}
+    .pf-item-card{background:#fff;border-radius:14px;border:1.5px solid #e2e8f0;padding:16px 18px;margin-bottom:10px;position:relative;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+    .pf-item-card:hover{border-color:#a5b4fc;box-shadow:0 4px 20px rgba(99,102,241,.1)}
+    .pf-item-num{width:28px;height:28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.7rem;font-weight:800;flex-shrink:0}
+    .pf-bulk{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.74rem;padding:9px 18px;border-radius:10px;cursor:pointer;transition:all .18s;letter-spacing:.3px;box-shadow:0 4px 14px rgba(99,102,241,.3)}
+    .pf-bulk:hover{opacity:.9;transform:translateY(-1px)}
+    .pf-sum{background:linear-gradient(160deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:16px;padding:20px;box-shadow:0 8px 32px rgba(15,23,42,.4)}
+    .pf-sum-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.78rem}
+    .pf-sum-row:last-child{border-bottom:none}
+    .pf-grand{font-size:1.4rem;font-weight:900;color:#818cf8;letter-spacing:-.5px}
+    .pf-submit{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;font-weight:700;font-size:.85rem;padding:12px 28px;border-radius:12px;cursor:pointer;transition:all .2s;letter-spacing:.4px;box-shadow:0 4px 16px rgba(99,102,241,.35)}
+    .pf-submit:hover{opacity:.9;transform:translateY(-1px)}
+    .pf-submit.green{background:linear-gradient(135deg,#059669,#10b981);box-shadow:0 4px 16px rgba(5,150,105,.35)}
+    .pf-field-group{background:#f8fafc;border-radius:10px;padding:10px 12px;border:1.5px solid #f1f5f9}
+    .pf-field-group:focus-within{border-color:#c7d2fe;background:#fff}
+  `;
+
 
   return (
     <div className="pf-wrap">
@@ -407,7 +535,9 @@ export default function PurchaseForm() {
                         ✏️ Bulk Edit
                       </button>
                     )}
-                    <button type="button" className="pf-bulk" onClick={()=>setShowBulkScan(true)}>+ Bulk Add</button>
+                    {enableBulkAdd && (
+                      <button type="button" className="pf-bulk" onClick={()=>setShowBulkScan(true)}>+ Bulk Add</button>
+                    )}
                   </div>
                 </div>
 
@@ -416,7 +546,7 @@ export default function PurchaseForm() {
                     <div style={{fontSize:'2.5rem',opacity:.3,marginBottom:8}}>🛒</div>
                     <div style={{fontWeight:700,fontSize:'.82rem',marginBottom:4}}>No items added yet</div>
                     <button type="button" style={{background:'#f1f5f9',border:'1.5px solid #e2e8f0',borderRadius:8,padding:'6px 16px',fontSize:'.75rem',fontWeight:700,cursor:'pointer',color:'#6366f1'}}
-                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0}])}>
+                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2}])}>
                       + Add Item
                     </button>
                   </div>
@@ -424,118 +554,118 @@ export default function PurchaseForm() {
                   <>
                     {items.map((item,i)=>{
                       const marginVal=parseFloat(item.selling_price||0)-parseFloat(item.unit_price||0);
-                      const marginPer=item.unit_price>0?(marginVal/item.unit_price)*100:0;
+                      const lineTotal=(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0));
                       return (
-                        <div key={i} className="pf-item">
-                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,paddingBottom:8,borderBottom:'1px solid #e2e8f0'}}>
-                            <span style={{fontSize:'.68rem',fontWeight:800,color:'#475569',letterSpacing:'.5px'}}>🏷️ ITEM #{i+1}</span>
-                            <div style={{display:'flex',gap:16,alignItems:'center'}}>
-                              <button type="button" onClick={()=>handleOpenBulkEdit(i)} style={{background:'none',border:'none',color:'#6366f1',cursor:'pointer',fontSize:'.78rem',fontWeight:700,padding:0}}>✏️ Edit Details</button>
-                              <button type="button" onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'.78rem',fontWeight:700,padding:0}}>✕ Remove</button>
+                        <div key={i} className="pf-item-card">
+                          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                            <div className="pf-item-num">{i+1}</div>
+                            <div style={{flex:1}}>
+                              <CreatableSelect
+                                options={products.map(p=>({value:p.id,label:`${p.brand?p.brand.name+' ':''}${p.name} ${p.attributes?.ram||p.attributes?.storage?`(${p.attributes.ram||''}/${p.attributes.storage||''})`:''} ${p.attributes?.color?`- ${p.attributes.color}`:''}`.trim().toUpperCase()}))}
+                                value={item.product_id?{value:item.product_id,label:(()=>{const p=products.find(p=>p.id===item.product_id);return p?`${p.brand?p.brand.name+' ':''}${p.name} ${p.attributes?.ram||p.attributes?.storage?`(${p.attributes.ram||''}/${p.attributes.storage||''})`:''} ${p.attributes?.color?`- ${p.attributes.color}`:''}`.trim().toUpperCase():'';})()}:(item.new_product_name?{value:'new',label:`${brands.find(b=>b.id===item.brand_id)?.name||''} ${item.new_product_name}`.trim().toUpperCase()}:null)}
+                                onChange={(opt)=>{if(opt){if(opt.value!=='new'){const p=products.find(p=>p.id===opt.value);updateItem(i,'product_id',opt.value);updateItem(i,'brand_id',p?.brand_id||'');updateItem(i,'new_product_name','');updateItem(i,'is_new',false);}}else{updateItem(i,'product_id','');updateItem(i,'brand_id','');updateItem(i,'new_product_name','');updateItem(i,'is_new',false);}}}
+                                onCreateOption={async(val)=>{const parts=val.trim().split(' ');const nb=parts[0].toUpperCase();const nm=parts.slice(1).join(' ').trim().toUpperCase();let bid=null;const eb=brands.find(b=>b.name.toUpperCase()===nb);if(eb){bid=eb.id;}else{bid=await handleCreateBrand(nb);}updateItem(i,'brand_id',bid);updateItem(i,'new_product_name',nm);updateItem(i,'product_id','');updateItem(i,'is_new',true);}}
+                                placeholder="— Select Company & Model —"
+                                isClearable
+                                styles={{control:(b)=>({...b,minHeight:'40px',fontSize:'.82rem',fontWeight:600,backgroundColor:'#f8fafc',borderColor:'#e2e8f0',borderRadius:'9px',boxShadow:'none'}),menu:(b)=>({...b,fontSize:'.78rem',zIndex:9999})}}
+                              />
+                            </div>
+                            <div style={{background:'linear-gradient(135deg,#eef2ff,#e0e7ff)',border:'1.5px solid #c7d2fe',borderRadius:10,padding:'6px 14px',textAlign:'center',minWidth:100,flexShrink:0}}>
+                              <div style={{fontSize:'.58rem',fontWeight:700,color:'#6366f1',textTransform:'uppercase',letterSpacing:.5}}>Amount</div>
+                              <div style={{fontSize:'.95rem',fontWeight:800,color:'#4338ca'}}>₹{lineTotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
                             </div>
                           </div>
-                          <div className="row g-2 mb-2">
-                            <div className="col-12 col-md-3">
-                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
-                                <span className="pf-lbl" style={{marginBottom:0}}>Product</span>
-                                <label style={{fontSize:'.6rem',color:'#94a3b8',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
-                                  New? <input type="checkbox" checked={item.is_new} onChange={e=>updateItem(i,'is_new',e.target.checked)} style={{accentColor:'#6366f1'}}/>
-                                </label>
-                              </div>
-                              {item.is_new
-                                ? <input type="text" className="pf-inp" placeholder="e.g. Vivo V70" required value={item.new_product_name} onChange={e=>updateItem(i,'new_product_name',e.target.value)}/>
-                                : <select className="pf-inp" required value={item.product_id} onChange={e=>updateItem(i,'product_id',e.target.value)}>
-                                    <option value="">— Choose Product —</option>
-                                    {products.map(p=>(
-                                      <option key={p.id} value={p.id}>
-                                        {p.name} 
-                                        {p.attributes?.ram || p.attributes?.storage ? ` (${p.attributes.ram || ''}/${p.attributes.storage || ''})` : ''}
-                                        {p.attributes?.color ? ` - ${p.attributes.color}` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                              }
-                            </div>
-                            <div className="col-12 col-md-5">
-                              <span className="pf-lbl">IMEI / Serial</span>
+
+                          <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:8,marginBottom:10,alignItems:'end'}}>
+                            <div>
+                              <span className="pf-lbl" style={{color:'#6366f1'}}>📱 IMEI / Serial</span>
                               <div style={{display:'flex',gap:4}}>
-                                <input type="text" className="pf-imei" placeholder="Scan or type..." value={item.imei} onChange={e=>updateItem(i,'imei',e.target.value)}/>
-                                <button type="button" onClick={()=>setScanner({show:true,itemIndex:i})} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:7,padding:'0 9px',cursor:'pointer',fontSize:'.8rem'}}>📷</button>
+                                <input type="text" className="pf-inp" placeholder="Enter IMEI (comma-separated for multiple)" value={item.imei} onChange={e=>updateItem(i,'imei',e.target.value)} style={{borderColor:'#c7d2fe',color:'#3730a3',fontWeight:600,flex:1}}/>
+                                <button type="button" onClick={()=>setScanner({show:true,itemIndex:i})} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:9,padding:'0 12px',cursor:'pointer',fontSize:'.85rem',flexShrink:0}}>📷</button>
                               </div>
                             </div>
-                            <div className="col-4 col-md-1">
+                            <div style={{minWidth:80}}>
                               <span className="pf-lbl">RAM</span>
                               <input type="text" list="ramOptions" className="pf-inp" placeholder="8GB" value={item.ram} onChange={e=>updateItem(i,'ram',e.target.value)}/>
-                              <datalist id="ramOptions">
-                                {['2GB','3GB','4GB','6GB','8GB','12GB','16GB'].map(v => <option key={v} value={v} />)}
-                              </datalist>
                             </div>
-                            <div className="col-4 col-md-1">
+                            <div style={{minWidth:90}}>
                               <span className="pf-lbl">ROM</span>
                               <input type="text" list="storageOptions" className="pf-inp" placeholder="128GB" value={item.storage} onChange={e=>updateItem(i,'storage',e.target.value)}/>
-                              <datalist id="storageOptions">
-                                {['16GB','32GB','64GB','128GB','256GB','512GB','1TB'].map(v => <option key={v} value={v} />)}
-                              </datalist>
                             </div>
-                            <div className="col-4 col-md-2">
+                            <div style={{minWidth:100}}>
                               <span className="pf-lbl">Color</span>
-                              <input type="text" list="colorOptions" className="pf-inp" placeholder="Red" value={item.color} onChange={e=>updateItem(i,'color',e.target.value)}/>
-                              <datalist id="colorOptions">
-                                {['Black','White','Blue','Red','Gold','Silver','Grey'].map(v => <option key={v} value={v} />)}
-                              </datalist>
+                              <input type="text" list="colorOptions" className="pf-inp" placeholder="Black" value={item.color} onChange={e=>updateItem(i,'color',e.target.value)}/>
                             </div>
                           </div>
-                           <div className="row g-2 align-items-end">
-                            <div className="col-4 col-md-1">
-                              <span className="pf-price-lbl" style={{color:'#64748b'}}>Qty</span>
-                              <input type="number" className="pf-inp" style={{textAlign:'center',fontWeight:700}} min="1" value={item.quantity} readOnly={!!item.imei} onChange={e=>updateItem(i,'quantity',parseInt(e.target.value))}/>
+
+                          <div style={{display:'grid',gridTemplateColumns:'80px 110px 80px 1fr 80px 80px',gap:8,marginBottom:10,alignItems:'end'}}>
+                            <div>
+                              <span className="pf-lbl">Qty</span>
+                              <input type="number" className="pf-inp" min="1" value={item.quantity} readOnly={!!item.imei} onChange={e=>updateItem(i,'quantity',parseInt(e.target.value))} style={{textAlign:'center',fontWeight:800,background:item.imei?'#f1f5f9':'#fff'}}/>
                             </div>
-                            <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl">Rate (ex-GST) ₹</span>
-                              <input type="number" className="pf-inp" style={{fontWeight:700}} step=".01" value={item.unit_price} onChange={e=>updateItem(i,'unit_price',parseFloat(e.target.value))}/>
+                            <div>
+                              <span className="pf-lbl">DP Inc.GST ₹</span>
+                              <input type="number" className="pf-inp" placeholder="0.00" value={item.dp_inc_gst||''} onChange={e=>updateItem(i,'dp_inc_gst',e.target.value)} style={{textAlign:'right'}}/>
                             </div>
-                            <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl" style={{color:'#059669'}}>MOP ₹</span>
-                              <input type="number" className="pf-inp" style={{borderColor:'#6ee7b7',color:'#059669',fontWeight:700}} step=".01" value={item.selling_price} onChange={e=>updateItem(i,'selling_price',parseFloat(e.target.value))}/>
+                            <div>
+                              <span className="pf-lbl">GST %</span>
+                              <select className="pf-inp" value={item.calc_gst_rate??18} onChange={e=>updateItem(i,'calc_gst_rate',e.target.value)}>
+                                <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
+                              </select>
                             </div>
-                            <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl" style={{color:'#6366f1'}}>WHOLE ₹</span>
-                              <input type="number" className="pf-inp" style={{borderColor:'#a5b4fc',color:'#6366f1'}} step=".01" value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))}/>
+                            <div>
+                              <span className="pf-lbl" style={{color:'#4f46e5'}}>Rate Ex.GST ₹</span>
+                              <input type="number" className="pf-inp" step=".01" value={item.unit_price} onChange={e=>updateItem(i,'unit_price',parseFloat(e.target.value))} style={{textAlign:'right',fontWeight:800,color:'#4f46e5',background:'#eef2ff',borderColor:'#c7d2fe'}}/>
                             </div>
-                            <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl" style={{color:'#dc2626'}}>MIN ₹</span>
-                              <input type="number" className="pf-inp" style={{borderColor:'#fca5a5',color:'#dc2626'}} step=".01" value={item.min_selling_price} onChange={e=>updateItem(i,'min_selling_price',parseFloat(e.target.value))}/>
+                            <div>
+                              <span className="pf-lbl">Trade %</span>
+                              <input type="number" className="pf-inp" value={item.trade_disc_pct??3.85} onChange={e=>updateItem(i,'trade_disc_pct',e.target.value)} style={{textAlign:'right'}}/>
                             </div>
-                            <div className="col-4 col-md-2">
-                              <span className="pf-price-lbl" style={{color:'#6366f1'}}>COM ₹</span>
-                              <input type="number" className="pf-inp" style={{borderColor:'#a5b4fc',color:'#6366f1'}} step=".01" value={item.incentive_amount} onChange={e=>updateItem(i,'incentive_amount',parseFloat(e.target.value))}/>
-                            </div>
-                            <div className="col-12 col-md-1">
-                              <div style={{background:'#f1f5f9',borderRadius:8,padding:'5px 5px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:42}}>
-                                <span style={{fontSize:'.45rem',fontWeight:700,color:'#94a3b8',textTransform:'uppercase'}}>Margin</span>
-                                <span style={{fontWeight:700,color:marginVal>=0?'#059669':'#dc2626',fontSize:'.6rem'}}>₹{marginVal.toLocaleString('en-IN')}</span>
-                              </div>
-                              <div style={{background:'#e2e8f0',height:3,borderRadius:4,marginTop:3}}>
-                                <div style={{background:marginVal>=0?'#059669':'#dc2626',width:`${Math.min(100,Math.max(0,marginPer))}%`,height:'100%',borderRadius:4}}/>
-                              </div>
+                            <div>
+                              <span className="pf-lbl">Cash %</span>
+                              <input type="number" className="pf-inp" value={item.cash_disc_pct??2} onChange={e=>updateItem(i,'cash_disc_pct',e.target.value)} style={{textAlign:'right'}}/>
                             </div>
                           </div>
-                          <div style={{textAlign:'right',marginTop:4,fontSize:'.75rem',color:'#64748b'}}>
-                            Item Total: <span style={{fontWeight:700,color:'#6366f1',fontSize:'.88rem'}}>₹{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toLocaleString('en-IN')}</span>
+
+                          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,background:'#f8fafc',borderRadius:10,padding:'10px 12px',border:'1.5px solid #f1f5f9',marginBottom:10}}>
+                            <div>
+                              <span style={{fontSize:'.6rem',fontWeight:800,color:'#059669',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>MOP ₹</span>
+                              <input type="number" className="pf-inp" step=".01" value={item.selling_price} onChange={e=>updateItem(i,'selling_price',parseFloat(e.target.value))} style={{borderColor:'#6ee7b7',color:'#059669',fontWeight:700,background:'#f0fdf4',padding:'6px 8px'}}/>
+                            </div>
+                            <div>
+                              <span style={{fontSize:'.6rem',fontWeight:800,color:'#6366f1',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>Wholesale ₹</span>
+                              <input type="number" className="pf-inp" step=".01" value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))} style={{borderColor:'#a5b4fc',color:'#6366f1',padding:'6px 8px'}}/>
+                            </div>
+                            <div>
+                              <span style={{fontSize:'.6rem',fontWeight:800,color:'#dc2626',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>Min Price ₹</span>
+                              <input type="number" className="pf-inp" step=".01" value={item.min_selling_price} onChange={e=>updateItem(i,'min_selling_price',parseFloat(e.target.value))} style={{borderColor:'#fca5a5',color:'#dc2626',padding:'6px 8px'}}/>
+                            </div>
+                            <div>
+                              <span style={{fontSize:'.6rem',fontWeight:800,color:'#7c3aed',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>Commission ₹</span>
+                              <input type="number" className="pf-inp" step=".01" value={item.incentive_amount} onChange={e=>updateItem(i,'incentive_amount',parseFloat(e.target.value))} style={{borderColor:'#ddd6fe',color:'#7c3aed',padding:'6px 8px'}}/>
+                            </div>
+                            <div>
+                              <span style={{fontSize:'.6rem',fontWeight:800,color:marginVal>=0?'#059669':'#dc2626',display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>Margin</span>
+                              <div style={{background:marginVal>=0?'#f0fdf4':'#fef2f2',border:`1.5px solid ${marginVal>=0?'#6ee7b7':'#fca5a5'}`,borderRadius:9,padding:'6px 8px',fontWeight:800,fontSize:'.88rem',color:marginVal>=0?'#059669':'#dc2626',textAlign:'right'}}>₹{marginVal.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                            </div>
+                          </div>
+
+                          <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+                            <button type="button" onClick={()=>duplicateRow(i,'color')} style={{background:'#f0fdf4',border:'1.5px solid #86efac',color:'#16a34a',borderRadius:8,padding:'5px 14px',fontSize:'.7rem',cursor:'pointer',fontWeight:700}}>➕ Same Color</button>
+                            <button type="button" onClick={()=>duplicateRow(i,'specs')} style={{background:'#fefce8',border:'1.5px solid #fde047',color:'#ca8a04',borderRadius:8,padding:'5px 14px',fontSize:'.7rem',cursor:'pointer',fontWeight:700}}>➕ Diff Specs</button>
+                            <button type="button" onClick={()=>removeItem(i)} style={{background:'#fef2f2',border:'1.5px solid #fecaca',color:'#ef4444',borderRadius:8,padding:'5px 14px',fontSize:'.7rem',cursor:'pointer',fontWeight:700}}>🗑 Remove</button>
                           </div>
                         </div>
                       );
                     })}
-                    <div style={{background:'#eff6ff',borderRadius:10,padding:'12px 18px',border:'1.5px solid #bfdbfe',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-                      <div style={{fontSize:'.75rem',fontWeight:800,color:'#1e3a8a',letterSpacing:'.5px'}}>TOTAL QUANTITY: <span style={{color:'#2563eb',fontSize:'1.05rem',marginLeft:6}}>{items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)} Units</span></div>
-                      <div style={{fontSize:'.75rem',fontWeight:800,color:'#1e3a8a',letterSpacing:'.5px'}}>ITEMS SUB-TOTAL: <span style={{color:'#059669',fontSize:'1.05rem',marginLeft:6}}>₹{total.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
+                    <div style={{background:'linear-gradient(135deg,#eff6ff,#eef2ff)',borderRadius:12,padding:'14px 18px',border:'1.5px solid #bfdbfe',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                      <div style={{fontSize:'.78rem',fontWeight:800,color:'#1e3a8a'}}>TOTAL QTY: <span style={{color:'#2563eb',fontSize:'1.1rem',marginLeft:6}}>{items.reduce((s,i)=>s+(Number(i.quantity)||0),0)} Units</span></div>
+                      <div style={{fontSize:'.78rem',fontWeight:800,color:'#1e3a8a'}}>SUB-TOTAL: <span style={{color:'#059669',fontSize:'1.1rem',marginLeft:6}}>₹{total.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
                     </div>
-                    <div style={{textAlign:'center',marginTop:4}}>
-                      <button type="button" className="pf-bulk" style={{background:'#f1f5f9',color:'#6366f1',border:'1.5px dashed #a5b4fc'}}
-                        onClick={()=>setItems([...items,{product_id:'',is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0}])}>
-                        + Add More Items
-                      </button>
-                    </div>
+                    <button type="button" style={{background:'#fff',color:'#6366f1',border:'2px dashed #a5b4fc',borderRadius:12,padding:'11px 28px',fontSize:'.8rem',fontWeight:700,cursor:'pointer',width:'100%'}}
+                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:1,imei:'',ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2}])}>
+                      + Add More Items
+                    </button>
                   </>
                 )}
               </div>
@@ -589,9 +719,24 @@ export default function PurchaseForm() {
                 <div style={{color:'rgba(255,255,255,.5)',fontSize:'.62rem',fontWeight:700,letterSpacing:1,textTransform:'uppercase',marginBottom:12}}>Order Summary</div>
                 <div className="pf-sum-row"><span style={{color:'rgba(255,255,255,.6)'}}>Subtotal</span><span style={{color:'#fff',fontWeight:600}}>₹{total.toLocaleString('en-IN')}</span></div>
                 <div className="pf-sum-row">
+                  <span style={{color:'rgba(255,255,255,.6)'}}>Trade Discount (₹)</span>
+                  <input type="number" value={form.discount===0?'':form.discount} onFocus={e=>e.target.select()} onChange={e=>setForm({...form,discount:parseFloat(e.target.value)||0})}
+                    style={{width:80,background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.15)',borderRadius:5,color:'#fde047',textAlign:'right',fontWeight:700,padding:'2px 6px',fontSize:'.78rem'}} placeholder="0"/>
+                </div>
+                <div className="pf-sum-row">
                   <div style={{display:'flex',alignItems:'center',gap:8}}>
                     <input type="checkbox" id="calcGst" checked={form.calculate_gst} onChange={e=>setForm({...form,calculate_gst:e.target.checked})} style={{accentColor:'#818cf8'}}/>
                     <label htmlFor="calcGst" style={{color:'rgba(255,255,255,.6)',fontSize:'.75rem',cursor:'pointer',margin:0}}>GST</label>
+                    {form.calculate_gst && (
+                      <div style={{display:'flex',gap:2,marginLeft:8}}>
+                        {['exact','2pt','down','up'].map(m=>(
+                          <button key={m} type="button" onClick={()=>setForm({...form,gst_rounding_mode:m})}
+                            style={{background:form.gst_rounding_mode===m?'#818cf8':'rgba(255,255,255,.1)',border:'none',color:'#fff',borderRadius:4,padding:'1px 6px',fontSize:'.6rem',cursor:'pointer',fontWeight:700}} title={`Rounding: ${m}`}>
+                            {m==='exact'?'Ex':m==='2pt'?'.00':m==='down'?'-':'+'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {form.calculate_gst && <>
@@ -599,13 +744,29 @@ export default function PurchaseForm() {
                     <div style={{display:'flex',alignItems:'center',gap:6,color:'rgba(255,255,255,.55)'}}>
                       CGST <input type="number" value={form.cgst_rate} onChange={e=>setForm({...form,cgst_rate:e.target.value})} style={{width:40,background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.2)',borderRadius:5,color:'#fff',textAlign:'center',fontSize:'.72rem',padding:'2px 4px'}}/> %
                     </div>
-                    <span style={{color:'#a5b4fc',fontWeight:600}}>₹{cgstAmount.toLocaleString('en-IN')}</span>
+                    {isManualGst ? (
+                      <div style={{display:'flex',alignItems:'center',gap:4}}>
+                        <input type="number" step="0.01" value={form.cgst_amount} onChange={e=>setForm({...form,cgst_amount:parseFloat(e.target.value)||0})}
+                          style={{width:75,background:'rgba(255,255,255,.1)',border:'1.5px solid #a5b4fc',borderRadius:5,color:'#fff',textAlign:'right',fontSize:'.78rem',padding:'2px 6px'}}/>
+                        <button type="button" onClick={()=>{setIsManualGst(false); setForm(f=>({...f,is_gst_manual:false}))}} style={{background:'none',border:'none',color:'#f87171',fontSize:'.65rem',cursor:'pointer',padding:0}}>↺</button>
+                      </div>
+                    ) : (
+                      <span onClick={()=>{setIsManualGst(true); setForm(f=>({...f,cgst_amount:cgstAmount.toFixed(2),is_gst_manual:true}))}} style={{color:'#a5b4fc',fontWeight:600,cursor:'pointer'}} title="Click to override manually">₹{cgstAmount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 3})} ✏️</span>
+                    )}
                   </div>
                   <div className="pf-sum-row">
                     <div style={{display:'flex',alignItems:'center',gap:6,color:'rgba(255,255,255,.55)'}}>
                       SGST <input type="number" value={form.sgst_rate} onChange={e=>setForm({...form,sgst_rate:e.target.value})} style={{width:40,background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.2)',borderRadius:5,color:'#fff',textAlign:'center',fontSize:'.72rem',padding:'2px 4px'}}/> %
                     </div>
-                    <span style={{color:'#a5b4fc',fontWeight:600}}>₹{sgstAmount.toLocaleString('en-IN')}</span>
+                    {isManualGst ? (
+                      <div style={{display:'flex',alignItems:'center',gap:4}}>
+                        <input type="number" step="0.01" value={form.sgst_amount} onChange={e=>setForm({...form,sgst_amount:parseFloat(e.target.value)||0})}
+                          style={{width:75,background:'rgba(255,255,255,.1)',border:'1.5px solid #a5b4fc',borderRadius:5,color:'#fff',textAlign:'right',fontSize:'.78rem',padding:'2px 6px'}}/>
+                        <button type="button" onClick={()=>{setIsManualGst(false); setForm(f=>({...f,is_gst_manual:false}))}} style={{background:'none',border:'none',color:'#f87171',fontSize:'.65rem',cursor:'pointer',padding:0}}>↺</button>
+                      </div>
+                    ) : (
+                      <span onClick={()=>{setIsManualGst(true); setForm(f=>({...f,sgst_amount:sgstAmount.toFixed(2),is_gst_manual:true}))}} style={{color:'#a5b4fc',fontWeight:600,cursor:'pointer'}} title="Click to override manually">₹{sgstAmount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 3})} ✏️</span>
+                    )}
                   </div>
                 </>}
                 <div className="pf-sum-row">
@@ -623,15 +784,29 @@ export default function PurchaseForm() {
                   <div style={{display:'flex',alignItems:'center',gap:6,color:'rgba(255,255,255,.55)'}}>
                     Round Off
                     <div style={{display:'flex',gap:2}}>
-                      {['down','auto','up'].map(m=>(
-                        <button key={m} type="button" onClick={()=>setForm({...form,rounding_mode:m})}
+                      {['down','auto','up', 'manual'].map(m=>(
+                        <button key={m} type="button" onClick={()=>{
+                          setForm({...form,rounding_mode:m});
+                          if(m==='manual') setIsManualRound(true);
+                          else setIsManualRound(false);
+                        }}
                           style={{background:form.rounding_mode===m?'#6366f1':'rgba(255,255,255,.1)',border:'none',color:'#fff',borderRadius:4,padding:'1px 7px',fontSize:'.65rem',cursor:'pointer',fontWeight:700}}>
-                          {m==='down'?'-':m==='up'?'+':'A'}
+                          {m==='down'?'-':m==='up'?'+':m==='manual'?'M':'A'}
                         </button>
                       ))}
                     </div>
                   </div>
-                  <span style={{color:parseFloat(roundOff)>=0?'#4ade80':'#f87171',fontWeight:600}}>{parseFloat(roundOff)>=0?'+':''}{roundOff}</span>
+                  {form.rounding_mode === 'manual' ? (
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <input type="number" step="0.01" value={form.round_off} onFocus={e=>e.target.select()}
+                        onChange={e=>{
+                          setForm({...form,round_off:parseFloat(e.target.value)||0});
+                        }}
+                        style={{width:75,background:'rgba(255,255,255,.1)',border:'1.5px solid #6366f1',borderRadius:5,color:'#fff',textAlign:'right',fontSize:'.78rem',padding:'2px 6px'}}/>
+                    </div>
+                  ) : (
+                    <span style={{color:parseFloat(roundOff)>=0?'#4ade80':'#f87171',fontWeight:600}}>{parseFloat(roundOff)>=0?'+':''}{parseFloat(roundOff).toFixed(2)}</span>
+                  )}
                 </div>
                 <div style={{borderTop:'1px solid rgba(255,255,255,.15)',marginTop:8,paddingTop:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span style={{color:'rgba(255,255,255,.7)',fontWeight:700,textTransform:'uppercase',fontSize:'.75rem'}}>Grand Total</span>

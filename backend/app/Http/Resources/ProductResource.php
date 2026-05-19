@@ -20,6 +20,8 @@ class ProductResource extends JsonResource
             'sku' => $this->sku,
             'category_id' => $this->category_id,
             'category' => $this->whenLoaded('category'),
+            'brand_id' => $this->brand_id,
+            'brand' => $this->whenLoaded('brand'),
             'purchase_price' => $this->purchase_price,
             'selling_price' => $this->selling_price,
             'wholeseller_price' => $this->wholeseller_price,

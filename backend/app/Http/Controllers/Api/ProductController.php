@@ -20,7 +20,7 @@ class ProductController extends Controller
 
         // If user wants ungrouped "every single product" view
         if ($request->group_by_config === 'false' || $request->group_by_config === 'true') {
-            $query = \App\Models\PurchaseItem::with(['product.category', 'invoice.supplier'])
+            $query = \App\Models\PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
                 ->whereHas('invoice', function($q) use ($shopId, $request) {
                     $q->where('status', 'received');
                     if ($shopId) $q->where('shop_id', $shopId);
@@ -116,6 +116,7 @@ class ProductController extends Controller
                             'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                             'location' => $item->location ?? $item->product->location,
                             'category' => $item->product->category,
+                            'brand' => $item->product->brand,
                             'is_grouped' => true
                         ];
                     }
@@ -153,7 +154,8 @@ class ProductController extends Controller
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                         'location' => $item->location ?? $item->product->location,
-                        'category' => $item->product->category
+                        'category' => $item->product->category,
+                        'brand' => $item->product->brand
                     ];
                 }
 
@@ -191,14 +193,15 @@ class ProductController extends Controller
                         'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
                         'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
                         'location' => $item->location ?? $item->product->location,
-                        'category' => $item->product->category
+                        'category' => $item->product->category,
+                        'brand' => $item->product->brand
                     ];
                 }
             }
             return response()->json($expanded);
         }
 
-        $query = Product::with(['category', 'inventory' => function($q) use ($shopId) {
+        $query = Product::with(['category', 'brand', 'inventory' => function($q) use ($shopId) {
             if ($shopId) {
                 $q->where('shop_id', $shopId);
             }
@@ -218,6 +221,7 @@ class ProductController extends Controller
     {
         $data = $request->validate([
             'category_id'       => 'required|exists:categories,id',
+            'brand_id'          => 'nullable|exists:brands,id',
             'name'              => 'required|string|max:200',
             'sku'               => 'required|string|max:100|unique:products,sku',
             'imei'              => 'nullable|string|max:20|unique:products,imei',
@@ -248,6 +252,7 @@ class ProductController extends Controller
     {
         $data = $request->validate([
             'category_id'       => 'sometimes|exists:categories,id',
+            'brand_id'          => 'nullable|exists:brands,id',
             'name'              => 'sometimes|string|max:200',
             'sku'               => 'sometimes|string|max:100|unique:products,sku,' . $product->id,
             'imei'              => 'nullable|string|max:20|unique:products,imei,' . $product->id,

@@ -34,6 +34,7 @@ class PurchaseInvoiceResource extends JsonResource
             'sgst_amount' => $this->sgst_amount,
             'rounding_mode' => $this->rounding_mode,
             'round_off' => $this->round_off,
+            'is_gst_manual' => $this->is_gst_manual,
             'grand_total' => $this->grand_total,
             'total_paid' => $this->total_paid,
             'payment_status' => $this->payment_status,

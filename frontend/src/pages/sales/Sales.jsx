@@ -144,6 +144,7 @@ export default function Sales() {
                 <th>Date / Shop</th>
                 <th>Customer Name</th>
                 <th className="text-end">Grand Total</th>
+                <th className="text-end" style={{color:'#d97706'}}>Discount</th>
                 <th className="text-end">Paid</th>
                 <th className="text-end">Balance</th>
                 <th className="text-center">Status</th>
@@ -152,9 +153,9 @@ export default function Sales() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+                <tr><td colSpan={9} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
               ) : invoices.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
+                <tr><td colSpan={9} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
               ) : invoices.map(inv => {
                 const balance = parseFloat(inv.grand_total) - parseFloat(inv.total_paid);
                 return (
@@ -172,6 +173,11 @@ export default function Sales() {
                         <div className="x-small text-muted">📞 {inv.customer?.phone}</div>
                     </td>
                     <td className="text-end fw-bold">₹{parseFloat(inv.grand_total).toLocaleString('en-IN')}</td>
+                    <td className="text-end fw-bold" style={{color: (parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0 ? '#d97706' : '#aaa'}}>
+                      {(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0
+                        ? `- ₹${(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)).toLocaleString('en-IN')}`
+                        : '—'}
+                    </td>
                     <td className="text-end fw-bold text-success">₹{parseFloat(inv.total_paid).toLocaleString('en-IN')}</td>
                     <td className="text-end fw-bold text-danger">₹{balance.toLocaleString('en-IN')}</td>
                     <td className="text-center">{inv.is_cancelled ? <span className="badge bg-secondary">CANCELLED</span> : getStatusBadge(inv.payment_status)}</td>

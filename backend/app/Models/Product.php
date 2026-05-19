@@ -13,7 +13,7 @@ class Product extends Model
     use SoftDeletes, UppercaseStrings;
 
     protected $fillable = [
-        'category_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'condition', 'attributes', 'location'
+        'category_id', 'brand_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'condition', 'attributes', 'location'
     ];
 
     protected $casts = [
@@ -27,6 +27,7 @@ class Product extends Model
     ];
 
     public function category(): BelongsTo { return $this->belongsTo(Category::class); }
+    public function brand(): BelongsTo { return $this->belongsTo(Brand::class); }
     public function inventory(): HasMany { return $this->hasMany(Inventory::class); }
     public function purchaseItems(): HasMany { return $this->hasMany(PurchaseItem::class); }
     public function saleItems(): HasMany { return $this->hasMany(SaleItem::class); }

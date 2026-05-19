@@ -37,6 +37,7 @@ class SaleInvoiceControllerTest extends TestCase
             'customer_name' => $customer->name,
             'payment_method' => 'cash',
             'bill_type' => 'kaccha',
+            'calculate_gst' => false,
             'items' => [
                 [
                     'product_id' => $product->id,

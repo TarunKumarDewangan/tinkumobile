@@ -40,10 +40,12 @@ class SaleInvoiceResource extends JsonResource
             'total_paid' => $this->total_paid,
             'payment_status' => $this->payment_status,
             'payment_method' => $this->payment_method,
-            'bill_type' => $this->bill_type,
-            'is_cancelled' => $this->is_cancelled,
-            'items' => SaleItemResource::collection($this->whenLoaded('items'))->resolve(),
-            'gift_items' => $this->whenLoaded('giftItems'),
+            'bill_type'     => $this->bill_type,
+            'is_cancelled'  => $this->is_cancelled,
+            'notes'         => $this->notes,
+            'sold_by_id'    => $this->sold_by_id,
+            'items'         => SaleItemResource::collection($this->whenLoaded('items'))->resolve(),
+            'gift_items'    => $this->whenLoaded('giftItems'),
         ];
     }
 }

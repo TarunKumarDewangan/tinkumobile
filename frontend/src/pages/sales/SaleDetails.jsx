@@ -264,7 +264,7 @@ export default function SaleDetails() {
                                           <th rowSpan="2" style={{ width: '40px' }}>SNo.</th>
                                           <th rowSpan="2">Description of Item</th>
                                           <th rowSpan="2" style={{ width: '50px' }}>QTY</th>
-                                          <th rowSpan="2" style={{ width: '100px' }}>MRP</th>
+                                          
                                           <th rowSpan="2" style={{ width: '100px' }}>RATE</th>
                                           <th rowSpan="2" style={{ width: '50px' }}>Disc%</th>
                                           <th rowSpan="2" style={{ width: '100px' }}>Taxable Amount</th>
@@ -296,7 +296,7 @@ export default function SaleDetails() {
                                                       </div>
                                                   </td>
                                                   <td>{item.quantity}</td>
-                                                  <td>{parseFloat(item.product?.max_selling_price || item.unit_price).toFixed(2)}</td>
+                                                  
                                                   <td>{parseFloat(item.unit_price).toFixed(2)}</td>
                                                   <td>0.00</td>
                                                   <td className="text-end pe-1">{taxable.toFixed(2)}</td>
@@ -310,13 +310,13 @@ export default function SaleDetails() {
                                       {/* Fill empty rows to maintain height like in photo */}
                                       {Array.from({ length: Math.max(0, 5 - (invoice.items?.length || 0)) }).map((_, i) => (
                                           <tr key={`empty-${i}`} style={{ height: '30px' }}>
-                                              {Array.from({ length: 11 }).map((_, j) => <td key={j}></td>)}
+                                              {Array.from({ length: 10 }).map((_, j) => <td key={j}></td>)}
                                           </tr>
                                       ))}
                                   </tbody>
                                   <tfoot>
                                       <tr className="fw-black bg-light text-uppercase">
-                                          <td colSpan="6" className="text-start ps-3 align-top py-3" rowSpan="6">
+                                          <td colSpan="5" className="text-start ps-3 align-top py-3" rowSpan="6">
                                               <div className="mb-2">Terms & Conditions :</div>
                                               <ol className="ps-3 x-small fw-bold mb-0 opacity-75">
                                                   <li>GOODS ONCE SOLD WILL NOT BE TAKEN BACK.</li>
@@ -396,6 +396,16 @@ export default function SaleDetails() {
                                  <span className="small fw-bold text-muted">TOTAL BILL:</span>
                                  <span className="fw-bold text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                              </div>
+                             {(() => {
+                               const totalDisc = parseFloat(invoice.discount || 0) +
+                                 (invoice.is_cash_discount_on_bill ? parseFloat(invoice.cash_discount || 0) : 0);
+                               return totalDisc > 0 ? (
+                                 <div className="d-flex justify-content-between p-2 rounded" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                                   <span className="small fw-bold" style={{ color: '#92400e' }}>🏷️ DISCOUNT GIVEN:</span>
+                                   <span className="fw-bold" style={{ color: '#b45309' }}>- ₹{totalDisc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 </div>
+                               ) : null;
+                             })()}
                              <div className="d-flex justify-content-between p-2 bg-success bg-opacity-10 rounded text-success">
                                  <span className="small fw-bold">RECEIVED:</span>
                                  <span className="fw-bold">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>

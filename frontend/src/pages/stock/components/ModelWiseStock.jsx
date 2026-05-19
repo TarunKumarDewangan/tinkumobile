@@ -6,7 +6,7 @@ export default function ModelWiseStock({ products, loading, filters }) {
 
   // Group products by Brand and then by Model + Config
   const groupedData = products.reduce((acc, p) => {
-    let brand = (p.attributes?.brand || '').trim();
+    let brand = (p.brand?.name || p.attributes?.brand || '').trim();
     if (!brand) {
       brand = p.name ? p.name.split(' ')[0] : 'OTHER';
     }

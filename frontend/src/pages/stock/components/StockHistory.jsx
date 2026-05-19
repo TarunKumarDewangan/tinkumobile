@@ -117,7 +117,7 @@ export default function StockHistory({
                   </td>
                   <td className="text-muted" style={{ fontSize:'.72rem', whiteSpace:'nowrap', fontWeight:700 }}>{formatDate(adj.adjustment_date)}</td>
                   <td>
-                    <div style={{fontWeight:800, color:'#1e293b', fontSize:'.82rem'}}>{adj.product?.name}</div>
+                    <div style={{fontWeight:800, color:'#1e293b', fontSize:'.82rem'}}>{adj.product?.brand ? adj.product.brand.name.toUpperCase() + ' ' : ''}{adj.product?.name}</div>
                     <div className="text-muted" style={{ fontSize:'.65rem' }}>{adj.product?.sku}</div>
                   </td>
                   <td>

@@ -17,7 +17,6 @@ export default function SaleForm() {
   const [shops, setShops]       = useState([]);
   const [staff, setStaff]       = useState([]);
   
-  // Form State
   const [form, setForm] = useState({ 
     shop_id: '',
     customer_id: '', 
@@ -35,12 +34,16 @@ export default function SaleForm() {
     is_cash_discount_on_bill: true,
     rounding_mode: 'auto',
     round_off: 0,
+    cgst_amount: 0,
+    sgst_amount: 0,
+    is_gst_manual: false,
     notes: '',
   });
   const [items, setItems] = useState([]);
   
   // Internal state to track if round_off is manually overridden
   const [isManualRound, setIsManualRound] = useState(false);
+  const [isManualGst, setIsManualGst] = useState(false);
 
   // Customer Search & Add
   const [customerInputText, setCustomerInputText] = useState('');
@@ -146,11 +149,15 @@ export default function SaleForm() {
         cash_discount: data.cash_discount || 0,
         is_cash_discount_on_bill: data.is_cash_discount_on_bill ?? true,
         rounding_mode: data.rounding_mode,
-        round_off: data.round_off,
+        round_off: data.round_off || 0,
+        cgst_amount: data.cgst_amount || 0,
+        sgst_amount: data.sgst_amount || 0,
+        is_gst_manual: data.is_gst_manual ?? false,
         notes: data.notes || '',
         sold_by_id: data.sold_by_id || ''
       });
-      setIsManualRound(true); 
+      if (data.rounding_mode === 'manual') setIsManualRound(true);
+      if (data.is_gst_manual) setIsManualGst(true);
       setItems(data.items?.map(i => ({
         selection_id: i.product_id,
         product_id: i.product_id,
@@ -291,35 +298,36 @@ export default function SaleForm() {
   // Calculations
   const totalInclusive = items.reduce((s, i) => s + (i.quantity * i.unit_price || 0), 0);
   let subtotal = totalInclusive;
-  let cgstAmount = 0;
-  let sgstAmount = 0;
+  let autoCgstAmount = 0;
+  let autoSgstAmount = 0;
 
   if (form.calculate_gst) {
       const cgstR = parseFloat(form.cgst_rate) || 0;
       const sgstR = parseFloat(form.sgst_rate) || 0;
       const totalGstRate = cgstR + sgstR;
       
-      subtotal = totalInclusive / (1 + (totalGstRate / 100));
-      const totalGstAmount = totalInclusive - subtotal;
+      const calcSubtotal = totalInclusive / (1 + (totalGstRate / 100));
+      const totalGstAmount = totalInclusive - calcSubtotal;
       
       if (totalGstRate > 0) {
          // Round taxes to 2 decimals
-         cgstAmount = Math.round(totalGstAmount * (cgstR / totalGstRate) * 100) / 100;
-         sgstAmount = Math.round(totalGstAmount * (sgstR / totalGstRate) * 100) / 100;
-         // Recalculate subtotal to be exactly the remainder
-         subtotal = Math.round((totalInclusive - cgstAmount - sgstAmount) * 100) / 100;
+         autoCgstAmount = Math.round(totalGstAmount * (cgstR / totalGstRate) * 100) / 100;
+         autoSgstAmount = Math.round(totalGstAmount * (sgstR / totalGstRate) * 100) / 100;
       }
   }
+
+  const cgstAmount = isManualGst ? (parseFloat(form.cgst_amount) || 0) : autoCgstAmount;
+  const sgstAmount = isManualGst ? (parseFloat(form.sgst_amount) || 0) : autoSgstAmount;
+  subtotal = Math.round((totalInclusive - cgstAmount - sgstAmount) * 100) / 100;
 
   const rawTotal = subtotal + cgstAmount + sgstAmount - (parseFloat(form.discount) || 0) - (form.is_cash_discount_on_bill ? (parseFloat(form.cash_discount) || 0) : 0);
   
   // Rounding Logic
   useEffect(() => {
     if (!isManualRound) {
-        let roundedValue = rawTotal;
-        if (form.rounding_mode === 'up') roundedValue = Math.floor(rawTotal + 1);
-        else if (form.rounding_mode === 'down') roundedValue = Math.ceil(rawTotal - 1);
-        else if (form.rounding_mode === 'auto') roundedValue = Math.round(rawTotal);
+        let roundedValue = Math.round(rawTotal);
+        if (form.rounding_mode === 'up') roundedValue = Math.ceil(rawTotal);
+        else if (form.rounding_mode === 'down') roundedValue = Math.floor(rawTotal);
         
         const diff = roundedValue - rawTotal;
         setForm(f => ({ ...f, round_off: parseFloat(diff.toFixed(2)) }));
@@ -389,7 +397,14 @@ export default function SaleForm() {
     
     setLoading(true);
     try {
-      let finalForm = { ...form, items };
+      let finalForm = {
+        ...form,
+        cgst_amount: cgstAmount,
+        sgst_amount: sgstAmount,
+        round_off: parseFloat(form.round_off) || 0,
+        is_gst_manual: isManualGst,
+        items
+      };
       if (form.payment_method === 'OTHER' && form.other_mode) {
           finalForm.payment_method = form.other_mode;
       }
@@ -763,13 +778,29 @@ export default function SaleForm() {
                             <span className="small text-muted fw-bold">SUBTOTAL:</span>
                             <span className="fw-bold">₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                         </div>
-                        <div className="d-flex justify-content-between mb-1">
+                        <div className="d-flex justify-content-between mb-1 align-items-center">
                             <span className="small text-muted fw-bold">CGST ({form.cgst_rate}%):</span>
-                            <span className="fw-bold">₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            {isManualGst ? (
+                              <div className="d-flex align-items-center gap-1">
+                                <input type="number" step="0.01" className="form-control form-control-sm text-end fw-bold text-dark border-primary" style={{ width: '100px', height: '28px' }}
+                                  value={form.cgst_amount} onChange={e=>setForm({...form, cgst_amount: parseFloat(e.target.value)||0})} />
+                                <button type="button" className="btn btn-xs btn-link p-0 m-0 text-danger" onClick={()=>{setIsManualGst(false); setForm(f=>({...f, is_gst_manual:false}))}}>↺</button>
+                              </div>
+                            ) : (
+                              <span className="fw-bold cursor-pointer text-decoration-underline" onClick={()=>{setIsManualGst(true); setForm(f=>({...f, cgst_amount: cgstAmount.toFixed(2), is_gst_manual:true}))}} title="Click to edit manually">₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ✏️</span>
+                            )}
                         </div>
-                        <div className="d-flex justify-content-between mb-1">
+                        <div className="d-flex justify-content-between mb-1 align-items-center">
                             <span className="small text-muted fw-bold">SGST ({form.sgst_rate}%):</span>
-                            <span className="fw-bold">₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            {isManualGst ? (
+                              <div className="d-flex align-items-center gap-1">
+                                <input type="number" step="0.01" className="form-control form-control-sm text-end fw-bold text-dark border-primary" style={{ width: '100px', height: '28px' }}
+                                  value={form.sgst_amount} onChange={e=>setForm({...form, sgst_amount: parseFloat(e.target.value)||0})} />
+                                <button type="button" className="btn btn-xs btn-link p-0 m-0 text-danger" onClick={()=>{setIsManualGst(false); setForm(f=>({...f, is_gst_manual:false}))}}>↺</button>
+                              </div>
+                            ) : (
+                              <span className="fw-bold cursor-pointer text-decoration-underline" onClick={()=>{setIsManualGst(true); setForm(f=>({...f, sgst_amount: sgstAmount.toFixed(2), is_gst_manual:true}))}} title="Click to edit manually">₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ✏️</span>
+                            )}
                         </div>
                         <div className="d-flex justify-content-between mb-3 align-items-center mt-2 border-bottom pb-2">
                             <div className="w-100">
