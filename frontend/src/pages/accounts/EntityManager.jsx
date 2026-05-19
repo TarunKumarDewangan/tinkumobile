@@ -10,6 +10,7 @@ export default function EntityManager() {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState(null);
+  const [customTypes, setCustomTypes] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     type: '',
@@ -34,6 +35,13 @@ export default function EntityManager() {
         params: q ? { q } : {}
       });
       setEntities(data);
+
+      // Extract custom types from loaded entities
+      const types = data.map(e => e.type).filter(Boolean);
+      const uniqueCustomTypes = Array.from(new Set(types)).filter(
+        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'OTHER'].includes(t)
+      );
+      setCustomTypes(uniqueCustomTypes);
     } catch (error) {
       toast.error('Failed to fetch entities');
     } finally {
@@ -110,6 +118,10 @@ export default function EntityManager() {
     }
   };
 
+
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER'].includes(formData.type);
+  const isCustomType = customTypes.includes(formData.type);
+  const showCustomInput = formData.type === 'OTHER' || (!isDefaultType && !isCustomType && formData.type !== '');
 
   return (
     <div className="container-fluid py-4">
@@ -228,7 +240,11 @@ export default function EntityManager() {
                       <select 
                         className="form-select fw-semibold"
                         required
-                        value={formData.type}
+                        value={
+                          isDefaultType || isCustomType
+                            ? formData.type
+                            : (formData.type ? 'OTHER' : '')
+                        }
                         onChange={e => setFormData({...formData, type: e.target.value})}
                       >
                         <option value="">Select Category...</option>
@@ -237,9 +253,26 @@ export default function EntityManager() {
                         <option value="SHOP">SHOP</option>
                         <option value="SUPPLIER">SUPPLIER</option>
                         <option value="RETAILER">RETAILER</option>
-                        <option value="OTHER">OTHER</option>
+                        {customTypes.map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                        <option value="OTHER">OTHER / CUSTOM TYPE</option>
                       </select>
                     </div>
+
+                    {showCustomInput && (
+                      <div className="col-12">
+                        <label className="form-label fw-bold small text-muted text-uppercase">Custom Category / Type *</label>
+                        <input 
+                          type="text" 
+                          className="form-control fw-bold"
+                          required
+                          placeholder="Type custom category name..."
+                          value={formData.type === 'OTHER' ? '' : formData.type}
+                          onChange={e => setFormData({...formData, type: e.target.value.toUpperCase()})}
+                        />
+                      </div>
+                    )}
                     <div className="col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
                       <input 
