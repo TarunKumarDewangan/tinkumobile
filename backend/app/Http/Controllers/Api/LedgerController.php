@@ -114,10 +114,8 @@ class LedgerController extends Controller
                 'net_balance' => $closing
             ];
         })->filter(function($e) use ($query) {
-            // When searching, show ALL matching entities (even fully settled/zero balance)
-            // When browsing without a query, only show those with outstanding balances
-            if ($query) return true;
-            return round($e['net_balance'], 2) != 0 || round($e['opening_balance'], 2) != 0;
+            // Show all entities including zero balance entities
+            return true;
         })->values();
 
         return response()->json($results);

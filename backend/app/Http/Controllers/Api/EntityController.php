@@ -55,7 +55,65 @@ class EntityController extends Controller
             'description' => 'nullable|string'
         ]);
 
-        return response()->json(Entity::create($data), 201);
+        if (in_array($data['type'], ['CUSTOMER', 'SHOP_CUSTOMER']) && !empty($data['phone'])) {
+            $exists = \App\Models\Customer::where('phone', $data['phone'])->exists();
+            if ($exists) {
+                return response()->json(['message' => 'A customer with this phone number already exists.'], 422);
+            }
+        }
+
+        return DB::transaction(function() use ($data) {
+            $model = null;
+            if ($data['type'] === 'CUSTOMER') {
+                $model = \App\Models\Customer::create([
+                    'name' => $data['name'],
+                    'phone' => $data['phone'] ?? '',
+                    'email' => $data['email'],
+                    'address' => $data['description'],
+                    'category' => 'REGULAR'
+                ]);
+            } elseif ($data['type'] === 'SHOP_CUSTOMER') {
+                $model = \App\Models\Customer::create([
+                    'name' => $data['name'],
+                    'phone' => $data['phone'] ?? '',
+                    'email' => $data['email'],
+                    'address' => $data['description'],
+                    'category' => 'SHOP'
+                ]);
+            } elseif ($data['type'] === 'SUPPLIER') {
+                $model = \App\Models\Supplier::create([
+                    'name' => $data['name'],
+                    'phone' => $data['phone'] ?? '',
+                    'address' => $data['description'],
+                    'gst_no' => $data['gst_number'],
+                ]);
+            } elseif ($data['type'] === 'SHOP') {
+                $model = \App\Models\Shop::create([
+                    'name' => $data['name'],
+                    'phone' => $data['phone'] ?? '',
+                    'address' => $data['description'],
+                    'email' => $data['email'],
+                    'gstin' => $data['gst_number'],
+                ]);
+            }
+
+            if ($model) {
+                $entity = Entity::where('relation_type', get_class($model))
+                    ->where('relation_id', $model->id)
+                    ->first();
+            } else {
+                $entity = new Entity();
+            }
+
+            $entity->fill($data);
+            if ($model) {
+                $entity->relation_type = get_class($model);
+                $entity->relation_id = $model->id;
+            }
+            $entity->save();
+
+            return response()->json($entity, 201);
+        });
     }
 
     public function update(Request $request, Entity $entity)
@@ -71,8 +129,41 @@ class EntityController extends Controller
             'description' => 'nullable|string'
         ]);
 
-        $entity->update($data);
-        return response()->json($entity);
+        if (in_array($data['type'], ['CUSTOMER', 'SHOP_CUSTOMER']) && !empty($data['phone'])) {
+            $exists = \App\Models\Customer::where('phone', $data['phone'])->where('id', '!=', $entity->relation_id)->exists();
+            if ($exists) {
+                return response()->json(['message' => 'A customer with this phone number already exists.'], 422);
+            }
+        }
+
+        return DB::transaction(function() use ($entity, $data) {
+            $entity->update($data);
+            
+            if ($entity->relation) {
+                $relation = $entity->relation;
+                $relationData = [
+                    'name' => $entity->name,
+                    'phone' => $entity->phone ?? '',
+                ];
+                
+                if ($relation instanceof \App\Models\Customer) {
+                    $relationData['category'] = $entity->type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR';
+                    $relationData['email'] = $entity->email;
+                    $relationData['address'] = $entity->description;
+                } elseif ($relation instanceof \App\Models\Supplier) {
+                    $relationData['address'] = $entity->description;
+                    $relationData['gst_no'] = $entity->gst_number;
+                } elseif ($relation instanceof \App\Models\Shop) {
+                    $relationData['address'] = $entity->description;
+                    $relationData['email'] = $entity->email;
+                    $relationData['gstin'] = $entity->gst_number;
+                }
+                
+                $relation->update($relationData);
+            }
+            
+            return response()->json($entity);
+        });
     }
 
     public function destroy(Entity $entity)
