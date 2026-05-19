@@ -22,7 +22,7 @@ export default function EntityManager() {
     description: ''
   });
 
-  const entityTypes = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'OTHER'];
+  const entityTypes = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'DISTRIBUTOR', 'OTHER'];
 
   useEffect(() => {
     fetchEntities('');
@@ -39,7 +39,7 @@ export default function EntityManager() {
       // Extract custom types from loaded entities
       const types = data.map(e => e.type).filter(Boolean);
       const uniqueCustomTypes = Array.from(new Set(types)).filter(
-        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'OTHER'].includes(t)
+        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'DISTRIBUTOR', 'OTHER'].includes(t)
       );
       setCustomTypes(uniqueCustomTypes);
     } catch (error) {
@@ -119,7 +119,7 @@ export default function EntityManager() {
   };
 
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER'].includes(formData.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'DISTRIBUTOR'].includes(formData.type);
   const isCustomType = customTypes.includes(formData.type);
   const showCustomInput = formData.type === 'OTHER' || (!isDefaultType && !isCustomType && formData.type !== '');
 
@@ -253,6 +253,7 @@ export default function EntityManager() {
                         <option value="SHOP">SHOP</option>
                         <option value="SUPPLIER">SUPPLIER</option>
                         <option value="RETAILER">RETAILER</option>
+                        <option value="DISTRIBUTOR">DISTRIBUTOR</option>
                         {customTypes.map(t => (
                           <option key={t} value={t}>{t}</option>
                         ))}
