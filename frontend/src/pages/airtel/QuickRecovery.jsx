@@ -21,6 +21,11 @@ export default function QuickRecovery() {
     const [isConfirming, setIsConfirming] = useState(false);
     const [historyMode, setHistoryMode] = useState('sequential'); // 'sequential' or 'grouped'
 
+    // Retailers list for quick selection
+    const [allRetailers, setAllRetailers] = useState([]);
+    const [allLoading, setAllLoading] = useState(false);
+    const [listSortBy, setListSortBy] = useState('pending_balance'); // 'pending_balance' or 'name'
+
     const formatTime = (dateStr) => {
         if (!dateStr) return '';
         const date = new Date(dateStr);
@@ -48,6 +53,37 @@ export default function QuickRecovery() {
         const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         return `${day} ${months[parseInt(month, 10) - 1]}`;
     };
+
+    // Fetch all retailers for list selection
+    const fetchAllRetailers = async () => {
+        setAllLoading(true);
+        try {
+            const { data } = await axios.get('/airtel-retailers?per_page=all');
+            setAllRetailers(data);
+        } catch (error) {
+            toast.error('Failed to load retailers list');
+        } finally {
+            setAllLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchAllRetailers();
+    }, []);
+
+    // Sorted & filtered retailers based on search query and selection
+    const sortedRetailers = [...allRetailers]
+        .filter(r => {
+            if (!query) return true;
+            return r.name.toLowerCase().includes(query.toLowerCase()) || r.msisdn.includes(query);
+        })
+        .sort((a, b) => {
+            if (listSortBy === 'pending_balance') {
+                return parseFloat(b.pending_balance || 0) - parseFloat(a.pending_balance || 0);
+            } else {
+                return a.name.localeCompare(b.name);
+            }
+        });
 
     // Auto-fetch when query is 10 digits, otherwise search by name
     useEffect(() => {
@@ -123,6 +159,7 @@ export default function QuickRecovery() {
                 recovered_at: new Date().toISOString().split('T')[0]
             });
             fetchDirectRetailer(data.retailer.msisdn); // Refresh data
+            fetchAllRetailers(); // Refresh all retailers list
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to record recovery');
         } finally {
@@ -178,6 +215,13 @@ export default function QuickRecovery() {
                     {/* Details Card */}
                     <div className="card shadow-sm border-0 rounded-4 mb-3 animate__animated animate__fadeInUp">
                         <div className="card-body p-4">
+                            <button 
+                                className="btn btn-outline-secondary btn-sm mb-3 px-3 rounded-pill text-uppercase fw-bold"
+                                onClick={() => { setData(null); setQuery(''); }}
+                                style={{fontSize: '0.7rem'}}
+                            >
+                                ⬅ Back to List
+                            </button>
                             <div className="d-flex justify-content-between align-items-center mb-4">
                                 <div>
                                     <h4 className="fw-bold mb-0 text-uppercase">{data.retailer.name}</h4>
@@ -307,10 +351,67 @@ export default function QuickRecovery() {
                         </div>
                     </div>
                 </>
-            ) : query.length > 0 && query.length < 10 && !isNaN(query) && !showResults && (
-                <div className="text-center py-5 text-muted animate__animated animate__fadeIn">
-                    <div className="fs-1 opacity-25 mb-2">🔍</div>
-                    <div className="fw-bold text-uppercase x-small">Typing MSISDN...</div>
+            ) : (
+                <div className="card shadow-sm border-0 rounded-4 animate__animated animate__fadeIn">
+                    <div className="card-body p-4">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                            <h6 className="mb-0 fw-bold text-uppercase text-muted" style={{letterSpacing:'0.5px'}}>
+                                Retailers Ledger
+                            </h6>
+                            <div className="btn-group btn-group-sm rounded-pill overflow-hidden border">
+                                <button 
+                                    className={`btn btn-xs fw-bold text-uppercase px-3 ${listSortBy === 'pending_balance' ? 'btn-primary' : 'btn-white text-muted'}`}
+                                    onClick={() => setListSortBy('pending_balance')}
+                                    style={{fontSize:'0.65rem'}}
+                                >
+                                    💸 Pending
+                                </button>
+                                <button 
+                                    className={`btn btn-xs fw-bold text-uppercase px-3 ${listSortBy === 'name' ? 'btn-primary' : 'btn-white text-muted'}`}
+                                    onClick={() => setListSortBy('name')}
+                                    style={{fontSize:'0.65rem'}}
+                                >
+                                    🔤 A-Z
+                                </button>
+                            </div>
+                        </div>
+
+                        {allLoading ? (
+                            <div className="text-center py-5">
+                                <div className="spinner-border text-primary"></div>
+                            </div>
+                        ) : sortedRetailers.length === 0 ? (
+                            <div className="text-center py-5 text-muted text-uppercase x-small">
+                                No retailers found
+                            </div>
+                        ) : (
+                            <div className="list-group list-group-flush">
+                                {sortedRetailers.map(r => (
+                                    <button 
+                                        key={r.id}
+                                        className="list-group-item list-group-item-action py-3 px-0 border-bottom d-flex justify-content-between align-items-center bg-transparent"
+                                        onClick={() => selectRetailer(r)}
+                                    >
+                                        <div>
+                                            <div className="fw-bold text-uppercase text-dark mb-0 fs-6">{r.name}</div>
+                                            <div className="text-muted small fw-semibold font-monospace">{r.msisdn}</div>
+                                        </div>
+                                        <div className="text-end">
+                                            <div className={`fw-bold fs-5 ${parseFloat(r.pending_balance || 0) > 0 ? 'text-danger' : 'text-success'}`}>
+                                                ₹{parseFloat(r.pending_balance || 0).toLocaleString()}
+                                            </div>
+                                            <span className={`badge rounded-pill x-small text-uppercase ${
+                                                r.status === 'FULL RECOVERED' ? 'bg-success' : 
+                                                r.status === 'FOLLOW UP' ? 'bg-info' : 'bg-warning text-dark'
+                                            }`} style={{fontSize:'0.55rem'}}>
+                                                {r.status}
+                                            </span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 

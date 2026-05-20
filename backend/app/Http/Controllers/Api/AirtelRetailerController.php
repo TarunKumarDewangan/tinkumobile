@@ -27,6 +27,7 @@ class AirtelRetailerController extends Controller
     {
         $sortBy = $request->get('sort_by', 'name');
         $order = $request->get('order', 'asc');
+        $perPage = $request->get('per_page', 20);
 
         $query = Retailer::query()
             ->select('retailers.*')
@@ -47,7 +48,25 @@ class AirtelRetailerController extends Controller
             $query->orderBy($sortBy === 'name' ? 'name' : 'name', $order);
         }
 
-        $retailers = $query->paginate(20);
+        if ($perPage === 'all') {
+            $retailers = $query->get();
+            $retailers->transform(function($r) {
+                $r->pending_balance = $r->pending_balance_calculated;
+                if ($r->pending_balance <= 0) {
+                    $r->status = 'FULL RECOVERED';
+                } else {
+                    $hasFollowUp = AirtelDrop::where('retailer_id', $r->id)
+                        ->where('status', 'pending')
+                        ->whereNotNull('next_recovery_date')
+                        ->exists();
+                    $r->status = $hasFollowUp ? 'FOLLOW UP' : 'PENDING';
+                }
+                return $r;
+            });
+            return response()->json($retailers);
+        }
+
+        $retailers = $query->paginate((int)$perPage);
         
         $retailers->getCollection()->transform(function($r) {
             $r->pending_balance = $r->pending_balance_calculated;
