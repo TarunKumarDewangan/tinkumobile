@@ -181,6 +181,7 @@ class AirtelDropController extends Controller
             $failed = 0;
             $duplicates = 0;
             $errors = [];
+            $retailersToSync = [];
 
             foreach ($validated['drops'] as $dropData) {
                 $retailer = Retailer::where('msisdn', $dropData['msisdn'])->first();
@@ -209,7 +210,13 @@ class AirtelDropController extends Controller
                     'status' => 'pending'
                 ]);
 
+                $retailersToSync[$retailer->id] = true;
                 $success++;
+            }
+
+            // Sync drop allocations for updated retailers
+            foreach (array_keys($retailersToSync) as $retailerId) {
+                app(\App\Services\AirtelSyncService::class)->syncRetailer($retailerId);
             }
 
             return response()->json([
@@ -292,6 +299,7 @@ class AirtelDropController extends Controller
                 if ($entity) {
                     app(\App\Services\EntityService::class)->syncBalance($entity);
                 }
+                app(\App\Services\AirtelSyncService::class)->syncRetailer($retailer->id);
             }
 
             return response()->json([
@@ -313,6 +321,7 @@ class AirtelDropController extends Controller
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
+            $retailersToSync = [];
             foreach ($validated['recoveries'] as $rec) {
                 // Fetch drop row with pessimistic lock to serialize concurrent matching actions
                 $drop = AirtelDrop::lockForUpdate()->find($rec['id']);
@@ -342,6 +351,12 @@ class AirtelDropController extends Controller
                     'entity_name'      => $drop->retailer->name,
                     'shop_id'          => $drop->retailer->shop_id,
                 ]);
+
+                $retailersToSync[$drop->retailer_id] = true;
+            }
+
+            foreach (array_keys($retailersToSync) as $retailerId) {
+                app(\App\Services\AirtelSyncService::class)->syncRetailer($retailerId);
             }
 
             return response()->json(['message' => 'Recoveries recorded successfully']);
@@ -490,13 +505,23 @@ class AirtelDropController extends Controller
             return response()->json(['message' => 'Unauthorized to delete drops'], 403);
         }
 
+        $query = AirtelDrop::query();
         if ($request->from_date && $request->to_date) {
+            $query->whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59']);
+            $retailerIds = $query->distinct()->pluck('retailer_id')->toArray();
             AirtelDrop::whereBetween('refill_date', [$request->from_date . ' 00:00:00', $request->to_date . ' 23:59:59'])->delete();
             ActivityLog::log('BULK_DELETE_DROPS', null, 'Deleted drops from ' . $request->from_date . ' to ' . $request->to_date);
         } else {
             $request->validate(['date' => 'required|date']);
+            $query->whereDate('refill_date', $request->date);
+            $retailerIds = $query->distinct()->pluck('retailer_id')->toArray();
             AirtelDrop::whereDate('refill_date', $request->date)->delete();
             ActivityLog::log('BULK_DELETE_DROPS', null, 'Deleted drops for date: ' . $request->date);
+        }
+
+        // Sync drop allocations for affected retailers
+        foreach ($retailerIds as $retailerId) {
+            app(\App\Services\AirtelSyncService::class)->syncRetailer($retailerId);
         }
 
         return response()->json(['message' => 'Selected drops have been cleared']);
@@ -512,9 +537,14 @@ class AirtelDropController extends Controller
             return response()->json(['message' => 'Cannot delete recovered drops'], 422);
         }
         $retailer = $drop->retailer;
+        $retailerId = $drop->retailer_id;
         $amount = $drop->amount;
         $drop->delete();
         ActivityLog::log('DELETE_DROP', $retailer, 'Deleted drop of ₹' . number_format($amount) . ' for ' . ($retailer->name ?? 'Unknown'));
+
+        // Sync drop allocations for the retailer
+        app(\App\Services\AirtelSyncService::class)->syncRetailer($retailerId);
+
         return response()->json(null, 204);
     }
 

@@ -187,6 +187,9 @@ class AirtelRetailerController extends Controller
                     app(\App\Services\EntityService::class)->syncBalance($entity);
                 }
 
+                // Recalculate drop allocations
+                app(\App\Services\AirtelSyncService::class)->syncRetailer($retailer->id);
+
                 // Send WhatsApp Notification
                 try {
                     $amount = number_format($recovery->amount, 2);
@@ -386,6 +389,9 @@ class AirtelRetailerController extends Controller
         
         ActivityLog::log('DELETE_RECOVERY', $retailer, 'Deleted recovery payment of ₹' . number_format($amount) . ' for ' . ($retailer->name ?? 'Unknown'));
 
+        // Recalculate drop allocations after deletion
+        app(\App\Services\AirtelSyncService::class)->syncRetailer($retailerId);
+
 
 
         return response()->json(null, 204);
@@ -402,13 +408,8 @@ class AirtelRetailerController extends Controller
         
         ActivityLog::log('BULK_DELETE_RECOVERIES', null, 'Cleared ALL recovery payments from the system');
         
-        // Reset ALL drops to pending status
-        AirtelDrop::query()->update([
-            'paid_amount' => 0,
-            'status' => 'pending',
-            'recovered_at' => null,
-            'recovery_user_id' => null
-        ]);
+        // Reset ALL drops to pending status via sync
+        app(\App\Services\AirtelSyncService::class)->syncAllRetailers();
 
         return response()->json(['message' => 'All recovery records have been cleared system-wide.']);
     }
@@ -422,6 +423,9 @@ class AirtelRetailerController extends Controller
         Retailer::query()->update(['balance' => 0]);
         
         ActivityLog::log('BULK_CLEAR_OPENING_BALANCES', null, 'Cleared all retailer opening balances');
+
+        // Recalculate drops now that opening balances are zero
+        app(\App\Services\AirtelSyncService::class)->syncAllRetailers();
 
         return response()->json(['message' => 'All opening balances have been cleared']);
     }
