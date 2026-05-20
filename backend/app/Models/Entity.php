@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\UppercaseStrings;
 
 class Entity extends Model
 {
+    use UppercaseStrings;
     protected $fillable = [
         'name',
         'type',
