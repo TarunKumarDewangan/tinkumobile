@@ -14,6 +14,7 @@ export default function GroupSummary() {
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState('ALL');
     const [showOpeningStock, setShowOpeningStock] = useState(false);
+    const [hideZeroBalances, setHideZeroBalances] = useState(true);
 
     // Edit Modal state
     const [editEntity, setEditEntity] = useState(null);
@@ -49,6 +50,7 @@ export default function GroupSummary() {
 
     const filteredEntities = entities.filter(ent => {
         if (!showOpeningStock && ent.name === 'OPENING STOCK') return false;
+        if (hideZeroBalances && Math.abs(Number(ent.net_balance)) < 0.01) return false;
         return true;
     }).sort((a, b) => {
         if (a.name === 'OPENING STOCK') return -1;
@@ -164,7 +166,14 @@ export default function GroupSummary() {
                                 <option value="SHOP">Shops</option>
                             </select>
                         </div>
-                        <div className="col-md-5 d-flex align-items-center justify-content-end">
+                        <div className="col-md-5 d-flex align-items-center justify-content-end gap-3">
+                            <div className="form-check form-switch mb-0">
+                                <input className="form-check-input" type="checkbox" role="switch" id="showZeroBalancesSwitch" style={{ cursor: 'pointer' }}
+                                    checked={!hideZeroBalances} onChange={e => setHideZeroBalances(!e.target.checked)} />
+                                <label className="form-check-label ms-2 small fw-bold text-muted" htmlFor="showZeroBalancesSwitch" style={{ cursor: 'pointer' }}>
+                                    Show Zero Balance
+                                </label>
+                            </div>
                             <div className="form-check form-switch mb-0">
                                 <input className="form-check-input" type="checkbox" role="switch" id="showOpeningStockSwitch" style={{ cursor: 'pointer' }}
                                     checked={showOpeningStock} onChange={e => setShowOpeningStock(e.target.checked)} />
