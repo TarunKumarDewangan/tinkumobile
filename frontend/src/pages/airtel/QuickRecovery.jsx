@@ -171,7 +171,7 @@ export default function QuickRecovery() {
         <div className="container-fluid py-3 bg-light min-vh-100">
             {/* Search Section */}
             <div className="card shadow-sm border-0 rounded-4 mb-3 overflow-visible z-3">
-                <div className="card-body p-4 bg-primary text-white text-center rounded-4">
+                <div className="card-body p-3 p-md-4 bg-primary text-white text-center rounded-4">
                     <h5 className="text-uppercase fw-bold mb-3" style={{letterSpacing:'1px'}}>Airtel Quick Recovery</h5>
                     <div className="position-relative">
                         <input 
@@ -214,7 +214,7 @@ export default function QuickRecovery() {
                 <>
                     {/* Details Card */}
                     <div className="card shadow-sm border-0 rounded-4 mb-3 animate__animated animate__fadeInUp">
-                        <div className="card-body p-4">
+                        <div className="card-body p-3 p-md-4">
                             <button 
                                 className="btn btn-outline-secondary btn-sm mb-3 px-3 rounded-pill text-uppercase fw-bold"
                                 onClick={() => { setData(null); setQuery(''); }}
@@ -222,9 +222,9 @@ export default function QuickRecovery() {
                             >
                                 ⬅ Back to List
                             </button>
-                            <div className="d-flex justify-content-between align-items-center mb-4">
+                            <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
                                 <div>
-                                    <h4 className="fw-bold mb-0 text-uppercase">{data.retailer.name}</h4>
+                                    <h4 className="fw-bold mb-0 text-uppercase text-wrap">{data.retailer.name}</h4>
                                     <div className="text-muted small fw-bold">MSISDN: {data.retailer.msisdn}</div>
                                 </div>
                                 <div className="text-end">
@@ -353,8 +353,8 @@ export default function QuickRecovery() {
                 </>
             ) : (
                 <div className="card shadow-sm border-0 rounded-4 animate__animated animate__fadeIn">
-                    <div className="card-body p-4">
-                        <div className="d-flex justify-content-between align-items-center mb-3">
+                    <div className="card-body p-3 p-md-4">
+                        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                             <h6 className="mb-0 fw-bold text-uppercase text-muted" style={{letterSpacing:'0.5px'}}>
                                 Retailers Ledger
                             </h6>
@@ -392,11 +392,11 @@ export default function QuickRecovery() {
                                         className="list-group-item list-group-item-action py-3 px-0 border-bottom d-flex justify-content-between align-items-center bg-transparent"
                                         onClick={() => selectRetailer(r)}
                                     >
-                                        <div>
-                                            <div className="fw-bold text-uppercase text-dark mb-0 fs-6">{r.name}</div>
+                                        <div className="text-start flex-grow-1 min-w-0 pe-2">
+                                            <div className="fw-bold text-uppercase text-dark mb-0 fs-6 text-wrap">{r.name}</div>
                                             <div className="text-muted small fw-semibold font-monospace">{r.msisdn}</div>
                                         </div>
-                                        <div className="text-end">
+                                        <div className="text-end flex-shrink-0 ms-2">
                                             <div className={`fw-bold fs-5 ${parseFloat(r.pending_balance || 0) > 0 ? 'text-danger' : 'text-success'}`}>
                                                 ₹{parseFloat(r.pending_balance || 0).toLocaleString()}
                                             </div>
