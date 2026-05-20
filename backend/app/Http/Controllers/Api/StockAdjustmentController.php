@@ -276,6 +276,14 @@ class StockAdjustmentController extends Controller
         $productId = $item['product_id'] ?? null;
 
         if (!empty($item['is_new']) && $item['is_new']) {
+            // Safety check: Prevent duplicate creation if a product with the same IMEI already exists
+            if (!empty($imei)) {
+                $existingProductByImei = Product::where('imei', $imei)->first();
+                if ($existingProductByImei) {
+                    return $existingProductByImei->id;
+                }
+            }
+
             // Safety check: Prevent duplicate creation if a product with the same name already exists
             $existingProduct = Product::where('name', $item['new_product_name'])->first();
             if ($existingProduct) {
