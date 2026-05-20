@@ -42,6 +42,20 @@ class EntityController extends Controller
         return response()->json(Entity::calculateBalances($entities));
     }
 
+    public function show(Entity $entity)
+    {
+        $entity->load('relation.events');
+        $result = $entity->toArray();
+        if ($entity->relation instanceof \App\Models\Customer) {
+            $result['voucher_code'] = $entity->relation->voucher_code;
+            $result['events'] = $entity->relation->events;
+        } else {
+            $result['voucher_code'] = '';
+            $result['events'] = [];
+        }
+        return response()->json($result);
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -52,7 +66,12 @@ class EntityController extends Controller
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
             'gst_number' => 'nullable|string',
-            'description' => 'nullable|string'
+            'description' => 'nullable|string',
+            'voucher_code' => 'nullable|string',
+            'events' => 'nullable|array',
+            'events.*.type' => 'required|string',
+            'events.*.name' => 'nullable|string',
+            'events.*.date' => 'required|date'
         ]);
 
         if (in_array($data['type'], ['CUSTOMER', 'SHOP_CUSTOMER']) && !empty($data['phone'])) {
@@ -70,7 +89,8 @@ class EntityController extends Controller
                     'phone' => $data['phone'] ?? '',
                     'email' => $data['email'],
                     'address' => $data['description'],
-                    'category' => 'REGULAR'
+                    'category' => 'REGULAR',
+                    'voucher_code' => $data['voucher_code'] ?? null
                 ]);
             } elseif ($data['type'] === 'SHOP_CUSTOMER') {
                 $model = \App\Models\Customer::create([
@@ -78,7 +98,8 @@ class EntityController extends Controller
                     'phone' => $data['phone'] ?? '',
                     'email' => $data['email'],
                     'address' => $data['description'],
-                    'category' => 'SHOP'
+                    'category' => 'SHOP',
+                    'voucher_code' => $data['voucher_code'] ?? null
                 ]);
             } elseif ($data['type'] === 'SUPPLIER') {
                 $model = \App\Models\Supplier::create([
@@ -98,6 +119,11 @@ class EntityController extends Controller
             }
 
             if ($model) {
+                if (!empty($data['events'])) {
+                    foreach ($data['events'] as $evt) {
+                        $model->events()->create($evt);
+                    }
+                }
                 $entity = Entity::where('relation_type', get_class($model))
                     ->where('relation_id', $model->id)
                     ->first();
@@ -126,7 +152,12 @@ class EntityController extends Controller
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
             'gst_number' => 'nullable|string',
-            'description' => 'nullable|string'
+            'description' => 'nullable|string',
+            'voucher_code' => 'nullable|string',
+            'events' => 'nullable|array',
+            'events.*.type' => 'required|string',
+            'events.*.name' => 'nullable|string',
+            'events.*.date' => 'required|date'
         ]);
 
         if (in_array($data['type'], ['CUSTOMER', 'SHOP_CUSTOMER']) && !empty($data['phone'])) {
@@ -150,16 +181,26 @@ class EntityController extends Controller
                     $relationData['category'] = $entity->type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR';
                     $relationData['email'] = $entity->email;
                     $relationData['address'] = $entity->description;
+                    $relationData['voucher_code'] = $data['voucher_code'] ?? null;
+                    
+                    $relation->update($relationData);
+                    
+                    $relation->events()->delete();
+                    if (!empty($data['events'])) {
+                        foreach ($data['events'] as $evt) {
+                            $relation->events()->create($evt);
+                        }
+                    }
                 } elseif ($relation instanceof \App\Models\Supplier) {
                     $relationData['address'] = $entity->description;
                     $relationData['gst_no'] = $entity->gst_number;
+                    $relation->update($relationData);
                 } elseif ($relation instanceof \App\Models\Shop) {
                     $relationData['address'] = $entity->description;
                     $relationData['email'] = $entity->email;
                     $relationData['gstin'] = $entity->gst_number;
+                    $relation->update($relationData);
                 }
-                
-                $relation->update($relationData);
             }
             
             return response()->json($entity);

@@ -19,7 +19,9 @@ export default function EntityManager() {
     gst_number: '',
     opening_balance: 0,
     balance_type: 'RECEIVABLE',
-    description: ''
+    description: '',
+    voucher_code: '',
+    events: []
   });
 
   const entityTypes = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'DISTRIBUTOR', 'OTHER'];
@@ -78,19 +80,26 @@ export default function EntityManager() {
     }
   };
 
-  const openModal = (entity = null) => {
+  const openModal = async (entity = null) => {
     if (entity) {
       setEditingEntity(entity);
-      setFormData({
-        name: entity.name,
-        type: entity.type,
-        phone: entity.phone || '',
-        email: entity.email || '',
-        gst_number: entity.gst_number || '',
-        opening_balance: entity.opening_balance || 0,
-        balance_type: entity.balance_type || 'RECEIVABLE',
-        description: entity.description || ''
-      });
+      try {
+        const { data } = await axios.get(`/entities/${entity.id}`);
+        setFormData({
+          name: data.name,
+          type: data.type,
+          phone: data.phone || '',
+          email: data.email || '',
+          gst_number: data.gst_number || '',
+          opening_balance: data.opening_balance || 0,
+          balance_type: data.balance_type || 'RECEIVABLE',
+          description: data.description || '',
+          voucher_code: data.voucher_code || '',
+          events: data.events || []
+        });
+      } catch (error) {
+        toast.error('Failed to load entity details');
+      }
     } else {
       setEditingEntity(null);
       setFormData({
@@ -101,7 +110,9 @@ export default function EntityManager() {
         gst_number: '',
         opening_balance: 0,
         balance_type: 'RECEIVABLE',
-        description: ''
+        description: '',
+        voucher_code: '',
+        events: []
       });
     }
     setShowModal(true);
@@ -216,7 +227,7 @@ export default function EntityManager() {
 
       {showModal && (
         <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content border-0 shadow">
               <div className="modal-header bg-primary text-white">
                 <h5 className="modal-title fw-bold text-uppercase">{editingEntity ? 'Edit Entity' : 'New Entity'}</h5>
@@ -313,6 +324,118 @@ export default function EntityManager() {
                         <option value="PAYABLE">I OWE THEM (Payable)</option>
                       </select>
                     </div>
+
+                    {['CUSTOMER', 'SHOP_CUSTOMER'].includes(formData.type) && (
+                      <>
+                        <div className="col-md-6">
+                          <label className="form-label fw-bold small text-muted text-uppercase">Email</label>
+                          <input 
+                            type="email" 
+                            className="form-control"
+                            placeholder="Email address"
+                            value={formData.email || ''}
+                            onChange={e => setFormData({...formData, email: e.target.value})}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label fw-bold small text-muted text-uppercase">Voucher Code</label>
+                          <input 
+                            type="text" 
+                            className="form-control text-primary fw-semibold"
+                            placeholder="Voucher Code"
+                            value={formData.voucher_code || ''}
+                            onChange={e => setFormData({...formData, voucher_code: e.target.value.toUpperCase()})}
+                          />
+                        </div>
+                        <div className="col-12 mt-3 pt-3 border-top">
+                          <div className="d-flex justify-content-between align-items-center mb-1">
+                            <h6 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2" style={{ fontSize: '0.9rem' }}>
+                              🎂 Customer Events
+                            </h6>
+                            <button 
+                              type="button" 
+                              className="btn btn-sm btn-outline-primary fw-bold" 
+                              onClick={() => setFormData({...formData, events: [...(formData.events || []), { type: '', name: '', date: '' }]})}
+                              style={{ fontSize: '0.75rem', borderRadius: '6px', padding: '4px 12px' }}
+                            >
+                              + Add Event
+                            </button>
+                          </div>
+                          <p className="text-muted x-small text-uppercase mb-3 fw-semibold" style={{ letterSpacing: '0.5px', fontSize: '0.7rem' }}>
+                            Click "+ Add Event" to track birthdays, etc.
+                          </p>
+
+                          <div className="row g-2">
+                            {(formData.events || []).map((ev, idx) => (
+                              <div key={idx} className="col-12 p-3 bg-light rounded border mb-2">
+                                <div className="row g-2 align-items-center">
+                                  
+                                  <div className="col-md-4">
+                                    <select 
+                                      className="form-select form-select-sm fw-semibold" 
+                                      value={ev.type} 
+                                      onChange={e => {
+                                        const newEvents = [...formData.events];
+                                        newEvents[idx].type = e.target.value;
+                                        setFormData({...formData, events: newEvents});
+                                      }}
+                                    >
+                                      <option value="">Select Type</option>
+                                      <option value="dob">DOB</option>
+                                      <option value="anniversary">Anniversary</option>
+                                      <option value="other">Other</option>
+                                    </select>
+                                  </div>
+
+                                  {ev.type === 'other' && (
+                                    <div className="col-md-3">
+                                      <input 
+                                        className="form-control form-control-sm fw-semibold" 
+                                        placeholder="Event Name" 
+                                        value={ev.name || ''} 
+                                        onChange={e => {
+                                          const newEvents = [...formData.events];
+                                          newEvents[idx].name = e.target.value.toUpperCase();
+                                          setFormData({...formData, events: newEvents});
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+
+                                  <div className={`col-md-${ev.type === 'other' ? '4' : '7'}`}>
+                                    <input 
+                                      className="form-control form-control-sm fw-semibold" 
+                                      type="date" 
+                                      value={ev.date} 
+                                      onChange={e => {
+                                        const newEvents = [...formData.events];
+                                        newEvents[idx].date = e.target.value;
+                                        setFormData({...formData, events: newEvents});
+                                      }}
+                                    />
+                                  </div>
+
+                                  <div className="col-md-1 text-end">
+                                    <button 
+                                      type="button" 
+                                      className="btn btn-sm btn-link text-danger p-0 border-0 bg-transparent" 
+                                      onClick={() => {
+                                        const newEvents = formData.events.filter((_, i) => i !== idx);
+                                        setFormData({...formData, events: newEvents});
+                                      }}
+                                    >
+                                      ❌
+                                    </button>
+                                  </div>
+
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
                     <div className="col-12">
                       <label className="form-label fw-bold small text-muted text-uppercase">Description / Notes</label>
                       <textarea 
