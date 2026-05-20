@@ -41,7 +41,7 @@ class PurchaseInvoice extends Model
         'status', 'received_at',
         'total_amount', 'grand_total', 'total_paid', 'payment_status', 'cgst_rate', 'sgst_rate', 
         'cgst_amount', 'sgst_amount', 'calculate_gst', 'cash_discount', 'is_cash_discount_on_bill',
-        'payment_method', 'rounding_mode', 'round_off', 'notes'
+        'payment_method', 'rounding_mode', 'round_off', 'notes', 'accounting_entity_id'
     ];
 
     public function updatePaymentStatus()

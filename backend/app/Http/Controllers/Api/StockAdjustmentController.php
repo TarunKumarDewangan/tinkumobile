@@ -183,13 +183,13 @@ class StockAdjustmentController extends Controller
                             'color'               => $item['color'] ?? null,
                             'quantity'            => 1,
                             'received_quantity'   => 1,
-                            'unit_price'          => $item['unit_price'] ?: 0,
-                            'selling_price'       => $item['selling_price'] ?: 0,
-                            'wholeseller_price'   => $item['wholeseller_price'] ?? 0,
-                            'min_selling_price'   => $item['min_selling_price'] ?? 0,
-                            'max_selling_price'   => $item['max_selling_price'] ?? 0,
-                            'incentive_amount'    => $item['incentive_amount'] ?? 0,
-                            'total'               => $item['unit_price'] ?: 0
+                            'unit_price'          => empty($item['unit_price']) ? 0 : floatval($item['unit_price']),
+                            'selling_price'       => empty($item['selling_price']) ? 0 : floatval($item['selling_price']),
+                            'wholeseller_price'   => empty($item['wholeseller_price']) ? 0 : floatval($item['wholeseller_price']),
+                            'min_selling_price'   => empty($item['min_selling_price']) ? 0 : floatval($item['min_selling_price']),
+                            'max_selling_price'   => empty($item['max_selling_price']) ? 0 : floatval($item['max_selling_price']),
+                            'incentive_amount'    => empty($item['incentive_amount']) ? 0 : floatval($item['incentive_amount']),
+                            'total'               => empty($item['unit_price']) ? 0 : floatval($item['unit_price'])
                         ]);
 
                         Inventory::addStock($shopId, $productId, 1);
@@ -219,13 +219,13 @@ class StockAdjustmentController extends Controller
                             'color'               => $item['color'] ?? null,
                             'quantity'            => $quantity,
                             'received_quantity'   => $quantity,
-                            'unit_price'          => $item['unit_price'] ?: 0,
-                            'selling_price'       => $item['selling_price'] ?: 0,
-                            'wholeseller_price'   => $item['wholeseller_price'] ?? 0,
-                            'min_selling_price'   => $item['min_selling_price'] ?? 0,
-                            'max_selling_price'   => $item['max_selling_price'] ?? 0,
-                            'incentive_amount'    => $item['incentive_amount'] ?? 0,
-                            'total'               => ($item['unit_price'] ?: 0) * $quantity
+                            'unit_price'          => empty($item['unit_price']) ? 0 : floatval($item['unit_price']),
+                            'selling_price'       => empty($item['selling_price']) ? 0 : floatval($item['selling_price']),
+                            'wholeseller_price'   => empty($item['wholeseller_price']) ? 0 : floatval($item['wholeseller_price']),
+                            'min_selling_price'   => empty($item['min_selling_price']) ? 0 : floatval($item['min_selling_price']),
+                            'max_selling_price'   => empty($item['max_selling_price']) ? 0 : floatval($item['max_selling_price']),
+                            'incentive_amount'    => empty($item['incentive_amount']) ? 0 : floatval($item['incentive_amount']),
+                            'total'               => (empty($item['unit_price']) ? 0 : floatval($item['unit_price'])) * $quantity
                         ]);
 
                         Inventory::addStock($shopId, $productId, $quantity);
@@ -287,12 +287,12 @@ class StockAdjustmentController extends Controller
                 'name'           => $item['new_product_name'],
                 'sku'            => Product::generateSku($item['new_product_name']),
                 'imei'           => $imei, // Set specific IMEI if provided
-                'purchase_price' => $item['unit_price'] ?? 0,
-                'selling_price'  => $item['selling_price'] ?? 0,
-                'min_selling_price' => $item['min_selling_price'] ?? 0,
-                'max_selling_price' => $item['max_selling_price'] ?? 0,
-                'wholeseller_price' => $item['wholeseller_price'] ?? 0,
-                'incentive_amount'  => $item['incentive_amount'] ?? 0,
+                'purchase_price' => empty($item['unit_price']) ? 0 : floatval($item['unit_price']),
+                'selling_price'  => empty($item['selling_price']) ? 0 : floatval($item['selling_price']),
+                'min_selling_price' => empty($item['min_selling_price']) ? 0 : floatval($item['min_selling_price']),
+                'max_selling_price' => empty($item['max_selling_price']) ? 0 : floatval($item['max_selling_price']),
+                'wholeseller_price' => empty($item['wholeseller_price']) ? 0 : floatval($item['wholeseller_price']),
+                'incentive_amount'  => empty($item['incentive_amount']) ? 0 : floatval($item['incentive_amount']),
                 'attributes'     => [
                     'ram'     => $item['ram'] ?? null,
                     'storage' => $item['storage'] ?? null,

@@ -42,7 +42,7 @@ class SaleInvoice extends Model
         'total_amount', 'discount', 'grand_total', 'total_paid', 'payment_status',
         'cgst_rate', 'sgst_rate', 'cgst_amount', 'sgst_amount', 'rounding_mode', 'round_off',
         'calculate_gst', 'cash_discount', 'is_cash_discount_on_bill',
-        'payment_method', 'bill_type', 'parent_bill_id', 'is_cancelled', 'notes'
+        'payment_method', 'bill_type', 'parent_bill_id', 'is_cancelled', 'notes', 'accounting_entity_id'
     ];
 
     protected $casts = [
