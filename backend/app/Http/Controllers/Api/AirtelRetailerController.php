@@ -209,7 +209,8 @@ class AirtelRetailerController extends Controller
                 // Recalculate drop allocations
                 app(\App\Services\AirtelSyncService::class)->syncRetailer($retailer->id);
 
-                // Send WhatsApp Notification
+                // Send WhatsApp Notification (Disabled - Daily Summary at 9 PM instead)
+                /*
                 try {
                     $amount = number_format($recovery->amount, 2);
                     $msg = "📡 *Airtel Recovery*\nAmount: ₹{$amount}\nRetailer: {$retailer->name}\nMode: {$mode}";
@@ -217,6 +218,7 @@ class AirtelRetailerController extends Controller
                 } catch (\Exception $waEx) {
                     \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Recovery', ['error' => $waEx->getMessage()]);
                 }
+                */
 
                 return response()->json($recovery, 201);
             });

@@ -33,6 +33,7 @@ const Gifts = lazy(() => import('./pages/Gifts'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Incentives = lazy(() => import('./pages/Incentives'));
 const CompanyOffers = lazy(() => import('./pages/CompanyOffers'));
+const SendOffers = lazy(() => import('./pages/SendOffers'));
 const Users = lazy(() => import('./pages/admin/Users'));
 const Shops = lazy(() => import('./pages/admin/Shops'));
 const ActivityLogs = lazy(() => import('./pages/admin/ActivityLogs'));
@@ -119,6 +120,7 @@ function AppRoutes() {
           <Route path="employees" element={<Employees />} />
           <Route path="incentives" element={<Incentives />} />
           <Route path="offers" element={<CompanyOffers />} />
+          <Route path="send-offers" element={<SendOffers />} />
           <Route path="admin/users" element={<Users />} />
           <Route path="admin/shops" element={<Shops />} />
           <Route path="admin/activity-logs" element={<ActivityLogs />} />

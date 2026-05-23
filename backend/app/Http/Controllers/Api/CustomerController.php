@@ -119,5 +119,51 @@ class CustomerController extends Controller
         ]);
     }
 
+    public function sendOffer(Request $request)
+    {
+        $validated = $request->validate([
+            'customer_id'  => 'required',
+            'offer'        => 'required|string',
+            'voucher_code' => 'nullable|string',
+        ]);
+
+        $msg = "🎁 *SPECIAL OFFER FROM TINKU MOBILES* 🎁\n";
+        $msg .= "---------------------------\n";
+        $msg .= $validated['offer'] . "\n";
+        $msg .= "---------------------------\n";
+        if (!empty($validated['voucher_code'])) {
+            $msg .= "🎟️ Use Voucher Code: *{$validated['voucher_code']}*\n";
+            $msg .= "---------------------------\n";
+        }
+        $msg .= "Thank you for being our valued customer!\n\n";
+        $msg .= "_Tinku Mobiles Management System_";
+
+        $waService = app(\App\Services\WhatsAppService::class);
+
+        if ($validated['customer_id'] === 'all') {
+            $customers = Customer::all();
+            $successCount = 0;
+            $failCount = 0;
+            foreach ($customers as $customer) {
+                if ($waService->sendMessage($customer->phone, $msg)) {
+                    $successCount++;
+                } else {
+                    $failCount++;
+                }
+            }
+            return response()->json([
+                'message' => "Offer sent to {$successCount} customers. Failed for {$failCount} customers."
+            ]);
+        } else {
+            $customer = Customer::findOrFail($validated['customer_id']);
+            $sent = $waService->sendMessage($customer->phone, $msg);
+            if ($sent) {
+                return response()->json(['message' => 'Offer sent successfully to ' . $customer->name]);
+            } else {
+                return response()->json(['message' => 'Failed to send WhatsApp message. Please check settings/configuration.'], 500);
+            }
+        }
+    }
+
     public function destroy(Customer $customer) { $customer->delete(); return response()->json(['message' => 'Deleted']); }
 }

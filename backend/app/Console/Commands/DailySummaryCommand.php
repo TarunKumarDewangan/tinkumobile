@@ -38,6 +38,7 @@ class DailySummaryCommand extends Command
         $saleCount = SaleInvoice::whereDate('sale_date', $today)->count();
         $repairCount = RepairRequest::whereDate('submitted_date', $today)->count();
         $recoveryCount = AirtelRecovery::whereDate('recovered_at', $today)->count();
+        $recoveryAmount = AirtelRecovery::whereDate('recovered_at', $today)->sum('amount');
         
         // Financial Breakdown from Transactions
         // IN (Collections)
@@ -70,7 +71,7 @@ class DailySummaryCommand extends Command
         $msg .= "📝 *Activity Counts:*\n";
         $msg .= "• Sales Invoices: {$saleCount}\n";
         $msg .= "• Repairs Booked: {$repairCount}\n";
-        $msg .= "• Airtel Recoveries: {$recoveryCount}\n\n";
+        $msg .= "• Airtel Recoveries: {$recoveryCount} (Total: ₹" . number_format($recoveryAmount, 2) . ")\n\n";
         
         $msg .= "💰 *Collections (IN):*\n";
         $msg .= "• Cash: ₹" . number_format($cashIn, 2) . "\n";
