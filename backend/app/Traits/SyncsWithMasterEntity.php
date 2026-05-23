@@ -78,12 +78,15 @@ trait SyncsWithMasterEntity
             }
         }
 
+        $gstField = isset($this->gstin) ? 'gstin' : 'gst_no';
         $entity->fill([
             'type'  => $type,
             'phone' => $this->$phoneField ?? null,
             'email' => $this->email ?? null,
-            'opening_balance' => $this->balance ?? $entity->opening_balance ?? 0,
-            'balance_type' => $entity->balance_type ?? 'RECEIVABLE',
+            'gst_number' => $this->$gstField ?? null,
+            'description' => $this->address ?? null,
+            'opening_balance' => $this->balance ?? $this->opening_balance ?? request('opening_balance') ?? $entity->opening_balance ?? 0,
+            'balance_type' => $this->balance_type ?? request('balance_type') ?? $entity->balance_type ?? 'RECEIVABLE',
         ]);
 
         $entity->save();

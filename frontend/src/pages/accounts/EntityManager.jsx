@@ -24,7 +24,7 @@ export default function EntityManager() {
     events: []
   });
 
-  const entityTypes = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'DISTRIBUTOR', 'OTHER'];
+  const entityTypes = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'RETAILER', 'DISTRIBUTOR', 'FINANCER', 'OTHER'];
 
   useEffect(() => {
     fetchEntities('');

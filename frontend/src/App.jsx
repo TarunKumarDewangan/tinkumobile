@@ -26,6 +26,9 @@ const LoanForm = lazy(() => import('./pages/loans/LoanForm'));
 const Recharge = lazy(() => import('./pages/Recharge'));
 const SimCards = lazy(() => import('./pages/SimCards'));
 const OldMobiles = lazy(() => import('./pages/OldMobiles'));
+const OldMobilePurchaseForm = lazy(() => import('./pages/OldMobilePurchaseForm'));
+const OldMobileStocks = lazy(() => import('./pages/OldMobileStocks'));
+const OldMobileSales = lazy(() => import('./pages/OldMobileSales'));
 const Gifts = lazy(() => import('./pages/Gifts'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Incentives = lazy(() => import('./pages/Incentives'));
@@ -107,6 +110,10 @@ function AppRoutes() {
           <Route path="recharge" element={<Recharge />} />
           <Route path="sim-cards" element={<SimCards />} />
           <Route path="old-mobiles" element={<OldMobiles />} />
+          <Route path="old-mobiles/new" element={<OldMobilePurchaseForm />} />
+          <Route path="old-mobiles/stocks" element={<OldMobileStocks />} />
+          <Route path="old-mobiles/sales" element={<OldMobileSales />} />
+          <Route path="old-mobiles/sales/new" element={<SaleForm />} />
           <Route path="gifts" element={<Gifts />} />
           <Route path="stock-entry" element={<StockEntry />} />
           <Route path="employees" element={<Employees />} />

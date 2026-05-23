@@ -80,6 +80,7 @@ class TransactionService
             'SaleInvoice'     => 'CUSTOMER',
             'PurchaseInvoice' => 'SUPPLIER',
             'AirtelDrop'      => 'RETAILER',
+            'OldMobilePurchase' => 'CUSTOMER',
             default           => 'OTHER',
         };
     }

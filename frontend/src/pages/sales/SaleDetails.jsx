@@ -59,6 +59,17 @@ export default function SaleDetails() {
       } catch (e) { toast.error('Payment failed'); }
   };
 
+  const handleMarkFinanceReceived = async () => {
+      if (!window.confirm('Mark this finance payment as RECEIVED?')) return;
+      try {
+          await api.post(`/sale-invoices/${id}/receive-finance`);
+          toast.success('✅ Finance payment marked as received');
+          loadInvoice();
+      } catch (e) {
+          toast.error(e.response?.data?.message || 'Failed to update finance status');
+      }
+  };
+
   const handlePrint = () => { window.print(); };
 
   if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
@@ -200,10 +211,26 @@ export default function SaleDetails() {
                                   </div>
                                   
                                   {/* Payment Breakdown */}
+                                  {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                      <div className="d-flex justify-content-between mb-1 opacity-75 text-info">
+                                          <span className="x-small fw-black">EXCHANGE CREDIT:</span>
+                                          <span className="x-small fw-black">₹{parseFloat(invoice.exchange_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                  )}
                                   <div className="d-flex justify-content-between mb-1 opacity-75">
-                                      <span className="x-small fw-black text-success">TOTAL PAID:</span>
-                                      <span className="x-small fw-black text-success">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      <span className="x-small fw-black text-success">
+                                          {parseFloat(invoice.exchange_paid || 0) > 0 ? 'NET PAID (CASH/UPI):' : 'TOTAL PAID:'}
+                                      </span>
+                                      <span className="x-small fw-black text-success">
+                                          ₹{(parseFloat(invoice.total_paid) - parseFloat(invoice.exchange_paid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </span>
                                   </div>
+                                  {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                      <div className="d-flex justify-content-between mb-1 opacity-75 border-top pt-1">
+                                          <span className="x-small fw-black text-dark">TOTAL PAID:</span>
+                                          <span className="x-small fw-black text-dark">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                  )}
                                   <div className="d-flex justify-content-between">
                                       <span className="x-small fw-black text-danger">PENDING BALANCE:</span>
                                       <span className="x-small fw-black text-danger">₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
@@ -388,6 +415,38 @@ export default function SaleDetails() {
                   </div>
               </div>
 
+              {parseFloat(invoice.finance_amount || 0) > 0 && (
+                  <div className="card shadow-sm border-0 rounded-3 mb-3 bg-white">
+                      <div className="card-body p-4">
+                          <h5 className="fw-bold mb-3 border-bottom pb-2">🏦 FINANCE DETAILS</h5>
+                          <div className="d-flex flex-column gap-2 mb-3">
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">FINANCER:</span>
+                                  <span className="fw-bold text-primary">{invoice.financer?.name || 'FINANCE COMPANY'}</span>
+                              </div>
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">FINANCE AMOUNT:</span>
+                                  <span className="fw-bold text-dark">₹{parseFloat(invoice.finance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">STATUS:</span>
+                                  <span className={`badge ${invoice.finance_payment_status === 'RECEIVED' ? 'bg-success' : 'bg-danger'}`}>
+                                      {invoice.finance_payment_status === 'RECEIVED' ? 'PAID / RECEIVED' : 'PENDING ⏳'}
+                                  </span>
+                              </div>
+                          </div>
+                          {invoice.finance_payment_status === 'PENDING' && !invoice.is_cancelled && (
+                              <button 
+                                  onClick={handleMarkFinanceReceived} 
+                                  className="btn btn-primary w-100 fw-black py-2 shadow-sm"
+                              >
+                                  MARK FINANCE RECEIVED
+                              </button>
+                          )}
+                      </div>
+                  </div>
+              )}
+
               <div className="card shadow-sm border-0 rounded-3 mb-3 bg-white">
                     <div className="card-body p-4">
                         <h5 className="fw-bold mb-3 border-bottom pb-2">💳 PAYMENT SUMMARY</h5>
@@ -406,10 +465,22 @@ export default function SaleDetails() {
                                  </div>
                                ) : null;
                              })()}
+                             {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                 <div className="d-flex justify-content-between p-2 rounded text-info" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                                     <span className="small fw-bold">🔄 EXCHANGE CREDIT USED:</span>
+                                     <span className="fw-bold">₹{parseFloat(invoice.exchange_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 </div>
+                             )}
                              <div className="d-flex justify-content-between p-2 bg-success bg-opacity-10 rounded text-success">
-                                 <span className="small fw-bold">RECEIVED:</span>
-                                 <span className="fw-bold">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 <span className="small fw-bold">{parseFloat(invoice.exchange_paid || 0) > 0 ? 'NET PAID (CASH/UPI):' : 'RECEIVED:'}</span>
+                                 <span className="fw-bold">₹{(parseFloat(invoice.total_paid) - parseFloat(invoice.exchange_paid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                              </div>
+                             {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                 <div className="d-flex justify-content-between p-2 bg-light rounded text-dark border-top">
+                                     <span className="small fw-bold">TOTAL RECEIVED:</span>
+                                     <span className="fw-bold">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 </div>
+                             )}
                              <div className="d-flex justify-content-between p-2 bg-danger bg-opacity-10 rounded text-danger">
                                  <span className="small fw-bold">OUTSTANDING:</span>
                                  <span className="fw-bold">₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>

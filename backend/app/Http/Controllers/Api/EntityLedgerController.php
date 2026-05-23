@@ -280,7 +280,8 @@ class EntityLedgerController extends Controller
         });
 
         // Sales
-        $saleQuery = \App\Models\SaleInvoice::whereHas('customer', fn($q) => $q->where('name', $entityName));
+        $saleQuery = \App\Models\SaleInvoice::where('is_cancelled', false)
+            ->whereHas('customer', fn($q) => $q->where('name', $entityName));
         if ($startDate) $saleQuery->where('sale_date', '>=', $startDate);
         if ($endDate) $saleQuery->where('sale_date', '<=', $endDate);
         
@@ -289,13 +290,15 @@ class EntityLedgerController extends Controller
                     return ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : "");
                 })->implode(', ');
                 
+                $financeText = $i->finance_amount > 0 ? " (Total: ₹" . number_format($i->grand_total) . ", Finance: ₹" . number_format($i->finance_amount) . ", Net Customer: ₹" . number_format($i->grand_total - $i->finance_amount) . ")" : "";
+                
                 $ledgerItems->push([
                     'id' => 'SL-CHG-' . $i->id,
                     'transaction_date' => $i->sale_date,
                     'category' => 'SALE_CHARGE',
-                    'description' => "Sale Invoice: #{$i->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ""),
+                    'description' => "Sale Invoice: #{$i->invoice_no}" . ($itemNames ? " [{$itemNames}]" : "") . $financeText,
                     'in_worth' => 0,
-                    'out_worth' => (float)$i->grand_total,
+                    'out_worth' => (float)($i->grand_total - $i->finance_amount),
                     'unrealized_in' => 0,
                     'unrealized_out' => 0,
                     'type' => 'UNREALIZED',
@@ -303,6 +306,33 @@ class EntityLedgerController extends Controller
                     'created_at' => $i->created_at
                 ]);
             });
+
+        // Finance Receivable for Financer
+        $financeQuery = \App\Models\SaleInvoice::where('is_cancelled', false);
+        if ($entity && $entity->id) {
+            $financeQuery->where('financer_id', $entity->id);
+        } else {
+            $financeQuery->whereHas('financer', fn($q) => $q->where('name', $entityName));
+        }
+        if ($startDate) $financeQuery->where('sale_date', '>=', $startDate);
+        if ($endDate) $financeQuery->where('sale_date', '<=', $endDate);
+
+        $financeQuery->with('customer')->get()->each(function($i) use ($ledgerItems) {
+            $customerName = $i->customer->name ?? 'Customer';
+            $ledgerItems->push([
+                'id' => 'SL-FIN-' . $i->id,
+                'transaction_date' => $i->sale_date,
+                'category' => 'FINANCE_RECEIVABLE',
+                'description' => "Finance Receivable: Invoice #{$i->invoice_no} (Customer: {$customerName}, Financed: ₹" . number_format($i->finance_amount) . ")",
+                'in_worth' => 0,
+                'out_worth' => (float)$i->finance_amount,
+                'unrealized_in' => 0,
+                'unrealized_out' => 0,
+                'type' => 'UNREALIZED',
+                'entry_type' => 'UNREALIZED',
+                'created_at' => $i->created_at
+            ]);
+        });
 
         // Loans (Typically we might filter by start date of loan, or just show all outstanding)
         $loanQuery = \App\Models\Loan::whereHas('customer', fn($q) => $q->where('name', $entityName))
@@ -422,8 +452,34 @@ class EntityLedgerController extends Controller
                     'type' => 'UNREALIZED',
                     'entry_type' => 'UNREALIZED',
                     'created_at' => $i->created_at
-                ]);
             });
+
+        // Old Mobile Purchases (non-exchange)
+        $oldMobQuery = \App\Models\OldMobilePurchase::where(function($q) use ($entityName, $entity) {
+            $q->where('customer_name', $entityName);
+            if ($entity && $entity->relation_id && $entity->relation_type === 'App\Models\Customer') {
+                $q->orWhere('customer_id', $entity->relation_id);
+            }
+        })->where('is_exchange', false);
+        
+        if ($startDate) $oldMobQuery->where('purchase_date', '>=', $startDate);
+        if ($endDate) $oldMobQuery->where('purchase_date', '<=', $endDate);
+        
+        $oldMobQuery->get()->each(function($i) use ($ledgerItems) {
+            $ledgerItems->push([
+                'id' => 'OM-CHG-' . $i->id,
+                'transaction_date' => $i->purchase_date,
+                'category' => 'OLD_MOBILE_CHARGE',
+                'description' => "Old Mobile Purchase: {$i->model_name} (IMEI: " . ($i->imei ?? '—') . ")",
+                'in_worth' => (float)$i->purchase_price,
+                'out_worth' => 0,
+                'unrealized_in' => 0,
+                'unrealized_out' => 0,
+                'type' => 'UNREALIZED',
+                'entry_type' => 'UNREALIZED',
+                'created_at' => $i->created_at
+            ]);
+        });
 
         // Compute running totals directly from ledger items for accuracy
         $totalIn  = $ledgerItems->sum('in_worth');

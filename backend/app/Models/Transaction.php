@@ -11,7 +11,7 @@ use App\Traits\PostsToLedger;
 
 class Transaction extends Model
 {
-    use PostsToLedger;
+    use PostsToLedger, SyncsBalances;
     use SoftDeletes;
 
     protected function getLedgerData(): ?array

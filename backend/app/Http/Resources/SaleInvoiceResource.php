@@ -38,14 +38,20 @@ class SaleInvoiceResource extends JsonResource
             'round_off' => $this->round_off,
             'grand_total' => $this->grand_total,
             'total_paid' => $this->total_paid,
+            'exchange_paid' => $this->exchange_paid,
             'payment_status' => $this->payment_status,
             'payment_method' => $this->payment_method,
-            'bill_type'     => $this->bill_type,
-            'is_cancelled'  => $this->is_cancelled,
-            'notes'         => $this->notes,
-            'sold_by_id'    => $this->sold_by_id,
-            'items'         => SaleItemResource::collection($this->whenLoaded('items'))->resolve(),
-            'gift_items'    => $this->whenLoaded('giftItems'),
+            'bill_type'              => $this->bill_type,
+            'is_cancelled'           => $this->is_cancelled,
+            'notes'                  => $this->notes,
+            'sold_by_id'             => $this->sold_by_id,
+            // Finance / EMI fields — required for correct balance display on frontend
+            'financer_id'            => $this->financer_id,
+            'down_payment'           => $this->down_payment,
+            'finance_amount'         => $this->finance_amount,
+            'finance_payment_status' => $this->finance_payment_status,
+            'items'                  => SaleItemResource::collection($this->whenLoaded('items'))->resolve(),
+            'gift_items'             => $this->whenLoaded('giftItems'),
         ];
     }
 }

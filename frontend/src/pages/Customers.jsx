@@ -8,7 +8,7 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name:'', phone:'', email:'', address:'', voucher_code:'', events: [] });
+  const [form, setForm] = useState({ name:'', phone:'', email:'', address:'', voucher_code:'', category: 'REGULAR', opening_balance: 0, balance_type: 'RECEIVABLE', gst_no: '', events: [] });
   const [editId, setEditId] = useState(null);
   const navigate = useNavigate();
 
@@ -24,7 +24,7 @@ export default function Customers() {
     try {
       if (editId) { await api.put(`/customers/${editId}`, form); toast.success('Updated'); }
       else { await api.post('/customers', form); toast.success('Customer added'); }
-      setShowForm(false); setEditId(null); setForm({ name:'', phone:'', email:'', address:'', voucher_code:'', events: [] }); load();
+      setShowForm(false); setEditId(null); setForm({ name:'', phone:'', email:'', address:'', voucher_code:'', category: 'REGULAR', opening_balance: 0, balance_type: 'RECEIVABLE', gst_no: '', events: [] }); load();
     } catch(e) { toast.error(e.response?.data?.message || 'Error'); }
   };
 
@@ -42,7 +42,7 @@ export default function Customers() {
     <div>
       <div className="page-header">
         <h2>👥 Customers</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(true); setEditId(null); setForm({ name:'', phone:'', email:'', address:'', voucher_code:'', category:'REGULAR', events: [] }); }}>+ Add Customer</button>
+        <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(true); setEditId(null); setForm({ name:'', phone:'', email:'', address:'', voucher_code:'', category:'REGULAR', opening_balance: 0, balance_type: 'RECEIVABLE', gst_no: '', events: [] }); }}>+ Add Customer</button>
       </div>
 
       {showForm && (
@@ -84,6 +84,20 @@ export default function Customers() {
                       />
                     </div>
 
+                    {/* Customer Type */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold text-dark mb-1">Customer Type <span className="text-danger">*</span></label>
+                      <select 
+                        className="form-select fw-semibold" 
+                        value={form.category || 'REGULAR'} 
+                        onChange={e => setForm({...form, category: e.target.value})}
+                        style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
+                      >
+                        <option value="REGULAR">NORMAL CUSTOMER</option>
+                        <option value="SHOP">SHOP CUSTOMER</option>
+                      </select>
+                    </div>
+
                     {/* Phone Number */}
                     <div className="col-md-6">
                       <label className="form-label small fw-bold text-dark mb-1">Phone Number <span className="text-danger">*</span></label>
@@ -96,6 +110,46 @@ export default function Customers() {
                         onChange={e => setForm({...form, phone: e.target.value})} 
                         style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
                       />
+                    </div>
+
+                    {/* GST Number */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold text-dark mb-1">GST Number</label>
+                      <input 
+                        type="text" 
+                        className="form-control fw-semibold" 
+                        placeholder="GST Number" 
+                        value={form.gst_no || ''} 
+                        onChange={e => setForm({...form, gst_no: e.target.value.toUpperCase()})} 
+                        style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
+                      />
+                    </div>
+
+                    {/* Opening Balance */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold text-dark mb-1">Opening Balance</label>
+                      <input 
+                        type="number" 
+                        className="form-control fw-semibold" 
+                        placeholder="Opening Balance" 
+                        value={form.opening_balance} 
+                        onChange={e => setForm({...form, opening_balance: e.target.value})} 
+                        style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
+                      />
+                    </div>
+
+                    {/* Balance Type */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold text-dark mb-1">Balance Type</label>
+                      <select 
+                        className="form-select fw-semibold" 
+                        value={form.balance_type} 
+                        onChange={e => setForm({...form, balance_type: e.target.value})}
+                        style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
+                      >
+                        <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
+                        <option value="PAYABLE">I OWE THEM (Payable)</option>
+                      </select>
                     </div>
 
                     {/* Email */}
@@ -122,20 +176,6 @@ export default function Customers() {
                         onChange={e => setForm({...form, voucher_code: e.target.value.toUpperCase()})} 
                         style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
                       />
-                    </div>
-
-                    {/* Customer Type */}
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold text-dark mb-1">Customer Type <span className="text-danger">*</span></label>
-                      <select 
-                        className="form-select fw-semibold" 
-                        value={form.category || 'REGULAR'} 
-                        onChange={e => setForm({...form, category: e.target.value})}
-                        style={{ border: '1px solid #ced4da', borderRadius: '6px', padding: '0.6rem 0.75rem' }}
-                      >
-                        <option value="REGULAR">NORMAL CUSTOMER</option>
-                        <option value="SHOP">SHOP CUSTOMER</option>
-                      </select>
                     </div>
 
                     {/* Address */}
@@ -312,7 +352,7 @@ export default function Customers() {
                   <td>{c.voucher_code ? <code className="text-primary">{c.voucher_code}</code> : '—'}</td>
                   <td>
                     <button className="btn btn-xs btn-outline-info me-1" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => navigate(`/customer/profile/${c.id}`)}>History</button>
-                    <button className="btn btn-xs btn-outline-primary me-1" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => { setEditId(c.id); setForm({ ...c, events: c.events || [], category: c.category || 'REGULAR' }); setShowForm(true); }}>Edit</button>
+                    <button className="btn btn-xs btn-outline-primary me-1" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => { setEditId(c.id); setForm({ ...c, events: c.events || [], category: c.category || 'REGULAR', opening_balance: c.entity?.opening_balance || 0, balance_type: c.entity?.balance_type || 'RECEIVABLE', gst_no: c.gst_no || '' }); setShowForm(true); }}>Edit</button>
                     <button className="btn btn-xs btn-outline-danger" style={{ fontSize:'0.75rem', padding:'2px 8px' }} onClick={() => handleDelete(c.id)}>Delete</button>
                   </td>
                 </tr>

@@ -47,6 +47,17 @@ export default function Sales() {
     } catch (e) { toast.error('Error cancelling sale'); }
   };
 
+  const handleReceiveFinance = async (id) => {
+    if (!window.confirm('Mark this finance payment as RECEIVED?')) return;
+    try {
+      await api.post(`/sale-invoices/${id}/receive-finance`);
+      toast.success('Finance payment marked as received');
+      loadInvoices();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to update finance status');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('PERMANENTLY DELETE this invoice? Stock will be restored.')) return;
     try {
@@ -157,12 +168,18 @@ export default function Sales() {
               ) : invoices.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
               ) : invoices.map(inv => {
-                const balance = parseFloat(inv.grand_total) - parseFloat(inv.total_paid);
+                // Mirror the backend updatePaymentStatus() logic:
+                // finance_amount counts as paid only when finance_payment_status === 'RECEIVED'
+                const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
+                const totalPaid = parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
+                const balance = Math.max(0, parseFloat(inv.grand_total) - totalPaid);
                 return (
                   <tr key={inv.id} className={inv.is_cancelled ? 'opacity-50 text-decoration-line-through' : ''}>
                     <td className="ps-4">
                         <div className="fw-bold text-primary">{inv.invoice_no}</div>
-                        <span className={`badge x-small ${inv.bill_type === 'pakka' ? 'bg-success' : 'bg-warning text-dark'}`}>{inv.bill_type}</span>
+                        <div className="d-flex flex-wrap gap-1 mt-1">
+                          <span className={`badge x-small ${inv.bill_type === 'pakka' ? 'bg-success' : 'bg-warning text-dark'}`}>{inv.bill_type}</span>
+                        </div>
                     </td>
                     <td>
                         <div className="fw-bold">{formatDate(inv.sale_date)}</div>
@@ -180,7 +197,31 @@ export default function Sales() {
                     </td>
                     <td className="text-end fw-bold text-success">₹{parseFloat(inv.total_paid).toLocaleString('en-IN')}</td>
                     <td className="text-end fw-bold text-danger">₹{balance.toLocaleString('en-IN')}</td>
-                    <td className="text-center">{inv.is_cancelled ? <span className="badge bg-secondary">CANCELLED</span> : getStatusBadge(inv.payment_status)}</td>
+                    <td className="text-center">
+                      {inv.is_cancelled ? (
+                        <span className="badge bg-secondary">CANCELLED</span>
+                      ) : (
+                        <div className="d-flex flex-column align-items-center gap-1">
+                          {getStatusBadge(inv.payment_status)}
+                          {parseFloat(inv.finance_amount || 0) > 0 && (
+                            inv.finance_payment_status === 'RECEIVED' ? (
+                              <span className="badge x-small bg-info text-white">
+                                EMI PAID: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')})
+                              </span>
+                            ) : (
+                              <span 
+                                className="badge x-small bg-danger text-white cursor-pointer" 
+                                style={{ cursor: 'pointer' }}
+                                title="Click to mark finance payment as received"
+                                onClick={() => handleReceiveFinance(inv.id)}
+                              >
+                                EMI PEND: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')}) ⏳
+                              </span>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="text-end pe-4">
                         <div className="d-flex justify-content-end gap-1">
                             {!inv.is_cancelled && (

@@ -63,22 +63,14 @@ class ProductController extends Controller
             $soldCounts = []; 
             foreach ($saleItems as $si) {
                 if ($si->imei) continue; 
-                $normName = strtoupper(trim($si->product->name));
-                $normRam  = strtoupper(trim($si->ram ?? '-'));
-                $normStor = strtoupper(trim($si->storage ?? '-'));
-                $normCol  = strtoupper(trim($si->color ?? '-'));
-                $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
+                $key = $this->generateGroupKey($si->product, $si->ram, $si->storage, $si->color);
                 $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
             }
 
             if ($request->group_by_config === 'true') {
                 $grouped = [];
                 foreach ($items as $item) {
-                    $normName = strtoupper(trim($item->product->name));
-                    $normRam  = strtoupper(trim($item->ram ?? '-'));
-                    $normStor = strtoupper(trim($item->storage ?? '-'));
-                    $normCol  = strtoupper(trim($item->color ?? '-'));
-                    $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
+                    $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
                     
                     $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
                     $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
@@ -127,7 +119,7 @@ class ProductController extends Controller
                         $grouped[$key]['selling_price'] = $item->selling_price;
                     }
                 }
-                return response()->json(array_values($grouped));
+                return response()->json($this->sortStockItems(array_values($grouped)));
             }
 
             $expanded = [];
@@ -162,11 +154,7 @@ class ProductController extends Controller
                 $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
                 $nonImeiQty = ($item->imei) ? 0 : $totalQty;
                 
-                $normName = strtoupper(trim($item->product->name));
-                $normRam  = strtoupper(trim($item->ram ?? '-'));
-                $normStor = strtoupper(trim($item->storage ?? '-'));
-                $normCol  = strtoupper(trim($item->color ?? '-'));
-                $key = $normName . '_' . $normRam . '_' . $normStor . '_' . $normCol;
+                $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
 
                 if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
                     $diff = min($nonImeiQty, $soldCounts[$key]);
@@ -198,7 +186,7 @@ class ProductController extends Controller
                     ];
                 }
             }
-            return response()->json($expanded);
+            return response()->json($this->sortStockItems($expanded));
         }
 
         $query = Product::with(['category', 'brand', 'inventory' => function($q) use ($shopId) {
@@ -422,5 +410,93 @@ class ProductController extends Controller
 
             return response()->json(['message' => 'Stock item updated successfully.']);
         });
+    }
+
+    private function generateGroupKey($product, $ram, $storage, $color)
+    {
+        $brandName = ($product && $product->brand) ? $product->brand->name : '';
+        $productName = $product ? $product->name : '';
+        
+        $fullName = $brandName . ' ' . $productName;
+        
+        // Normalize whitespace (replace non-breaking spaces, zero-width spaces, and collapse duplicate spaces)
+        $cleanName = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $fullName);
+        $cleanRam = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $ram ?? '-');
+        $cleanStorage = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $storage ?? '-');
+        $cleanColor = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $color ?? '-');
+        
+        return sprintf(
+            '%s_%s_%s_%s',
+            strtoupper(trim($cleanName)),
+            strtoupper(trim($cleanRam)),
+            strtoupper(trim($cleanStorage)),
+            strtoupper(trim($cleanColor))
+        );
+    }
+
+    private function sortStockItems(array $items)
+    {
+        usort($items, function($a, $b) {
+            // 1. Sort by Product Name (brand + name) ascending
+            $brandA = '';
+            if (isset($a['brand'])) {
+                $brandA = is_object($a['brand']) ? ($a['brand']->name ?? '') : ($a['brand']['name'] ?? '');
+            }
+            $brandB = '';
+            if (isset($b['brand'])) {
+                $brandB = is_object($b['brand']) ? ($b['brand']->name ?? '') : ($b['brand']['name'] ?? '');
+            }
+            
+            $nameA = strtoupper(trim($brandA . ' ' . $a['name']));
+            $nameB = strtoupper(trim($brandB . ' ' . $b['name']));
+            
+            $cmp = strcmp($nameA, $nameB);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            
+            // 2. Sort by RAM descending (highest RAM first)
+            $ramA = isset($a['attributes']['ram']) ? $a['attributes']['ram'] : '';
+            $ramB = isset($b['attributes']['ram']) ? $b['attributes']['ram'] : '';
+            
+            $parseRam = function($val) {
+                if (!$val) return 0;
+                return (int)preg_replace('/[^0-9]/', '', $val);
+            };
+            
+            $numRamA = $parseRam($ramA);
+            $numRamB = $parseRam($ramB);
+            
+            if ($numRamA !== $numRamB) {
+                return $numRamB <=> $numRamA;
+            }
+            
+            // 3. Sort by Storage descending (highest Storage first)
+            $storA = isset($a['attributes']['storage']) ? $a['attributes']['storage'] : '';
+            $storB = isset($b['attributes']['storage']) ? $b['attributes']['storage'] : '';
+            
+            $parseStor = function($val) {
+                if (!$val) return 0;
+                $num = (int)preg_replace('/[^0-9]/', '', $val);
+                if (stripos($val, 'TB') !== false) {
+                    $num *= 1024;
+                }
+                return $num;
+            };
+            
+            $numStorA = $parseStor($storA);
+            $numStorB = $parseStor($storB);
+            
+            if ($numStorA !== $numStorB) {
+                return $numStorB <=> $numStorA;
+            }
+            
+            // 4. Sort by Color ascending (alphabetical)
+            $colorA = isset($a['attributes']['color']) ? strtoupper(trim($a['attributes']['color'])) : '';
+            $colorB = isset($b['attributes']['color']) ? strtoupper(trim($b['attributes']['color'])) : '';
+            return strcmp($colorA, $colorB);
+        });
+        
+        return $items;
     }
 }

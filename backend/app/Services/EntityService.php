@@ -73,20 +73,61 @@ class EntityService
             ->groupBy('forwarded_to')
             ->get()->keyBy('entity_name') : collect();
 
-        // 4. Sales Charges
+        // 4. Sales Charges (Customer portion: grand_total - finance_amount)
         $salesCharges = !empty($entityIds) ? DB::table('sale_invoices')
+            ->leftJoin('entities', function($join) {
+                $join->on('entities.relation_id', '=', 'sale_invoices.customer_id')
+                     ->where('entities.relation_type', '=', 'App\Models\Customer');
+            })
+            ->whereNull('sale_invoices.deleted_at')
+            ->where('sale_invoices.is_cancelled', false)
+            ->where(function($q) use ($entityIds) {
+                $q->whereIn('sale_invoices.accounting_entity_id', $entityIds)
+                  ->orWhereIn('entities.id', $entityIds);
+            })
+            ->select(
+                DB::raw('COALESCE(sale_invoices.accounting_entity_id, entities.id) as entity_id'),
+                DB::raw('SUM(sale_invoices.grand_total - COALESCE(sale_invoices.finance_amount, 0)) as total_charge')
+            )
+            ->groupBy('entity_id')
+            ->get()->keyBy('entity_id') : collect();
+
+        // 4b. Finance Charges (Financer portion: finance_amount)
+        $financeCharges = !empty($entityIds) ? DB::table('sale_invoices')
             ->whereNull('deleted_at')
-            ->whereIn('accounting_entity_id', $entityIds)
-            ->select('accounting_entity_id as entity_id', DB::raw('SUM(grand_total) as total_charge'))
-            ->groupBy('accounting_entity_id')
+            ->where('sale_invoices.is_cancelled', false)
+            ->whereIn('financer_id', $entityIds)
+            ->select('financer_id as entity_id', DB::raw('SUM(finance_amount) as total_charge'))
+            ->groupBy('financer_id')
             ->get()->keyBy('entity_id') : collect();
 
         // 5. Purchase Charges
         $purchaseCharges = !empty($entityIds) ? DB::table('purchase_invoices')
-            ->whereNull('deleted_at')
-            ->whereIn('accounting_entity_id', $entityIds)
-            ->select('accounting_entity_id as entity_id', DB::raw('SUM(grand_total) as total_charge'))
-            ->groupBy('accounting_entity_id')
+            ->leftJoin('entities', function($join) {
+                $join->on('entities.relation_id', '=', 'purchase_invoices.supplier_id')
+                     ->where('entities.relation_type', '=', 'App\Models\Supplier');
+            })
+            ->whereNull('purchase_invoices.deleted_at')
+            ->where(function($q) use ($entityIds) {
+                $q->whereIn('purchase_invoices.accounting_entity_id', $entityIds)
+                  ->orWhereIn('entities.id', $entityIds);
+            })
+            ->select(
+                DB::raw('COALESCE(purchase_invoices.accounting_entity_id, entities.id) as entity_id'),
+                DB::raw('SUM(purchase_invoices.grand_total) as total_charge')
+            )
+            ->groupBy('entity_id')
+            ->get()->keyBy('entity_id') : collect();
+        // 5b. Old Mobile Purchase Charges (only where is_exchange is false/0)
+        $oldMobileCharges = !empty($entityIds) ? DB::table('old_mobile_purchases')
+            ->join('entities', function($join) {
+                $join->on('entities.relation_id', '=', 'old_mobile_purchases.customer_id')
+                     ->where('entities.relation_type', '=', 'App\Models\Customer');
+            })
+            ->where('old_mobile_purchases.is_exchange', false)
+            ->whereIn('entities.id', $entityIds)
+            ->select('entities.id as entity_id', DB::raw('SUM(old_mobile_purchases.purchase_price) as total_charge'))
+            ->groupBy('entities.id')
             ->get()->keyBy('entity_id') : collect();
 
         // 6. Loan Charges
@@ -104,7 +145,7 @@ class EntityService
             ->groupBy('retailers.name')
             ->get()->keyBy('entity_name') : collect();
 
-        return $entities->map(function ($entity) use ($realized, $repairCharges, $forwardingDues, $salesCharges, $purchaseCharges, $loanCharges, $airtelCharges) {
+        return $entities->map(function ($entity) use ($realized, $repairCharges, $forwardingDues, $salesCharges, $purchaseCharges, $oldMobileCharges, $loanCharges, $airtelCharges, $financeCharges) {
             $id = $entity->id;
             $name = $entity->name;
 
@@ -116,13 +157,16 @@ class EntityService
             $outWorth = $matchedRealized->sum('total_out');
 
             $repCharge = $repairCharges->filter(fn($r) => ($id && $r->entity_id == $id) || ($name && $r->customer_name == $name))->sum('total_charge');
+            $oldMobCharge = $oldMobileCharges[$id]->total_charge ?? 0;
             
             $unrealized = $repCharge
                         - ($forwardingDues[$name]->total_due ?? 0)
                         + ($salesCharges[$id]->total_charge ?? 0)
                         - ($purchaseCharges[$id]->total_charge ?? 0)
+                        - $oldMobCharge
                         + ($loanCharges[$id]->total_charge ?? 0)
-                        + ($airtelCharges[$name]->total_drop ?? 0);
+                        + ($airtelCharges[$name]->total_drop ?? 0)
+                        + ($financeCharges[$id]->total_charge ?? 0);
 
             $entity->setAttribute('in_worth', (float)$inWorth);
             $entity->setAttribute('out_worth', (float)$outWorth);

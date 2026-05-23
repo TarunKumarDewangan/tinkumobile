@@ -19,15 +19,26 @@ const NAV = [
   },
   
   { 
+    section: 'Old/2nd Mobile', 
+    dropdown: true,
+    children: [
+        { to: '/old-mobiles',        icon: '🛒', label: 'Purchase',   perm: 'view_old_mobile_purchases', end: true },
+        { to: '/old-mobiles/stocks', icon: '📦', label: '2nd Stocks', perm: 'view_old_mobile_purchases' },
+        { to: '/old-mobiles/sales',  icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+    ]
+  },
+  
+  /*
+  { 
     section: 'Other Inventory', 
     dropdown: true,
     children: [
         { to: '/products',    icon: '📱', label: 'Products',   perm: 'view_products' },
         { to: '/sim-cards',   icon: '📶', label: 'SIM Cards',  perm: 'view_sims' },
-        { to: '/old-mobiles', icon: '📲', label: 'Old Mobiles',perm: 'view_old_mobile_purchases' },
         { to: '/gifts',       icon: '🎁', label: 'Gifts',      perm: 'view_gifts' },
     ]
   },
+  */
 
   { 
     section: 'Services', 
@@ -89,7 +100,6 @@ const BOTTOM_TABS = [
   { to: '/',         icon: '📊', label: 'Home',     end: true },
   { to: '/sales',    icon: '🧾', label: 'Sales',    perm: 'view_sales' },
   { to: '/airtel/quick-recovery', icon: '⚡', label: 'Recovery', perm: 'view_airtel_recovery' },
-  { to: '/products', icon: '📱', label: 'Products', perm: 'view_products' },
   { to: '/repairs',  icon: '🔧', label: 'Repairs',  perm: 'view_repairs' },
 ];
 
@@ -97,7 +107,7 @@ export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
+  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
   
   const toggleSection = (section) => {
     setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
@@ -186,6 +196,7 @@ export default function Layout() {
                             <div className="d-flex align-items-center gap-2">
                                 <span style={{fontSize:'0.9rem'}}>
                                     {item.section === 'New Mobile' ? '📦' : 
+                                     item.section === 'Old/2nd Mobile' ? '📲' :
                                      item.section === 'Other Inventory' ? '🗃️' :
                                      item.section === 'Services' ? '🛠️' :
                                      item.section === 'Business' ? '💼' :

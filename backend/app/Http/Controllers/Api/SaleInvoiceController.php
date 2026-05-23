@@ -28,7 +28,7 @@ class SaleInvoiceController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = SaleInvoice::with('customer', 'user', 'items.product');
+        $query = SaleInvoice::with('customer', 'user', 'items.product', 'financer');
 
         if (! $user->hasFullAccess()) {
             $query->where('shop_id', $user->shop_id);
@@ -69,6 +69,7 @@ class SaleInvoiceController extends Controller
             'payment_method'   => 'nullable|string',
             'discount'         => 'nullable|numeric|min:0',
             'total_paid'       => 'nullable|numeric|min:0',
+            'exchange_paid'    => 'nullable|numeric|min:0',
             'cgst_rate'        => 'nullable|numeric|min:0',
             'sgst_rate'        => 'nullable|numeric|min:0',
             'calculate_gst'    => 'nullable|boolean',
@@ -91,6 +92,11 @@ class SaleInvoiceController extends Controller
             'gift_items'          => 'nullable|array',
             'gift_items.*.gift_product_id' => 'exists:gift_products,id',
             'gift_items.*.quantity'        => 'integer|min:1',
+            // Finance / EMI fields
+            'financer_id'              => 'nullable|exists:entities,id',
+            'down_payment'             => 'nullable|numeric|min:0',
+            'finance_amount'           => 'nullable|numeric|min:0',
+            'finance_payment_status'   => 'nullable|in:RECEIVED,PENDING',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -170,20 +176,53 @@ class SaleInvoiceController extends Controller
                 'rounding_mode'  => $roundingMode,
                 'round_off'      => $roundOff,
                 'total_paid'     => $data['total_paid'] ?? 0,
+                'exchange_paid'  => $data['exchange_paid'] ?? 0,
                 'payment_method' => $data['payment_method'] ?? 'cash',
                 'bill_type'      => $data['bill_type'] ?? 'kaccha',
                 'notes'          => $data['notes'] ?? null,
+                // Finance fields
+                'financer_id'           => $data['financer_id'] ?? null,
+                'down_payment'          => $data['down_payment'] ?? 0,
+                'finance_amount'        => $data['finance_amount'] ?? 0,
+                'finance_payment_status' => $data['finance_payment_status'] ?? null,
             ]);
 
             $invoice->updatePaymentStatus();
 
-            // Record Income Transaction using Service
-            if ($invoice->total_paid > 0) {
+            // Record Income Transaction using Service (Only for the cash portion, not exchange credit)
+            $cashPaid = (float) ($invoice->total_paid);
+            if ($cashPaid > 0) {
                 $this->transactionService->recordForModel($invoice, [
                     'type'        => 'IN',
                     'category'    => 'SALE_INCOME',
+                    'amount'      => $cashPaid,
                     'description' => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
                 ]);
+            }
+
+            // Record Finance Company transaction if applicable
+            $financeAmt = (float) ($data['finance_amount'] ?? 0);
+            $financerId = $data['financer_id'] ?? null;
+            if ($financeAmt > 0 && $financerId) {
+                $financer = \App\Models\Entity::find($financerId);
+                $financePayStatus = $data['finance_payment_status'] ?? 'RECEIVED';
+                if ($financer) {
+                    if ($financePayStatus === 'RECEIVED') {
+                        // Finance company paid us — record transaction linked to their entity
+                        // so it creates a Credit (Cr) entry in their ledger.
+                        $this->transactionService->recordForModel($invoice, [
+                            'type'                 => 'IN',
+                            'category'             => 'FINANCE_INCOME',
+                            'amount'               => $financeAmt,
+                            'payment_mode'         => 'FINANCE',
+                            'accounting_entity_id' => $financer->id,
+                            'entity_name'          => $financer->name,
+                            'description'          => "Finance payment received from {$financer->name} for Invoice #{$invoice->invoice_no}",
+                        ]);
+                    }
+                    // For PENDING: the SaleInvoice model's getLedgerData() automatically posts 
+                    // the FINANCE_PENDING Debit (Dr) to the financer's ledger. No manual code needed!
+                }
             }
 
             $mobileCatId = Category::where('slug', 'mobile-new')->value('id');
@@ -326,6 +365,11 @@ class SaleInvoiceController extends Controller
             'items.*.ram'         => 'nullable|string',
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
+            // Finance/EMI fields
+            'financer_id'            => 'nullable|exists:entities,id',
+            'down_payment'           => 'nullable|numeric|min:0',
+            'finance_amount'         => 'nullable|numeric|min:0',
+            'finance_payment_status' => 'nullable|in:PENDING,RECEIVED',
         ]);
 
         DB::beginTransaction();
@@ -384,6 +428,8 @@ class SaleInvoiceController extends Controller
                 $roundOff = $grandTotal - $rawGrandTotal;
             }
 
+            $oldFinancerId = $saleInvoice->financer_id;
+
             $saleInvoice->update([
                 'customer_id'    => $data['customer_id'],
                 'sold_by_id'     => $data['sold_by_id'] ?? $saleInvoice->sold_by_id,
@@ -402,6 +448,11 @@ class SaleInvoiceController extends Controller
                 'round_off'      => $roundOff,
                 'payment_method' => $data['payment_method'] ?? $saleInvoice->payment_method,
                 'notes'          => $data['notes'] ?? $saleInvoice->notes,
+                // Save finance/EMI fields
+                'financer_id'            => $data['financer_id'] ?? null,
+                'down_payment'           => $data['down_payment'] ?? 0,
+                'finance_amount'         => $data['finance_amount'] ?? 0,
+                'finance_payment_status' => $data['finance_payment_status'] ?? 'RECEIVED',
             ]);
 
             foreach ($data['items'] as $item) {
@@ -419,8 +470,74 @@ class SaleInvoiceController extends Controller
                 Inventory::removeStock($saleInvoice->shop_id, $item['product_id'], $item['quantity']);
             }
 
+            // Delete old finance company transactions individually so Eloquent delete events fire
+            $oldFinanceTransactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                ->where('entity_id', $saleInvoice->id)
+                ->where('category', 'FINANCE_INCOME')
+                ->get();
+            foreach ($oldFinanceTransactions as $tx) {
+                $tx->delete();
+            }
+
+            // Delete old cash income transactions individually so events fire
+            $oldCashTransactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                ->where('entity_id', $saleInvoice->id)
+                ->where('category', 'SALE_INCOME')
+                ->get();
+            foreach ($oldCashTransactions as $tx) {
+                $tx->delete();
+            }
+
+            \App\Models\Ledger::where('voucher_type', 'FINANCE_PENDING')
+                ->where('voucher_id', $saleInvoice->id)
+                ->delete();
+
+            // Record updated cash income transaction if total_paid > 0
+            $cashPaid = (float) ($saleInvoice->total_paid);
+            if ($cashPaid > 0) {
+                $this->transactionService->recordForModel($saleInvoice, [
+                    'type'        => 'IN',
+                    'category'    => 'SALE_INCOME',
+                    'amount'      => $cashPaid,
+                    'description' => "Sale income recorded for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})",
+                ]);
+            }
+
+            $financeAmt = (float) ($data['finance_amount'] ?? 0);
+            $financerId = $data['financer_id'] ?? null;
+            if ($financeAmt > 0 && $financerId) {
+                $financer = \App\Models\Entity::find($financerId);
+                $financePayStatus = $data['finance_payment_status'] ?? 'RECEIVED';
+                if ($financer) {
+                    if ($financePayStatus === 'RECEIVED') {
+                        $this->transactionService->recordForModel($saleInvoice, [
+                            'type'                 => 'IN',
+                            'category'             => 'FINANCE_INCOME',
+                            'amount'               => $financeAmt,
+                            'payment_mode'         => 'FINANCE',
+                            'accounting_entity_id' => $financer->id,
+                            'entity_name'          => $financer->name,
+                            'description'          => "Finance payment received from {$financer->name} for Invoice #{$saleInvoice->invoice_no}",
+                        ]);
+                    }
+                    // For PENDING: the SaleInvoice model's getLedgerData() automatically posts 
+                    // the FINANCE_PENDING Debit (Dr) to the financer's ledger. No manual code needed!
+                }
+            }
+
             $saleInvoice->updatePaymentStatus();
             DB::commit();
+
+            // Sync financer balances
+            if ($financerId) {
+                $f = \App\Models\Entity::find($financerId);
+                if ($f) app(\App\Services\EntityService::class)->syncBalance($f);
+            }
+            if ($oldFinancerId && $oldFinancerId != $financerId) {
+                $oldF = \App\Models\Entity::find($oldFinancerId);
+                if ($oldF) app(\App\Services\EntityService::class)->syncBalance($oldF);
+            }
+
             return response()->json($saleInvoice->load('items.product', 'customer'));
         } catch (\Exception $e) {
             DB::rollBack();
@@ -485,6 +602,14 @@ class SaleInvoiceController extends Controller
                     Inventory::addStock($saleInvoice->shop_id, $item->product_id, $item->quantity);
                 }
                 $saleInvoice->update(['is_cancelled' => true]);
+
+                // Delete associated transactions in a loop so Eloquent events fire
+                $transactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                    ->where('entity_id', $saleInvoice->id)
+                    ->get();
+                foreach ($transactions as $tx) {
+                    $tx->delete();
+                }
             }
             DB::commit();
             return response()->json(['message' => 'Sale cancelled and stock restored']);
@@ -509,6 +634,15 @@ class SaleInvoiceController extends Controller
                 }
             }
             $saleInvoice->delete();
+
+            // Delete associated transactions in a loop so Eloquent events fire
+            $transactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                ->where('entity_id', $saleInvoice->id)
+                ->get();
+            foreach ($transactions as $tx) {
+                $tx->delete();
+            }
+
             DB::commit();
             return response()->json(['message' => 'Sale deleted and stock restored']);
         } catch (\Exception $e) {
@@ -570,6 +704,58 @@ class SaleInvoiceController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function receiveFinancePayment(Request $request, SaleInvoice $saleInvoice)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($saleInvoice->finance_payment_status === 'RECEIVED') {
+            return response()->json(['message' => 'Finance payment already marked as received.'], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $saleInvoice->finance_payment_status = 'RECEIVED';
+            $saleInvoice->save(); // Save model so model events trigger posts to ledger
+
+            // Record transaction for receipt from finance company linked to their entity
+            // so it creates a Credit (Cr) entry in their ledger.
+            if ($saleInvoice->finance_amount > 0 && $saleInvoice->financer_id) {
+                $financer = \App\Models\Entity::find($saleInvoice->financer_id);
+                if ($financer) {
+                    $this->transactionService->recordForModel($saleInvoice, [
+                        'type'                 => 'IN',
+                        'category'             => 'FINANCE_INCOME',
+                        'amount'               => $saleInvoice->finance_amount,
+                        'payment_mode'         => 'FINANCE',
+                        'accounting_entity_id' => $financer->id,
+                        'entity_name'          => $financer->name,
+                        'description'          => "Finance payment received from {$financer->name} for Invoice #{$saleInvoice->invoice_no}",
+                    ]);
+                }
+            }
+
+            $saleInvoice->updatePaymentStatus();
+            DB::commit();
+
+            // Sync financer balance
+            if ($saleInvoice->financer_id) {
+                $f = \App\Models\Entity::find($saleInvoice->financer_id);
+                if ($f) app(\App\Services\EntityService::class)->syncBalance($f);
+            }
+
+            return response()->json([
+                'message' => 'Finance payment marked as RECEIVED successfully.',
+                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product', 'shop'))
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to update: ' . $e->getMessage()], 500);
         }
     }
 }

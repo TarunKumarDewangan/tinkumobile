@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 class CustomerController extends Controller
 {
     public function index(Request $request) {
-        $query = Customer::with('events');
+        $query = Customer::with(['events', 'entity']);
         if ($request->search) $query->where('name','like',"%{$request->search}%")->orWhere('phone','like',"%{$request->search}%");
         return response()->json($query->latest()->get());
     }
@@ -22,6 +22,8 @@ class CustomerController extends Controller
             'address'=>'nullable|string',
             'voucher_code'=>'nullable|string',
             'category'=>'nullable|string|in:REGULAR,SHOP',
+            'opening_balance'=>'nullable|numeric',
+            'balance_type'=>'nullable|string|in:RECEIVABLE,PAYABLE',
             'events'=>'nullable|array',
             'events.*.type'=>'required|string',
             'events.*.name'=>'nullable|string',
@@ -34,9 +36,9 @@ class CustomerController extends Controller
                 $customer->events()->create($event);
             }
         }
-        return response()->json($customer->load('events'), 201);
+        return response()->json($customer->load(['events', 'entity']), 201);
     }
-    public function show(Customer $customer) { return response()->json($customer->load('events')); }
+    public function show(Customer $customer) { return response()->json($customer->load(['events', 'entity'])); }
     public function update(Request $request, Customer $customer) {
         $data = $request->validate([
             'name'=>'sometimes|string|max:150',
@@ -46,6 +48,8 @@ class CustomerController extends Controller
             'address'=>'nullable|string',
             'voucher_code'=>'nullable|string',
             'category'=>'nullable|string|in:REGULAR,SHOP',
+            'opening_balance'=>'nullable|numeric',
+            'balance_type'=>'nullable|string|in:RECEIVABLE,PAYABLE',
             'events'=>'nullable|array',
             'events.*.type'=>'required|string',
             'events.*.name'=>'nullable|string',
@@ -59,7 +63,7 @@ class CustomerController extends Controller
                 $customer->events()->create($event);
             }
         }
-        return response()->json($customer->load('events'));
+        return response()->json($customer->load(['events', 'entity']));
     }
     public function getHistory(Request $request, Customer $customer) {
         $customer->load([

@@ -17,32 +17,68 @@ class SaleInvoice extends Model
 
     protected function getLedgerData(): ?array
     {
+        if ($this->is_cancelled) return null;
+
         $customer = $this->customer;
         if (!$customer) return null;
         
         $entity = \App\Models\Entity::where('name', $customer->name)->first();
         if (!$entity) return null;
 
-        // Credit Sale = Debit the Customer (they owe us)
-        // If it was paid by cash immediately, a Transaction (Receipt) will offset it.
-        return [
-            'entity_id' => $entity->id,
-            'date' => $this->sale_date,
+        $entries = [];
+
+        // 1. Credit Sale = Debit the Customer for Grand Total (they owe us the full amount initially)
+        $entries[] = [
+            'entity_id'    => $entity->id,
+            'date'         => $this->sale_date,
             'voucher_type' => 'SALE',
-            'particulars' => 'Sale Invoice: #' . $this->invoice_no,
-            'debit' => $this->grand_total,
-            'credit' => 0,
-            'user_id' => $this->user_id,
-            'shop_id' => $this->shop_id,
+            'particulars'  => 'Sale Invoice: #' . $this->invoice_no,
+            'debit'        => $this->grand_total,
+            'credit'       => 0,
+            'user_id'      => $this->user_id,
+            'shop_id'      => $this->shop_id,
         ];
+
+        // If there is a finance portion, adjust the customer and finance company accounts
+        if ($this->finance_amount > 0 && $this->financer_id) {
+            $financer = \App\Models\Entity::find($this->financer_id);
+            $financerName = $financer ? $financer->name : 'Finance Company';
+
+            // 2. Credit the Customer for the Finance amount (offset customer's debt because financer takes it over)
+            $entries[] = [
+                'entity_id'    => $entity->id,
+                'date'         => $this->sale_date,
+                'voucher_type' => 'SALE_FINANCE',
+                'particulars'  => "Finance by {$financerName} for Invoice #{$this->invoice_no}",
+                'debit'        => 0,
+                'credit'       => $this->finance_amount,
+                'user_id'      => $this->user_id,
+                'shop_id'      => $this->shop_id,
+            ];
+
+            // 3. Debit the Finance Company for the Finance amount (Receivable from them)
+            $entries[] = [
+                'entity_id'    => $this->financer_id,
+                'date'         => $this->sale_date,
+                'voucher_type' => 'FINANCE_PENDING',
+                'particulars'  => "Finance Receivable from {$financerName} for Invoice #{$this->invoice_no}",
+                'debit'        => $this->finance_amount,
+                'credit'       => 0,
+                'user_id'      => $this->user_id,
+                'shop_id'      => $this->shop_id,
+            ];
+        }
+
+        return $entries;
     }
 
     protected $fillable = [
         'invoice_no', 'shop_id', 'customer_id', 'user_id', 'sold_by_id', 'sale_date',
-        'total_amount', 'discount', 'grand_total', 'total_paid', 'payment_status',
+        'total_amount', 'discount', 'grand_total', 'total_paid', 'exchange_paid', 'payment_status',
         'cgst_rate', 'sgst_rate', 'cgst_amount', 'sgst_amount', 'rounding_mode', 'round_off',
         'calculate_gst', 'cash_discount', 'is_cash_discount_on_bill',
-        'payment_method', 'bill_type', 'parent_bill_id', 'is_cancelled', 'notes', 'accounting_entity_id'
+        'payment_method', 'bill_type', 'parent_bill_id', 'is_cancelled', 'notes', 'accounting_entity_id',
+        'financer_id', 'down_payment', 'finance_amount', 'finance_payment_status',
     ];
 
     protected $casts = [
@@ -55,6 +91,7 @@ class SaleInvoice extends Model
         'calculate_gst' => 'boolean',
         'is_cash_discount_on_bill' => 'boolean',
         'total_paid'   => 'decimal:2',
+        'exchange_paid'=> 'decimal:2',
         'grand_total'  => 'decimal:2',
         'round_off'    => 'decimal:2',
     ];
@@ -71,7 +108,11 @@ class SaleInvoice extends Model
 
     public function updatePaymentStatus()
     {
-        $paid = (float) $this->total_paid;
+        $paid = (float) $this->total_paid + (float) $this->exchange_paid;
+        // Finance amount counts as "paid" if the status is RECEIVED; if PENDING it's still outstanding from financer
+        if ($this->finance_payment_status === 'RECEIVED') {
+            $paid += (float) $this->finance_amount;
+        }
         $total = (float) $this->grand_total;
 
         if ($paid >= $total) {
@@ -92,4 +133,6 @@ class SaleInvoice extends Model
     public function giftItems(): HasMany { return $this->hasMany(SaleGiftItem::class); }
     public function parentBill(): BelongsTo { return $this->belongsTo(SaleInvoice::class, 'parent_bill_id'); }
     public function childBills(): HasMany { return $this->hasMany(SaleInvoice::class, 'parent_bill_id'); }
+    public function financer(): BelongsTo { return $this->belongsTo(\App\Models\Entity::class, 'financer_id'); }
 }
+

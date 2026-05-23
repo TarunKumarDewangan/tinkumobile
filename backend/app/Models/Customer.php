@@ -14,6 +14,7 @@ class Customer extends Model
     protected $fillable = ['name', 'phone', 'email', 'gst_no', 'address', 'voucher_code', 'category'];
 
     public function events(): HasMany { return $this->hasMany(CustomerEvent::class); }
+    public function entity() { return $this->morphOne(Entity::class, 'relation'); }
     public function rechargeS(): HasMany { return $this->hasMany(RechargeSale::class); }
     public function simCards(): HasMany { return $this->hasMany(SimCard::class, 'sold_to'); }
     public function oldMobilePurchases(): HasMany { return $this->hasMany(OldMobilePurchase::class); }

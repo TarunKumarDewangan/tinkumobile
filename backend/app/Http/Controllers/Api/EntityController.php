@@ -90,6 +90,7 @@ class EntityController extends Controller
                     'email' => $data['email'],
                     'address' => $data['description'],
                     'category' => 'REGULAR',
+                    'gst_no' => $data['gst_number'] ?? null,
                     'voucher_code' => $data['voucher_code'] ?? null
                 ]);
             } elseif ($data['type'] === 'SHOP_CUSTOMER') {
@@ -99,6 +100,7 @@ class EntityController extends Controller
                     'email' => $data['email'],
                     'address' => $data['description'],
                     'category' => 'SHOP',
+                    'gst_no' => $data['gst_number'] ?? null,
                     'voucher_code' => $data['voucher_code'] ?? null
                 ]);
             } elseif ($data['type'] === 'SUPPLIER') {
@@ -181,6 +183,7 @@ class EntityController extends Controller
                     $relationData['category'] = $entity->type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR';
                     $relationData['email'] = $entity->email;
                     $relationData['address'] = $entity->description;
+                    $relationData['gst_no'] = $entity->gst_number;
                     $relationData['voucher_code'] = $data['voucher_code'] ?? null;
                     
                     $relation->update($relationData);
