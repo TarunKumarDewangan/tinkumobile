@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import debounce from 'lodash/debounce';
+import { Modal, Button } from 'react-bootstrap';
 import api from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -35,6 +36,9 @@ export default function OldMobilePurchaseForm() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerInputText, setCustomerInputText] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [showCustModal, setShowCustModal] = useState(false);
+  const [newCust, setNewCust] = useState({ name: '', phone: '', email: '', gst_no: '', address: '', voucher_code: '', category: 'REGULAR', opening_balance: 0, balance_type: 'RECEIVABLE', events: [] });
 
   // Load masters on mount
   useEffect(() => {
@@ -95,6 +99,26 @@ export default function OldMobilePurchaseForm() {
     }));
     setCustomerInputText('');
     setCustomerSearch('');
+  };
+
+  const handleAddCustomer = async (e) => {
+      e.preventDefault();
+      try {
+          const { data } = await api.post('/customers', newCust);
+          setCustomers([...customers, data]);
+          handleSelectCustomer(data);
+          setShowCustModal(false);
+          setNewCust({ name: '', phone: '', email: '', gst_no: '', address: '', voucher_code: '', category: 'REGULAR', opening_balance: 0, balance_type: 'RECEIVABLE', events: [] });
+          toast.success('✅ Customer added');
+      } catch (e) { toast.error(e.response?.data?.message || 'Error adding customer'); }
+  };
+
+  const addCustEvent = () => setNewCust({ ...newCust, events: [...newCust.events, { type: 'dob', name: '', date: '' }] });
+  const removeCustEvent = (i) => setNewCust({ ...newCust, events: newCust.events.filter((_, idx) => idx !== i) });
+  const updateCustEvent = (i, field, val) => {
+    const evs = [...newCust.events];
+    evs[i][field] = val;
+    setNewCust({ ...newCust, events: evs });
   };
 
   const handleSubmit = async (e) => {
@@ -199,9 +223,10 @@ export default function OldMobilePurchaseForm() {
               <div className="col-12">
                 <label className="form-label text-muted small fw-bold">SEARCH EXISTING CUSTOMER</label>
                 <div className="input-group">
+                  <span className="input-group-text bg-white border-secondary-subtle border-end-0"><i className="bi bi-search"></i></span>
                   <input 
                     type="text" 
-                    className="form-control bg-white text-dark border-secondary-subtle text-uppercase" 
+                    className="form-control bg-white text-dark border-secondary-subtle border-start-0 text-uppercase" 
                     placeholder="Search by Name or Phone..." 
                     value={customerInputText}
                     onChange={e => { 
@@ -210,10 +235,12 @@ export default function OldMobilePurchaseForm() {
                       if (form.customer_id) handleClearCustomer();
                     }}
                   />
-                  {form.customer_id && (
-                    <button type="button" className="btn btn-outline-danger" onClick={handleClearCustomer}>
+                  {form.customer_id ? (
+                    <button type="button" className="btn btn-outline-danger fw-bold" onClick={handleClearCustomer}>
                       Clear
                     </button>
+                  ) : (
+                    <button type="button" className="btn btn-primary fw-bold" onClick={() => setShowCustModal(true)} title="Add New Customer">+</button>
                   )}
                 </div>
                 {customerSearch && !form.customer_id && filteredCustomers.length > 0 && (
@@ -416,6 +443,103 @@ export default function OldMobilePurchaseForm() {
           </div>
         </div>
       </form>
+
+      {/* Mini Modal: Add Customer */}
+      <Modal show={showCustModal} onHide={() => setShowCustModal(false)} centered className="text-uppercase border-primary">
+          <Modal.Header closeButton className="bg-primary text-white">
+              <Modal.Title className="fw-bold small">➕ ADD NEW CUSTOMER</Modal.Title>
+          </Modal.Header>
+          <form onSubmit={handleAddCustomer}>
+              <Modal.Body className="p-4">
+                  <div className="row g-3">
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Full Name <span className="text-danger">*</span></label>
+                          <input type="text" className="form-control" required value={newCust.name} onChange={e => setNewCust({...newCust, name: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Customer Type <span className="text-danger">*</span></label>
+                          <select className="form-select" value={newCust.category} onChange={e => setNewCust({...newCust, category: e.target.value})}>
+                              <option value="REGULAR">NORMAL CUSTOMER</option>
+                              <option value="SHOP">SHOP CUSTOMER</option>
+                          </select>
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Phone Number <span className="text-danger">*</span></label>
+                          <input type="text" className="form-control" required value={newCust.phone} onChange={e => setNewCust({...newCust, phone: e.target.value})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">GST Number</label>
+                          <input type="text" className="form-control" placeholder="e.g. 22AAAAA0000A1Z5" value={newCust.gst_no || ''} onChange={e => setNewCust({...newCust, gst_no: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Opening Balance</label>
+                          <input type="number" className="form-control" value={newCust.opening_balance} onChange={e => setNewCust({...newCust, opening_balance: e.target.value})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Balance Type</label>
+                          <select className="form-select" value={newCust.balance_type} onChange={e => setNewCust({...newCust, balance_type: e.target.value})}>
+                              <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
+                              <option value="PAYABLE">I OWE THEM (Payable)</option>
+                          </select>
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Email</label>
+                          <input type="email" className="form-control" value={newCust.email || ''} onChange={e => setNewCust({...newCust, email: e.target.value})} />
+                      </div>
+                      <div className="col-md-6 text-uppercase">
+                          <label className="form-label small fw-bold">Voucher Code</label>
+                          <input type="text" className="form-control" value={newCust.voucher_code || ''} onChange={e => setNewCust({...newCust, voucher_code: e.target.value.toUpperCase()})} />
+                      </div>
+                      <div className="col-12 text-uppercase">
+                          <label className="form-label small fw-bold">Address</label>
+                          <input type="text" className="form-control" value={newCust.address || ''} onChange={e => setNewCust({...newCust, address: e.target.value.toUpperCase()})} />
+                      </div>
+                  </div>
+
+                  <div className="mt-4 border-top pt-3 text-uppercase">
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                          <label className="form-label small fw-bold mb-0">🎂 Customer Events</label>
+                          <button type="button" className="btn btn-xs btn-outline-primary" onClick={addCustEvent}>+ Add Event</button>
+                      </div>
+                      {newCust.events.map((ev, i) => (
+                          <div key={i} className="row g-2 mb-2 align-items-end animate-fade-in border p-2 rounded bg-light">
+                              <div className="col-4">
+                                  <label className="x-small fw-bold">Type</label>
+                                  <select className="form-select form-select-sm" value={ev.type} onChange={e => updateCustEvent(i, 'type', e.target.value)}>
+                                      <option value="dob">DOB</option>
+                                      <option value="anniversary">Anniversary</option>
+                                      <option value="other">Other</option>
+                                  </select>
+                              </div>
+                              {ev.type === 'other' && (
+                                  <div className="col-4">
+                                      <label className="x-small fw-bold">Event Name</label>
+                                      <input className="form-control form-control-sm" placeholder="e.g. Wedding" value={ev.name} onChange={e => updateCustEvent(i, 'name', e.target.value.toUpperCase())} />
+                                  </div>
+                              )}
+                              <div className={ev.type === 'other' ? 'col-3' : 'col-6'}>
+                                  <label className="x-small fw-bold">Date</label>
+                                  <input type="date" className="form-control form-control-sm" required value={ev.date} onChange={e => updateCustEvent(i, 'date', e.target.value)} />
+                              </div>
+                              <div className="col-1 text-center">
+                                  <button type="button" className="btn btn-link text-danger p-0 border-0" onClick={() => removeCustEvent(i)}>✕</button>
+                              </div>
+                          </div>
+                      ))}
+                      {newCust.events.length === 0 && <p className="text-muted x-small">Click "+ Add Event" to track birthdays, etc.</p>}
+                  </div>
+              </Modal.Body>
+              <Modal.Footer>
+                  <Button variant="secondary" className="fw-bold" onClick={() => setShowCustModal(false)}>CANCEL</Button>
+                  <Button type="submit" variant="primary" className="fw-bold px-4">CREATE CUSTOMER</Button>
+              </Modal.Footer>
+          </form>
+      </Modal>
+
+      <style>{`
+          .x-small { font-size: 0.7rem; }
+          .btn-xs { padding: 0.1rem 0.4rem; font-size: 0.65rem; }
+      `}</style>
     </div>
   );
 }
