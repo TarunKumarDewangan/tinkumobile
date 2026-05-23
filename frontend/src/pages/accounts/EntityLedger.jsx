@@ -521,7 +521,7 @@ export default function EntityLedger() {
                           <th className="text-end">Debit (Dr)</th>
                           <th className="text-end pe-4">Credit (Cr)</th>
                           <th className="text-end pe-4">Balance</th>
-                          <th className="text-center pe-4" style={{ width: '130px' }}>Actions</th>
+                          <th className="text-center pe-4" style={{ width: '160px' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -569,29 +569,26 @@ export default function EntityLedger() {
                                 <div className="d-inline-flex gap-1">
                                   {isActionable && (
                                     <button 
-                                      className="btn-action-circle primary hover-scale"
+                                      className="btn btn-outline-primary btn-xs rounded-pill px-2 py-0.5 hover-scale fw-bold"
                                       onClick={() => handleViewEntry(item)}
-                                      title="View Details"
                                     >
-                                      <i className="bi bi-eye" style={{ fontSize: '0.85rem' }}></i>
+                                      View
                                     </button>
                                   )}
                                   {isEditable && (
                                     <button 
-                                      className="btn-action-circle warning hover-scale"
+                                      className="btn btn-outline-warning btn-xs rounded-pill px-2 py-0.5 hover-scale fw-bold"
                                       onClick={() => handleEditEntry(item)}
-                                      title="Edit Entry"
                                     >
-                                      <i className="bi bi-pencil" style={{ fontSize: '0.85rem' }}></i>
+                                      Edit
                                     </button>
                                   )}
                                   {isActionable && (
                                     <button 
-                                      className="btn-action-circle danger hover-scale"
+                                      className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0.5 hover-scale fw-bold"
                                       onClick={() => handleDeleteEntry(item)}
-                                      title="Delete Entry"
                                     >
-                                      <i className="bi bi-trash" style={{ fontSize: '0.85rem' }}></i>
+                                      Delete
                                     </button>
                                   )}
                                 </div>
@@ -1069,44 +1066,6 @@ export default function EntityLedger() {
         .hover-scale {
             transition: all 0.2s ease-in-out;
         }
-        .btn-action-circle {
-            width: 28px;
-            height: 28px;
-            padding: 0 !important;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50% !important;
-            transition: all 0.2s ease-in-out;
-            border: 1px solid;
-            background: transparent;
-            cursor: pointer;
-        }
-        .btn-action-circle.primary {
-            color: #4f46e5;
-            border-color: rgba(79, 70, 229, 0.3);
-        }
-        .btn-action-circle.primary:hover {
-            background: #4f46e5;
-            color: #fff;
-        }
-        .btn-action-circle.warning {
-            color: #d97706;
-            border-color: rgba(217, 119, 6, 0.3);
-        }
-        .btn-action-circle.warning:hover {
-            background: #d97706;
-            color: #fff;
-        }
-        .btn-action-circle.danger {
-            color: #dc2626;
-            border-color: rgba(220, 38, 38, 0.3);
-        }
-        .btn-action-circle.danger:hover {
-            background: #dc2626;
-            color: #fff;
-        }
-
         .entity-ledger-modern {
             font-family: 'Inter', sans-serif;
             color: #1e293b;
