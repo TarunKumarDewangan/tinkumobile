@@ -10,7 +10,7 @@ export default function Sales() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [shops, setShops]       = useState([]);
-  const { isOwner } = useAuth();
+  const { hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [showBackupModal, setShowBackupModal] = useState(false);
 
@@ -20,7 +20,7 @@ export default function Sales() {
 
   useEffect(() => {
     loadInvoices();
-    if (isOwner()) {
+    if (hasFullAccess()) {
         api.get('/shops').then(r => setShops(r.data));
     }
   }, [filters]);
@@ -126,7 +126,7 @@ export default function Sales() {
                     <option value="pakka">PAKKA</option>
                 </select>
             </div>
-            {isOwner() && (
+            {hasFullAccess() && (
                 <div className="col-12 col-md-2">
                     <label className="small text-muted mb-1 fw-bold">Shop Branch</label>
                     <select className="form-select form-select-sm" value={filters.shop_id} onChange={e => setFilters({...filters, shop_id: e.target.value})}>

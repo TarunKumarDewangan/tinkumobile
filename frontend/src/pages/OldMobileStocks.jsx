@@ -85,7 +85,7 @@ export default function OldMobileStocks() {
         </div>
 
         <div className="d-flex gap-3 align-items-center">
-          {isOwner() && (
+          {hasFullAccess() && (
             <div style={{ minWidth: '200px' }}>
               <select 
                 className="form-select bg-light text-dark border-secondary-subtle fw-semibold"
@@ -184,7 +184,7 @@ export default function OldMobileStocks() {
                       <div className="d-flex justify-content-end gap-2">
                         <button onClick={() => navigate(`/products/${p.id}/edit`)} className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold">✏️ EDIT</button>
                         <button onClick={() => navigate(`/old-mobiles/sales/new?category=mobile-old&product_id=${p.id}`)} className="btn btn-sm btn-success shadow-sm rounded-pill px-3 fw-bold">🛒 SELL</button>
-                        {isOwner() && (
+                        {hasFullAccess() && (
                           <button onClick={() => handleDelete(p.id)} className="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold">🗑️</button>
                         )}
                       </div>

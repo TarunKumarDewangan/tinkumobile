@@ -31,7 +31,7 @@ export default function StockEntry() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
 
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, hasFullAccess } = useAuth();
   const inventory = useInventory(filters, form, setForm);
 
   const handleFilterChange = (name, value) => setFilters(prev => ({ ...prev, [name]: value }));
@@ -145,7 +145,7 @@ export default function StockEntry() {
           <p>Comprehensive Inventory & Stock Management</p>
         </div>
         <div className="d-flex gap-2 align-items-center">
-          {isOwner() && (
+          {hasFullAccess() && (
             <>
               <button className="pf-bulk me-2" onClick={() => setShowDuplicateModal(true)} style={{background:'rgba(255,255,255,0.08)', border:'1.5px solid rgba(255,255,255,0.15)', color:'#fff', padding:'6px 14px'}}>
                 🔍 CHECK DUPLICATES
@@ -207,7 +207,7 @@ export default function StockEntry() {
             shops={inventory.shops}
             baseProducts={inventory.baseProducts}
             categories={inventory.categories}
-            isOwner={isOwner()}
+            isOwner={hasFullAccess()}
             loading={loading}
             setLoading={setLoading}
             onSuccess={inventory.refresh}

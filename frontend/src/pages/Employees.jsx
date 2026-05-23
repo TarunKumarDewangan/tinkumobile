@@ -9,7 +9,7 @@ export default function Employees() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [shops, setShops]         = useState([]);
-  const { isOwner }               = useAuth();
+  const { hasFullAccess }               = useAuth();
   
   // Staff Modal
   const [showModal, setShowModal] = useState(false);
@@ -42,7 +42,7 @@ export default function Employees() {
 
   useEffect(() => {
     loadEmployees();
-    if (isOwner()) {
+    if (hasFullAccess()) {
         api.get('/shops').then(r => setShops(r.data));
     }
   }, [filters]);
@@ -188,7 +188,7 @@ export default function Employees() {
                     onChange={e => setFilters({...filters, search: e.target.value})}
                 />
             </div>
-            {isOwner() && (
+            {hasFullAccess() && (
                 <div className="col-12 col-md-3">
                     <label className="small text-muted mb-1 fw-bold">Shop Branch</label>
                     <select 
@@ -277,7 +277,7 @@ export default function Employees() {
                 <label className="form-label small fw-bold">Email Address</label>
                 <input type="email" className="form-control" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
               </div>
-              {isOwner() && (
+              {hasFullAccess() && (
                 <div className="col-12">
                    <label className="form-label small fw-bold text-primary">Assign To Shop <span className="text-danger">*</span></label>
                    <select className="form-select border-primary" required value={formData.shop_id} onChange={e => setFormData({...formData, shop_id: e.target.value})}>

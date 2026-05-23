@@ -46,7 +46,7 @@ export default function PurchaseForm() {
   const [isManualGst, setIsManualGst] = useState(false);
   const navigate = useNavigate();
   const { id }     = useParams();
-  const { isOwner } = useAuth();
+  const { isOwner, hasFullAccess } = useAuth();
   const [loading, setLoading] = useState(false);
   const enableBulkAdd = false; // Set to true to show "+ Bulk Add" button later
 
@@ -63,7 +63,7 @@ export default function PurchaseForm() {
     });
     api.get('/categories').then(r => setCategories(r.data));
     api.get('/brands').then(r => setBrands(r.data));
-    if (isOwner()) {
+    if (hasFullAccess()) {
       api.get('/shops').then(r => setShops(r.data));
     }
 
@@ -198,9 +198,9 @@ export default function PurchaseForm() {
       }
     }
     
-    // Auto-calculate quantity based on comma-separated IMEIs
+    // Auto-calculate quantity based on comma/space-separated IMEIs
     if (field === 'imei') {
-      const imeis = val.split(',').map(s => s.trim()).filter(Boolean);
+      const imeis = val.split(/[\s,]+/).filter(Boolean);
       if (imeis.length > 0) {
         a[i].quantity = imeis.length;
       } else {
@@ -356,7 +356,7 @@ export default function PurchaseForm() {
     e.preventDefault();
     
     // Validation
-    if (isOwner() && !form.shop_id) {
+    if (hasFullAccess() && !form.shop_id) {
       toast.error('Please select a shop');
       return;
     }
@@ -381,7 +381,7 @@ export default function PurchaseForm() {
       // Flatten grouped items so backend receives exactly 1 item per IMEI as expected
       let flatItems = [];
       items.forEach(it => {
-        let imeiList = (it.imei || '').split(',').map(x => x.trim()).filter(Boolean);
+        let imeiList = (it.imei || '').split(/[\s,]+/).filter(Boolean);
         if (imeiList.length > 0) {
           imeiList.forEach(imei => {
             flatItems.push({ ...it, imei: imei, quantity: 1 });
@@ -463,7 +463,7 @@ export default function PurchaseForm() {
           <div className="pf-card">
             <div className="pf-sec">📋 General Information</div>
             <div className="row g-2">
-              {isOwner() && (
+              {hasFullAccess() && (
                 <div className="col-6 col-md-2">
                   <span className="pf-lbl">Shop / Branch *</span>
                   <select className="pf-inp" required value={form.shop_id} onChange={e=>setForm({...form,shop_id:e.target.value})}>

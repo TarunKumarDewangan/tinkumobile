@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function SaleForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, hasFullAccess } = useAuth();
   
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState([]);
@@ -110,7 +110,7 @@ export default function SaleForm() {
       const staffRes = await api.get('/users');
       setStaff(staffRes.data);
       
-      if (isOwner()) {
+      if (hasFullAccess()) {
         const shopsRes = await api.get('/shops');
         setShops(shopsRes.data);
         if (!id && shopsRes.data.length > 0) {
@@ -607,7 +607,7 @@ export default function SaleForm() {
              <div className="card shadow-sm border-0 bg-white rounded-3 mb-3">
                 <div className="card-body p-4">
                     <div className="row g-3">
-                        {isOwner() && (
+                        {hasFullAccess() && (
                             <div className="col-12">
                                 <label className="form-label small fw-bold text-primary">SELECT SHOP <span className="text-danger">*</span></label>
                                 <select className="form-select border-primary fw-bold" required value={form.shop_id} onChange={e => { setForm({...form, shop_id: e.target.value}); loadProducts(e.target.value); }}>

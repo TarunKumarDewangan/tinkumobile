@@ -150,6 +150,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/old-mobiles', [OldMobileController::class, 'index']);
     Route::post('/old-mobiles', [OldMobileController::class, 'store']);
     Route::get('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'show']);
+    Route::put('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'update']);
+    Route::delete('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'destroy']);
 
     // Gifts
     Route::get('/gift-products', [GiftController::class, 'products']);

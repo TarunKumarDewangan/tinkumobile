@@ -5,7 +5,7 @@ import api from '../api/axios';
 import DataBackupModal from '../components/DataBackupModal';
 
 export default function Dashboard() {
-  const { user, isOwner, can } = useAuth();
+  const { user, isOwner, can, hasFullAccess } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -16,7 +16,7 @@ export default function Dashboard() {
 
   if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
 
-  const shopLabel = isOwner() ? 'All Shops' : user?.shop?.name;
+  const shopLabel = hasFullAccess() ? 'All Shops' : user?.shop?.name;
 
   const quickActions = [
     { to: '/airtel/quick-recovery', label: '⚡ Quick Recovery', perm: 'view_airtel_recovery', variant: 'success' },
@@ -106,7 +106,7 @@ export default function Dashboard() {
                   {action.label}
                 </Link>
               ))}
-              {isOwner() && (
+              {hasFullAccess() && (
                 <button onClick={() => setShowSyncModal(true)} className="btn btn-dark btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
                   🔄 FULL SYSTEM SYNC
                 </button>

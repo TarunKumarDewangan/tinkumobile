@@ -26,9 +26,9 @@ export default function OpeningStockForm({
     const newItems = [...openingStockItems];
     newItems[i][field] = val;
     
-    // Auto-split IMEIs if they are comma/space-separated
-    if (field === 'imei' && (val.includes(',') || val.includes('\n'))) {
-      const imeis = val.split(/[\s,]+/).filter(Boolean);
+    // Auto-split IMEIs if they are comma/space/tab-separated
+    if (field === 'imei' && (val.includes(',') || val.includes('\n') || val.includes('\t') || (val.includes(' ') && val.trim().split(/[\s,]+/).length > 1))) {
+      const imeis = val.split(/[\s,\t\r\n]+/).filter(Boolean);
       if (imeis.length > 1) {
           const baseItem = { ...newItems[i] };
           newItems[i].imei = imeis[0];
@@ -287,6 +287,14 @@ export default function OpeningStockForm({
                               currentImeis[idx] = e.target.value.toUpperCase();
                               updateOpeningItem(i, 'imei', currentImeis.join(' '));
                             }} 
+                            onPaste={e => {
+                              const pastedText = e.clipboardData.getData('text');
+                              const splitImeis = pastedText.split(/[\s,]+/).filter(Boolean);
+                              if (splitImeis.length > 1) {
+                                  e.preventDefault();
+                                  updateOpeningItem(i, 'imei', splitImeis.join(','));
+                              }
+                            }}
                           />
                           {idx === 0 && (
                             <button type="button" onClick={() => setScanner({ show: true, itemIndex: i })} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:7,padding:'0 9px',cursor:'pointer',fontSize:'.8rem'}}>📷</button>

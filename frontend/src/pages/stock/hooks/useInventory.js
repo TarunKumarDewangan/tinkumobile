@@ -12,7 +12,7 @@ export default function useInventory(filters, form, setForm) {
     const [categories, setCategories] = useState([]);
     const [imeiList, setImeiList] = useState([]);
     const [loading, setLoading] = useState(false);
-    const { isOwner } = useAuth();
+    const { hasFullAccess } = useAuth();
     const initialShopSet = useRef(false);
 
     const loadData = useCallback(async () => {
@@ -29,7 +29,7 @@ export default function useInventory(filters, form, setForm) {
             stockRes.data.forEach(inv => { map[inv.product_id] = inv.stock; });
             setCurrentStock(map);
 
-            if (isOwner()) {
+            if (hasFullAccess()) {
                 const r = await api.get('/shops');
                 setShops(r.data);
                 if (r.data.length > 0 && !form?.shop_id && !initialShopSet.current) {
@@ -42,7 +42,7 @@ export default function useInventory(filters, form, setForm) {
         } finally {
             setLoading(false);
         }
-    }, [filters, form?.shop_id, isOwner, setForm]);
+    }, [filters, form?.shop_id, hasFullAccess, setForm]);
 
     useEffect(() => { loadData(); }, [loadData]);
 

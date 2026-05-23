@@ -46,7 +46,7 @@ export default function OldMobilePurchaseForm() {
     api.get('/shops')
       .then(res => {
         setShops(res.data);
-        if (res.data.length > 0 && !hasFullAccess) {
+        if (res.data.length > 0 && !hasFullAccess()) {
           const defaultShop = res.data.find(s => s.id === user.shop_id) || res.data[0];
           setForm(f => ({ ...f, shop_id: defaultShop.id }));
         } else if (res.data.length > 0) {
@@ -166,7 +166,7 @@ export default function OldMobilePurchaseForm() {
             <h4 className="text-dark mb-4 border-bottom border-secondary-subtle pb-2">🏢 Shop & Payout Mode</h4>
 
             <div className="row g-3">
-              {isOwner() && (
+              {hasFullAccess() && (
                 <div className="col-md-6">
                   <label className="form-label text-muted small fw-bold">SELECT SHOP/BRANCH <span className="text-danger">*</span></label>
                   <select 

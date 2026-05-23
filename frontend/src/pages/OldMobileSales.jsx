@@ -6,7 +6,7 @@ import { formatDate } from '../utils/formatters';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function OldMobileSales() {
-  const { isOwner } = useAuth();
+  const { hasFullAccess } = useAuth();
   const navigate = useNavigate();
 
   // State
@@ -31,12 +31,12 @@ export default function OldMobileSales() {
       })
       .catch(err => console.error(err));
 
-    if (isOwner()) {
+    if (hasFullAccess()) {
       api.get('/shops')
         .then(res => setShops(res.data))
         .catch(err => console.error(err));
     }
-  }, [isOwner]);
+  }, [hasFullAccess]);
 
   // Load Invoices when filters change
   const loadInvoices = async () => {
@@ -115,7 +115,7 @@ export default function OldMobileSales() {
               <option value="pakka">PAKKA</option>
             </select>
           </div>
-          {isOwner() && (
+          {hasFullAccess() && (
             <div className="col-12 col-md-2">
               <label className="form-label text-muted small fw-bold">Shop Branch</label>
               <select className="form-select bg-light text-dark border-secondary-subtle" value={filters.shop_id} onChange={e => setFilters({...filters, shop_id: e.target.value})}>
