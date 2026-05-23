@@ -200,6 +200,7 @@ class EntityLedgerController extends Controller
     {
         $startDate = $request->query('start_date');
         $endDate = $request->query('end_date');
+        $excludeSaleInvoiceId = $request->query('exclude_sale_invoice_id');
 
         $entity = \App\Models\Entity::where('name', $entityName)->first();
         
@@ -238,6 +239,13 @@ class EntityLedgerController extends Controller
         });
         if ($startDate) $txQuery->where('transaction_date', '>=', $startDate);
         if ($endDate) $txQuery->where('transaction_date', '<=', $endDate);
+        if ($excludeSaleInvoiceId) {
+            $txQuery->where(function($q) use ($excludeSaleInvoiceId) {
+                $q->whereNull('entity_type')
+                  ->orWhere('entity_type', '!=', 'App\Models\SaleInvoice')
+                  ->orWhere('entity_id', '!=', $excludeSaleInvoiceId);
+            });
+        }
         
         $transactions = $txQuery->get();
         foreach ($transactions as $tx) {
@@ -284,6 +292,9 @@ class EntityLedgerController extends Controller
             ->whereHas('customer', fn($q) => $q->where('name', $entityName));
         if ($startDate) $saleQuery->where('sale_date', '>=', $startDate);
         if ($endDate) $saleQuery->where('sale_date', '<=', $endDate);
+        if ($excludeSaleInvoiceId) {
+            $saleQuery->where('id', '!=', $excludeSaleInvoiceId);
+        }
         
         $saleQuery->with('items.product')->get()->each(function($i) use ($ledgerItems) {
                 $itemNames = $i->items->map(function($it) {

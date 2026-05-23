@@ -228,7 +228,8 @@ export default function SaleForm() {
       setCustomerInputText(data.customer?.name || '');
       setSelectedCustomer(data.customer || null);
       if (data.customer) {
-        api.get(`/entities/${encodeURIComponent(data.customer.name)}/ledger`)
+        const url = `/entities/${encodeURIComponent(data.customer.name)}/ledger` + (id ? `?exclude_sale_invoice_id=${id}` : '');
+        api.get(url)
           .then(res => {
             const bal = parseFloat(res.data.entity?.net_balance || 0);
             const initialCreditUsed = parseFloat(data.exchange_paid || 0);
@@ -482,7 +483,8 @@ export default function SaleForm() {
     setSelectedCustomer(c);
     setPriceMode(c.category === 'SHOP' ? 'WHOLESALE' : 'RETAIL');
     if (c.name) {
-      api.get(`/entities/${encodeURIComponent(c.name)}/ledger`)
+      const url = `/entities/${encodeURIComponent(c.name)}/ledger` + (id ? `?exclude_sale_invoice_id=${id}` : '');
+      api.get(url)
         .then(res => {
           const bal = parseFloat(res.data.entity?.net_balance || 0);
           if (bal < 0) {
