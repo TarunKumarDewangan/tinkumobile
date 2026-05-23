@@ -468,7 +468,7 @@ class EntityLedgerController extends Controller
 
         // Old Mobile Purchases (non-exchange)
         $oldMobQuery = \App\Models\OldMobilePurchase::where(function($q) use ($entityName, $entity) {
-            $q->where('customer_name', $entityName);
+            $q->whereHas('customer', fn($c) => $c->where('name', $entityName));
             if ($entity && $entity->relation_id && $entity->relation_type === 'App\Models\Customer') {
                 $q->orWhere('customer_id', $entity->relation_id);
             }
