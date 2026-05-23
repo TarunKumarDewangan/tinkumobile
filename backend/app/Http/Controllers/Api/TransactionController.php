@@ -97,6 +97,34 @@ class TransactionController extends Controller
         return response()->json(['message' => 'Transaction deleted']);
     }
 
+    public function update(Request $request, Transaction $transaction)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess()) {
+            return response()->json(['message' => 'Only Admin/Owner can update transactions'], 403);
+        }
+
+        $data = $request->validate([
+            'amount'           => 'required|numeric|min:0.01',
+            'payment_mode'     => 'required|string',
+            'description'      => 'nullable|string',
+            'category'         => 'required|string|max:50',
+            'transaction_date' => 'required|date',
+        ]);
+
+        $transaction->update($data);
+
+        // Sync entity balance
+        if ($transaction->accounting_entity_id) {
+            $entity = \App\Models\Entity::find($transaction->accounting_entity_id);
+            if ($entity) {
+                app(\App\Services\EntityService::class)->syncBalance($entity);
+            }
+        }
+
+        return response()->json($transaction);
+    }
+
     /**
      * Get unique categories used in transactions.
      */

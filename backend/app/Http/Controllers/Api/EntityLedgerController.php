@@ -452,6 +452,7 @@ class EntityLedgerController extends Controller
                     'type' => 'UNREALIZED',
                     'entry_type' => 'UNREALIZED',
                     'created_at' => $i->created_at
+                ]);
             });
 
         // Old Mobile Purchases (non-exchange)

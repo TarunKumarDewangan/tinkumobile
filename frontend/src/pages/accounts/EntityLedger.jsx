@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
@@ -7,6 +7,16 @@ import _ from 'lodash'; // Using lodash for debounce
 
 export default function EntityLedger() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [isPinVerified, setIsPinVerified] = useState(false);
+  const [pinModal, setPinModal] = useState({ show: false, action: null, value: '', error: false, shake: false });
+  const [viewTxModal, setViewTxModal] = useState({ show: false, transaction: null });
+  const [editTxModal, setEditTxModal] = useState({ 
+    show: false, 
+    transaction: null, 
+    loading: false, 
+    formData: { amount: '', category: '', payment_mode: '', description: '', transaction_date: '' } 
+  });
   const [entities, setEntities] = useState([]);
   const [selectedEntityId, setSelectedEntityId] = useState(null);
   const [selectedEntityName, setSelectedEntityName] = useState(null);
@@ -40,6 +50,135 @@ export default function EntityLedger() {
     transaction_date: new Date().toISOString().split('T')[0]
   });
   const [categories, setCategories] = useState(['ENTITY_SETTLEMENT', 'SHOP_EXPENSE', 'PERSONAL', 'LOAN_PAYMENT']);
+
+  const handlePinRequiredAction = (action) => {
+    if (isPinVerified) {
+      action();
+    } else {
+      setPinModal({ show: true, action, value: '', error: false, shake: false });
+    }
+  };
+
+  const handlePinSubmit = (e) => {
+    e.preventDefault();
+    if (pinModal.value === '71727378') {
+      setIsPinVerified(true);
+      const actionToRun = pinModal.action;
+      setPinModal({ show: false, action: null, value: '', error: false, shake: false });
+      if (actionToRun) actionToRun();
+    } else {
+      setPinModal(prev => ({ ...prev, error: true, shake: true }));
+      toast.error('Invalid security PIN!');
+      setTimeout(() => {
+        setPinModal(prev => ({ ...prev, shake: false }));
+      }, 500);
+    }
+  };
+
+  const handleViewEntry = async (item) => {
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      try {
+        const { data } = await api.get(`/transactions/${item.voucher_id}`);
+        setViewTxModal({ show: true, transaction: data });
+      } catch (err) {
+        toast.error('Failed to fetch transaction details');
+      }
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      navigate(`/sales/${item.voucher_id}`);
+    } else if (item.voucher_type === 'REPAIR') {
+      navigate(`/repairs/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'PURCHASE') {
+      navigate(`/purchases/${item.voucher_id}`);
+    } else {
+      toast.info(`View details of ${item.voucher_type} is not supported directly.`);
+    }
+  };
+
+  const handleEditEntry = (item) => {
+    handlePinRequiredAction(async () => {
+      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+        try {
+          const { data } = await api.get(`/transactions/${item.voucher_id}`);
+          setEditTxModal({
+            show: true,
+            transaction: data,
+            loading: false,
+            formData: {
+              amount: data.amount,
+              category: data.category,
+              payment_mode: data.payment_mode,
+              description: data.description || '',
+              transaction_date: data.transaction_date.split('T')[0]
+            }
+          });
+        } catch (err) {
+          toast.error('Failed to fetch transaction details for editing');
+        }
+      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+        navigate(`/sales/${item.voucher_id}/edit`);
+      } else if (item.voucher_type === 'REPAIR') {
+        navigate(`/repairs/${item.voucher_id}/edit`);
+      } else if (item.voucher_type === 'PURCHASE') {
+        navigate(`/purchases/${item.voucher_id}/edit`);
+      } else {
+        toast.info(`Editing of ${item.voucher_type} is not supported directly.`);
+      }
+    });
+  };
+
+  const handleDeleteEntry = (item) => {
+    handlePinRequiredAction(() => {
+      if (!window.confirm(`Are you sure you want to permanently delete this ${item.voucher_type} entry? This action is irreversible.`)) {
+        return;
+      }
+      
+      let deleteUrl = '';
+      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+        deleteUrl = `/transactions/${item.voucher_id}`;
+      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+        deleteUrl = `/sale-invoices/${item.voucher_id}`;
+      } else if (item.voucher_type === 'REPAIR') {
+        deleteUrl = `/repairs/${item.voucher_id}`;
+      } else if (item.voucher_type === 'PURCHASE') {
+        deleteUrl = `/purchase-invoices/${item.voucher_id}`;
+      } else if (item.voucher_type === 'AIRTEL_DROP') {
+        deleteUrl = `/airtel-drops/${item.voucher_id}`;
+      } else if (item.voucher_type === 'AIRTEL_RECOVERY') {
+        deleteUrl = `/airtel-recoveries/${item.voucher_id}`;
+      } else {
+        toast.error(`Deletion of ${item.voucher_type} is not supported.`);
+        return;
+      }
+
+      api.delete(deleteUrl)
+        .then(() => {
+          toast.success(`${item.voucher_type} deleted successfully`);
+          loadLedger(selectedEntityId, selectedEntityName);
+          fetchSummary();
+          if (searchTerm) loadEntities(searchTerm, filterType);
+        })
+        .catch(err => {
+          toast.error(err.response?.data?.message || `Failed to delete ${item.voucher_type}`);
+        });
+    });
+  };
+
+  const handleUpdateTx = async (e) => {
+    e.preventDefault();
+    setEditTxModal(prev => ({ ...prev, loading: true }));
+    try {
+      await api.put(`/transactions/${editTxModal.transaction.id}`, editTxModal.formData);
+      toast.success('Transaction updated successfully');
+      setEditTxModal({ show: false, transaction: null, loading: false, formData: {} });
+      loadLedger(selectedEntityId, selectedEntityName);
+      fetchSummary();
+      if (searchTerm) loadEntities(searchTerm, filterType);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update transaction');
+    } finally {
+      setEditTxModal(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   const fetchSummary = async () => {
     try {
@@ -382,6 +521,7 @@ export default function EntityLedger() {
                           <th className="text-end">Debit (Dr)</th>
                           <th className="text-end pe-4">Credit (Cr)</th>
                           <th className="text-end pe-4">Balance</th>
+                          <th className="text-center pe-4" style={{ width: '130px' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -395,33 +535,73 @@ export default function EntityLedger() {
                             <td className={`text-end pe-4 fw-bold x-small ${targetEntity?.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
                                ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
                             </td>
+                            <td></td>
                           </tr>
                         )}
-                        {ledger.slice(0, visibleItems).map((item) => (
-                          <tr key={item.id}>
-                            <td className="ps-4">
-                                <span className="x-small text-muted">{new Date(item.date).toLocaleDateString('en-GB')}</span>
-                            </td>
-                            <td>
-                                <div className="d-flex align-items-center">
-                                    <div className={`category-dot me-2 bg-primary`}></div>
-                                    <div>
-                                        <div className="fw-bold text-dark x-small">{item.particulars}</div>
-                                    </div>
+                        {ledger.slice(0, visibleItems).map((item) => {
+                          const isActionable = ['SALE', 'SALE_FINANCE', 'FINANCE_PENDING', 'REPAIR', 'PURCHASE', 'RECEIPT', 'PAYMENT', 'AIRTEL_DROP', 'AIRTEL_RECOVERY'].includes(item.voucher_type);
+                          const isEditable = ['SALE', 'SALE_FINANCE', 'FINANCE_PENDING', 'REPAIR', 'PURCHASE', 'RECEIPT', 'PAYMENT'].includes(item.voucher_type);
+                          
+                          return (
+                            <tr key={item.id}>
+                              <td className="ps-4">
+                                  <span className="x-small text-muted">{new Date(item.date).toLocaleDateString('en-GB')}</span>
+                              </td>
+                              <td>
+                                  <div className="d-flex align-items-center">
+                                      <div className={`category-dot me-2 bg-primary`}></div>
+                                      <div>
+                                          <div className="fw-bold text-dark x-small">{item.particulars}</div>
+                                      </div>
+                                  </div>
+                              </td>
+                              <td><span className="badge bg-light text-secondary border xx-small">{item.voucher_type}</span></td>
+                              <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-danger' : 'text-muted opacity-25'}`}>
+                                  {item.debit > 0 ? `₹${Number(item.debit).toLocaleString()}` : '—'}
+                              </td>
+                              <td className={`text-end pe-4 fw-bold x-small ${item.credit > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
+                                  {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
+                              </td>
+                              <td className={`text-end pe-4 fw-bold x-small ${item.running_balance >= 0 ? 'text-success' : 'text-danger'}`}>
+                                  ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
+                              </td>
+                              <td className="text-center pe-4">
+                                <div className="d-inline-flex gap-1">
+                                  {isActionable && (
+                                    <button 
+                                      className="btn btn-outline-primary btn-xs rounded-circle p-1 d-flex align-items-center justify-content-center hover-scale"
+                                      style={{ width: '24px', height: '24px' }}
+                                      onClick={() => handleViewEntry(item)}
+                                      title="View Details"
+                                    >
+                                      <i className="bi bi-eye" style={{ fontSize: '0.75rem' }}></i>
+                                    </button>
+                                  )}
+                                  {isEditable && (
+                                    <button 
+                                      className="btn btn-outline-warning btn-xs rounded-circle p-1 d-flex align-items-center justify-content-center hover-scale"
+                                      style={{ width: '24px', height: '24px' }}
+                                      onClick={() => handleEditEntry(item)}
+                                      title="Edit Entry"
+                                    >
+                                      <i className="bi bi-pencil" style={{ fontSize: '0.75rem' }}></i>
+                                    </button>
+                                  )}
+                                  {isActionable && (
+                                    <button 
+                                      className="btn btn-outline-danger btn-xs rounded-circle p-1 d-flex align-items-center justify-content-center hover-scale"
+                                      style={{ width: '24px', height: '24px' }}
+                                      onClick={() => handleDeleteEntry(item)}
+                                      title="Delete Entry"
+                                    >
+                                      <i className="bi bi-trash" style={{ fontSize: '0.75rem' }}></i>
+                                    </button>
+                                  )}
                                 </div>
-                            </td>
-                            <td><span className="badge bg-light text-secondary border xx-small">{item.voucher_type}</span></td>
-                            <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-danger' : 'text-muted opacity-25'}`}>
-                                {item.debit > 0 ? `₹${Number(item.debit).toLocaleString()}` : '—'}
-                            </td>
-                            <td className={`text-end pe-4 fw-bold x-small ${item.credit > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
-                                {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
-                            </td>
-                            <td className={`text-end pe-4 fw-bold x-small ${item.running_balance >= 0 ? 'text-success' : 'text-danger'}`}>
-                                ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                     {ledger.length > visibleItems && (
@@ -665,7 +845,237 @@ export default function EntityLedger() {
         </div>
       )}
 
+      {/* PIN PROMPT MODAL */}
+      {pinModal.show && (
+        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1070 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div className="modal-header bg-danger text-white border-0 p-4">
+                <div className="d-flex align-items-center">
+                  <div className="bg-white bg-opacity-20 rounded-circle p-2 me-3">
+                    <i className="bi bi-shield-lock-fill h4 mb-0 text-white"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold mb-0">Security Authorization</h5>
+                    <p className="xx-small text-white-50 mb-0 mt-1">This operation requires authorization PIN</p>
+                  </div>
+                </div>
+                <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPinModal({ show: false, action: null, value: '', error: false, shake: false })}></button>
+              </div>
+              
+              <form onSubmit={handlePinSubmit}>
+                <div className={`modal-body p-4 bg-light text-center ${pinModal.shake ? 'shake-animation' : ''}`}>
+                  <p className="small text-muted mb-3 fw-bold">Enter authorization PIN to proceed:</p>
+                  <div className="mb-3">
+                    <input 
+                      type="password" 
+                      className={`form-control form-control-lg text-center fw-bold text-danger ${pinModal.error ? 'border-danger bg-danger-subtle' : 'border-secondary'} shadow-sm`} 
+                      placeholder="• • • • • • • •" 
+                      maxLength="8"
+                      value={pinModal.value}
+                      onChange={(e) => setPinModal({ ...pinModal, value: e.target.value, error: false })}
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="modal-footer border-0 p-3 bg-white justify-content-end gap-2">
+                  <button type="button" className="btn btn-light fw-bold px-4 rounded-pill" onClick={() => setPinModal({ show: false, action: null, value: '', error: false, shake: false })}>Cancel</button>
+                  <button type="submit" className="btn btn-danger fw-bold px-4 rounded-pill shadow-sm" disabled={pinModal.value.length < 8}>
+                    Verify & Proceed
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW TRANSACTION MODAL */}
+      {viewTxModal.show && viewTxModal.transaction && (
+        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1060 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div className="modal-header border-0 p-4 bg-primary text-white">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0">Transaction Details</h5>
+                  <p className="xx-small text-white-50 mb-0 mt-1 text-uppercase tracking-wider">Voucher ID: #{viewTxModal.transaction.id}</p>
+                </div>
+                <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setViewTxModal({ show: false, transaction: null })}></button>
+              </div>
+              
+              <div className="modal-body p-4 bg-light">
+                <div className="card border-0 shadow-sm rounded-3 p-3 mb-3 text-center bg-white">
+                  <span className="xx-small text-uppercase fw-bold text-muted d-block mb-1">Transaction Amount</span>
+                  <span className={`h2 mb-0 fw-bold ${viewTxModal.transaction.type === 'IN' ? 'text-success' : 'text-danger'}`}>
+                    {viewTxModal.transaction.type === 'IN' ? '+' : '-'} ₹{Number(viewTxModal.transaction.amount).toLocaleString()}
+                  </span>
+                  <span className="badge bg-light text-secondary border rounded-pill mt-2 d-inline-block px-3 py-1 xx-small fw-bold">
+                    {viewTxModal.transaction.type === 'IN' ? '📥 RECEIPT' : '📤 PAYMENT'}
+                  </span>
+                </div>
+
+                <div className="bg-white rounded-3 shadow-sm p-3 border">
+                  <div className="row g-3">
+                    <div className="col-6">
+                      <span className="xx-small text-muted text-uppercase fw-bold d-block">Transaction Date</span>
+                      <span className="small fw-bold text-dark">{new Date(viewTxModal.transaction.transaction_date).toLocaleDateString('en-GB')}</span>
+                    </div>
+                    <div className="col-6">
+                      <span className="xx-small text-muted text-uppercase fw-bold d-block">Payment Mode</span>
+                      <span className="small fw-bold text-dark text-uppercase">{viewTxModal.transaction.payment_mode}</span>
+                    </div>
+                    <div className="col-6">
+                      <span className="xx-small text-muted text-uppercase fw-bold d-block">Category</span>
+                      <span className="small fw-bold text-dark text-uppercase">{viewTxModal.transaction.category.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div className="col-6">
+                      <span className="xx-small text-muted text-uppercase fw-bold d-block">Recorded By</span>
+                      <span className="small fw-bold text-dark">{viewTxModal.transaction.user?.name || 'System'}</span>
+                    </div>
+                    <div className="col-12 border-top pt-2">
+                      <span className="xx-small text-muted text-uppercase fw-bold d-block">Particulars / Description</span>
+                      <span className="small text-dark">{viewTxModal.transaction.description || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="modal-footer border-0 p-3 bg-white justify-content-end">
+                <button type="button" className="btn btn-primary fw-bold px-4 rounded-pill shadow-sm" onClick={() => setViewTxModal({ show: false, transaction: null })}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TRANSACTION MODAL */}
+      {editTxModal.show && editTxModal.transaction && (
+        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1060 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div className="modal-header border-0 p-4 bg-warning text-dark">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0">Edit Transaction</h5>
+                  <p className="xx-small text-dark-50 mb-0 mt-1 text-uppercase tracking-wider">Modify Manual Transaction Details</p>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setEditTxModal({ show: false, transaction: null, loading: false, formData: {} })}></button>
+              </div>
+              
+              <form onSubmit={handleUpdateTx}>
+                <div className="modal-body p-4 bg-light">
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">AMOUNT (₹) <span className="text-danger">*</span></label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        className="form-control form-control-sm fw-bold border-warning" 
+                        placeholder="0.00" 
+                        required
+                        value={editTxModal.formData.amount}
+                        onChange={e => setEditTxModal({
+                          ...editTxModal,
+                          formData: { ...editTxModal.formData, amount: e.target.value }
+                        })}
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
+                      <select 
+                        className="form-select form-select-sm x-small"
+                        value={editTxModal.formData.payment_mode}
+                        onChange={e => setEditTxModal({
+                          ...editTxModal,
+                          formData: { ...editTxModal.formData, payment_mode: e.target.value }
+                        })}
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="UPI">UPI / Digital</option>
+                        <option value="BANK_TRANSFER">Bank Transfer</option>
+                        <option value="ADJUSTMENT">Discount / Adjustment</option>
+                        <option value="OTHER">Other Mode</option>
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">TRANSACTION DATE</label>
+                      <input 
+                        type="date" 
+                        className="form-control form-control-sm x-small" 
+                        required 
+                        value={editTxModal.formData.transaction_date}
+                        onChange={e => setEditTxModal({
+                          ...editTxModal,
+                          formData: { ...editTxModal.formData, transaction_date: e.target.value }
+                        })}
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">CATEGORY</label>
+                      <select 
+                        className="form-select form-select-sm x-small text-uppercase"
+                        value={editTxModal.formData.category}
+                        onChange={e => setEditTxModal({
+                          ...editTxModal,
+                          formData: { ...editTxModal.formData, category: e.target.value }
+                        })}
+                      >
+                        {categories.map((c, idx) => (
+                          <option key={idx} value={c}>{c.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-muted mb-1">PARTICULARS / NOTES</label>
+                      <textarea 
+                        className="form-control form-control-sm x-small" 
+                        rows="3" 
+                        placeholder="E.g. Settle old bill balance..."
+                        value={editTxModal.formData.description}
+                        onChange={e => setEditTxModal({
+                          ...editTxModal,
+                          formData: { ...editTxModal.formData, description: e.target.value }
+                        })}
+                      ></textarea>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="modal-footer border-0 p-3 bg-white justify-content-end gap-2">
+                  <button type="button" className="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-bold" onClick={() => setEditTxModal({ show: false, transaction: null, loading: false, formData: {} })} disabled={editTxModal.loading}>Cancel</button>
+                  <button type="submit" className="btn btn-warning btn-sm rounded-pill px-4 fw-bold shadow-sm text-dark" disabled={editTxModal.loading}>
+                    {editTxModal.loading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .shake-animation {
+            animation: shake 0.4s ease-in-out;
+        }
+        .hover-scale {
+            transition: all 0.2s ease-in-out;
+        }
+        .hover-scale:hover {
+            transform: scale(1.15);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
         .entity-ledger-modern {
             font-family: 'Inter', sans-serif;
             color: #1e293b;
