@@ -137,7 +137,7 @@ export default function SaleForm() {
         setItems([{
           selection_id: p.id,
           product_id: p.product_id,
-          imei: p.attributes?.imei || '',
+          imei: p.imei || p.attributes?.imei || '',
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
           color: p.attributes?.color || '',
@@ -160,7 +160,7 @@ export default function SaleForm() {
         setItems([{
           selection_id: p.id,
           product_id: p.product_id || p.id,
-          imei: p.attributes?.imei || imei,
+          imei: p.imei || p.attributes?.imei || imei,
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
           color: p.attributes?.color || '',
@@ -271,11 +271,14 @@ export default function SaleForm() {
           id: `item_${p.id}_0`,
           product_id: p.id,
           name: p.name,
+          imei: p.imei,
           attributes: p.attributes || {},
           current_stock: p.stock || 1,
           selling_price: p.selling_price,
           wholeseller_price: p.wholeseller_price,
           purchase_price: p.purchase_price,
+          min_selling_price: p.min_selling_price,
+          max_selling_price: p.max_selling_price,
           category: p.category
         }));
         setProducts(mapped);
@@ -318,7 +321,7 @@ export default function SaleForm() {
     const newItem = {
         selection_id: p.id,
         product_id: p.product_id,
-        imei: p.attributes?.imei || '',
+        imei: p.imei || p.attributes?.imei || '',
         ram: p.attributes?.ram || '',
         storage: p.attributes?.storage || '',
         color: p.attributes?.color || '',
@@ -370,7 +373,7 @@ export default function SaleForm() {
       // Find product by ID or by generated Name string
       const p = products.find(p => 
         p.id == val || 
-        (p.name + " (" + (p.attributes?.ram || '') + "/" + (p.attributes?.storage || '') + "/" + (p.attributes?.color || '') + ") / IMEI: " + (p.attributes?.imei || '')).toUpperCase() === val.toUpperCase()
+        (p.name + " (" + (p.attributes?.ram || '') + "/" + (p.attributes?.storage || '') + "/" + (p.attributes?.color || '') + ") / IMEI: " + (p.imei || p.attributes?.imei || '')).toUpperCase() === val.toUpperCase()
       );
 
       if (p) {
@@ -384,7 +387,7 @@ export default function SaleForm() {
               arr[i].ram = p.attributes.ram || '';
               arr[i].storage = p.attributes.storage || '';
               arr[i].color = p.attributes.color || '';
-              arr[i].imei = p.attributes.imei || '';
+              arr[i].imei = p.imei || p.attributes.imei || '';
           }
       }
     }
@@ -699,7 +702,7 @@ export default function SaleForm() {
                                 {scanResult && (
                                     <div className="text-info x-small fw-bold border border-info rounded px-2 py-1 bg-info bg-opacity-10 mb-1 animate-fade-in shadow-sm">
                                         <i className="bi bi-check-circle-fill me-1"></i>
-                                        {scanResult.name} ({scanResult.attributes?.ram || '-'}/{scanResult.attributes?.storage || '-'}/{scanResult.attributes?.color || '-'}) | IMEI: {scanResult.attributes?.imei}
+                                        {scanResult.name} ({scanResult.attributes?.ram || '-'}/{scanResult.attributes?.storage || '-'}/{scanResult.attributes?.color || '-'}) | IMEI: {scanResult.imei || scanResult.attributes?.imei || '-'}
                                     </div>
                                 )}
                                 <div className="input-group input-group-sm" style={{ width: '500px' }}>
@@ -715,13 +718,13 @@ export default function SaleForm() {
                                         {showProductList && (
                                             <div className="list-group shadow-sm mt-1 position-absolute w-100 z-3 border animate-fade-in" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                                 {products
-                                                    .filter(p => !productSearch || p.name.toUpperCase().includes(productSearch.toUpperCase()) || (p.attributes?.imei && p.attributes.imei.includes(productSearch.toUpperCase())))
+                                                    .filter(p => !productSearch || p.name.toUpperCase().includes(productSearch.toUpperCase()) || (p.imei && p.imei.includes(productSearch.toUpperCase())) || (p.attributes?.imei && p.attributes.imei.includes(productSearch.toUpperCase())))
                                                     .slice(0, 20)
                                                     .map(p => {
                                                         const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color) 
                                                             ? `(${p.attributes.ram || '-'}/${p.attributes.storage || '-'}/${p.attributes.color || '-'})`
                                                             : '';
-                                                        const imeiSuffix = p.attributes?.imei ? ` / IMEI: ${p.attributes.imei}` : '';
+                                                        const imeiSuffix = (p.imei || p.attributes?.imei) ? ` / IMEI: ${p.imei || p.attributes.imei}` : '';
                                                         return (
                                                             <button key={p.id} type="button" className="list-group-item list-group-item-action py-2 text-uppercase small" 
                                                                 onClick={() => {
@@ -797,12 +800,12 @@ export default function SaleForm() {
                                                 className="form-control form-control-sm text-uppercase fw-bold mb-1 shadow-sm border-primary" 
                                                 placeholder="🔍 TYPE PRODUCT NAME OR IMEI..."
                                                 required 
-                                                value={products.find(px => px.id == item.selection_id)?.name ? (products.find(px => px.id == item.selection_id).name + " (" + (products.find(px => px.id == item.selection_id).attributes?.ram || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.storage || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.color || '') + ") / IMEI: " + (products.find(px => px.id == item.selection_id).attributes?.imei || '')) : item.selection_id || ''} 
+                                                value={products.find(px => px.id == item.selection_id)?.name ? (products.find(px => px.id == item.selection_id).name + " (" + (products.find(px => px.id == item.selection_id).attributes?.ram || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.storage || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.color || '') + ") / IMEI: " + (products.find(px => px.id == item.selection_id).imei || products.find(px => px.id == item.selection_id).attributes?.imei || '')) : item.selection_id || ''} 
                                                 onChange={e => updateItem(i, 'selection_id', e.target.value)}
                                             />
                                             <datalist id={`productOptions-${i}`}>
                                                 {products.map(p => (
-                                                    <option key={p.id} value={`${p.name.toUpperCase()} (${(p.attributes?.ram || '')}/${(p.attributes?.storage || '')}/${(p.attributes?.color || '')}) / IMEI: ${p.attributes?.imei || ''}`} />
+                                                    <option key={p.id} value={`${p.name.toUpperCase()} (${(p.attributes?.ram || '')}/${(p.attributes?.storage || '')}/${(p.attributes?.color || '')}) / IMEI: ${p.imei || p.attributes?.imei || ''}`} />
                                                 ))}
                                             </datalist>
                                             
