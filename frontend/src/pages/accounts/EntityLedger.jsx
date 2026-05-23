@@ -75,23 +75,25 @@ export default function EntityLedger() {
     }
   };
 
-  const handleViewEntry = async (item) => {
-    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-      try {
-        const { data } = await api.get(`/transactions/${item.voucher_id}`);
-        setViewTxModal({ show: true, transaction: data });
-      } catch (err) {
-        toast.error('Failed to fetch transaction details');
+  const handleViewEntry = (item) => {
+    handlePinRequiredAction(async () => {
+      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+        try {
+          const { data } = await api.get(`/transactions/${item.voucher_id}`);
+          setViewTxModal({ show: true, transaction: data });
+        } catch (err) {
+          toast.error('Failed to fetch transaction details');
+        }
+      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+        navigate(`/sales/${item.voucher_id}`);
+      } else if (item.voucher_type === 'REPAIR') {
+        navigate(`/repairs/${item.voucher_id}/edit`);
+      } else if (item.voucher_type === 'PURCHASE') {
+        navigate(`/purchases/${item.voucher_id}`);
+      } else {
+        toast.info(`View details of ${item.voucher_type} is not supported directly.`);
       }
-    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-      navigate(`/sales/${item.voucher_id}`);
-    } else if (item.voucher_type === 'REPAIR') {
-      navigate(`/repairs/${item.voucher_id}/edit`);
-    } else if (item.voucher_type === 'PURCHASE') {
-      navigate(`/purchases/${item.voucher_id}`);
-    } else {
-      toast.info(`View details of ${item.voucher_type} is not supported directly.`);
-    }
+    });
   };
 
   const handleEditEntry = (item) => {
@@ -569,7 +571,7 @@ export default function EntityLedger() {
                                 <div className="d-inline-flex gap-1">
                                   {isActionable && (
                                     <button 
-                                      className="btn btn-outline-primary btn-xs rounded-pill px-2 py-0.5 hover-scale fw-bold"
+                                      className="btn btn-primary btn-sm rounded px-2 py-1 shadow-sm fw-bold"
                                       onClick={() => handleViewEntry(item)}
                                     >
                                       View
@@ -577,7 +579,7 @@ export default function EntityLedger() {
                                   )}
                                   {isEditable && (
                                     <button 
-                                      className="btn btn-outline-warning btn-xs rounded-pill px-2 py-0.5 hover-scale fw-bold"
+                                      className="btn btn-warning btn-sm rounded px-2 py-1 shadow-sm fw-bold text-dark"
                                       onClick={() => handleEditEntry(item)}
                                     >
                                       Edit
@@ -585,7 +587,7 @@ export default function EntityLedger() {
                                   )}
                                   {isActionable && (
                                     <button 
-                                      className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0.5 hover-scale fw-bold"
+                                      className="btn btn-danger btn-sm rounded px-2 py-1 shadow-sm fw-bold"
                                       onClick={() => handleDeleteEntry(item)}
                                     >
                                       Delete
