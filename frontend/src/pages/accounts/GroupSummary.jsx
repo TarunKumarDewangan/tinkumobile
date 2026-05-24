@@ -15,6 +15,7 @@ export default function GroupSummary() {
     const [typeFilter, setTypeFilter] = useState('ALL');
     const [showOpeningStock, setShowOpeningStock] = useState(false);
     const [hideZeroBalances, setHideZeroBalances] = useState(true);
+    const [showCategoryTotals, setShowCategoryTotals] = useState(false);
 
     // Edit Modal state
     const [editEntity, setEditEntity] = useState(null);
@@ -130,10 +131,16 @@ export default function GroupSummary() {
             <div className="d-flex justify-content-between align-items-center mb-4 no-print">
                 <h4 className="fw-bold mb-0">🏛️ Group Summary</h4>
                 <div className="d-flex gap-2">
-                    <button className="btn btn-outline-secondary btn-sm" onClick={() => loadData(searchTerm, typeFilter)}>
+                    <button 
+                        className={`btn btn-sm rounded-pill d-inline-flex align-items-center gap-1 shadow-sm ${showCategoryTotals ? 'btn-secondary text-white' : 'btn-outline-secondary'}`} 
+                        onClick={() => setShowCategoryTotals(!showCategoryTotals)}
+                    >
+                        <i className="bi bi-grid-3x3-gap"></i> Category Totals
+                    </button>
+                    <button className="btn btn-outline-secondary btn-sm rounded-pill d-inline-flex align-items-center gap-1 shadow-sm" onClick={() => loadData(searchTerm, typeFilter)}>
                         <i className="bi bi-arrow-clockwise"></i> Refresh
                     </button>
-                    <button className="btn btn-primary btn-sm" onClick={() => window.print()}>
+                    <button className="btn btn-outline-dark btn-sm rounded-pill d-inline-flex align-items-center gap-1 shadow-sm" onClick={() => window.print()}>
                         <i className="bi bi-printer"></i> Print
                     </button>
                 </div>
@@ -186,6 +193,49 @@ export default function GroupSummary() {
                 </div>
             </div>
 
+            {/* Category-wise Totals Summary */}
+            {showCategoryTotals && (() => {
+                const categoryTotals = filteredEntities.reduce((acc, ent) => {
+                    const type = ent.type || 'OTHER';
+                    if (!acc[type]) acc[type] = { debit: 0, credit: 0, count: 0 };
+                    if (ent.net_balance > 0) acc[type].debit += ent.net_balance;
+                    if (ent.net_balance < 0) acc[type].credit += Math.abs(ent.net_balance);
+                    acc[type].count += 1;
+                    return acc;
+                }, {});
+
+                return (
+                    <div className="card shadow-sm border-0 mb-4 tally-theme animate-fadeIn no-print">
+                        <div className="card-header bg-light py-2 border-bottom fw-bold x-small text-uppercase text-muted">
+                            Category-wise Totals
+                        </div>
+                        <div className="card-body p-3">
+                            <div className="row g-2">
+                                {Object.keys(categoryTotals).length === 0 ? (
+                                    <div className="text-muted small px-3">No categories found.</div>
+                                ) : (
+                                    Object.entries(categoryTotals).map(([cat, val]) => (
+                                        <div key={cat} className="col-md-4 col-sm-6">
+                                            <div className="p-2 border rounded bg-light bg-opacity-50">
+                                                <div className="fw-bold x-small text-secondary mb-1">{cat.replace(/_/g, ' ')} ({val.count})</div>
+                                                <div className="d-flex justify-content-between small">
+                                                    <span className="text-muted">Debit:</span>
+                                                    <span className="fw-semibold text-dark">₹{val.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                                </div>
+                                                <div className="d-flex justify-content-between small">
+                                                    <span className="text-muted">Credit:</span>
+                                                    <span className="fw-semibold text-dark">₹{val.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Table */}
             <div className="card shadow-sm border-0 overflow-hidden tally-theme">
                 {/* Column Header */}
@@ -199,11 +249,11 @@ export default function GroupSummary() {
                 </div>
 
                 {/* Top Grand Total */}
-                <div className="bg-dark text-white py-2 px-3 no-print border-bottom">
+                <div className="bg-light text-dark py-2 px-3 no-print border-bottom">
                     <div className="row fw-bold">
                         <div className="col-5 text-uppercase">Grand Total</div>
-                        <div className="col-2 text-end text-success">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-2 text-end text-danger">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-dark">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-dark">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                         <div className="col-3"></div>
                     </div>
                 </div>
@@ -231,7 +281,7 @@ export default function GroupSummary() {
                                         {/* Name + Type */}
                                         <div className="col-5">
                                             <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`}
-                                                className="fw-bold text-primary text-decoration-none d-block">
+                                                className="fw-bold text-dark text-decoration-none d-block">
                                                 {ent.name}
                                             </Link>
                                             <div className="xx-small text-muted text-uppercase">{ent.type}</div>
@@ -245,7 +295,7 @@ export default function GroupSummary() {
                                         </div>
 
                                         {/* Credit */}
-                                        <div className="col-2 text-end fw-bold text-danger">
+                                        <div className="col-2 text-end fw-bold text-dark">
                                             {ent.net_balance < 0
                                                 ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
                                                 : '—'}
@@ -254,7 +304,7 @@ export default function GroupSummary() {
                                         {/* CRUD Buttons */}
                                         <div className="col-3 text-end no-print d-flex gap-1 justify-content-end flex-wrap">
                                             <button
-                                                className="btn btn-outline-primary btn-xs px-2 py-0"
+                                                className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
                                                 style={{ fontSize: '0.7rem' }}
                                                 title="Edit account"
                                                 onClick={() => openEdit(ent)}
@@ -263,7 +313,7 @@ export default function GroupSummary() {
                                             </button>
                                             {isOwner() && (<>
                                                 <button
-                                                    className="btn btn-outline-danger btn-xs px-2 py-0"
+                                                    className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
                                                     style={{ fontSize: '0.7rem' }}
                                                     title="Delete account only (keeps transaction history)"
                                                     disabled={deleting === ent.id}
@@ -274,8 +324,8 @@ export default function GroupSummary() {
                                                         : <><i className="bi bi-trash"></i> Del</>}
                                                 </button>
                                                 <button
-                                                    className="btn btn-xs px-2 py-0 text-white"
-                                                    style={{ fontSize: '0.7rem', backgroundColor: '#7c0000', border: '1px solid #7c0000' }}
+                                                    className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                    style={{ fontSize: '0.7rem' }}
                                                     title="Delete account AND all transaction history (irreversible)"
                                                     disabled={deletingHistory === ent.id}
                                                     onClick={() => handleDeleteWithHistory(ent)}
@@ -294,11 +344,11 @@ export default function GroupSummary() {
                 </div>
 
                 {/* Footer Totals */}
-                <div className="card-footer bg-dark text-white py-3 border-0">
+                <div className="card-footer bg-light text-dark py-3 border-0">
                     <div className="row fw-bold">
                         <div className="col-5 text-uppercase">Grand Total</div>
-                        <div className="col-2 text-end text-success">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-2 text-end text-danger">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-dark">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                        <div className="col-2 text-end text-dark">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                         <div className="col-3"></div>
                     </div>
                 </div>
@@ -390,7 +440,7 @@ export default function GroupSummary() {
 
             <style>{`
                 .tally-theme { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .tally-row:hover { background-color: #f0f4ff; }
+                .tally-row:hover { background-color: #f1f5f9; }
                 .x-small  { font-size: 0.75rem; }
                 .xx-small { font-size: 0.65rem; }
                 .btn-xs   { font-size: 0.7rem; padding: 2px 6px; }
