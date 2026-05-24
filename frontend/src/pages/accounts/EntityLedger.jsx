@@ -468,17 +468,17 @@ export default function EntityLedger() {
               {/* Ledger Stats Summary Bar */}
               <div className="bg-light bg-opacity-25 p-2 px-3 d-flex gap-4 border-bottom flex-wrap">
                   <div className="stat-item">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Total Net</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Closing Bal</div>
                     <div className={`fw-bold x-small ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
                         ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()}
                     </div>
                   </div>
                   <div className="stat-item border-start ps-3">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">In (Recv)</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Credit</div>
                     <div className="x-small fw-bold text-primary">₹{parseFloat(targetEntity?.in_worth || 0).toLocaleString()}</div>
                   </div>
                   <div className="stat-item border-start ps-3">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Out (Paid)</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Debit</div>
                     <div className="x-small fw-bold text-warning">₹{parseFloat(targetEntity?.out_worth || 0).toLocaleString()}</div>
                   </div>
                   {targetEntity?.repair_dues > 0 && (
@@ -588,6 +588,26 @@ export default function EntityLedger() {
                           );
                         })}
                       </tbody>
+                      <tfoot>
+                        <tr className="fw-bold bg-light custom-summary-row">
+                          <td className="ps-3 align-middle text-muted" colSpan="3">
+                            <span className="text-uppercase xx-small fw-bold tracking-wider">TOTALS</span>
+                          </td>
+                          <td className="text-end text-danger align-middle">
+                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Debit Total</span>
+                            <span style={{ fontSize: '0.95rem' }}>₹{parseFloat(targetEntity?.out_worth || 0).toLocaleString()}</span>
+                          </td>
+                          <td className="text-end text-success align-middle">
+                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Credit Total</span>
+                            <span style={{ fontSize: '0.95rem' }}>₹{parseFloat(targetEntity?.in_worth || 0).toLocaleString()}</span>
+                          </td>
+                          <td className={`text-end align-middle ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Closing Bal</span>
+                            <span style={{ fontSize: '0.95rem' }}>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</span>
+                          </td>
+                          <td colSpan="2"></td>
+                        </tr>
+                      </tfoot>
                     </table>
                     {ledger.length > visibleItems && (
                         <div className="text-center p-3">
@@ -1214,6 +1234,16 @@ export default function EntityLedger() {
             border-right: 1px solid #cbd5e1 !important;
         }
         .custom-ledger-table tbody tr td:last-child {
+            border-right: none !important;
+        }
+        .custom-ledger-table tfoot tr td {
+            padding: 0.65rem 0.5rem;
+            background: #f8fafc;
+            border-bottom: 2px solid #cbd5e1 !important;
+            border-top: 2px solid #cbd5e1 !important;
+            border-right: 1px solid #cbd5e1 !important;
+        }
+        .custom-ledger-table tfoot tr td:last-child {
             border-right: none !important;
         }
         .category-dot { width: 6px; height: 6px; border-radius: 50%; }
