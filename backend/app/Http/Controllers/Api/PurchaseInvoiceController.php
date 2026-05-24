@@ -73,6 +73,8 @@ class PurchaseInvoiceController extends Controller
         $user   = $request->user();
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
 
+        $this->resolveSupplierId($request);
+
         $data = $request->validate([
             'shop_id'            => $user->hasFullAccess() ? 'required|exists:shops,id' : 'nullable',
             'supplier_id'        => 'required|exists:suppliers,id',
@@ -244,6 +246,8 @@ class PurchaseInvoiceController extends Controller
         if (!$user->hasFullAccess() && $purchaseInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $this->resolveSupplierId($request);
 
         $data = $request->validate([
             'supplier_id'        => 'required|exists:suppliers,id',
@@ -631,6 +635,29 @@ class PurchaseInvoiceController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    protected function resolveSupplierId(Request $request)
+    {
+        $supplierId = $request->input('supplier_id');
+        if (is_string($supplierId) && str_starts_with($supplierId, 'entity-')) {
+            $entityId = (int) substr($supplierId, 7);
+            $entity = \App\Models\Entity::find($entityId);
+            if ($entity) {
+                if ($entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
+                    $request->merge(['supplier_id' => $entity->relation_id]);
+                } else {
+                    // Create new supplier
+                    $supplier = \App\Models\Supplier::create([
+                        'name'    => $entity->name,
+                        'phone'   => $entity->phone,
+                        'address' => $entity->description,
+                        'gst_no'  => $entity->gst_number,
+                    ]);
+                    $request->merge(['supplier_id' => $supplier->id]);
+                }
+            }
         }
     }
 }

@@ -15,6 +15,25 @@ class PurchaseInvoice extends Model
     use PostsToLedger;
     use SoftDeletes, RecordsTransactions;
 
+    public static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($model) {
+            if ($model->isDirty('supplier_id') || !$model->accounting_entity_id) {
+                if ($model->supplier_id) {
+                    $supplier = \App\Models\Supplier::find($model->supplier_id);
+                    if ($supplier) {
+                        $entity = \App\Models\Entity::where('name', $supplier->name)->first();
+                        if ($entity) {
+                            $model->accounting_entity_id = $entity->id;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     protected function getLedgerData(): ?array
     {
         $supplier = $this->supplier;

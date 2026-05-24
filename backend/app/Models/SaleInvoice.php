@@ -15,6 +15,25 @@ class SaleInvoice extends Model
     use PostsToLedger;
     use SoftDeletes, RecordsTransactions;
 
+    public static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($model) {
+            if ($model->isDirty('customer_id') || !$model->accounting_entity_id) {
+                if ($model->customer_id) {
+                    $customer = \App\Models\Customer::find($model->customer_id);
+                    if ($customer) {
+                        $entity = \App\Models\Entity::where('name', $customer->name)->first();
+                        if ($entity) {
+                            $model->accounting_entity_id = $entity->id;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     protected function getLedgerData(): ?array
     {
         if ($this->is_cancelled) return null;
