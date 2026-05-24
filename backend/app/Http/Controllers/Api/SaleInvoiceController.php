@@ -365,6 +365,8 @@ class SaleInvoiceController extends Controller
             'items.*.ram'         => 'nullable|string',
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
+            'total_paid'             => 'nullable|numeric|min:0',
+            'exchange_paid'          => 'nullable|numeric|min:0',
             // Finance/EMI fields
             'financer_id'            => 'nullable|exists:entities,id',
             'down_payment'           => 'nullable|numeric|min:0',
@@ -446,6 +448,8 @@ class SaleInvoiceController extends Controller
                 'grand_total'    => $grandTotal,
                 'rounding_mode'  => $roundingMode,
                 'round_off'      => $roundOff,
+                'total_paid'     => $data['total_paid'] ?? 0,
+                'exchange_paid'  => $data['exchange_paid'] ?? 0,
                 'payment_method' => $data['payment_method'] ?? $saleInvoice->payment_method,
                 'notes'          => $data['notes'] ?? $saleInvoice->notes,
                 // Save finance/EMI fields
