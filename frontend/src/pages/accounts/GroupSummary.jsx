@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { Link } from 'react-router-dom';
@@ -16,6 +16,7 @@ export default function GroupSummary() {
     const [showOpeningStock, setShowOpeningStock] = useState(false);
     const [hideZeroBalances, setHideZeroBalances] = useState(true);
     const [showCategoryTotals, setShowCategoryTotals] = useState(false);
+    const [expandedCategories, setExpandedCategories] = useState({});
 
     // Edit Modal state
     const [editEntity, setEditEntity] = useState(null);
@@ -61,6 +62,42 @@ export default function GroupSummary() {
 
     const totalDebit  = filteredEntities.reduce((s, e) => s + (e.net_balance > 0 ? e.net_balance : 0), 0);
     const totalCredit = filteredEntities.reduce((s, e) => s + (e.net_balance < 0 ? Math.abs(e.net_balance) : 0), 0);
+
+    // Group and sort logic for category totals inside table
+    const categoryGroups = filteredEntities.reduce((acc, ent) => {
+        const type = ent.type || 'OTHER';
+        if (!acc[type]) {
+            acc[type] = {
+                name: type,
+                entities: [],
+                totalDebit: 0,
+                totalCredit: 0
+            };
+        }
+        acc[type].entities.push(ent);
+        if (ent.net_balance > 0) {
+            acc[type].totalDebit += ent.net_balance;
+        } else if (ent.net_balance < 0) {
+            acc[type].totalCredit += Math.abs(ent.net_balance);
+        }
+        return acc;
+    }, {});
+
+    const sortedCategoryNames = Object.keys(categoryGroups).sort((a, b) => {
+        const idxA = ENTITY_TYPES.indexOf(a);
+        const idxB = ENTITY_TYPES.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b);
+    });
+
+    const toggleCategory = (cat) => {
+        setExpandedCategories(prev => ({
+            ...prev,
+            [cat]: !prev[cat]
+        }));
+    };
 
     /* ── Edit ── */
     const openEdit = (ent) => {
@@ -193,73 +230,11 @@ export default function GroupSummary() {
                 </div>
             </div>
 
-            {/* Category-wise Totals Summary */}
-            {showCategoryTotals && (() => {
-                const categoryTotals = filteredEntities.reduce((acc, ent) => {
-                    const type = ent.type || 'OTHER';
-                    if (!acc[type]) acc[type] = { debit: 0, credit: 0, count: 0 };
-                    if (ent.net_balance > 0) acc[type].debit += ent.net_balance;
-                    if (ent.net_balance < 0) acc[type].credit += Math.abs(ent.net_balance);
-                    acc[type].count += 1;
-                    return acc;
-                }, {});
-
-                return (
-                    <div className="card shadow-sm border-0 mb-4 tally-theme animate-fadeIn no-print">
-                        <div className="card-header bg-light py-2 border-bottom fw-bold x-small text-uppercase text-muted">
-                            Category-wise Totals
-                        </div>
-                        <div className="card-body p-3">
-                            <div className="row g-2">
-                                {Object.keys(categoryTotals).length === 0 ? (
-                                    <div className="text-muted small px-3">No categories found.</div>
-                                ) : (
-                                    Object.entries(categoryTotals).map(([cat, val]) => (
-                                        <div key={cat} className="col-md-4 col-sm-6">
-                                            <div className="p-2 border rounded bg-light bg-opacity-50">
-                                                <div className="fw-bold x-small text-secondary mb-1">{cat.replace(/_/g, ' ')} ({val.count})</div>
-                                                <div className="d-flex justify-content-between small">
-                                                    <span className="text-muted">Debit:</span>
-                                                    <span className="fw-semibold text-dark">₹{val.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                                </div>
-                                                <div className="d-flex justify-content-between small">
-                                                    <span className="text-muted">Credit:</span>
-                                                    <span className="fw-semibold text-dark">₹{val.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
 
             {/* Table */}
             <div className="card shadow-sm border-0 overflow-hidden tally-theme">
-                {/* Column Header */}
-                <div className="card-header bg-light py-3 border-bottom no-print">
-                    <div className="row fw-bold text-uppercase x-small text-muted align-items-center">
-                        <div className="col-5">Particulars</div>
-                        <div className="col-2 text-end">Debit (Receivable)</div>
-                        <div className="col-2 text-end">Credit (Payable)</div>
-                        <div className="col-3 text-end">Actions</div>
-                    </div>
-                </div>
-
-                {/* Top Grand Total */}
-                <div className="bg-light text-dark py-2 px-3 no-print border-bottom">
-                    <div className="row fw-bold">
-                        <div className="col-5 text-uppercase">Grand Total</div>
-                        <div className="col-2 text-end text-dark">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-2 text-end text-dark">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-3"></div>
-                    </div>
-                </div>
-
                 {/* Print Header */}
-                <div className="d-none d-print-block text-center mb-4">
+                <div className="d-none d-print-block text-center mb-4 mt-3">
                     <h2 className="fw-bold mb-1">Tinku Mobiles</h2>
                     <h5 className="text-muted">Group Summary Report</h5>
                     <div className="small">Generated on: {new Date().toLocaleString()}</div>
@@ -267,89 +242,210 @@ export default function GroupSummary() {
                 </div>
 
                 <div className="card-body p-0">
-                    <div className="tally-rows" style={{ minHeight: '400px' }}>
-                        {loading ? (
-                            <div className="text-center py-5">
-                                <div className="spinner-border text-primary opacity-50"></div>
-                            </div>
-                        ) : filteredEntities.length === 0 ? (
-                            <div className="text-center py-5 text-muted italic">No accounts found.</div>
-                        ) : (
-                            filteredEntities.map((ent, idx) => (
-                                <div key={ent.id} className={`tally-row border-bottom py-2 px-3 ${idx % 2 === 0 ? '' : 'bg-light bg-opacity-10'}`}>
-                                    <div className="row align-items-center">
-                                        {/* Name + Type */}
-                                        <div className="col-5">
-                                            <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`}
-                                                className="fw-bold text-dark text-decoration-none d-block">
-                                                {ent.name}
-                                            </Link>
-                                            <div className="xx-small text-muted text-uppercase">{ent.type}</div>
-                                        </div>
-
-                                        {/* Debit */}
-                                        <div className="col-2 text-end fw-bold">
-                                            {ent.net_balance > 0
-                                                ? `₹${ent.net_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                                : '—'}
-                                        </div>
-
-                                        {/* Credit */}
-                                        <div className="col-2 text-end fw-bold text-dark">
-                                            {ent.net_balance < 0
-                                                ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                                : '—'}
-                                        </div>
-
-                                        {/* CRUD Buttons */}
-                                        <div className="col-3 text-end no-print d-flex gap-1 justify-content-end flex-wrap">
-                                            <button
-                                                className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
-                                                style={{ fontSize: '0.7rem' }}
-                                                title="Edit account"
-                                                onClick={() => openEdit(ent)}
+                    <div className="table-responsive">
+                        <table className="table custom-tally-table mb-0">
+                            <thead>
+                                <tr className="bg-light text-uppercase x-small text-muted fw-bold">
+                                    <th style={{ width: '40%' }} className="ps-3">Particulars</th>
+                                    <th className="text-end pe-3" style={{ width: '20%' }}>Debit (Receivable)</th>
+                                    <th className="text-end pe-3" style={{ width: '20%' }}>Credit (Payable)</th>
+                                    <th className="text-end pe-3 no-print" style={{ width: '20%' }}>Actions</th>
+                                </tr>
+                                {/* Top Grand Total */}
+                                <tr className="bg-light text-dark fw-bold no-print" style={{ borderBottom: '2px solid #cbd5e1' }}>
+                                    <td className="text-uppercase py-2 ps-3">Grand Total</td>
+                                    <td className="text-end py-2 pe-3">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    <td className="text-end py-2 pe-3">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    <td className="no-print py-2"></td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan="4" className="text-center py-5">
+                                            <div className="spinner-border text-primary opacity-50"></div>
+                                        </td>
+                                    </tr>
+                                ) : filteredEntities.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="4" className="text-center py-5 text-muted italic">
+                                            No accounts found.
+                                        </td>
+                                    </tr>
+                                ) : showCategoryTotals ? (
+                                    sortedCategoryNames.map(catName => (
+                                        <Fragment key={`cat-group-${catName}`}>
+                                            <tr 
+                                                className="category-row"
+                                                onClick={() => toggleCategory(catName)}
                                             >
-                                                <i className="bi bi-pencil"></i> Edit
-                                            </button>
-                                            {isOwner() && (<>
-                                                <button
-                                                    className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
-                                                    style={{ fontSize: '0.7rem' }}
-                                                    title="Delete account only (keeps transaction history)"
-                                                    disabled={deleting === ent.id}
-                                                    onClick={() => handleDelete(ent)}
-                                                >
-                                                    {deleting === ent.id
-                                                        ? <span className="spinner-border spinner-border-sm"></span>
-                                                        : <><i className="bi bi-trash"></i> Del</>}
-                                                </button>
-                                                <button
-                                                    className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
-                                                    style={{ fontSize: '0.7rem' }}
-                                                    title="Delete account AND all transaction history (irreversible)"
-                                                    disabled={deletingHistory === ent.id}
-                                                    onClick={() => handleDeleteWithHistory(ent)}
-                                                >
-                                                    {deletingHistory === ent.id
-                                                        ? <span className="spinner-border spinner-border-sm"></span>
-                                                        : <><i className="bi bi-trash-fill"></i> Del+History</>}
-                                                </button>
-                                            </>)}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* Footer Totals */}
-                <div className="card-footer bg-light text-dark py-3 border-0">
-                    <div className="row fw-bold">
-                        <div className="col-5 text-uppercase">Grand Total</div>
-                        <div className="col-2 text-end text-dark">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-2 text-end text-dark">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                        <div className="col-3"></div>
+                                                <td className="ps-3 py-2">
+                                                    <span className="d-flex align-items-center gap-2">
+                                                        <i className={`bi ${expandedCategories[catName] ? 'bi-chevron-down' : 'bi-chevron-right'} text-muted`}></i>
+                                                        <span className="fw-bold">{catName.replace(/_/g, ' ')}</span>
+                                                        <span className="badge bg-secondary text-white rounded-pill font-normal" style={{ fontSize: '0.7rem' }}>
+                                                            {categoryGroups[catName].entities.length}
+                                                        </span>
+                                                    </span>
+                                                </td>
+                                                <td className="text-end fw-bold py-2 pe-3">
+                                                    {categoryGroups[catName].totalDebit > 0
+                                                        ? `₹${categoryGroups[catName].totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                        : '—'}
+                                                </td>
+                                                <td className="text-end fw-bold py-2 pe-3">
+                                                    {categoryGroups[catName].totalCredit > 0
+                                                        ? `₹${categoryGroups[catName].totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                        : '—'}
+                                                </td>
+                                                <td className="no-print py-2"></td>
+                                            </tr>
+                                            {expandedCategories[catName] && categoryGroups[catName].entities.map((ent) => (
+                                                <tr key={ent.id} className="tally-row">
+                                                    <td className="ps-5 py-2">
+                                                        <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`}
+                                                            className="fw-bold text-dark text-decoration-none d-block">
+                                                            {ent.name}
+                                                        </Link>
+                                                        <div className="xx-small text-muted text-uppercase">{ent.type}</div>
+                                                    </td>
+                                                    <td className="text-end fw-bold py-2 pe-3">
+                                                        {ent.net_balance > 0
+                                                            ? `₹${ent.net_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                            : '—'}
+                                                    </td>
+                                                    <td className="text-end fw-bold text-dark py-2 pe-3">
+                                                        {ent.net_balance < 0
+                                                            ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                            : '—'}
+                                                    </td>
+                                                    <td className="text-end no-print py-2 pe-3">
+                                                        <div className="d-flex gap-1 justify-content-end flex-wrap">
+                                                            <button
+                                                                className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                                style={{ fontSize: '0.7rem' }}
+                                                                title="Edit account"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openEdit(ent);
+                                                                }}
+                                                            >
+                                                                <i className="bi bi-pencil"></i> Edit
+                                                            </button>
+                                                            {isOwner() && (<>
+                                                                <button
+                                                                    className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                                    style={{ fontSize: '0.7rem' }}
+                                                                    title="Delete account only (keeps transaction history)"
+                                                                    disabled={deleting === ent.id}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDelete(ent);
+                                                                    }}
+                                                                >
+                                                                    {deleting === ent.id
+                                                                        ? <span className="spinner-border spinner-border-sm"></span>
+                                                                        : <><i className="bi bi-trash"></i> Del</>}
+                                                                </button>
+                                                                <button
+                                                                    className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                                    style={{ fontSize: '0.7rem' }}
+                                                                    title="Delete account AND all transaction history (irreversible)"
+                                                                    disabled={deletingHistory === ent.id}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteWithHistory(ent);
+                                                                    }}
+                                                                >
+                                                                    {deletingHistory === ent.id
+                                                                        ? <span className="spinner-border spinner-border-sm"></span>
+                                                                        : <><i className="bi bi-trash-fill"></i> Del+History</>}
+                                                                </button>
+                                                            </>)}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </Fragment>
+                                    ))
+                                ) : (
+                                    filteredEntities.map((ent) => (
+                                        <tr key={ent.id} className="tally-row">
+                                            <td className="ps-3 py-2">
+                                                <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`}
+                                                    className="fw-bold text-dark text-decoration-none d-block">
+                                                    {ent.name}
+                                                </Link>
+                                                <div className="xx-small text-muted text-uppercase">{ent.type}</div>
+                                            </td>
+                                            <td className="text-end fw-bold py-2 pe-3">
+                                                {ent.net_balance > 0
+                                                    ? `₹${ent.net_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                    : '—'}
+                                            </td>
+                                            <td className="text-end fw-bold text-dark py-2 pe-3">
+                                                {ent.net_balance < 0
+                                                    ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                    : '—'}
+                                            </td>
+                                            <td className="text-end no-print py-2 pe-3">
+                                                <div className="d-flex gap-1 justify-content-end flex-wrap">
+                                                    <button
+                                                        className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                        style={{ fontSize: '0.7rem' }}
+                                                        title="Edit account"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openEdit(ent);
+                                                        }}
+                                                    >
+                                                        <i className="bi bi-pencil"></i> Edit
+                                                    </button>
+                                                    {isOwner() && (<>
+                                                        <button
+                                                            className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                            style={{ fontSize: '0.7rem' }}
+                                                            title="Delete account only (keeps transaction history)"
+                                                            disabled={deleting === ent.id}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDelete(ent);
+                                                            }}
+                                                        >
+                                                            {deleting === ent.id
+                                                                ? <span className="spinner-border spinner-border-sm"></span>
+                                                                : <><i className="bi bi-trash"></i> Del</>}
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                                            style={{ fontSize: '0.7rem' }}
+                                                            title="Delete account AND all transaction history (irreversible)"
+                                                            disabled={deletingHistory === ent.id}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteWithHistory(ent);
+                                                            }}
+                                                        >
+                                                            {deletingHistory === ent.id
+                                                                ? <span className="spinner-border spinner-border-sm"></span>
+                                                                : <><i className="bi bi-trash-fill"></i> Del+History</>}
+                                                        </button>
+                                                    </>)}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                            <tfoot>
+                                <tr className="fw-bold bg-light">
+                                    <td className="text-uppercase ps-3 py-2">Grand Total</td>
+                                    <td className="text-end py-2 pe-3">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    <td className="text-end py-2 pe-3">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    <td className="no-print py-2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -440,15 +536,69 @@ export default function GroupSummary() {
 
             <style>{`
                 .tally-theme { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .tally-row:hover { background-color: #f1f5f9; }
                 .x-small  { font-size: 0.75rem; }
                 .xx-small { font-size: 0.65rem; }
                 .btn-xs   { font-size: 0.7rem; padding: 2px 6px; }
+
+                .custom-tally-table {
+                    width: 100%;
+                    border-collapse: collapse !important;
+                    border: 1px solid #cbd5e1 !important;
+                }
+                .custom-tally-table thead th {
+                    position: sticky;
+                    top: 0;
+                    z-index: 10;
+                    background: #f8fafc;
+                    color: #475569;
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    padding: 0.65rem 0.5rem;
+                    border-bottom: 2px solid #cbd5e1 !important;
+                    border-right: 1px solid #cbd5e1 !important;
+                }
+                .custom-tally-table thead th:last-child {
+                    border-right: none !important;
+                }
+                .custom-tally-table tbody tr td {
+                    padding: 0.6rem 0.5rem;
+                    border-bottom: 1px solid #cbd5e1 !important;
+                    border-right: 1px solid #cbd5e1 !important;
+                    vertical-align: middle;
+                }
+                .custom-tally-table tbody tr td:last-child {
+                    border-right: none !important;
+                }
+                .custom-tally-table tfoot tr td {
+                    padding: 0.65rem 0.5rem;
+                    background: #f8fafc;
+                    border-bottom: 2px solid #cbd5e1 !important;
+                    border-top: 2px solid #cbd5e1 !important;
+                    border-right: 1px solid #cbd5e1 !important;
+                    font-weight: bold;
+                }
+                .custom-tally-table tfoot tr td:last-child {
+                    border-right: none !important;
+                }
+                .custom-tally-table tbody tr.tally-row:hover {
+                    background-color: #f1f5f9 !important;
+                }
+                .category-row {
+                    background-color: #f8fafc !important;
+                    cursor: pointer;
+                    user-select: none;
+                }
+                .category-row:hover {
+                    background-color: #e2e8f0 !important;
+                }
+
                 @media print {
                     .no-print  { display: none !important; }
                     .card      { border: none !important; box-shadow: none !important; }
-                    .card-footer { background-color: #000 !important; color: #fff !important; }
                     body       { background: #fff !important; }
+                    .custom-tally-table { border: 1px solid #000 !important; }
+                    .custom-tally-table th, .custom-tally-table td { border: 1px solid #000 !important; }
                 }
             `}</style>
         </div>
