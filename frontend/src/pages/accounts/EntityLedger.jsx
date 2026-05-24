@@ -5,6 +5,28 @@ import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import _ from 'lodash'; // Using lodash for debounce
 
+const getVoucherBadgeClass = (type) => {
+  switch (type) {
+    case 'SALE':
+    case 'SALE_FINANCE':
+    case 'FINANCE_PENDING':
+      return 'bg-success-subtle text-success border border-success border-opacity-25 xx-small';
+    case 'RECEIPT':
+      return 'bg-info-subtle text-info border border-info border-opacity-25 xx-small';
+    case 'PAYMENT':
+      return 'bg-danger-subtle text-danger border border-danger border-opacity-25 xx-small';
+    case 'REPAIR':
+      return 'bg-primary-subtle text-primary border border-primary border-opacity-25 xx-small';
+    case 'PURCHASE':
+      return 'bg-warning-subtle text-warning-emphasis border border-warning border-opacity-25 xx-small';
+    case 'AIRTEL_DROP':
+    case 'AIRTEL_RECOVERY':
+      return 'bg-secondary-subtle text-secondary-emphasis border border-secondary border-opacity-25 xx-small';
+    default:
+      return 'bg-light text-secondary border xx-small';
+  }
+};
+
 export default function EntityLedger() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -318,7 +340,7 @@ export default function EntityLedger() {
             <p className="xx-small text-muted mb-0 text-uppercase letter-spacing-1">Management Portal</p>
           </div>
           
-          <div className="col-md-3">
+          <div className="col-md-4">
              <div className="search-box position-relative">
                 <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted x-small"></i>
                 <input 
@@ -332,43 +354,9 @@ export default function EntityLedger() {
               </div>
           </div>
 
-          <div className="col-auto me-auto">
-             <div className="tabs-pill shadow-sm">
-                <button className={`tab-item ${filterType === 'ALL' ? 'active' : ''}`} onClick={() => setFilterType('ALL')}>
-                  <i className="bi bi-grid-fill me-1"></i> ALL
-                </button>
-                <button className={`tab-item ${filterType === 'RECEIVABLE' ? 'active success' : ''}`} onClick={() => setFilterType('RECEIVABLE')}>
-                  <i className="bi bi-arrow-down-circle-fill me-1"></i> REC
-                </button>
-                <button className={`tab-item ${filterType === 'PAYABLE' ? 'active danger' : ''}`} onClick={() => setFilterType('PAYABLE')}>
-                  <i className="bi bi-arrow-up-circle-fill me-1"></i> PAY
-                </button>
-              </div>
-          </div>
-          
-          <div className="col-md-2">
-            <div className="stat-card clickable hover-lift" onClick={() => handleShowBreakdown('OVERALL')}>
-              <span className="xx-small text-uppercase fw-bold opacity-50 d-block">Overall Total</span>
-              <span className={`h5 mb-0 fw-bold ${summary.overallTotal >= 0 ? 'text-primary' : 'text-danger'}`}>
-                ₹{parseFloat(summary.overallTotal).toLocaleString()}
-              </span>
-            </div>
-          </div>
-          <div className="col-md-2">
-            <div className="stat-card clickable hover-lift success" onClick={() => handleShowBreakdown('RECEIVABLE')}>
-              <span className="xx-small text-uppercase fw-bold text-success opacity-50 d-block">Receivable</span>
-              <span className="h5 mb-0 fw-bold text-success">₹{parseFloat(summary.receivable).toLocaleString()}</span>
-            </div>
-          </div>
-          <div className="col-md-2">
-            <div className="stat-card clickable hover-lift danger" onClick={() => handleShowBreakdown('PAYABLE')}>
-              <span className="xx-small text-uppercase fw-bold text-danger opacity-50 d-block">Payable</span>
-              <span className="h5 mb-0 fw-bold text-danger">₹{parseFloat(summary.payable).toLocaleString()}</span>
-            </div>
-          </div>
-          <div className="col-auto">
+          <div className="col-auto ms-auto">
              <button className="btn btn-glass-secondary btn-sm rounded-pill" onClick={() => { fetchSummary(); if (searchTerm) loadEntities(searchTerm, filterType); }}>
-                <i className="bi bi-arrow-clockwise"></i>
+                <i className="bi bi-arrow-clockwise me-1"></i> Refresh
              </button>
           </div>
         </div>
@@ -376,7 +364,7 @@ export default function EntityLedger() {
 
       <div className="row g-3 flex-grow-1 overflow-hidden">
         {/* Modern Sidebar / Master View */}
-        <div className="col-lg-3 col-md-5 d-flex flex-column overflow-hidden h-100 animate-slideRight">
+        <div className="col-lg-2 col-md-3 d-flex flex-column overflow-hidden h-100 animate-slideRight">
           <div className="glass-card flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0">
             <div className="flex-grow-1 overflow-auto entity-list p-2">
               {loading ? (
@@ -424,7 +412,7 @@ export default function EntityLedger() {
         </div>
 
         {/* Detailed Ledger Area */}
-        <div className="col-lg-9 col-md-7 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
+        <div className="col-lg-10 col-md-9 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
           {selectedEntityId ? (
             <div className="glass-card-main flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0 animate-fadeIn">
               {/* Detail Header */}
@@ -517,26 +505,28 @@ export default function EntityLedger() {
                     <table className="table table-hover align-middle custom-ledger-table mb-0">
                       <thead>
                         <tr>
-                          <th className="ps-4">Date</th>
-                          <th>Particulars</th>
-                          <th>Vch Type</th>
-                          <th className="text-end">Debit (Dr)</th>
-                          <th className="text-end pe-4">Credit (Cr)</th>
-                          <th className="text-end pe-4">Balance</th>
-                          <th className="text-center pe-4" style={{ width: '160px' }}>Actions</th>
+                          <th className="ps-3" style={{ width: '100px' }}>Date</th>
+                          <th style={{ width: '90px' }}>Type</th>
+                          <th style={{ width: '90px' }}>Mode</th>
+                          <th className="text-end" style={{ width: '110px' }}>Debit (Dr)</th>
+                          <th className="text-end" style={{ width: '110px' }}>Credit (Cr)</th>
+                          <th className="text-end" style={{ width: '130px' }}>Balance</th>
+                          <th>Narration</th>
+                          <th className="text-center" style={{ width: '180px' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {parseFloat(targetEntity?.opening_balance || 0) !== 0 && (
                           <tr className="opening-balance-row bg-light bg-opacity-50">
-                            <td className="ps-4 xx-small text-muted">—</td>
-                            <td className="xx-small italic text-muted fw-bold text-primary">Opening Balance</td>
-                            <td>—</td>
-                            <td className="text-end">—</td>
-                            <td className="text-end pe-4">—</td>
-                            <td className={`text-end pe-4 fw-bold x-small ${targetEntity?.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
+                            <td className="ps-3 xx-small text-muted">—</td>
+                            <td className="xx-small text-muted">—</td>
+                            <td className="xx-small text-muted">—</td>
+                            <td className="text-end text-muted">—</td>
+                            <td className="text-end text-muted">—</td>
+                            <td className={`text-end fw-bold x-small ${targetEntity?.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
                                ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
                             </td>
+                            <td className="xx-small italic text-muted fw-bold text-primary">Opening Balance</td>
                             <td></td>
                           </tr>
                         )}
@@ -546,51 +536,50 @@ export default function EntityLedger() {
                           
                           return (
                             <tr key={item.id}>
-                              <td className="ps-4">
+                              <td className="ps-3">
                                   <span className="x-small text-muted">{new Date(item.date).toLocaleDateString('en-GB')}</span>
                               </td>
-                              <td>
-                                  <div className="d-flex align-items-center">
-                                      <div className={`category-dot me-2 bg-primary`}></div>
-                                      <div>
-                                          <div className="fw-bold text-dark x-small">{item.particulars}</div>
-                                      </div>
-                                  </div>
-                              </td>
-                              <td><span className="badge bg-light text-secondary border xx-small">{item.voucher_type}</span></td>
+                              <td><span className={`badge ${getVoucherBadgeClass(item.voucher_type)}`}>{item.voucher_type}</span></td>
+                              <td><span className="text-uppercase x-small fw-semibold text-muted">{item.payment_mode || '—'}</span></td>
                               <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-danger' : 'text-muted opacity-25'}`}>
                                   {item.debit > 0 ? `₹${Number(item.debit).toLocaleString()}` : '—'}
                               </td>
-                              <td className={`text-end pe-4 fw-bold x-small ${item.credit > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
+                              <td className={`text-end fw-bold x-small ${item.credit > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
                                   {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
                               </td>
-                              <td className={`text-end pe-4 fw-bold x-small ${item.running_balance >= 0 ? 'text-success' : 'text-danger'}`}>
+                              <td className={`text-end fw-bold x-small ${item.running_balance >= 0 ? 'text-success' : 'text-danger'}`}>
                                   ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
                               </td>
-                              <td className="text-center pe-4">
+                              <td>
+                                  <div className="fw-semibold text-dark x-small">{item.particulars}</div>
+                              </td>
+                              <td className="text-center">
                                 <div className="d-inline-flex gap-1">
                                   {isActionable && (
                                     <button 
-                                      className="btn btn-primary btn-sm rounded px-2 py-1 shadow-sm fw-bold"
+                                      className="btn btn-outline-primary btn-xs rounded-pill d-inline-flex align-items-center gap-1 shadow-sm"
                                       onClick={() => handleViewEntry(item)}
+                                      title="View Details"
                                     >
-                                      View
+                                      <i className="bi bi-eye"></i> View
                                     </button>
                                   )}
                                   {isEditable && (
                                     <button 
-                                      className="btn btn-warning btn-sm rounded px-2 py-1 shadow-sm fw-bold text-dark"
+                                      className="btn btn-outline-warning btn-xs rounded-pill d-inline-flex align-items-center gap-1 text-dark shadow-sm"
                                       onClick={() => handleEditEntry(item)}
+                                      title="Edit Transaction"
                                     >
-                                      Edit
+                                      <i className="bi bi-pencil"></i> Edit
                                     </button>
                                   )}
                                   {isActionable && (
                                     <button 
-                                      className="btn btn-danger btn-sm rounded px-2 py-1 shadow-sm fw-bold"
+                                      className="btn btn-outline-danger btn-xs rounded-pill d-inline-flex align-items-center gap-1 shadow-sm"
                                       onClick={() => handleDeleteEntry(item)}
+                                      title="Delete Entry"
                                     >
-                                      Delete
+                                      <i className="bi bi-trash"></i> Delete
                                     </button>
                                   )}
                                 </div>
@@ -1175,10 +1164,20 @@ export default function EntityLedger() {
             opacity: 0.8;
         }
         .entity-card.compact {
-            transition: all 0.2s;
+            transition: all 0.2s ease-in-out;
+            border-left: 3px solid transparent !important;
         }
-        .entity-card.active { background: #edf2ff; border: 1px solid #c7d2fe; }
-        .entity-card.hover-bg:hover { background: #f1f5f9; }
+        .entity-card.active { 
+            background: #edf2ff; 
+            border-left: 3px solid var(--bs-primary, #4f46e5) !important;
+            border-top: 1px solid #c7d2fe !important;
+            border-bottom: 1px solid #c7d2fe !important;
+            border-right: 1px solid #c7d2fe !important;
+        }
+        .entity-card.hover-bg:hover { 
+            background: #f1f5f9; 
+            transform: translateX(3px);
+        }
         
         .avatar-initial {
             width: 32px;
@@ -1189,16 +1188,34 @@ export default function EntityLedger() {
             font-weight: 800;
             font-size: 0.9rem;
         }
+        .custom-ledger-table {
+            border: 1px solid #cbd5e1 !important;
+            border-collapse: collapse !important;
+        }
         .custom-ledger-table thead th {
-            background: #f8fafc;
-            color: #64748b;
-            font-size: 0.65rem;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 0.68rem;
             font-weight: 700;
             text-transform: uppercase;
-            padding: 1rem;
-            border-bottom: 2px solid #e2e8f0;
+            padding: 0.65rem 0.5rem;
+            border-bottom: 2px solid #cbd5e1 !important;
+            border-right: 1px solid #cbd5e1 !important;
         }
-        .custom-ledger-table tbody tr td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; }
+        .custom-ledger-table thead th:last-child {
+            border-right: none !important;
+        }
+        .custom-ledger-table tbody tr td {
+            padding: 0.6rem 0.5rem;
+            border-bottom: 1px solid #cbd5e1 !important;
+            border-right: 1px solid #cbd5e1 !important;
+        }
+        .custom-ledger-table tbody tr td:last-child {
+            border-right: none !important;
+        }
         .category-dot { width: 6px; height: 6px; border-radius: 50%; }
         .x-small { font-size: 0.75rem; }
         .xx-small { font-size: 0.65rem; }
