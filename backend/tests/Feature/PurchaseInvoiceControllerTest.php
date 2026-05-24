@@ -187,4 +187,41 @@ class PurchaseInvoiceControllerTest extends TestCase
             'accounting_entity_id' => $entity->id
         ]);
     }
+
+    public function test_can_create_purchase_with_entity_supplier_having_null_phone_and_description()
+    {
+        $entity = Entity::create([
+            'name' => 'VIJAY DISTRIBUTORS',
+            'type' => 'DISTRIBUTOR',
+            'phone' => null,
+            'description' => null,
+            'gst_number' => null
+        ]);
+
+        $postData = [
+            'shop_id' => $this->shop->id,
+            'supplier_id' => "entity-{$entity->id}",
+            'purchase_date' => '2026-05-24',
+            'status' => 'received',
+            'bill_type' => 'kaccha',
+            'items' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => 2,
+                    'unit_price' => 1000,
+                    'selling_price' => 1200
+                ]
+            ]
+        ];
+
+        $response = $this->actingAs($this->user)
+            ->postJson('/api/purchase-invoices', $postData);
+
+        $response->assertStatus(201);
+        
+        $supplier = Supplier::where('name', 'VIJAY DISTRIBUTORS')->first();
+        $this->assertNotNull($supplier);
+        $this->assertEquals('', $supplier->phone);
+        $this->assertEquals('', $supplier->address);
+    }
 }

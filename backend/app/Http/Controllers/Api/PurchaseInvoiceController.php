@@ -651,8 +651,8 @@ class PurchaseInvoiceController extends Controller
                     // Create new supplier
                     $supplier = \App\Models\Supplier::create([
                         'name'    => $entity->name,
-                        'phone'   => $entity->phone,
-                        'address' => $entity->description,
+                        'phone'   => $entity->phone ?? '',
+                        'address' => $entity->description ?? '',
                         'gst_no'  => $entity->gst_number,
                     ]);
                     $request->merge(['supplier_id' => $supplier->id]);
