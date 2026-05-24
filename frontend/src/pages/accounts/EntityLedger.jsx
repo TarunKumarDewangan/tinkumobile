@@ -6,25 +6,7 @@ import { formatDate } from '../../utils/formatters';
 import _ from 'lodash'; // Using lodash for debounce
 
 const getVoucherBadgeClass = (type) => {
-  switch (type) {
-    case 'SALE':
-    case 'SALE_FINANCE':
-    case 'FINANCE_PENDING':
-      return 'bg-success-subtle text-success border border-success border-opacity-25 xx-small';
-    case 'RECEIPT':
-      return 'bg-info-subtle text-info border border-info border-opacity-25 xx-small';
-    case 'PAYMENT':
-      return 'bg-danger-subtle text-danger border border-danger border-opacity-25 xx-small';
-    case 'REPAIR':
-      return 'bg-primary-subtle text-primary border border-primary border-opacity-25 xx-small';
-    case 'PURCHASE':
-      return 'bg-warning-subtle text-warning-emphasis border border-warning border-opacity-25 xx-small';
-    case 'AIRTEL_DROP':
-    case 'AIRTEL_RECOVERY':
-      return 'bg-secondary-subtle text-secondary-emphasis border border-secondary border-opacity-25 xx-small';
-    default:
-      return 'bg-light text-secondary border xx-small';
-  }
+  return 'bg-light text-dark border border-secondary border-opacity-25 xx-small';
 };
 
 export default function EntityLedger() {
@@ -50,6 +32,8 @@ export default function EntityLedger() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('ALL'); 
   const [summary, setSummary] = useState({ overallTotal: 0, receivable: 0, payable: 0 });
+  const totalDebit = ledger.reduce((sum, item) => sum + parseFloat(item.debit || 0), 0);
+  const totalCredit = ledger.reduce((sum, item) => sum + parseFloat(item.credit || 0), 0);
   
   const [dateFilter, setDateFilter] = useState({
     start: '',
@@ -469,22 +453,22 @@ export default function EntityLedger() {
               <div className="bg-light bg-opacity-25 p-2 px-3 d-flex gap-4 border-bottom flex-wrap">
                   <div className="stat-item">
                     <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Closing Bal</div>
-                    <div className={`fw-bold x-small ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()}
+                    <div className="fw-bold x-small text-dark">
+                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}
                     </div>
                   </div>
                   <div className="stat-item border-start ps-3">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Credit</div>
-                    <div className="x-small fw-bold text-primary">₹{parseFloat(targetEntity?.in_worth || 0).toLocaleString()}</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Debit</div>
+                    <div className="x-small fw-bold text-dark">₹{totalDebit.toLocaleString()}</div>
                   </div>
                   <div className="stat-item border-start ps-3">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Debit</div>
-                    <div className="x-small fw-bold text-warning">₹{parseFloat(targetEntity?.out_worth || 0).toLocaleString()}</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Credit</div>
+                    <div className="x-small fw-bold text-dark">₹{totalCredit.toLocaleString()}</div>
                   </div>
                   {targetEntity?.repair_dues > 0 && (
                       <div className="stat-item border-start ps-3">
                          <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Repairs</div>
-                         <div className="x-small fw-bold text-danger">₹{parseFloat(targetEntity?.repair_dues).toLocaleString()}</div>
+                         <div className="x-small fw-bold text-dark">₹{parseFloat(targetEntity?.repair_dues).toLocaleString()}</div>
                       </div>
                   )}
               </div>
@@ -523,10 +507,10 @@ export default function EntityLedger() {
                             <td className="xx-small text-muted">—</td>
                             <td className="text-end text-muted">—</td>
                             <td className="text-end text-muted">—</td>
-                            <td className={`text-end fw-bold x-small ${targetEntity?.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
+                            <td className="text-end fw-bold x-small text-dark">
                                ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
                             </td>
-                            <td className="xx-small italic text-muted fw-bold text-primary">Opening Balance</td>
+                            <td className="xx-small italic text-muted fw-bold">Opening Balance</td>
                             <td></td>
                           </tr>
                         )}
@@ -541,13 +525,13 @@ export default function EntityLedger() {
                               </td>
                               <td><span className={`badge ${getVoucherBadgeClass(item.voucher_type)}`}>{item.voucher_type}</span></td>
                               <td><span className="text-uppercase x-small fw-semibold text-muted">{item.payment_mode || '—'}</span></td>
-                              <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-danger' : 'text-muted opacity-25'}`}>
+                              <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-dark' : 'text-muted opacity-25'}`}>
                                   {item.debit > 0 ? `₹${Number(item.debit).toLocaleString()}` : '—'}
                               </td>
-                              <td className={`text-end fw-bold x-small ${item.credit > 0 ? 'text-success' : 'text-muted opacity-25'}`}>
+                              <td className={`text-end fw-bold x-small ${item.credit > 0 ? 'text-dark' : 'text-muted opacity-25'}`}>
                                   {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
                               </td>
-                              <td className={`text-end fw-bold x-small ${item.running_balance >= 0 ? 'text-success' : 'text-danger'}`}>
+                              <td className="text-end fw-bold x-small text-dark">
                                   ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
                               </td>
                               <td>
@@ -593,15 +577,15 @@ export default function EntityLedger() {
                           <td className="ps-3 align-middle text-muted" colSpan="3">
                             <span className="text-uppercase xx-small fw-bold tracking-wider">TOTALS</span>
                           </td>
-                          <td className="text-end text-danger align-middle">
+                          <td className="text-end text-dark align-middle">
                             <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Debit Total</span>
-                            <span style={{ fontSize: '0.95rem' }}>₹{parseFloat(targetEntity?.out_worth || 0).toLocaleString()}</span>
+                            <span style={{ fontSize: '0.95rem' }}>₹{totalDebit.toLocaleString()}</span>
                           </td>
-                          <td className="text-end text-success align-middle">
+                          <td className="text-end text-dark align-middle">
                             <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Credit Total</span>
-                            <span style={{ fontSize: '0.95rem' }}>₹{parseFloat(targetEntity?.in_worth || 0).toLocaleString()}</span>
+                            <span style={{ fontSize: '0.95rem' }}>₹{totalCredit.toLocaleString()}</span>
                           </td>
-                          <td className={`text-end align-middle ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                          <td className="text-end text-dark align-middle">
                             <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Closing Bal</span>
                             <span style={{ fontSize: '0.95rem' }}>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</span>
                           </td>
@@ -1188,11 +1172,11 @@ export default function EntityLedger() {
             border-left: 3px solid transparent !important;
         }
         .entity-card.active { 
-            background: #edf2ff; 
-            border-left: 3px solid var(--bs-primary, #4f46e5) !important;
-            border-top: 1px solid #c7d2fe !important;
-            border-bottom: 1px solid #c7d2fe !important;
-            border-right: 1px solid #c7d2fe !important;
+            background: #f1f5f9; 
+            border-left: 3px solid #64748b !important;
+            border-top: 1px solid #cbd5e1 !important;
+            border-bottom: 1px solid #cbd5e1 !important;
+            border-right: 1px solid #cbd5e1 !important;
         }
         .entity-card.hover-bg:hover { 
             background: #f1f5f9; 
