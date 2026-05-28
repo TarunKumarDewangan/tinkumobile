@@ -648,13 +648,16 @@ class PurchaseInvoiceController extends Controller
                 if ($entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
                     $request->merge(['supplier_id' => $entity->relation_id]);
                 } else {
-                    // Create new supplier
-                    $supplier = \App\Models\Supplier::create([
-                        'name'    => $entity->name,
-                        'phone'   => $entity->phone ?? '',
-                        'address' => $entity->description ?? '',
-                        'gst_no'  => $entity->gst_number,
-                    ]);
+                    // Check if a supplier with the same name already exists to prevent duplicates
+                    $supplier = \App\Models\Supplier::where('name', $entity->name)->first();
+                    if (!$supplier) {
+                        $supplier = \App\Models\Supplier::create([
+                            'name'    => $entity->name,
+                            'phone'   => $entity->phone ?? '',
+                            'address' => $entity->description ?? '',
+                            'gst_no'  => $entity->gst_number,
+                        ]);
+                    }
                     $request->merge(['supplier_id' => $supplier->id]);
                 }
             }

@@ -126,9 +126,9 @@ export default function PurchaseForm() {
       api.get('/entities').catch(() => ({ data: [] }))
     ]);
     setSuppliers(suppRes.data);
-    // Entities with SUPPLIER or DISTRIBUTOR type appear in a separate group
+    // Entities with SUPPLIER, DISTRIBUTOR or SHOP_CUSTOMER type appear in a separate group
     const entityList = (entRes.data || []).filter(e =>
-      ['SUPPLIER', 'DISTRIBUTOR'].includes((e.type || '').toUpperCase())
+      ['SUPPLIER', 'DISTRIBUTOR', 'SHOP_CUSTOMER'].includes((e.type || '').toUpperCase())
     );
     setEntitySuppliers(entityList);
   };
