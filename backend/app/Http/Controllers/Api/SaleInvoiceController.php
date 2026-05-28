@@ -40,6 +40,19 @@ class SaleInvoiceController extends Controller
         if ($request->from) $query->where('sale_date', '>=', $request->from);
         if ($request->to) $query->where('sale_date', '<=', $request->to);
 
+        if ($request->has('is_old_mobile')) {
+            $isOld = filter_var($request->is_old_mobile, FILTER_VALIDATE_BOOLEAN);
+            if ($isOld) {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']);
+                });
+            } else {
+                $query->whereDoesntHave('items.product.category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']);
+                });
+            }
+        }
+
         if ($request->search) {
             $s = $request->search;
             $query->where(function($q) use ($s) {
@@ -491,10 +504,6 @@ class SaleInvoiceController extends Controller
             foreach ($oldCashTransactions as $tx) {
                 $tx->delete();
             }
-
-            \App\Models\Ledger::where('voucher_type', 'FINANCE_PENDING')
-                ->where('voucher_id', $saleInvoice->id)
-                ->delete();
 
             // Record updated cash income transaction if total_paid > 0
             $cashPaid = (float) ($saleInvoice->total_paid);

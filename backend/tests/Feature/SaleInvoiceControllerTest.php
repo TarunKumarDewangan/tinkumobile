@@ -64,4 +64,60 @@ class SaleInvoiceControllerTest extends TestCase
             'customer_id' => $customer->id,
         ]);
     }
+
+    public function test_can_filter_sale_invoices_by_old_mobile_status()
+    {
+        $shop = Shop::create(['name' => 'Test Shop', 'address' => '123 Test St', 'phone' => '1234567890']);
+        $user = User::factory()->create(['shop_id' => $shop->id]);
+        $customer = \App\Models\Customer::create(['shop_id' => $shop->id, 'name' => 'Test Customer', 'phone' => '1234567890']);
+        
+        $newCategory = \App\Models\Category::create(['name' => 'Mobile New', 'slug' => 'mobile-new']);
+        $oldCategory = \App\Models\Category::create(['name' => 'Mobile Old', 'slug' => 'mobile-old']);
+        
+        $newProduct = Product::create([
+            'shop_id' => $shop->id, 'name' => 'New Phone', 'sku' => 'NEW-1', 'selling_price' => 1000, 'purchase_price' => 800, 'category_id' => $newCategory->id
+        ]);
+        $oldProduct = Product::create([
+            'shop_id' => $shop->id, 'name' => 'Old Phone', 'sku' => 'OLD-1', 'selling_price' => 500, 'purchase_price' => 400, 'category_id' => $oldCategory->id
+        ]);
+        
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $newProduct->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 1000]);
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 500]);
+
+        // Create new mobile sale
+        $payloadNew = [
+            'sale_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'payment_method' => 'cash',
+            'bill_type' => 'kaccha',
+            'calculate_gst' => false,
+            'items' => [['product_id' => $newProduct->id, 'quantity' => 1, 'unit_price' => 1000]]
+        ];
+        $this->actingAs($user)->postJson('/api/sale-invoices', $payloadNew)->assertStatus(201);
+
+        // Create old mobile sale
+        $payloadOld = [
+            'sale_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'payment_method' => 'cash',
+            'bill_type' => 'kaccha',
+            'calculate_gst' => false,
+            'items' => [['product_id' => $oldProduct->id, 'quantity' => 1, 'unit_price' => 500]]
+        ];
+        $this->actingAs($user)->postJson('/api/sale-invoices', $payloadOld)->assertStatus(201);
+
+        // Request with is_old_mobile = true
+        $responseTrue = $this->actingAs($user)->getJson('/api/sale-invoices?is_old_mobile=true');
+        $responseTrue->assertStatus(200);
+        $dataTrue = $responseTrue->json('data');
+        $this->assertCount(1, $dataTrue);
+        $this->assertEquals('OLD PHONE', $dataTrue[0]['items'][0]['product']['name']);
+
+        // Request with is_old_mobile = false
+        $responseFalse = $this->actingAs($user)->getJson('/api/sale-invoices?is_old_mobile=false');
+        $responseFalse->assertStatus(200);
+        $dataFalse = $responseFalse->json('data');
+        $this->assertCount(1, $dataFalse);
+        $this->assertEquals('NEW PHONE', $dataFalse[0]['items'][0]['product']['name']);
+    }
 }

@@ -7,7 +7,6 @@ export default function useInventory(filters, form, setForm) {
     const [products, setProducts] = useState([]);
     const [baseProducts, setBaseProducts] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
-    const [currentStock, setCurrentStock] = useState({});
     const [shops, setShops] = useState([]);
     const [categories, setCategories] = useState([]);
     const [imeiList, setImeiList] = useState([]);
@@ -15,52 +14,67 @@ export default function useInventory(filters, form, setForm) {
     const { hasFullAccess } = useAuth();
     const initialShopSet = useRef(false);
 
-    const loadData = useCallback(async () => {
+    // Fetch filtered products only when filters change (debounced or on trigger)
+    const loadFilteredProducts = useCallback(async () => {
         setLoading(true);
         try {
-            const [prodRes, baseProdRes, stockRes] = await Promise.all([
-                api.get('/products', { params: filters }),
-                api.get('/products'),
-                api.get('/stock-levels')
-            ]);
+            const prodRes = await api.get('/products', { params: filters });
             setProducts(prodRes.data.data || prodRes.data);
-            setBaseProducts(baseProdRes.data.data || baseProdRes.data);
-            const map = {};
-            stockRes.data.forEach(inv => { map[inv.product_id] = inv.stock; });
-            setCurrentStock(map);
-
-            if (hasFullAccess()) {
-                const r = await api.get('/shops');
-                setShops(r.data);
-                if (r.data.length > 0 && !form?.shop_id && !initialShopSet.current) {
-                    initialShopSet.current = true;
-                    if (setForm) setForm(f => ({ ...f, shop_id: r.data[0].id }));
-                }
-            }
         } catch (e) {
-            toast.error("Failed to load inventory data");
+            toast.error("Failed to load inventory products");
         } finally {
             setLoading(false);
         }
-    }, [filters, form?.shop_id, hasFullAccess, setForm]);
-
-    useEffect(() => { loadData(); }, [loadData]);
+    }, [filters]);
 
     useEffect(() => {
-        api.get('/suppliers').then(r => setSuppliers(r.data)).catch(() => {});
-        api.get('/purchase-invoices/unique-imeis').then(r => setImeiList(r.data)).catch(() => {});
-        api.get('/categories').then(r => setCategories(r.data)).catch(() => {});
-    }, []);
+        loadFilteredProducts();
+    }, [loadFilteredProducts]);
+
+    // Fetch static metadata once on mount
+    useEffect(() => {
+        // Load base products
+        api.get('/products')
+            .then(r => setBaseProducts(r.data.data || r.data))
+            .catch(() => {});
+
+        // Load suppliers
+        api.get('/suppliers')
+            .then(r => setSuppliers(r.data))
+            .catch(() => {});
+
+        // Load unique IMEIs
+        api.get('/purchase-invoices/unique-imeis')
+            .then(r => setImeiList(r.data))
+            .catch(() => {});
+
+        // Load categories
+        api.get('/categories')
+            .then(r => setCategories(r.data))
+            .catch(() => {});
+
+        // Load shops
+        if (hasFullAccess()) {
+            api.get('/shops')
+                .then(r => {
+                    setShops(r.data);
+                    if (r.data.length > 0 && !form?.shop_id && !initialShopSet.current) {
+                        initialShopSet.current = true;
+                        if (setForm) setForm(f => ({ ...f, shop_id: r.data[0].id }));
+                    }
+                })
+                .catch(() => {});
+        }
+    }, [hasFullAccess, setForm, form?.shop_id]);
 
     return {
         products,
         baseProducts,
         suppliers,
-        currentStock,
         shops,
         categories,
         imeiList,
         loading,
-        refresh: loadData
+        refresh: loadFilteredProducts
     };
 }

@@ -184,4 +184,162 @@ class ReportController extends Controller
             'overdue_repairs'      => RepairRequest::whereNotNull('estimated_delivery_date')->whereNull('actual_delivery_date')->where('estimated_delivery_date', '<', $today)->when($shopId, fn($q, $s) => $q->where('shop_id', $s))->count(),
         ]);
     }
+
+    /** 11. Combined Sales and Stocks Report */
+    public function combinedSalesReport(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+
+        $newCat = \App\Models\Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
+        $oldCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
+
+        $newCatId = $newCat ? $newCat->id : null;
+        $oldCatId = $oldCat ? $oldCat->id : null;
+        $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
+
+        /**
+         * Build the list of "groups" to process:
+         *   - type=brand   → real brand row (aggregates all products of that brand)
+         *   - type=product → individual row for an unbranded product (uses product name as label)
+         */
+        $groups = [];
+
+        if ($request->has('brand_id') && $request->brand_id !== '') {
+            if ($request->brand_id === 'none' || $request->brand_id === 'null') {
+                // Show unbranded products individually
+                if (!empty($catIds)) {
+                    foreach (\App\Models\Product::whereNull('brand_id')->whereIn('category_id', $catIds)->get() as $p) {
+                        $groups[] = ['type' => 'product', 'product' => $p];
+                    }
+                }
+            } else {
+                $brand = \App\Models\Brand::find($request->brand_id);
+                if ($brand) {
+                    $groups[] = ['type' => 'brand', 'brand_id' => $brand->id, 'brand_name' => $brand->name];
+                }
+            }
+        } else {
+            // All real brands
+            foreach (\App\Models\Brand::all() as $brand) {
+                $groups[] = ['type' => 'brand', 'brand_id' => $brand->id, 'brand_name' => $brand->name];
+            }
+            // Each unbranded mobile product becomes its own row
+            if (!empty($catIds)) {
+                foreach (\App\Models\Product::whereNull('brand_id')->whereIn('category_id', $catIds)->get() as $p) {
+                    $groups[] = ['type' => 'product', 'product' => $p];
+                }
+            }
+        }
+
+        // Helper closure: invoice filter
+        $invoiceFilter = function ($q) use ($shopId, $request) {
+            $q->where('is_cancelled', false);
+            if ($shopId)        $q->where('shop_id', $shopId);
+            if ($request->from) $q->where('sale_date', '>=', $request->from);
+            if ($request->to)   $q->where('sale_date', '<=', $request->to);
+        };
+
+        $reportData = [];
+
+        foreach ($groups as $group) {
+
+            /* ── Individual unbranded product row ── */
+            if ($group['type'] === 'product') {
+                $product = $group['product'];
+                $isOld   = ($oldCatId && $product->category_id == $oldCatId);
+
+                $sold  = (int) SaleItem::where('product_id', $product->id)
+                    ->whereHas('invoice', $invoiceFilter)
+                    ->sum('quantity');
+
+                $stock = (int) Inventory::where('product_id', $product->id)
+                    ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+                    ->sum('stock');
+
+                if ($sold === 0) continue;
+
+                $reportData[] = [
+                    'brand_id'    => 'product_' . $product->id,
+                    'brand_name'  => $product->name,          // full product name as label
+                    'new_sold'    => $isOld ? 0 : $sold,
+                    'old_sold'    => $isOld ? $sold : 0,
+                    'total_sold'  => $sold,
+                    'new_stock'   => $isOld ? 0 : $stock,
+                    'old_stock'   => $isOld ? $stock : 0,
+                    'total_stock' => $stock,
+                    'products'    => [[
+                        'product_id'   => $product->id,
+                        'product_name' => $product->name,
+                        'type'         => $isOld ? 'Second Hand' : 'New',
+                        'sold'         => $sold,
+                        'stock'        => $stock,
+                    ]],
+                ];
+                continue;
+            }
+
+            /* ── Real brand row (aggregated) ── */
+            $brandId   = $group['brand_id'];
+            $brandName = $group['brand_name'];
+
+            $newSold = (int) SaleItem::whereHas('product', function ($q) use ($brandId, $newCatId) {
+                $q->where('brand_id', $brandId);
+                if ($newCatId) $q->where('category_id', $newCatId);
+            })->whereHas('invoice', $invoiceFilter)->sum('quantity');
+
+            $oldSold = (int) SaleItem::whereHas('product', function ($q) use ($brandId, $oldCatId) {
+                $q->where('brand_id', $brandId);
+                if ($oldCatId) $q->where('category_id', $oldCatId);
+            })->whereHas('invoice', $invoiceFilter)->sum('quantity');
+
+            $newStock = (int) Inventory::whereHas('product', function ($q) use ($brandId, $newCatId) {
+                $q->where('brand_id', $brandId);
+                if ($newCatId) $q->where('category_id', $newCatId);
+            })->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
+
+            $oldStock = (int) Inventory::whereHas('product', function ($q) use ($brandId, $oldCatId) {
+                $q->where('brand_id', $brandId);
+                if ($oldCatId) $q->where('category_id', $oldCatId);
+            })->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
+
+            if ($newSold === 0 && $oldSold === 0) continue;
+
+            // Per-product breakdown for this brand
+            $productsData = [];
+            foreach (\App\Models\Product::where('brand_id', $brandId)->whereIn('category_id', $catIds)->get() as $product) {
+                $sold  = (int) SaleItem::where('product_id', $product->id)->whereHas('invoice', $invoiceFilter)->sum('quantity');
+                $stock = (int) Inventory::where('product_id', $product->id)->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
+                if ($sold > 0) {
+                    $isOld = ($oldCatId && $product->category_id == $oldCatId);
+                    $productsData[] = [
+                        'product_id'   => $product->id,
+                        'product_name' => $product->name,
+                        'type'         => $isOld ? 'Second Hand' : 'New',
+                        'sold'         => $sold,
+                        'stock'        => $stock,
+                    ];
+                }
+            }
+            usort($productsData, fn($a, $b) => $b['sold'] === $a['sold'] ? strcmp($a['product_name'], $b['product_name']) : $b['sold'] <=> $a['sold']);
+
+            $reportData[] = [
+                'brand_id'    => $brandId,
+                'brand_name'  => $brandName,
+                'new_sold'    => $newSold,
+                'old_sold'    => $oldSold,
+                'total_sold'  => $newSold + $oldSold,
+                'new_stock'   => $newStock,
+                'old_stock'   => $oldStock,
+                'total_stock' => $newStock + $oldStock,
+                'products'    => $productsData,
+            ];
+        }
+
+        // Sort: most sold first, then alphabetical
+        usort($reportData, fn($a, $b) => $b['total_sold'] === $a['total_sold']
+            ? strcmp($a['brand_name'], $b['brand_name'])
+            : $b['total_sold'] <=> $a['total_sold']);
+
+        return response()->json($reportData);
+    }
 }

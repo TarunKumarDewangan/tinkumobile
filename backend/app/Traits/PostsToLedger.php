@@ -55,14 +55,20 @@ trait PostsToLedger
             );
         }
 
-        // Clean up stale entries (e.g. if the customer or forwarded shop changed)
-        $voucherTypes = array_unique($voucherTypes);
-        if (!empty($voucherTypes)) {
-            $query = \App\Models\Ledger::whereIn('voucher_type', $voucherTypes)
+        // Clean up stale entries (e.g. if the customer or forwarded shop changed, or if a type was removed)
+        $possibleVoucherTypes = $this->getPossibleVoucherTypes();
+        if (!empty($possibleVoucherTypes)) {
+            $query = \App\Models\Ledger::whereIn('voucher_type', $possibleVoucherTypes)
                 ->where('voucher_id', $this->id);
-            if (!empty($validEntityIds)) {
-                $query->whereNotIn('entity_id', $validEntityIds);
+
+            foreach ($entries as $entry) {
+                if (!isset($entry['entity_id']) || !$entry['entity_id'] || !isset($entry['voucher_type'])) continue;
+                $query->where(function ($q) use ($entry) {
+                    $q->where('entity_id', '!=', $entry['entity_id'])
+                      ->orWhere('voucher_type', '!=', $entry['voucher_type']);
+                });
             }
+
             $query->delete();
         }
     }

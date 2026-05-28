@@ -172,6 +172,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Reports
     Route::prefix('reports')->group(function () {
         Route::get('/sales', [ReportController::class, 'sales']);
+        Route::get('/combined-sales', [ReportController::class, 'combinedSalesReport']);
         Route::get('/profit', [ReportController::class, 'profit']);
         Route::get('/stock', [ReportController::class, 'stock']);
         Route::get('/incentives', [ReportController::class, 'incentives']);

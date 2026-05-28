@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../../api/axios';
@@ -9,6 +9,19 @@ export default function StockList({ products, loading, filters, handleFilterChan
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  const totalItems = products.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const currentItems = products.slice(startIndex, endIndex);
 
   const openEdit = (p) => {
       setEditingItem(p);
@@ -70,7 +83,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
 
       <div className="pm-table-wrap">
         <div className="table-responsive">
-          <table className="pm-table">
+          <table className="custom-tally-table">
             <thead>
               <tr>
                 <th className="ps-4">Product Name</th>
@@ -85,19 +98,19 @@ export default function StockList({ products, loading, filters, handleFilterChan
             <tbody>
               {loading ? (
                 <tr><td colSpan={8} className="text-center py-5"><div className="spinner-border text-primary"/></td></tr>
-              ) : products.map(p => (
-                <tr key={p.id}>
+              ) : currentItems.map(p => (
+                <tr key={p.id} className="tally-row">
                   <td className="ps-4">
-                    <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '.88rem' }}>
+                    <div className="fw-bold text-dark" style={{ fontSize: '.88rem' }}>
                       {p.brand ? p.brand.name.toUpperCase() + ' ' : ''}{p.name.toUpperCase()}
                     </div>
                   </td>
                   <td>
                     <div className="d-flex align-items-center gap-1 flex-wrap">
-                      <span className="pm-badge" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
-                        {p.attributes?.color?.toUpperCase() || '-'}
+                      <span className="pm-badge text-uppercase" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1' }}>
+                        {p.attributes?.color || '-'}
                       </span>
-                      <span className="pm-badge" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                      <span className="pm-badge" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1' }}>
                         {p.attributes?.ram || '-' } / {p.attributes?.storage || '-'}
                       </span>
                     </div>
@@ -108,7 +121,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                         p.attributes?.imeis?.length > 0 ? (
                           p.attributes.imeis.map((imei, idx) => (
                             <span key={idx} className="pm-badge" 
-                                  style={{background:'#f8fafc',color:'#6366f1',border:'1px solid #e2e8f0',fontSize:'.58rem', cursor:'pointer'}}
+                                  style={{background:'#f8fafc',color:'#1e293b',border:'1px solid #cbd5e1',fontSize:'.65rem', cursor:'pointer'}}
                                   onClick={() => navigate(`/sales/new?imei=${imei}`)}
                                   title="Click to sell this IMEI"
                             >
@@ -121,7 +134,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
                       ) : (
                         p.attributes?.imei ? (
                           <span className="pm-badge" 
-                                style={{background:'#eff6ff',color:'#2563eb',border:'1px solid #bfdbfe', cursor:'pointer'}}
+                                style={{background:'#f8fafc',color:'#1e293b',border:'1px solid #cbd5e1',fontSize:'.65rem', cursor:'pointer'}}
                                 onClick={() => navigate(`/sales/new?imei=${p.attributes.imei}`)}
                                 title="Click to sell this IMEI"
                           >
@@ -149,41 +162,38 @@ export default function StockList({ products, loading, filters, handleFilterChan
                       }}
                     >
                       <span className="me-1">📍</span>
-                      <span className={p.location ? 'text-dark fw-800' : 'text-primary'}>
+                      <span className={p.location ? 'text-dark fw-bold' : 'text-secondary text-decoration-underline'}>
                         {p.location ? p.location.toUpperCase() : 'SET LOCATION'}
                       </span>
                     </div>
                   </td>
                   <td className="text-center">
-                    <span className="pm-badge" style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+                    <span className="pm-badge" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1', fontWeight: 'bold' }}>
                       {p.current_stock} PCS
                     </span>
                   </td>
-                  <td className="text-end fw-800" style={{ fontSize: '.9rem', color: '#1e293b' }}>
+                  <td className="text-end fw-bold" style={{ fontSize: '.9rem', color: '#1e293b' }}>
                     ₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}
                   </td>
                   <td className="text-end pe-4">
                     {!filters.group_by_config && p.id && (
-                      <div className="d-flex justify-content-end gap-2">
+                      <div className="d-flex justify-content-end gap-1 flex-wrap">
                         {p.attributes?.imei && (
                           <button 
-                            className="pm-clear-btn"
-                            style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#10b981',color:'#10b981',background:'#f0fdf4'}}
+                            className="btn btn-outline-success btn-xs rounded-pill px-3 fw-bold"
                             onClick={() => navigate(`/sales/new?imei=${p.attributes.imei}`)}
                           >
                             SELL
                           </button>
                         )}
                         <button 
-                          className="pm-clear-btn"
-                          style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#3b82f6',color:'#3b82f6',background:'#eff6ff'}}
+                          className="btn btn-outline-secondary btn-xs rounded-pill px-3 fw-bold"
                           onClick={() => openEdit(p)}
                         >
                           EDIT
                         </button>
                         <button 
-                          className="pm-clear-btn"
-                          style={{padding:'3px 10px',fontSize:'.65rem',borderColor:'#ef4444',color:'#ef4444',background:'#fef2f2'}}
+                          className="btn btn-outline-danger btn-xs rounded-pill px-3 fw-bold"
                           onClick={() => handleDelete(p.id)}
                         >
                           DEL
@@ -200,6 +210,78 @@ export default function StockList({ products, loading, filters, handleFilterChan
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls */}
+      {totalItems > 0 && (
+        <div className="d-flex justify-content-between align-items-center mt-3 px-2 flex-wrap gap-2 no-print">
+          <div className="text-muted small">
+            Showing <strong className="text-dark">{startIndex + 1}</strong> to{' '}
+            <strong className="text-dark">{endIndex}</strong> of{' '}
+            <strong className="text-dark">{totalItems}</strong> entries
+          </div>
+          <div className="d-flex align-items-center gap-1">
+            <button
+              className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(1)}
+              style={{ fontSize: '0.72rem', fontWeight: 'bold' }}
+            >
+              First
+            </button>
+            <button
+              className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+              style={{ fontSize: '0.72rem', fontWeight: 'bold' }}
+            >
+              Prev
+            </button>
+            
+            {(() => {
+              const pages = [];
+              const maxVisible = 5;
+              let start = Math.max(1, currentPage - 2);
+              let end = Math.min(totalPages, start + maxVisible - 1);
+              
+              if (end - start + 1 < maxVisible) {
+                start = Math.max(1, end - maxVisible + 1);
+              }
+              
+              for (let i = start; i <= end; i++) {
+                pages.push(i);
+              }
+              
+              return pages.map(pageNum => (
+                <button
+                  key={pageNum}
+                  className={`btn btn-sm rounded-circle d-flex align-items-center justify-content-center ${currentPage === pageNum ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary'}`}
+                  style={{ width: '32px', height: '32px', fontSize: '0.72rem', fontWeight: 'bold' }}
+                  onClick={() => setCurrentPage(pageNum)}
+                >
+                  {pageNum}
+                </button>
+              ));
+            })()}
+
+            <button
+              className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+              style={{ fontSize: '0.72rem', fontWeight: 'bold' }}
+            >
+              Next
+            </button>
+            <button
+              className="btn btn-sm btn-outline-secondary rounded-pill px-3"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+              style={{ fontSize: '0.72rem', fontWeight: 'bold' }}
+            >
+              Last
+            </button>
+          </div>
+        </div>
+      )}
 
       <Modal show={!!editingItem} onClose={() => setEditingItem(null)} title="EDIT STOCK ITEM">
         {editingItem && (
@@ -311,6 +393,45 @@ export default function StockList({ products, loading, filters, handleFilterChan
           </form>
         )}
       </Modal>
+      <style>{`
+        .custom-tally-table {
+          width: 100%;
+          border-collapse: collapse !important;
+          border: 1px solid #cbd5e1 !important;
+        }
+        .custom-tally-table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          background: #f8fafc;
+          color: #475569;
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 0.65rem 0.5rem;
+          border-bottom: 2px solid #cbd5e1 !important;
+          border-right: 1px solid #cbd5e1 !important;
+        }
+        .custom-tally-table thead th:last-child {
+          border-right: none !important;
+        }
+        .custom-tally-table tbody tr td {
+          padding: 0.6rem 0.5rem;
+          border-bottom: 1px solid #cbd5e1 !important;
+          border-right: 1px solid #cbd5e1 !important;
+          vertical-align: middle;
+        }
+        .custom-tally-table tbody tr td:last-child {
+          border-right: none !important;
+        }
+        .custom-tally-table tbody tr.tally-row:hover {
+          background-color: #f1f5f9 !important;
+        }
+        .clickable-location:hover {
+          text-decoration: underline !important;
+        }
+        .btn-xs { font-size: 0.7rem; padding: 2px 8px; }
+      `}</style>
     </div>
   );
 }

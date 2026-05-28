@@ -17,7 +17,7 @@ export default function OldMobileSales() {
   const [loading, setLoading] = useState(true);
   
   const [filters, setFilters] = useState({ 
-    from: '', to: '', bill_type: '', search: '', shop_id: '' 
+    from: '', to: '', bill_type: '', search: '', shop_id: '', is_old_mobile: true
   });
 
   // Load Categories & Shops on mount
@@ -129,7 +129,7 @@ export default function OldMobileSales() {
             <input type="text" className="form-control bg-light text-dark border-secondary-subtle text-uppercase" placeholder="Search by name, invoice..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
           </div>
           <div className="col-12 col-md-2 d-flex align-items-end">
-            <button className="btn btn-outline-secondary w-100 fw-bold rounded-pill" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:''})}>RESET</button>
+            <button className="btn btn-outline-secondary w-100 fw-bold rounded-pill" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: true})}>RESET</button>
           </div>
         </div>
       </div>

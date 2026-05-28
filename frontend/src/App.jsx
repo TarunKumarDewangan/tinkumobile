@@ -40,6 +40,7 @@ const ActivityLogs = lazy(() => import('./pages/admin/ActivityLogs'));
 const TrashManager = lazy(() => import('./pages/admin/TrashManager'));
 const Reports = lazy(() => import('./pages/reports/Reports'));
 const SalesReport = lazy(() => import('./pages/reports/SalesReport'));
+const CombinedSalesReport = lazy(() => import('./pages/reports/CombinedSalesReport'));
 const ProfitReport = lazy(() => import('./pages/reports/ProfitReport'));
 const StockReport = lazy(() => import('./pages/reports/StockReport'));
 const LoanReport = lazy(() => import('./pages/reports/LoanReport'));
@@ -56,6 +57,7 @@ const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
 const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
 const Daybook = lazy(() => import('./pages/accounts/Daybook'));
 const GroupSummary = lazy(() => import('./pages/accounts/GroupSummary'));
+const GroupDetails = lazy(() => import('./pages/accounts/GroupDetails'));
 const WhatsAppConfig = lazy(() => import('./pages/admin/WhatsAppConfig'));
 
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
@@ -127,6 +129,7 @@ function AppRoutes() {
           <Route path="admin/trash" element={<TrashManager />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/sales" element={<SalesReport />} />
+          <Route path="reports/combined-sales" element={<CombinedSalesReport />} />
           <Route path="reports/profit" element={<ProfitReport />} />
           <Route path="reports/stock" element={<StockReport />} />
           <Route path="reports/loans" element={<LoanReport />} />
@@ -142,6 +145,7 @@ function AppRoutes() {
           <Route path="accounts/entity-ledger" element={<EntityLedger />} />
           <Route path="accounts/daybook" element={<Daybook />} />
           <Route path="accounts/group-summary" element={<GroupSummary />} />
+          <Route path="accounts/group-details" element={<GroupDetails />} />
           <Route path="admin/whatsapp-config" element={<WhatsAppConfig />} />
 
           <Route path="customer/login" element={<CustomerLogin />} />

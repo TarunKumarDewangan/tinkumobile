@@ -23,6 +23,7 @@ class LedgerController extends Controller
             ->whereHas('entity', function($q) {
                 $q->where('type', '!=', 'RETAILER');
             })
+            ->whereNotIn('voucher_type', ['SALE_FINANCE', 'FINANCE_PENDING'])
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
@@ -58,7 +59,10 @@ class LedgerController extends Controller
         $query = Ledger::where('entity_id', $entityId);
         if ($startDate) $query->where('date', '>=', $startDate);
         if ($endDate)   $query->where('date', '<=', $endDate);
-        $ledgers = $query->orderBy('date', 'asc')->orderBy('id', 'asc')->get();
+        $ledgers = $query->orderBy('date', 'asc')
+            ->orderBy('debit', 'desc')
+            ->orderBy('id', 'asc')
+            ->get();
 
         // Calculate running balances
         $runningBalance = $openingBalance;

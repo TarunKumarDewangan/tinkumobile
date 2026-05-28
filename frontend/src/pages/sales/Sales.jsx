@@ -15,7 +15,7 @@ export default function Sales() {
   const [showBackupModal, setShowBackupModal] = useState(false);
 
   const [filters, setFilters] = useState({ 
-    from: '', to: '', bill_type: '', search: '', shop_id: '' 
+    from: '', to: '', bill_type: '', search: '', shop_id: '', is_old_mobile: false 
   });
 
   useEffect(() => {
@@ -140,7 +140,7 @@ export default function Sales() {
                 <input type="text" className="form-control form-control-sm text-uppercase" placeholder="SEARCH..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
             </div>
             <div className="col-12 col-md-2 d-flex align-items-end">
-                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:''})}>RESET</button>
+                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false})}>RESET</button>
             </div>
         </div>
       </div>

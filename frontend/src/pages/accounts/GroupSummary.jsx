@@ -1,22 +1,23 @@
 import { useState, useEffect, Fragment } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-const ENTITY_TYPES = ['CUSTOMER', 'SHOP_CUSTOMER', 'SUPPLIER', 'AIRTEL_RETAILER', 'SHOP', 'OTHER'];
+const ENTITY_TYPES = ['CUSTOMER', 'SHOP_CUSTOMER', 'SUPPLIER', 'AIRTEL_RETAILER', 'SHOP', 'REPAIR', 'OTHER'];
 const BALANCE_TYPES = ['RECEIVABLE', 'PAYABLE'];
 
 export default function GroupSummary() {
     const { isOwner } = useAuth();
+    const navigate = useNavigate();
     const [entities, setEntities] = useState([]);
+    const [repairSummary, setRepairSummary] = useState({ count: 0, balance: 0, duesByName: {} });
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState('ALL');
     const [showOpeningStock, setShowOpeningStock] = useState(false);
     const [hideZeroBalances, setHideZeroBalances] = useState(true);
-    const [showCategoryTotals, setShowCategoryTotals] = useState(false);
-    const [expandedCategories, setExpandedCategories] = useState({});
+    const [showCategoryTotals, setShowCategoryTotals] = useState(true);
 
     // Edit Modal state
     const [editEntity, setEditEntity] = useState(null);
@@ -35,6 +36,27 @@ export default function GroupSummary() {
             if (type !== 'ALL') params.type = type;
             const { data } = await api.get('/ledgers/entity-balances', { params });
             setEntities(data);
+
+            // Fetch repairs to calculate outstanding
+            const { data: repairs } = await api.get('/repairs');
+            let outstandingCount = 0;
+            let outstandingBalance = 0;
+            const repairDuesByName = {};
+            repairs.forEach(r => {
+                const quoted = parseFloat(r.quoted_amount || 0);
+                const advance = parseFloat(r.advance_amount || 0);
+                const received = parseFloat(r.balance_amount_received || 0);
+                const balance = quoted - (advance + received);
+                if (balance > 0.01) {
+                    outstandingCount++;
+                    outstandingBalance += balance;
+                    if (r.customer_name) {
+                        const name = r.customer_name.replace(/\s+/g, '').toUpperCase();
+                        repairDuesByName[name] = (repairDuesByName[name] || 0) + balance;
+                    }
+                }
+            });
+            setRepairSummary({ count: outstandingCount, balance: outstandingBalance, duesByName: repairDuesByName });
         } catch {
             toast.error('Failed to load group summary');
         } finally {
@@ -60,9 +82,6 @@ export default function GroupSummary() {
         return 0;
     });
 
-    const totalDebit  = filteredEntities.reduce((s, e) => s + (e.net_balance > 0 ? e.net_balance : 0), 0);
-    const totalCredit = filteredEntities.reduce((s, e) => s + (e.net_balance < 0 ? Math.abs(e.net_balance) : 0), 0);
-
     // Group and sort logic for category totals inside table
     const categoryGroups = filteredEntities.reduce((acc, ent) => {
         const type = ent.type || 'OTHER';
@@ -75,13 +94,39 @@ export default function GroupSummary() {
             };
         }
         acc[type].entities.push(ent);
+
+        // Deduct repair dues from the customer balance in the summary table
+        // to prevent double-counting between the CUSTOMER category and the REPAIR category
+        const repairDues = repairSummary.duesByName?.[ent.name.replace(/\s+/g, '').toUpperCase()] || 0;
+        let adjustedBalance = ent.net_balance;
         if (ent.net_balance > 0) {
-            acc[type].totalDebit += ent.net_balance;
-        } else if (ent.net_balance < 0) {
-            acc[type].totalCredit += Math.abs(ent.net_balance);
+            adjustedBalance = Math.max(0, ent.net_balance - repairDues);
+        }
+
+        if (adjustedBalance > 0) {
+            acc[type].totalDebit += adjustedBalance;
+        } else if (adjustedBalance < 0) {
+            acc[type].totalCredit += Math.abs(adjustedBalance);
         }
         return acc;
     }, {});
+
+    if ((typeFilter === 'ALL' || typeFilter === 'REPAIR') && repairSummary.count > 0) {
+        categoryGroups['REPAIR'] = {
+            name: 'REPAIR',
+            entities: [],
+            totalDebit: repairSummary.balance,
+            totalCredit: 0
+        };
+    }
+
+    const totalDebit = showCategoryTotals
+        ? Object.values(categoryGroups).reduce((s, g) => s + g.totalDebit, 0)
+        : filteredEntities.reduce((s, e) => s + (e.net_balance > 0 ? e.net_balance : 0), 0);
+
+    const totalCredit = showCategoryTotals
+        ? Object.values(categoryGroups).reduce((s, g) => s + g.totalCredit, 0)
+        : filteredEntities.reduce((s, e) => s + (e.net_balance < 0 ? Math.abs(e.net_balance) : 0), 0);
 
     const sortedCategoryNames = Object.keys(categoryGroups).sort((a, b) => {
         const idxA = ENTITY_TYPES.indexOf(a);
@@ -92,12 +137,7 @@ export default function GroupSummary() {
         return a.localeCompare(b);
     });
 
-    const toggleCategory = (cat) => {
-        setExpandedCategories(prev => ({
-            ...prev,
-            [cat]: !prev[cat]
-        }));
-    };
+
 
     /* ── Edit ── */
     const openEdit = (ent) => {
@@ -200,7 +240,14 @@ export default function GroupSummary() {
                             <select
                                 className="form-select form-select-sm"
                                 value={typeFilter}
-                                onChange={e => setTypeFilter(e.target.value)}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === 'ALL') {
+                                        setTypeFilter(val);
+                                    } else {
+                                        navigate(`/accounts/group-details?type=${val}`);
+                                    }
+                                }}
                             >
                                 <option value="ALL">All Account Types</option>
                                 <option value="CUSTOMER">Customers (Regular)</option>
@@ -208,6 +255,7 @@ export default function GroupSummary() {
                                 <option value="SUPPLIER">Suppliers</option>
                                 <option value="AIRTEL_RETAILER">Airtel Retailers</option>
                                 <option value="SHOP">Shops</option>
+                                <option value="REPAIR">Repairs (Outstanding)</option>
                             </select>
                         </div>
                         <div className="col-md-5 d-flex align-items-center justify-content-end gap-3">
@@ -274,99 +322,41 @@ export default function GroupSummary() {
                                     </tr>
                                 ) : showCategoryTotals ? (
                                     sortedCategoryNames.map(catName => (
-                                        <Fragment key={`cat-group-${catName}`}>
-                                            <tr 
-                                                className="category-row"
-                                                onClick={() => toggleCategory(catName)}
-                                            >
-                                                <td className="ps-3 py-2">
-                                                    <span className="d-flex align-items-center gap-2">
-                                                        <i className={`bi ${expandedCategories[catName] ? 'bi-chevron-down' : 'bi-chevron-right'} text-muted`}></i>
-                                                        <span className="fw-bold">{catName.replace(/_/g, ' ')}</span>
-                                                        <span className="badge bg-secondary text-white rounded-pill font-normal" style={{ fontSize: '0.7rem' }}>
-                                                            {categoryGroups[catName].entities.length}
-                                                        </span>
+                                        <tr 
+                                            key={`cat-group-${catName}`}
+                                            className="category-row"
+                                            onClick={() => navigate(`/accounts/group-details?type=${catName}`)}
+                                            style={{ cursor: 'pointer' }}
+                                        >
+                                            <td className="ps-3 py-2">
+                                                <span className="d-flex align-items-center gap-2">
+                                                    <i className="bi bi-chevron-right text-muted" style={{ fontSize: '0.8rem' }}></i>
+                                                    <span className="fw-bold">{catName.replace(/_/g, ' ')}</span>
+                                                    <span className="badge bg-secondary text-white rounded-pill font-normal" style={{ fontSize: '0.7rem' }}>
+                                                        {catName === 'REPAIR' ? repairSummary.count : categoryGroups[catName].entities.length}
                                                     </span>
-                                                </td>
-                                                <td className="text-end fw-bold py-2 pe-3">
-                                                    {categoryGroups[catName].totalDebit > 0
-                                                        ? `₹${categoryGroups[catName].totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                                        : '—'}
-                                                </td>
-                                                <td className="text-end fw-bold py-2 pe-3">
-                                                    {categoryGroups[catName].totalCredit > 0
-                                                        ? `₹${categoryGroups[catName].totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                                        : '—'}
-                                                </td>
-                                                <td className="no-print py-2"></td>
-                                            </tr>
-                                            {expandedCategories[catName] && categoryGroups[catName].entities.map((ent) => (
-                                                <tr key={ent.id} className="tally-row">
-                                                    <td className="ps-5 py-2">
-                                                        <Link to={`/accounts/entity-ledger?id=${ent.id}&name=${encodeURIComponent(ent.name)}`}
-                                                            className="fw-bold text-dark text-decoration-none d-block">
-                                                            {ent.name}
-                                                        </Link>
-                                                        <div className="xx-small text-muted text-uppercase">{ent.type}</div>
-                                                    </td>
-                                                    <td className="text-end fw-bold py-2 pe-3">
-                                                        {ent.net_balance > 0
-                                                            ? `₹${ent.net_balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                                            : '—'}
-                                                    </td>
-                                                    <td className="text-end fw-bold text-dark py-2 pe-3">
-                                                        {ent.net_balance < 0
-                                                            ? `₹${Math.abs(ent.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                                            : '—'}
-                                                    </td>
-                                                    <td className="text-end no-print py-2 pe-3">
-                                                        <div className="d-flex gap-1 justify-content-end flex-wrap">
-                                                            <button
-                                                                className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
-                                                                style={{ fontSize: '0.7rem' }}
-                                                                title="Edit account"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    openEdit(ent);
-                                                                }}
-                                                            >
-                                                                <i className="bi bi-pencil"></i> Edit
-                                                            </button>
-                                                            {isOwner() && (<>
-                                                                <button
-                                                                    className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
-                                                                    style={{ fontSize: '0.7rem' }}
-                                                                    title="Delete account only (keeps transaction history)"
-                                                                    disabled={deleting === ent.id}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDelete(ent);
-                                                                    }}
-                                                                >
-                                                                    {deleting === ent.id
-                                                                        ? <span className="spinner-border spinner-border-sm"></span>
-                                                                        : <><i className="bi bi-trash"></i> Del</>}
-                                                                </button>
-                                                                <button
-                                                                    className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
-                                                                    style={{ fontSize: '0.7rem' }}
-                                                                    title="Delete account AND all transaction history (irreversible)"
-                                                                    disabled={deletingHistory === ent.id}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDeleteWithHistory(ent);
-                                                                    }}
-                                                                >
-                                                                    {deletingHistory === ent.id
-                                                                        ? <span className="spinner-border spinner-border-sm"></span>
-                                                                        : <><i className="bi bi-trash-fill"></i> Del+History</>}
-                                                                </button>
-                                                            </>)}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </Fragment>
+                                                </span>
+                                            </td>
+                                            <td className="text-end fw-bold py-2 pe-3">
+                                                {categoryGroups[catName].totalDebit > 0
+                                                    ? `₹${categoryGroups[catName].totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                    : '—'}
+                                            </td>
+                                            <td className="text-end fw-bold py-2 pe-3">
+                                                {categoryGroups[catName].totalCredit > 0
+                                                    ? `₹${categoryGroups[catName].totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                                    : '—'}
+                                            </td>
+                                            <td className="no-print py-2 text-end pe-3">
+                                                <Link 
+                                                    to={`/accounts/group-details?type=${catName}`}
+                                                    className="btn btn-outline-primary btn-xs rounded-pill px-3 fw-bold"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    👁️ View Group
+                                                </Link>
+                                            </td>
+                                        </tr>
                                     ))
                                 ) : (
                                     filteredEntities.map((ent) => (

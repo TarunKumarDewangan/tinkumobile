@@ -63,6 +63,7 @@ const NAV = [
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
         { to: '/send-offers', icon: '✉️', label: 'Send Offers', perm: 'manage_offers' },
         { to: '/reports',     icon: '📈', label: 'Reports',    perm: 'view_reports' },
+        { to: '/reports/combined-sales', icon: '📊', label: 'Combined Sales', perm: 'view_reports' },
     ]
   },
 

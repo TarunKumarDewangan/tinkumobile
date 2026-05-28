@@ -55,10 +55,23 @@ class ProductController extends Controller
             
             $items = $query->get();
 
-            // ── Subtract Sold Items Logically ──
-            $saleItems = \App\Models\SaleItem::whereHas('invoice', function($q) {
+            // ── Subtract Sold Items Logically (Optimized) ──
+            $newCat = \App\Models\Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
+            $oldCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
+            $mobileCatIds = array_values(array_filter([$newCat?->id, $oldCat?->id]));
+
+            $saleItemsQuery = \App\Models\SaleItem::whereHas('invoice', function($q) use ($shopId) {
                 $q->where('is_cancelled', false);
-            })->get(); 
+                if ($shopId) $q->where('shop_id', $shopId);
+            });
+
+            if ($request->category_id) {
+                $saleItemsQuery->whereHas('product', fn($pq) => $pq->where('category_id', $request->category_id));
+            } else if (!empty($mobileCatIds)) {
+                $saleItemsQuery->whereHas('product', fn($pq) => $pq->whereIn('category_id', $mobileCatIds));
+            }
+
+            $saleItems = $saleItemsQuery->get();
             $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
             $soldCounts = []; 
             foreach ($saleItems as $si) {
