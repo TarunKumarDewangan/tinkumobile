@@ -3,15 +3,53 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { formatDate } from '../../utils/formatters';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function GroupDetails() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const type = searchParams.get('type') || 'CUSTOMER';
+  const { isOwner } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleting, setDeleting] = useState(null);
+  const [deletingHistory, setDeletingHistory] = useState(null);
+
+  const handleDelete = async (ent) => {
+    if (!window.confirm(`Delete "${ent.name}" from accounts?\n\nThis removes the entity record but KEEPS transaction history.`)) return;
+    setDeleting(ent.id);
+    try {
+      await api.delete(`/entities/${ent.id}`);
+      toast.success(`"${ent.name}" deleted`);
+      setData(prev => prev.filter(e => e.id !== ent.id));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Delete failed');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleDeleteWithHistory = async (ent) => {
+    const first = window.confirm(
+      `⚠️ DELETE "${ent.name}" WITH ALL TRANSACTION HISTORY?\n\nThis will permanently erase:\n• The account record\n• ALL ledger transactions for this account\n• Balance history\n\nThis CANNOT be undone. Confirm?`
+    );
+    if (!first) return;
+    const second = window.confirm(`FINAL WARNING: Completely erase "${ent.name}" and every transaction linked to it?`);
+    if (!second) return;
+
+    setDeletingHistory(ent.id);
+    try {
+      const { data: res } = await api.delete(`/entities/${ent.id}/with-history`);
+      toast.success(res.message || `"${ent.name}" and its history deleted`);
+      setData(prev => prev.filter(e => e.id !== ent.id));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Delete with history failed');
+    } finally {
+      setDeletingHistory(null);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -164,7 +202,7 @@ export default function GroupDetails() {
                     <th className="text-end">Debit (Receivable)</th>
                     <th className="text-end">Credit (Payable)</th>
                     <th className="text-end">Net Balance</th>
-                    <th className="text-end pe-3" style={{ width: '180px' }}>Actions</th>
+                    <th className="text-end pe-3" style={{ width: '280px' }}>Actions</th>
                   </>
                 )}
               </tr>
@@ -240,9 +278,47 @@ export default function GroupDetails() {
                         ₹{Math.abs(bal).toLocaleString()} {bal >= 0 ? 'Dr' : 'Cr'}
                       </td>
                       <td className="text-end pe-3">
-                        <Link to={`/accounts/entity-ledger?id=${e.id}&name=${encodeURIComponent(e.name)}`} className="btn btn-outline-info btn-xs rounded-pill px-3 fw-semibold">
-                           View Ledger
-                        </Link>
+                        <div className="d-flex gap-1 justify-content-end align-items-center">
+                          <Link to={`/accounts/entity-ledger?id=${e.id}&name=${encodeURIComponent(e.name)}`} className="btn btn-outline-info btn-xs rounded-pill px-2 fw-semibold">
+                             View Ledger
+                          </Link>
+                          {isOwner() && (
+                            <>
+                              <button
+                                className="btn btn-outline-secondary btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                style={{ fontSize: '0.7rem' }}
+                                title="Delete account only (keeps transaction history)"
+                                disabled={deleting === e.id}
+                                onClick={(evt) => {
+                                  evt.stopPropagation();
+                                  handleDelete(e);
+                                }}
+                              >
+                                {deleting === e.id ? (
+                                  <span className="spinner-border spinner-border-sm" style={{ width: '0.7rem', height: '0.7rem' }}></span>
+                                ) : (
+                                  <><i className="bi bi-trash"></i> Del</>
+                                )}
+                              </button>
+                              <button
+                                className="btn btn-outline-danger btn-xs rounded-pill px-2 py-0 d-inline-flex align-items-center gap-1 shadow-sm"
+                                style={{ fontSize: '0.7rem' }}
+                                title="Delete account AND all transaction history (irreversible)"
+                                disabled={deletingHistory === e.id}
+                                onClick={(evt) => {
+                                  evt.stopPropagation();
+                                  handleDeleteWithHistory(e);
+                                }}
+                              >
+                                {deletingHistory === e.id ? (
+                                  <span className="spinner-border spinner-border-sm" style={{ width: '0.7rem', height: '0.7rem' }}></span>
+                                ) : (
+                                  <><i className="bi bi-trash-fill"></i> Del+History</>
+                                )}
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

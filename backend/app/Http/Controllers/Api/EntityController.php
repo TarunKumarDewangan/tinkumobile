@@ -212,8 +212,13 @@ class EntityController extends Controller
 
     public function destroy(Entity $entity)
     {
-        $entity->delete();
-        return response()->json(['message' => 'Entity deleted']);
+        return DB::transaction(function() use ($entity) {
+            if ($entity->relation) {
+                $entity->relation->delete();
+            }
+            $entity->delete();
+            return response()->json(['message' => 'Entity deleted']);
+        });
     }
 
     /**
@@ -234,6 +239,11 @@ class EntityController extends Controller
 
             // 2. Remove cached balance row
             DB::table('entity_balances')->where('entity_id', $id)->delete();
+
+            // Delete the related morph model if it exists
+            if ($entity->relation) {
+                $entity->relation->delete();
+            }
 
             // 3. Delete the entity itself
             $entity->delete();
