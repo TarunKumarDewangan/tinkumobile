@@ -262,7 +262,7 @@ export default function Repairs() {
           </div>
         ) : (
           <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0">
+            <table className="table table-hover align-middle mb-0 custom-tally-table">
               <thead className="bg-light-subtle shadow-none">
                 <tr className="border-bottom text-uppercase text-muted" style={{ fontSize: '0.65rem' }}>
                   <th className="ps-3" style={{width:40}}>#</th>
@@ -295,7 +295,7 @@ export default function Repairs() {
                         <div className="x-small text-muted text-uppercase" style={{fontSize:'0.6rem'}}>Forwarded</div>
                         <div className="text-primary">{totals.forwardedCount}</div>
                     </td>
-                    <td className="text-end bg-white shadow-sm border-start border-primary border-3">
+                    <td className="text-end bg-white shadow-sm border-start border-secondary border-3">
                         <div className="d-flex flex-column gap-1 pe-2 py-1">
                             <div className="x-small text-uppercase text-muted opacity-75">Q: ₹{totals.quoted.toLocaleString()}</div>
                             <div className="x-small text-uppercase text-success opacity-75">S: ₹{totals.received.toLocaleString()}</div>
@@ -441,6 +441,39 @@ export default function Repairs() {
         .x-small { font-size: 0.7rem; }
         .btn-xs { padding: 0.1rem 0.25rem; font-size: 0.7rem; }
         .letter-spacing-1 { letter-spacing: 1px; }
+        .custom-tally-table {
+          width: 100%;
+          border-collapse: collapse !important;
+          border: 1px solid #cbd5e1 !important;
+        }
+        .custom-tally-table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          background: #f8fafc !important;
+          color: #475569 !important;
+          font-size: 0.7rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 0.65rem 0.5rem;
+          border-bottom: 2px solid #cbd5e1 !important;
+          border-right: 1px solid #cbd5e1 !important;
+        }
+        .custom-tally-table thead th:last-child {
+          border-right: none !important;
+        }
+        .custom-tally-table tbody tr td {
+          padding: 0.6rem 0.5rem;
+          border-bottom: 1px solid #cbd5e1 !important;
+          border-right: 1px solid #cbd5e1 !important;
+          vertical-align: middle;
+        }
+        .custom-tally-table tbody tr td:last-child {
+          border-right: none !important;
+        }
+        .custom-tally-table tbody tr:hover {
+          background-color: #f1f5f9 !important;
+        }
       `}</style>
     </div>
   );
