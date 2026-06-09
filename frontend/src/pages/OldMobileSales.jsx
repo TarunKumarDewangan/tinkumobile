@@ -64,6 +64,15 @@ export default function OldMobileSales() {
     } catch (e) { toast.error('Error cancelling sale'); }
   };
 
+  const handleDelete = async (id) => {
+    if (!window.confirm('PERMANENTLY DELETE this invoice? Stock will be restored.')) return;
+    try {
+      await api.delete(`/sale-invoices/${id}`);
+      toast.success('Invoice deleted successfully');
+      loadInvoices();
+    } catch (e) { toast.error('Error deleting invoice'); }
+  };
+
   // Filter invoices to only show those containing old mobile items
   const oldMobileInvoices = invoices.filter(inv => {
     if (!oldMobileCategoryId) return true; // If category not loaded yet, show all as fallback
@@ -205,8 +214,12 @@ export default function OldMobileSales() {
                         <div className="d-flex justify-content-end gap-2">
                           <button onClick={() => navigate(`/sales/${inv.id}`)} className="btn btn-sm btn-outline-info rounded-pill px-3">VIEW</button>
                           {!inv.is_cancelled && (
-                            <button onClick={() => handleCancel(inv.id)} className="btn btn-sm btn-outline-warning rounded-pill px-3">CANCEL</button>
+                            <>
+                              <button onClick={() => navigate(`/old-mobiles/sales/${inv.id}/edit`)} className="btn btn-sm btn-outline-primary rounded-pill px-3">EDIT</button>
+                              <button onClick={() => handleCancel(inv.id)} className="btn btn-sm btn-outline-warning rounded-pill px-3">CANCEL</button>
+                            </>
                           )}
+                          <button onClick={() => handleDelete(inv.id)} className="btn btn-sm btn-outline-danger rounded-pill px-3">DEL</button>
                         </div>
                       </td>
                     </tr>

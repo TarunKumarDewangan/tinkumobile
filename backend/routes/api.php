@@ -106,6 +106,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('sale-invoices/{sale_invoice}/receive-finance', [SaleInvoiceController::class, 'receiveFinancePayment']);
     Route::post('/sale-invoices/{saleInvoice}/convert-to-pakka', [SaleInvoiceController::class, 'convertToPakka']);
     Route::post('/sale-invoices/{saleInvoice}/cancel', [SaleInvoiceController::class, 'cancel']);
+    Route::post('/sale-invoices/{saleInvoice}/convert-to-new-sale', [SaleInvoiceController::class, 'convertToNewSale']);
+
 
     // Repairs
     Route::get('/repairs/backup', [RepairController::class, 'backup']);

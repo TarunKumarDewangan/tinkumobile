@@ -121,6 +121,14 @@ export default function OldMobilePurchaseForm() {
     setNewCust({ ...newCust, events: evs });
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      if (e.target.tagName !== 'TEXTAREA' && e.target.type !== 'submit') {
+        e.preventDefault();
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -159,7 +167,7 @@ export default function OldMobilePurchaseForm() {
         <p className="text-muted">Enter details of the old mobile purchased or exchanged from the customer.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="row g-4">
+      <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="row g-4">
         {/* Left Side: General Info & Customer */}
         <div className="col-lg-6">
           <div className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4 mb-4">

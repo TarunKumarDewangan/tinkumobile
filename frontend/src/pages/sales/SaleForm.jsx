@@ -559,6 +559,14 @@ export default function SaleForm() {
     evs[i][field] = val;
     setNewCust({ ...newCust, events: evs });
   };
+  
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      if (e.target.tagName !== 'TEXTAREA' && e.target.type !== 'submit') {
+        e.preventDefault();
+      }
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -605,7 +613,7 @@ export default function SaleForm() {
         <button onClick={() => navigate(isOldMobileSale ? '/old-mobiles/sales' : '/sales')} className="btn btn-outline-secondary btn-sm text-uppercase fw-bold">← Back to List</button>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
         <div className="row g-3">
           {/* LEFT COLUMN: Sale Details */}
           <div className="col-12 col-xl-8">

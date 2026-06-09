@@ -70,12 +70,26 @@ export default function SaleDetails() {
       }
   };
 
+  const handleConvertToNewSale = async () => {
+      if (!window.confirm("Are you sure you want to switch this sale to New Mobile Sales? This will update the categories of the sold devices to New Mobiles and calculate employee incentives.")) return;
+      try {
+          const res = await api.post(`/sale-invoices/${id}/convert-to-new-sale`);
+          toast.success(res.data.message || 'Converted to new sale successfully!');
+          loadInvoice();
+      } catch (e) {
+          toast.error(e.response?.data?.message || 'Failed to convert sale');
+      }
+  };
+
   const handlePrint = () => { window.print(); };
 
   if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
   if (!invoice) return <div className="alert alert-danger">Invoice not found</div>;
 
   const balance = parseFloat(invoice.grand_total) - parseFloat(invoice.total_paid);
+  const isOldMobileSale = invoice?.items?.some(
+      item => item.product?.category?.slug === 'mobile-old' || item.product?.category?.slug === 'MOBILE-OLD'
+  );
 
   return (
     <div className="container-fluid py-2 sale-details-page">
@@ -85,6 +99,11 @@ export default function SaleDetails() {
            <p className="text-muted small mb-0">VIEW DETAILS, TRACK PAYMENTS AND PRINT</p>
         </div>
         <div className="d-flex gap-2">
+            {isOldMobileSale && !invoice.is_cancelled && (
+                <button onClick={handleConvertToNewSale} className="btn btn-warning btn-sm fw-bold shadow-sm text-uppercase text-dark border-2">
+                    🔄 Convert to New Sale
+                </button>
+            )}
             <button onClick={() => setViewMode(viewMode === 'v1' ? 'v2' : 'v1')} className={`btn btn-sm fw-bold border-2 text-uppercase ${viewMode === 'v1' ? 'btn-outline-primary' : 'btn-primary'}`}>
                 {viewMode === 'v1' ? '✨ Switch to Tax Invoice' : '💎 Switch to Standard Bill'}
             </button>
@@ -92,6 +111,7 @@ export default function SaleDetails() {
             <button onClick={handlePrint} className="btn btn-dark btn-sm fw-bold shadow-sm text-uppercase">🖨️ Print</button>
         </div>
       </div>
+
 
       <div className="row g-3">
           {/* Main Invoice Card */}

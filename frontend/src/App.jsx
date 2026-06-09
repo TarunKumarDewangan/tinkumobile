@@ -117,6 +117,7 @@ function AppRoutes() {
           <Route path="old-mobiles/stocks" element={<OldMobileStocks />} />
           <Route path="old-mobiles/sales" element={<OldMobileSales />} />
           <Route path="old-mobiles/sales/new" element={<SaleForm />} />
+          <Route path="old-mobiles/sales/:id/edit" element={<SaleForm />} />
           <Route path="gifts" element={<Gifts />} />
           <Route path="stock-entry" element={<StockEntry />} />
           <Route path="employees" element={<Employees />} />

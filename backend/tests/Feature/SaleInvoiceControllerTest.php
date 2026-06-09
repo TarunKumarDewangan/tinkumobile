@@ -120,4 +120,65 @@ class SaleInvoiceControllerTest extends TestCase
         $this->assertCount(1, $dataFalse);
         $this->assertEquals('NEW PHONE', $dataFalse[0]['items'][0]['product']['name']);
     }
+
+    public function test_can_convert_old_mobile_sale_to_new_mobile_sale()
+    {
+        $shop = Shop::create(['name' => 'Test Shop', 'address' => '123 Test St', 'phone' => '1234567890']);
+        $user = User::factory()->create(['shop_id' => $shop->id]);
+        $customer = \App\Models\Customer::create(['shop_id' => $shop->id, 'name' => 'Test Customer', 'phone' => '1234567890']);
+        
+        $newCategory = \App\Models\Category::create(['name' => 'Mobile New', 'slug' => 'mobile-new']);
+        $oldCategory = \App\Models\Category::create(['name' => 'Mobile Old', 'slug' => 'mobile-old']);
+        
+        $oldProduct = Product::create([
+            'shop_id' => $shop->id,
+            'name' => 'Old Phone to Convert',
+            'sku' => 'OLD-2',
+            'selling_price' => 500,
+            'purchase_price' => 400,
+            'category_id' => $oldCategory->id
+        ]);
+        
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 500]);
+
+        $payload = [
+            'sale_date' => now()->toDateString(),
+            'customer_id' => $customer->id,
+            'payment_method' => 'cash',
+            'bill_type' => 'kaccha',
+            'calculate_gst' => false,
+            'items' => [['product_id' => $oldProduct->id, 'quantity' => 1, 'unit_price' => 500]]
+        ];
+
+        $invoiceResponse = $this->actingAs($user)->postJson('/api/sale-invoices', $payload);
+        $invoiceResponse->assertStatus(201);
+        $invoiceId = $invoiceResponse->json('id');
+
+        // Verify it is initially returned in is_old_mobile=true
+        $responseTrue = $this->actingAs($user)->getJson('/api/sale-invoices?is_old_mobile=true');
+        $responseTrue->assertStatus(200);
+        $this->assertCount(1, $responseTrue->json('data'));
+
+        // Call the conversion endpoint
+        $convertResponse = $this->actingAs($user)->postJson("/api/sale-invoices/{$invoiceId}/convert-to-new-sale");
+        $convertResponse->assertStatus(200);
+
+        // Verify the product category was changed
+        $oldProduct->refresh();
+        $this->assertEquals($newCategory->id, $oldProduct->category_id);
+        $this->assertEquals('NEW', $oldProduct->condition);
+
+        // Verify employee incentive was created
+        $this->assertDatabaseHas('employee_incentives', [
+            'product_id' => $oldProduct->id,
+            'incentive_amount' => 5.00, // 500 * 0.01 = 5
+        ]);
+
+        // Verify it is now returned in is_old_mobile=false instead
+        $responseTrueAfter = $this->actingAs($user)->getJson('/api/sale-invoices?is_old_mobile=true');
+        $this->assertCount(0, $responseTrueAfter->json('data'));
+
+        $responseFalseAfter = $this->actingAs($user)->getJson('/api/sale-invoices?is_old_mobile=false');
+        $this->assertCount(1, $responseFalseAfter->json('data'));
+    }
 }

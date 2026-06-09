@@ -310,7 +310,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product', 'giftItems.giftProduct', 'shop'));
+        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'giftItems.giftProduct', 'shop'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)
@@ -771,4 +771,63 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Failed to update: ' . $e->getMessage()], 500);
         }
     }
+
+    public function convertToNewSale(Request $request, SaleInvoice $saleInvoice)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($saleInvoice->is_cancelled) {
+            return response()->json(['message' => 'Cannot convert cancelled sale'], 422);
+        }
+
+        $oldMobileCat = Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
+        $newMobileCat = Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
+
+        if (!$newMobileCat) {
+            return response()->json(['message' => 'New mobile category not found'], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $convertedCount = 0;
+            foreach ($saleInvoice->items as $item) {
+                $product = $item->product;
+                if ($product && $oldMobileCat && $product->category_id == $oldMobileCat->id) {
+                    // 1. Update product category to MOBILE-NEW and condition to new
+                    $product->update([
+                        'category_id' => $newMobileCat->id,
+                        'condition' => 'new'
+                    ]);
+
+                    // 2. Check and record Employee Incentive
+                    $hasIncentive = EmployeeIncentive::where('sale_item_id', $item->id)->exists();
+                    if (!$hasIncentive) {
+                        $incentiveAmount = $item->unit_price * 0.01;
+                        EmployeeIncentive::create([
+                            'user_id'          => $saleInvoice->sold_by_id ?? $saleInvoice->user_id,
+                            'sale_item_id'     => $item->id,
+                            'product_id'       => $item->product_id,
+                            'incentive_amount' => $incentiveAmount,
+                        ]);
+                    }
+
+                    $convertedCount++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => "Successfully converted {$convertedCount} devices in the invoice to new mobile sales.",
+                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'shop'))
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Conversion failed: ' . $e->getMessage()], 500);
+        }
+    }
 }
+

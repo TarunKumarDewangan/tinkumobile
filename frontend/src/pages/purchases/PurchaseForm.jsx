@@ -48,7 +48,7 @@ export default function PurchaseForm() {
   const { id }     = useParams();
   const { isOwner, hasFullAccess } = useAuth();
   const [loading, setLoading] = useState(false);
-  const enableBulkAdd = false; // Set to true to show "+ Bulk Add" button later
+  const enableBulkAdd = true; // Set to true to show "+ Bulk Add" button later
 
   // Quick Add Supplier
   const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -352,6 +352,14 @@ export default function PurchaseForm() {
     }
   }, [rawGrandTotal, form.rounding_mode, isManualRound]);
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      if (e.target.tagName !== 'TEXTAREA' && e.target.type !== 'submit') {
+        e.preventDefault();
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -458,7 +466,7 @@ export default function PurchaseForm() {
       {loading ? (
         <div className="text-center py-5"><div className="spinner-border text-primary"/></div>
       ) : (
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
           {/* General Info */}
           <div className="pf-card">
             <div className="pf-sec">📋 General Information</div>
