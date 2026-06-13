@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 
 class SupplierController extends Controller
 {
-    public function index() { return response()->json(Supplier::all()); }
+    public function index() { return response()->json(Supplier::with('entity')->get()); }
     public function store(Request $request) {
         $data = $request->validate([
             'name' => 'required|string|max:150',

@@ -137,6 +137,7 @@ export default function SaleForm() {
         setItems([{
           selection_id: p.id,
           product_id: p.product_id,
+          product_name: p.name || '',
           imei: p.imei || p.attributes?.imei || '',
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
@@ -160,6 +161,7 @@ export default function SaleForm() {
         setItems([{
           selection_id: p.id,
           product_id: p.product_id || p.id,
+          product_name: p.name || '',
           imei: p.imei || p.attributes?.imei || imei,
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
@@ -214,6 +216,7 @@ export default function SaleForm() {
       setItems(data.items?.map(i => ({
         selection_id: i.product_id,
         product_id: i.product_id,
+        product_name: i.product?.name || '',
         imei: i.imei || '',
         ram: i.ram || '',
         storage: i.storage || '',
@@ -322,6 +325,7 @@ export default function SaleForm() {
     const newItem = {
         selection_id: p.id,
         product_id: p.product_id,
+        product_name: p.name || '',
         imei: p.imei || p.attributes?.imei || '',
         ram: p.attributes?.ram || '',
         storage: p.attributes?.storage || '',
@@ -362,7 +366,7 @@ export default function SaleForm() {
     }
   };
 
-  const addItem = () => setItems([...items, { selection_id: '', product_id: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
+  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
   
   const updateItem = (i, field, val) => {
@@ -380,6 +384,7 @@ export default function SaleForm() {
       if (p) {
           arr[i].selection_id = p.id;
           arr[i].product_id = p.product_id || p.id;
+          arr[i].product_name = p.name || '';
           arr[i].unit_price = (priceMode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0);
           arr[i].base_price = p.purchase_price || 0;
           arr[i].min_selling_price = p.min_selling_price || 0,
@@ -390,6 +395,9 @@ export default function SaleForm() {
               arr[i].color = p.attributes.color || '';
               arr[i].imei = p.imei || p.attributes.imei || '';
           }
+      } else {
+          arr[i].product_id = '';
+          arr[i].product_name = '';
       }
     }
     setItems(arr);
@@ -603,6 +611,17 @@ export default function SaleForm() {
 
   const isOldMobileSale = window.location.pathname.includes('/old-mobiles');
 
+  const getProductDisplayName = (item) => {
+    const found = products.find(px => px.id == item.selection_id || (item.product_id && px.product_id == item.product_id));
+    if (found) {
+      return found.name + " (" + (found.attributes?.ram || '') + "/" + (found.attributes?.storage || '') + "/" + (found.attributes?.color || '') + ") / IMEI: " + (found.imei || found.attributes?.imei || '');
+    }
+    if (item.product_name) {
+      return item.product_name + " (" + (item.ram || '') + "/" + (item.storage || '') + "/" + (item.color || '') + ") / IMEI: " + (item.imei || '');
+    }
+    return item.selection_id || '';
+  };
+
   return (
     <div className="container-fluid py-2">
       <div className="page-header mb-3 d-flex justify-content-between align-items-center">
@@ -810,7 +829,7 @@ export default function SaleForm() {
                                                 className="form-control form-control-sm text-uppercase fw-bold mb-1 shadow-sm border-primary" 
                                                 placeholder="🔍 TYPE PRODUCT NAME OR IMEI..."
                                                 required 
-                                                value={products.find(px => px.id == item.selection_id)?.name ? (products.find(px => px.id == item.selection_id).name + " (" + (products.find(px => px.id == item.selection_id).attributes?.ram || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.storage || '') + "/" + (products.find(px => px.id == item.selection_id).attributes?.color || '') + ") / IMEI: " + (products.find(px => px.id == item.selection_id).imei || products.find(px => px.id == item.selection_id).attributes?.imei || '')) : item.selection_id || ''} 
+                                                value={getProductDisplayName(item)} 
                                                 onChange={e => updateItem(i, 'selection_id', e.target.value)}
                                             />
                                             <datalist id={`productOptions-${i}`}>

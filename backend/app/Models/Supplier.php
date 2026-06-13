@@ -18,4 +18,5 @@ class Supplier extends Model
     public function purchaseInvoices(): HasMany { return $this->hasMany(PurchaseInvoice::class); }
     public function rechargeP(): HasMany { return $this->hasMany(RechargePurchase::class); }
     public function simCards(): HasMany { return $this->hasMany(SimCard::class, 'purchased_from'); }
+    public function entity() { return $this->morphOne(Entity::class, 'relation'); }
 }
