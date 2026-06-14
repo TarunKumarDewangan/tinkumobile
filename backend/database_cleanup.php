@@ -8,11 +8,11 @@ $kernel->bootstrap();
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-echo "Starting database cleanup...\n";
+echo "Starting database cleanup (including soft-deleted records)...\n";
 
 DB::transaction(function() {
-    // 1. Fetch all active customers (ignoring soft deletes automatically)
-    $customers = \App\Models\Customer::all();
+    // 1. Fetch all customer records including soft-deleted ones
+    $customers = \App\Models\Customer::withTrashed()->get();
 
     // 2. Group customers by normalized phone number
     $grouped = [];
@@ -24,42 +24,67 @@ DB::transaction(function() {
     echo "Analyzing " . count($grouped) . " unique normalized phone numbers...\n";
 
     foreach ($grouped as $phone => $records) {
+        // If there's only 1 record, but it is soft-deleted, we can just leave it alone.
+        // If it's active, we clean its trailing comma.
         if (count($records) < 2) {
-            // No duplicates for this phone number. Just clean up the trailing comma if present!
             $record = $records[0];
-            $cleanPhone = rtrim(trim($record->phone), ',');
-            if ($record->phone !== $cleanPhone) {
-                echo "Cleaning trailing comma for single Customer ID {$record->id} ({$record->name}): '{$record->phone}' -> '{$cleanPhone}'\n";
-                DB::table('customers')->where('id', $record->id)->update(['phone' => $cleanPhone]);
+            if (is_null($record->deleted_at)) {
+                $cleanPhone = rtrim(trim($record->phone), ',');
+                if ($record->phone !== $cleanPhone) {
+                    echo "Cleaning trailing comma for single active Customer ID {$record->id} ({$record->name}): '{$record->phone}' -> '{$cleanPhone}'\n";
+                    DB::table('customers')->where('id', $record->id)->update(['phone' => $cleanPhone]);
+                }
             }
             continue;
         }
 
-        // We have duplicates! Let's choose the best record to keep.
-        // Best record is the one that has an entity link, or fallback to the first one.
+        // We have duplicates (could be multiple active, or combination of active and soft-deleted).
+        // Let's choose the best record to keep:
+        // Priority: 1. Active with Entity, 2. Active without Entity, 3. Soft-deleted with Entity, 4. Soft-deleted without Entity.
         $bestRecord = null;
-        foreach ($records as $record) {
-            $hasEntity = DB::table('entities')
-                ->where('relation_type', 'App\Models\Customer')
-                ->where('relation_id', $record->id)
-                ->exists();
-            if ($hasEntity) {
-                $bestRecord = $record;
-                break;
+        $activeRecords = array_filter($records, fn($r) => is_null($r->deleted_at));
+
+        if (!empty($activeRecords)) {
+            // Find active record linked to an entity
+            foreach ($activeRecords as $record) {
+                $hasEntity = DB::table('entities')
+                    ->where('relation_type', 'App\Models\Customer')
+                    ->where('relation_id', $record->id)
+                    ->exists();
+                if ($hasEntity) {
+                    $bestRecord = $record;
+                    break;
+                }
+            }
+            if (!$bestRecord) {
+                $bestRecord = reset($activeRecords); // keep first active
+            }
+        } else {
+            // All are soft-deleted, check if any has an entity
+            foreach ($records as $record) {
+                $hasEntity = DB::table('entities')
+                    ->where('relation_type', 'App\Models\Customer')
+                    ->where('relation_id', $record->id)
+                    ->exists();
+                if ($hasEntity) {
+                    $bestRecord = $record;
+                    break;
+                }
+            }
+            if (!$bestRecord) {
+                $bestRecord = $records[0]; // fallback
             }
         }
 
-        if (!$bestRecord) {
-            $bestRecord = $records[0];
-        }
+        $statusStr = is_null($bestRecord->deleted_at) ? "ACTIVE" : "SOFT-DELETED";
+        echo "Merging duplicates for phone: '{$phone}' (kept Customer ID: {$bestRecord->id} - {$statusStr})\n";
 
-        echo "Merging duplicates for phone: '{$phone}' (kept Customer ID: {$bestRecord->id})\n";
-
-        // Update all related records from other customers to point to the kept customer
+        // Update all related records from other duplicate customer IDs to point to the kept customer ID
         foreach ($records as $record) {
             if ($record->id === $bestRecord->id) continue;
 
-            echo "  -> Merging Customer ID {$record->id} into {$bestRecord->id}...\n";
+            $dupStatusStr = is_null($record->deleted_at) ? "ACTIVE" : "SOFT-DELETED";
+            echo "  -> Merging {$dupStatusStr} Customer ID {$record->id} into Kept Customer ID {$bestRecord->id}...\n";
 
             $tablesToUpdate = [
                 'sale_invoices' => 'customer_id',
@@ -81,12 +106,12 @@ DB::transaction(function() {
                 DB::table('sim_cards')->where('sold_to', $record->id)->update(['sold_to' => $bestRecord->id]);
             }
 
-            // Force delete the duplicate customer record
+            // Force delete (hard delete) the duplicate customer record to completely remove it from index
             DB::table('customers')->where('id', $record->id)->delete();
-            echo "  -> Deleted duplicate Customer ID {$record->id}\n";
+            echo "  -> Hard Deleted duplicate Customer ID {$record->id}\n";
         }
 
-        // Now that duplicates are gone, clean the phone number on the kept customer record
+        // Clean the phone number of the kept customer record
         $cleanPhone = rtrim(trim($bestRecord->phone), ',');
         if ($bestRecord->phone !== $cleanPhone) {
             DB::table('customers')->where('id', $bestRecord->id)->update(['phone' => $cleanPhone]);
@@ -94,7 +119,7 @@ DB::transaction(function() {
         }
     }
 
-    // 3. Clean up the entities table phone numbers (no unique constraint on entities.phone)
+    // 3. Clean up the entities table phone numbers (entities table has no unique constraint on phone)
     DB::statement("UPDATE entities SET phone = TRIM(TRAILING ',' FROM phone) WHERE phone LIKE '%,';");
     echo "Cleaned trailing commas from entities table.\n";
 });
