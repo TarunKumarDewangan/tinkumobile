@@ -96,8 +96,8 @@ class StockController extends Controller
 
     public function restoreBackup(Request $request)
     {
-        if (!$request->user()->isOwner()) {
-            return response()->json(['message' => 'Only the owner can restore backups'], 403);
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Only the owner or administrator can restore backups'], 403);
         }
 
         $request->validate([

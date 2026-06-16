@@ -317,10 +317,130 @@ class EntityController extends Controller
         // 2. Re-sync from all sources
         $this->autoSync();
 
-        // 3. Recalculate all balances
+        // 3. Re-align cached accounting_entity_id in all transactional tables
+        // Since entities were truncated, the old cached IDs are stale and must be mapped to the new entity IDs.
+        
+        // Purchase Invoices
+        \App\Models\PurchaseInvoice::chunkById(100, function ($invoices) {
+            foreach ($invoices as $inv) {
+                $supplier = $inv->supplier;
+                if ($supplier) {
+                    $entity = Entity::where('relation_type', \App\Models\Supplier::class)
+                        ->where('relation_id', $supplier->id)
+                        ->first();
+                    if ($entity && $inv->accounting_entity_id !== $entity->id) {
+                        $inv->accounting_entity_id = $entity->id;
+                        $inv->saveQuietly();
+                    }
+                }
+            }
+        });
+
+        // Sale Invoices
+        \App\Models\SaleInvoice::chunkById(100, function ($invoices) {
+            foreach ($invoices as $inv) {
+                $customer = $inv->customer;
+                if ($customer) {
+                    $entity = Entity::where('relation_type', \App\Models\Customer::class)
+                        ->where('relation_id', $customer->id)
+                        ->first();
+                    if ($entity && $inv->accounting_entity_id !== $entity->id) {
+                        $inv->accounting_entity_id = $entity->id;
+                        $inv->saveQuietly();
+                    }
+                }
+            }
+        });
+
+        // Repair Requests
+        \App\Models\RepairRequest::chunkById(100, function ($repairs) {
+            foreach ($repairs as $rep) {
+                $customer = $rep->customer;
+                if ($customer) {
+                    $entity = Entity::where('relation_type', \App\Models\Customer::class)
+                        ->where('relation_id', $customer->id)
+                        ->first();
+                    if ($entity && $rep->accounting_entity_id !== $entity->id) {
+                        $rep->accounting_entity_id = $entity->id;
+                        $rep->saveQuietly();
+                    }
+                }
+            }
+        });
+
+        // Loans
+        \App\Models\Loan::chunkById(100, function ($loans) {
+            foreach ($loans as $loan) {
+                $customer = $loan->customer;
+                if ($customer) {
+                    $entity = Entity::where('relation_type', \App\Models\Customer::class)
+                        ->where('relation_id', $customer->id)
+                        ->first();
+                    if ($entity && $loan->accounting_entity_id !== $entity->id) {
+                        $loan->accounting_entity_id = $entity->id;
+                        $loan->saveQuietly();
+                    }
+                }
+            }
+        });
+
+        // Transactions
+        \App\Models\Transaction::chunkById(100, function ($transactions) {
+            foreach ($transactions as $tx) {
+                $entityId = null;
+                if ($tx->entity_type && $tx->entity_id) {
+                    $entity = Entity::where('relation_type', $tx->entity_type)
+                        ->where('relation_id', $tx->entity_id)
+                        ->first();
+                    if ($entity) $entityId = $entity->id;
+                }
+                if (!$entityId && $tx->entity_name) {
+                    $entity = Entity::where('name', $tx->entity_name)->first();
+                    if (!$entity) {
+                        $cleanName = preg_replace('/\s*\(.*?\)\s*/', '', $tx->entity_name);
+                        $entity = Entity::where('name', $cleanName)
+                            ->orWhere('name', 'like', $cleanName . ' %')
+                            ->first();
+                    }
+                    if ($entity) $entityId = $entity->id;
+                }
+                if ($entityId && $tx->accounting_entity_id !== $entityId) {
+                    $tx->accounting_entity_id = $entityId;
+                    $tx->saveQuietly();
+                }
+            }
+        });
+
+        // 4. Truncate ledgers table
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        \App\Models\Ledger::truncate();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+        // 5. Rebuild unified ledger from all source records
+        \App\Models\AirtelDrop::chunk(100, function ($drops) {
+            foreach ($drops as $drop) $drop->postToLedger();
+        });
+
+        \App\Models\RepairRequest::chunk(100, function ($repairs) {
+            foreach ($repairs as $repair) $repair->postToLedger();
+        });
+
+        \App\Models\SaleInvoice::chunk(100, function ($sales) {
+            foreach ($sales as $sale) $sale->postToLedger();
+        });
+
+        \App\Models\PurchaseInvoice::chunk(100, function ($purchases) {
+            foreach ($purchases as $purchase) $purchase->postToLedger();
+        });
+
+        \App\Models\Transaction::chunk(100, function ($transactions) {
+            foreach ($transactions as $transaction) $transaction->postToLedger();
+        });
+
+        // 6. Recalculate all balances
         $service = app(\App\Services\EntityService::class);
         $service->syncAll();
 
-        return response()->json(['message' => 'Account system successfully recreated and all balances recalculated.']);
+        return response()->json(['message' => 'Account system successfully recreated, database entities aligned, and all balances/ledgers rebuilt.']);
     }
 }

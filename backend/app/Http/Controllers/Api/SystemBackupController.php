@@ -25,7 +25,7 @@ class SystemBackupController extends Controller
 {
     public function backup(Request $request)
     {
-        if (!$request->user()->isOwner()) return response()->json(['message' => 'Unauthorized'], 403);
+        if (!$request->user()->hasFullAccess()) return response()->json(['message' => 'Unauthorized'], 403);
 
         $data = [
             'type'              => 'FULL_SYSTEM_BACKUP',
@@ -61,7 +61,7 @@ class SystemBackupController extends Controller
 
     public function restoreBackup(Request $request)
     {
-        if (!$request->user()->isOwner()) return response()->json(['message' => 'Only the owner can restore system backups'], 403);
+        if (!$request->user()->hasFullAccess()) return response()->json(['message' => 'Only the owner or administrator can restore system backups'], 403);
 
         $request->validate([
             'backup_file' => 'required|file'
@@ -79,6 +79,7 @@ class SystemBackupController extends Controller
             Schema::disableForeignKeyConstraints();
 
             // Sequence matters for deletion (reverse order of dependencies)
+            DB::table('ledgers')->delete();
             DB::table('transactions')->delete();
             DB::table('salary_payments')->delete();
             DB::table('loan_payments')->delete();
@@ -193,6 +194,30 @@ class SystemBackupController extends Controller
                 $transactions = array_map($cleanItem, $data['transactions']);
                 foreach (array_chunk($transactions, 500) as $chunk) DB::table('transactions')->insert($chunk);
             }
+
+            // 9b. Rebuild unified ledger from all restored source records
+            \App\Models\AirtelDrop::chunk(100, function ($drops) {
+                foreach ($drops as $drop) $drop->postToLedger();
+            });
+
+            \App\Models\RepairRequest::chunk(100, function ($repairs) {
+                foreach ($repairs as $repair) $repair->postToLedger();
+            });
+
+            \App\Models\SaleInvoice::chunk(100, function ($sales) {
+                foreach ($sales as $sale) $sale->postToLedger();
+            });
+
+            \App\Models\PurchaseInvoice::chunk(100, function ($purchases) {
+                foreach ($purchases as $purchase) $purchase->postToLedger();
+            });
+
+            \App\Models\Transaction::chunk(100, function ($transactions) {
+                foreach ($transactions as $transaction) $transaction->postToLedger();
+            });
+
+            // Recalculate all balances
+            app(\App\Services\EntityService::class)->syncAll();
 
             Schema::enableForeignKeyConstraints();
             ActivityLog::log('FULL_SYSTEM_RESTORE', null, 'Performed a full system data restore from sync file.');

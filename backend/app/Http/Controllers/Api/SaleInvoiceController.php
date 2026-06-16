@@ -686,7 +686,7 @@ class SaleInvoiceController extends Controller
 
     public function restoreBackup(Request $request)
     {
-        if (!$request->user()->isOwner()) return response()->json(['message' => 'Unauthorized'], 403);
+        if (!$request->user()->hasFullAccess()) return response()->json(['message' => 'Unauthorized'], 403);
         
         $request->validate(['backup_file' => 'required|file']);
         $data = json_decode(file_get_contents($request->file('backup_file')->getRealPath()), true);

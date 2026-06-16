@@ -272,8 +272,8 @@ class AirtelRetailerController extends Controller
 
     public function restoreBackup(Request $request)
     {
-        if (!$request->user()->isOwner()) {
-            return response()->json(['message' => 'Only the owner can restore backups'], 403);
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Only the owner or administrator can restore backups'], 403);
         }
 
         $request->validate([
@@ -420,8 +420,8 @@ class AirtelRetailerController extends Controller
 
     public function bulkDeleteRecoveries(Request $request)
     {
-        if (!$request->user()->isOwner()) {
-            return response()->json(['message' => 'Only the owner can clear recovery records'], 403);
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Only the owner or administrator can clear recovery records'], 403);
         }
 
         // Delete all recovery records
@@ -437,8 +437,8 @@ class AirtelRetailerController extends Controller
 
     public function bulkClearOpeningBalances(Request $request)
     {
-        if (!$request->user()->isOwner()) {
-            return response()->json(['message' => 'Only the owner can clear opening balances'], 403);
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Only the owner or administrator can clear opening balances'], 403);
         }
 
         Retailer::query()->update(['balance' => 0]);
@@ -453,8 +453,8 @@ class AirtelRetailerController extends Controller
 
     public function bulkFullReset(Request $request)
     {
-        if (!$request->user()->isOwner()) {
-            return response()->json(['message' => 'Only the owner can perform a full reset'], 403);
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Only the owner or administrator can perform a full reset'], 403);
         }
 
         // 1. Clear Opening Balances
