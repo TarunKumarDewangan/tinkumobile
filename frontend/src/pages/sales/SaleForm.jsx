@@ -178,6 +178,7 @@ export default function SaleForm() {
           product_id: p.product_id,
           product_name: p.name || '',
           imei: p.imei || p.attributes?.imei || '',
+          imeis: [p.imei || p.attributes?.imei || ''],
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
           color: p.attributes?.color || '',
@@ -202,6 +203,7 @@ export default function SaleForm() {
           product_id: p.product_id || p.id,
           product_name: p.name || '',
           imei: p.imei || p.attributes?.imei || imei,
+          imeis: [p.imei || p.attributes?.imei || imei],
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
           color: p.attributes?.color || '',
@@ -252,20 +254,25 @@ export default function SaleForm() {
       }
       if (data.rounding_mode === 'manual') setIsManualRound(true);
       if (data.is_gst_manual) setIsManualGst(true);
-      setItems(data.items?.map(i => ({
-        selection_id: i.product_id,
-        product_id: i.product_id,
-        product_name: i.product?.name || '',
-        imei: i.imei || '',
-        ram: i.ram || '',
-        storage: i.storage || '',
-        color: i.color || '',
-        quantity: i.quantity,
-        unit_price: i.unit_price,
-        base_price: i.product?.purchase_price || 0,
-        min_selling_price: i.product?.min_selling_price || 0,
-        max_selling_price: i.product?.max_selling_price || 0
-      })));
+      setItems(data.items?.map(i => {
+        const itemQty = i.quantity || 1;
+        const itemImeis = i.imeis || Array(itemQty).fill('').map((_, idx) => idx === 0 ? (i.imei || '') : '');
+        return {
+          selection_id: i.product_id,
+          product_id: i.product_id,
+          product_name: i.product?.name || '',
+          imei: i.imei || '',
+          imeis: itemImeis,
+          ram: i.ram || '',
+          storage: i.storage || '',
+          color: i.color || '',
+          quantity: itemQty,
+          unit_price: i.unit_price,
+          base_price: i.product?.purchase_price || 0,
+          min_selling_price: i.product?.min_selling_price || 0,
+          max_selling_price: i.product?.max_selling_price || 0
+        };
+      }));
       setCustomerSearch(data.customer?.name || '');
       setCustomerInputText(data.customer?.name || '');
       setSelectedCustomer(data.customer || null);
@@ -366,6 +373,7 @@ export default function SaleForm() {
         product_id: p.product_id,
         product_name: p.name || '',
         imei: p.imei || p.attributes?.imei || '',
+        imeis: [p.imei || p.attributes?.imei || ''],
         ram: p.attributes?.ram || '',
         storage: p.attributes?.storage || '',
         color: p.attributes?.color || '',
@@ -405,8 +413,48 @@ export default function SaleForm() {
     }
   };
 
-  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
+  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', imeis: [''], ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+
+  const getMatchingStockItems = (item, excludeImeiIdx) => {
+    if (!item.product_name) return [];
+    return products.filter(p => {
+      const nameMatches = p.name && item.product_name && p.name.toUpperCase() === item.product_name.toUpperCase();
+      const idMatches = p.product_id && item.product_id && p.product_id == item.product_id;
+      if (!nameMatches && !idMatches) return false;
+      
+      const ramMatches = !item.ram || (p.attributes?.ram && p.attributes.ram.toUpperCase() === item.ram.toUpperCase());
+      const storageMatches = !item.storage || (p.attributes?.storage && p.attributes.storage.toUpperCase() === item.storage.toUpperCase());
+      const colorMatches = !item.color || (p.attributes?.color && p.attributes.color.toUpperCase() === item.color.toUpperCase());
+      
+      const imeiVal = p.imei || p.attributes?.imei;
+      if (!imeiVal) return false;
+      
+      // Exclude if this IMEI is already selected elsewhere in the form
+      const isAlreadySelected = items.some((it, itIdx) => {
+        const itImeis = it.imeis || [it.imei];
+        return itImeis.some((im, imIdx) => {
+          // Don't exclude if it's the current input slot we are filtering for
+          if (itIdx === items.indexOf(item) && imIdx === excludeImeiIdx) return false;
+          return im === imeiVal;
+        });
+      });
+      
+      return ramMatches && storageMatches && colorMatches && !isAlreadySelected;
+    });
+  };
+
+  const updateItemImei = (itemIdx, imeiIdx, val) => {
+    const arr = [...items];
+    if (!arr[itemIdx].imeis) {
+      arr[itemIdx].imeis = Array(arr[itemIdx].quantity || 1).fill('').map((_, idx) => idx === 0 ? (arr[itemIdx].imei || '') : '');
+    }
+    arr[itemIdx].imeis[imeiIdx] = val;
+    if (imeiIdx === 0) {
+      arr[itemIdx].imei = val;
+    }
+    setItems(arr);
+  };
   
   const updateItem = (i, field, val) => {
     const arr = [...items];
@@ -433,11 +481,29 @@ export default function SaleForm() {
               arr[i].storage = p.attributes.storage || '';
               arr[i].color = p.attributes.color || '';
               arr[i].imei = p.imei || p.attributes.imei || '';
+              arr[i].imeis = [p.imei || p.attributes.imei || ''];
           }
       } else {
           arr[i].product_id = '';
           arr[i].product_name = '';
       }
+    }
+    if (field === 'quantity') {
+      const qty = parseInt(val) || 1;
+      const currentImeis = arr[i].imeis || [arr[i].imei || ''];
+      const newImeis = [...currentImeis];
+      if (newImeis.length < qty) {
+        while (newImeis.length < qty) {
+          newImeis.push('');
+        }
+      } else if (newImeis.length > qty) {
+        newImeis.splice(qty);
+      }
+      arr[i].imeis = newImeis;
+    }
+    if (field === 'imei') {
+      if (!arr[i].imeis) arr[i].imeis = [];
+      arr[i].imeis[0] = val;
     }
     setItems(arr);
   };
@@ -657,6 +723,23 @@ export default function SaleForm() {
     
     setLoading(true);
     try {
+      const finalItems = [];
+      items.forEach(item => {
+        if (item.quantity > 1) {
+          const qty = item.quantity;
+          const imeis = item.imeis || [item.imei || ''];
+          for (let k = 0; k < qty; k++) {
+            finalItems.push({
+              ...item,
+              quantity: 1,
+              imei: imeis[k] || '',
+            });
+          }
+        } else {
+          finalItems.push(item);
+        }
+      });
+
       let finalForm = {
         ...form,
         idempotency_key: idempotencyKey.current,
@@ -664,7 +747,7 @@ export default function SaleForm() {
         sgst_amount: sgstAmount,
         round_off: parseFloat(form.round_off) || 0,
         is_gst_manual: isManualGst,
-        items
+        items: finalItems
       };
       if (form.payment_method === 'OTHER' && form.other_mode) {
           finalForm.payment_method = form.other_mode;
@@ -920,8 +1003,42 @@ export default function SaleForm() {
                                             <div className="row g-1 text-uppercase">
                                                 <div className="col-12 mb-1">
                                                     <label className="x-small fw-bold text-primary mb-0">IMEI/SERIAL NUMBER</label>
-                                                    <input type="text" className="form-control form-control-sm fw-bold border-primary shadow-sm" placeholder="ENTER 15-DIGIT IMEI..." value={item.imei} onChange={e => updateItem(i,'imei', e.target.value.toUpperCase())} />
+                                                    <input 
+                                                        type="text" 
+                                                        list={`stockImeis-${i}-0`}
+                                                        className="form-control form-control-sm fw-bold border-primary shadow-sm" 
+                                                        placeholder="ENTER 15-DIGIT IMEI..." 
+                                                        value={item.imei} 
+                                                        onChange={e => updateItem(i,'imei', e.target.value.toUpperCase())} 
+                                                    />
+                                                    <datalist id={`stockImeis-${i}-0`}>
+                                                        {getMatchingStockItems(item, 0).map(p => (
+                                                            <option key={p.id} value={p.imei || p.attributes?.imei || ''} />
+                                                        ))}
+                                                    </datalist>
                                                 </div>
+                                                {item.quantity > 1 && Array.from({ length: item.quantity - 1 }).map((_, imeiIdxPlusOne) => {
+                                                    const imeiIdx = imeiIdxPlusOne + 1;
+                                                    const imeiVal = (item.imeis && item.imeis[imeiIdx]) || '';
+                                                    return (
+                                                        <div className="col-12 mb-1" key={imeiIdx}>
+                                                            <label className="x-small fw-bold text-primary mb-0">IMEI/SERIAL NUMBER {imeiIdx + 1}</label>
+                                                            <input 
+                                                                type="text" 
+                                                                list={`stockImeis-${i}-${imeiIdx}`}
+                                                                className="form-control form-control-sm fw-bold border-primary shadow-sm" 
+                                                                placeholder={`ENTER IMEI ${imeiIdx + 1}...`} 
+                                                                value={imeiVal} 
+                                                                onChange={e => updateItemImei(i, imeiIdx, e.target.value.toUpperCase())} 
+                                                            />
+                                                            <datalist id={`stockImeis-${i}-${imeiIdx}`}>
+                                                                {getMatchingStockItems(item, imeiIdx).map(p => (
+                                                                    <option key={p.id} value={p.imei || p.attributes?.imei || ''} />
+                                                                ))}
+                                                            </datalist>
+                                                        </div>
+                                                    );
+                                                })}
                                                 <div className="col-4">
                                                     <input type="text" className="form-control form-control-xs" placeholder="RAM" value={item.ram} onChange={e => updateItem(i,'ram', e.target.value.toUpperCase())} />
                                                 </div>
