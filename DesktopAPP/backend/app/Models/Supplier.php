@@ -1,0 +1,22 @@
+<?php
+
+namespace App\Models;
+
+use App\Traits\UppercaseStrings;
+use App\Traits\SyncsWithMasterEntity;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class Supplier extends Model
+{
+    use SoftDeletes, UppercaseStrings, SyncsWithMasterEntity;
+
+    protected $fillable = ['name', 'phone', 'gst_no', 'address', 'is_online_shop'];
+    protected $casts = ['is_online_shop' => 'boolean'];
+
+    public function purchaseInvoices(): HasMany { return $this->hasMany(PurchaseInvoice::class); }
+    public function rechargeP(): HasMany { return $this->hasMany(RechargePurchase::class); }
+    public function simCards(): HasMany { return $this->hasMany(SimCard::class, 'purchased_from'); }
+    public function entity() { return $this->morphOne(Entity::class, 'relation'); }
+}

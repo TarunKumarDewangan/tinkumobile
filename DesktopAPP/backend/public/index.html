@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          let found = false;
+          for(let registration of registrations) {
+            found = true;
+            registration.unregister();
+          }
+          if (found) {
+            console.log('Stale Service Worker found and unregistered. Reloading...');
+            setTimeout(function() { window.location.reload(); }, 500);
+          }
+        });
+      }
+    </script>
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#e31d1d" />
+    <meta name="facebook-domain-verification" content="jynpl3hyac470khql25yz1mf7vl7pw" />
+    <title>Airtel Recovery | Tinku Mobiles</title>
+    <script type="module" crossorigin src="/assets/index-CS54iCEH.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-Dw2cE7zH.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-CZ6eXxXM.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-ui-DG_ijCa8.js">
+    <link rel="modulepreload" crossorigin href="/assets/axios-CYpRQU3u.js">
+    <link rel="modulepreload" crossorigin href="/assets/axios-toAVjyjV.js">
+    <link rel="stylesheet" crossorigin href="/assets/vendor-ui-D4aCc3Up.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-CWCjlpe5.css">
+  </head>
+  <body class="bg-light">
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          let found = false;
+          for(let registration of registrations) {
+            found = true;
+            registration.unregister();
+          }
+          if (found) {
+            console.log('Stale Service Worker found and unregistered. Reloading...');
+            setTimeout(function() { window.location.reload(); }, 500);
+          }
+        });
+      }
+    </script>
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#e31d1d" />
+    <meta name="facebook-domain-verification" content="jynpl3hyac470khql25yz1mf7vl7pw" />
+    <title>Airtel Recovery | Tinku Mobiles</title>
+  </head>
+  <body class="bg-light">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

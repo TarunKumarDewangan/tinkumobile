@@ -1,0 +1,311 @@
+import { useState, useEffect } from 'react';
+import axios from '../../api/axios';
+import { toast } from 'react-toastify';
+import { useAuth } from '../../contexts/AuthContext';
+const SortIcon = ({ sortField, field, sortOrder }) => {
+    if (sortField !== field) return <span className="ms-1 text-secondary opacity-50">↕</span>;
+    return <span className="ms-1 text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
+};
+
+export default function AirtelReports() {
+  const { isManager } = useAuth();
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [fromDate, setFromDate] = useState('2025-01-01');
+  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sortField, setSortField] = useState('pending_total');
+  const [sortOrder, setSortOrder] = useState('desc');
+
+  useEffect(() => {
+    if (!isManager()) {
+        fetchReport();
+    }
+  }, [fromDate, toDate, isManager]);
+
+  const fetchReport = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`/airtel-drops/report?from_date=${fromDate}&to_date=${toDate}`);
+      setReportData(data);
+    } catch (error) {
+      toast.error('Failed to fetch report');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('desc'); // Default to descending for numbers
+    }
+  };
+
+  const sortedRetailers = reportData ? [...(reportData.retailer_summary || [])].sort((a, b) => {
+    let aVal = parseFloat(a[sortField] || 0);
+    let bVal = parseFloat(b[sortField] || 0);
+    
+    if (sortField === 'name') {
+      aVal = (a.name || '').toLowerCase();
+      bVal = (b.name || '').toLowerCase();
+      return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    }
+
+    return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+  }) : [];
+
+  if (isManager()) {
+    return (
+      <div className="container-fluid py-5">
+        <div className="alert alert-danger text-center py-5 shadow-sm">
+          <h1 className="display-1 mb-4">🚫</h1>
+          <h2 className="fw-bold text-uppercase">Access Denied</h2>
+          <p className="lead">Managers are not authorized to view recovery reports.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container-fluid py-4 airtel-reports-page">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2 className="h4 mb-0 text-uppercase fw-bold">Airtel Recovery Reports</h2>
+        <div className="d-flex align-items-center gap-2">
+            <div className="btn-group me-2" role="group">
+                <button 
+                    className={`btn btn-sm ${fromDate === '2025-01-01' ? 'btn-primary' : 'btn-outline-primary'} text-uppercase fw-bold`}
+                    onClick={() => {
+                        setFromDate('2025-01-01');
+                        setToDate(new Date().toISOString().split('T')[0]);
+                    }}
+                >
+                    All Time
+                </button>
+                <button 
+                    className={`btn btn-sm ${fromDate === new Date().toISOString().split('T')[0] ? 'btn-primary' : 'btn-outline-primary'} text-uppercase fw-bold`}
+                    onClick={() => {
+                        const today = new Date().toISOString().split('T')[0];
+                        setFromDate(today);
+                        setToDate(today);
+                    }}
+                >
+                    Today
+                </button>
+            </div>
+            <div className="d-flex gap-1 align-items-center bg-white p-1 rounded border shadow-sm">
+                <input type="date" className="form-control form-control-sm border-0" style={{width:'130px'}} value={fromDate} onChange={e => setFromDate(e.target.value)} />
+                <span className="text-muted text-uppercase x-small font-monospace">to</span>
+                <input type="date" className="form-control form-control-sm border-0" style={{width:'130px'}} value={toDate} onChange={e => setToDate(e.target.value)} />
+            </div>
+        </div>
+      </div>
+
+      {loading ? (
+          <div className="text-center py-5"><div className="spinner-border text-primary"/></div>
+      ) : reportData ? (
+          <div className="row g-4">
+              {/* Daily Performance (Drop-Centric) */}
+              <div className="col-12 col-xl-7">
+                  <div className="card shadow-sm border-0 border-top border-4 border-primary h-100">
+                      <div className="card-header bg-white border-0 py-3">
+                          <h6 className="mb-0 text-uppercase fw-bold opacity-75">Daily Performance <small className="text-muted">(By Drop Date)</small></h6>
+                      </div>
+                      <div className="table-responsive" style={{maxHeight:'600px'}}>
+                          <table className="table table-hover align-middle mb-0">
+                              <thead className="table-light text-uppercase shadow-sm sticky-top">
+                                  <tr className="x-small">
+                                      <th className="ps-4">Air Drop Date</th>
+                                      <th>Dropped Amt</th>
+                                      <th>Recovered from these</th>
+                                      <th className="text-end pe-4">Collection %</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  {/* Totals Row */}
+                                  <tr className="bg-light fw-bold shadow-sm sticky-top" style={{top:'31px', zIndex:10}}>
+                                      <td className="ps-4 py-2 text-uppercase small">Total ({reportData.daily_report.length})</td>
+                                      <td className="small text-dark">₹{reportData.daily_report.reduce((acc, r) => acc + (r.total_dropped || 0), 0).toLocaleString()}</td>
+                                      <td className="small text-success fw-bold">₹{reportData.daily_report.reduce((acc, r) => acc + (r.total_recovered || 0), 0).toLocaleString()}</td>
+                                      <td className="text-end pe-4">
+                                          <div className="d-flex align-items-center justify-content-end gap-2">
+                                              <span className="x-small fw-bold">
+                                                  {(() => {
+                                                      const totalDropped = reportData.daily_report.reduce((acc, r) => acc + (r.total_dropped || 0), 0);
+                                                      const totalRecovered = reportData.daily_report.reduce((acc, r) => acc + (r.total_recovered || 0), 0);
+                                                      return totalDropped > 0 ? ((totalRecovered / totalDropped) * 100).toFixed(0) : 0;
+                                                  })()}%
+                                              </span>
+                                          </div>
+                                      </td>
+                                  </tr>
+                                  {reportData.daily_report.map(r => {
+                                      const percent = r.total_dropped > 0 ? (r.total_recovered / r.total_dropped) * 100 : 0;
+                                      return (
+                                          <tr key={r.date}>
+                                              <td className="ps-4 fw-bold small">{r.date === 'OPENING' ? 'OPENING BALANCE' : new Date(r.date).toLocaleDateString('en-GB').replace(/\//g, ' ')}</td>
+                                              <td className="small text-muted">₹{parseFloat(r.total_dropped).toLocaleString()}</td>
+                                              <td className="small text-success fw-bold">₹{parseFloat(r.total_recovered).toLocaleString()}</td>
+                                              <td className="text-end pe-4">
+                                                  <div className="d-flex align-items-center justify-content-end gap-2">
+                                                      <div className="progress flex-grow-1" style={{height:'4px', maxWidth:'60px'}}>
+                                                          <div className="progress-bar bg-success" style={{width: `${Math.min(percent, 100)}%`}} />
+                                                      </div>
+                                                      <span className="x-small fw-bold">{percent.toFixed(0)}%</span>
+                                                  </div>
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Retailer-wise Pending (Aging) */}
+              <div className="col-12 col-xl-5">
+                  <div className="card shadow-sm border-0 border-top border-4 border-danger h-100">
+                      <div className="card-header bg-white border-0 py-3">
+                          <h6 className="mb-0 text-uppercase fw-bold text-danger opacity-75">Retailer Pending Summary</h6>
+                      </div>
+                      <div className="table-responsive" style={{maxHeight:'600px'}}>
+                          <table className="table table-hover align-middle mb-0">
+                              <thead className="table-light text-uppercase shadow-sm sticky-top">
+                                   <tr className="x-small">
+                                       <th className="ps-3 cursor-pointer" style={{minWidth:'140px'}} onClick={() => handleSort('name')}>Retailer <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('opening_bal')}>OB <SortIcon field="opening_bal" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('airdrop_total')}>Drops <SortIcon field="airdrop_total" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end cursor-pointer" onClick={() => handleSort('received_total')}>Rec. <SortIcon field="received_total" sortField={sortField} sortOrder={sortOrder} /></th>
+                                       <th className="text-end pe-3 cursor-pointer" onClick={() => handleSort('pending_total')}>Pending <SortIcon field="pending_total" sortField={sortField} sortOrder={sortOrder} /></th>
+                                   </tr>
+                               </thead>
+                               <tbody>
+                                   {/* Grand Total Row */}
+                                   <tr className="bg-light fw-bold shadow-sm" style={{position:'sticky', top:'31px', zIndex:10}}>
+                                       <td className="ps-3 py-2 text-uppercase small">Total ({reportData.summary_aggregate?.count || reportData.retailer_summary.length})</td>
+                                       <td className="text-end x-small">₹{(reportData.summary_aggregate?.opening_bal || 0).toLocaleString()}</td>
+                                       <td className="text-end x-small">₹{(reportData.summary_aggregate?.airdrop || 0).toLocaleString()}</td>
+                                       <td className="text-end x-small text-success">₹{(reportData.summary_aggregate?.received || 0).toLocaleString()}</td>
+                                       <td className="text-end pe-3 x-small text-danger">₹{(reportData.summary_aggregate?.pending || 0).toLocaleString()}</td>
+                                   </tr>
+                                   {sortedRetailers.map(r => (
+                                       <tr key={r.id}>
+                                           <td className="ps-3 py-2">
+                                               <div className="fw-bold small text-uppercase" style={{lineHeight:'1.2'}}>{r.name || 'Unknown'}</div>
+                                               <div className="text-muted" style={{fontSize:'0.6rem', letterSpacing:'0.5px'}}>{r.msisdn}</div>
+                                           </td>
+                                           <td className="text-end x-small text-muted">₹{parseFloat(r.opening_bal || 0).toLocaleString()}</td>
+                                           <td className="text-end x-small text-muted">₹{parseFloat(r.airdrop_total || 0).toLocaleString()}</td>
+                                           <td className="text-end x-small text-success fw-bold">₹{parseFloat(r.received_total || 0).toLocaleString()}</td>
+                                           <td className="text-end pe-3 x-small">
+                                               <span className="fw-bold text-danger">₹{parseFloat(r.pending_total).toLocaleString()}</span>
+                                           </td>
+                                       </tr>
+                                   ))}
+                               </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Collections Received (Cash-Flow) */}
+              <div className="col-12">
+                  <div className="card shadow-sm border-0 border-top border-4 border-success">
+                      <div className="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                          <h6 className="mb-0 text-uppercase fw-bold text-success opacity-75">Daily Cash Collection <small className="text-muted">(Received on specific date)</small></h6>
+                          <div className="d-flex gap-2 align-items-center">
+                              <div className="badge bg-success-subtle text-success text-uppercase py-2 px-3 me-2">
+                                  Total Received: ₹{reportData.collections_received?.reduce((acc, curr) => acc + parseFloat(curr.amount_collected), 0).toLocaleString()}
+                              </div>
+                              <button 
+                                  className="btn btn-outline-success btn-sm fw-bold text-uppercase"
+                                  onClick={async () => {
+                                      try {
+                                          const response = await axios.get(`/airtel-drops/export-recovery-log?from_date=${fromDate}&to_date=${toDate}`, { responseType: 'blob' });
+                                          const url = window.URL.createObjectURL(new Blob([response.data]));
+                                          const link = document.createElement('a');
+                                          link.href = url;
+                                          link.setAttribute('download', `Airtel_Recovery_Report_${fromDate}_to_${toDate}.csv`);
+                                          document.body.appendChild(link);
+                                          link.click();
+                                          link.remove();
+                                      } catch (error) {
+                                          toast.error('Export failed');
+                                      }
+                                  }}
+                              >
+                                  📊 Export to Excel
+                              </button>
+                          </div>
+                      </div>
+                      <div className="row g-0 p-2">
+                        {reportData.collections_received?.map(c => (
+                            <div key={c.collection_date} className="col-12 col-md-6 col-lg-4 p-2">
+                                <div className="bg-white rounded p-3 border shadow-sm h-100">
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <div className="fw-bold small text-uppercase text-muted border-bottom">{new Date(c.collection_date).toLocaleDateString('en-GB').replace(/\//g, ' ')}</div>
+                                        <div className="h6 mb-0 fw-bold text-success">₹{parseFloat(c.amount_collected).toLocaleString()}</div>
+                                    </div>
+                                    <div className="d-flex flex-wrap gap-1 mt-2">
+                                        {Object.entries(c.modes || {}).map(([mode, amount]) => (
+                                            <div key={mode} className="x-small fw-bold px-2 py-1 rounded bg-light border border-secondary-subtle">
+                                                <span className="opacity-50">{mode}:</span> <span className="text-primary">₹{parseFloat(amount).toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {(!reportData.collections_received || reportData.collections_received.length === 0) && (
+                            <div className="col-12 py-5 text-center text-muted text-uppercase small">No collections received for this period</div>
+                        )}
+                      </div>
+
+                      {/* Detailed Recovery Log Table */}
+                      <div className="border-top mt-2">
+                          <div className="p-3 bg-light-subtle">
+                              <h6 className="x-small fw-bold text-uppercase text-muted mb-0">Detailed Collection Log</h6>
+                          </div>
+                          <div className="table-responsive" style={{maxHeight:'400px'}}>
+                              <table className="table table-hover table-sm align-middle mb-0">
+                                  <thead className="table-light text-uppercase x-small">
+                                      <tr>
+                                          <th className="ps-3">Date / Time</th>
+                                          <th>Retailer</th>
+                                          <th>Amount</th>
+                                          <th>Mode / Notes</th>
+                                          <th className="pe-3">User</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {reportData.detailed_recoveries?.map(rec => (
+                                          <tr key={rec.id} style={{fontSize:'0.75rem'}}>
+                                              <td className="ps-3">
+                                                  <div className="fw-bold">{new Date(rec.recovered_at).toLocaleDateString('en-GB')}</div>
+                                                  <div className="x-small text-muted">{new Date(rec.recovered_at).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}</div>
+                                              </td>
+                                              <td>
+                                                  <div className="fw-bold text-uppercase">{rec.retailer?.name}</div>
+                                                  <div className="x-small text-muted">{rec.retailer?.msisdn}</div>
+                                              </td>
+                                              <td className="fw-bold text-success">₹{parseFloat(rec.amount).toLocaleString()}</td>
+                                              <td className="text-muted text-uppercase" style={{fontSize:'0.65rem'}}>{rec.notes}</td>
+                                              <td className="pe-3 small text-uppercase">{rec.recovery_user?.name || 'System'}</td>
+                                          </tr>
+                                      ))}
+                                      {(!reportData.detailed_recoveries || reportData.detailed_recoveries.length === 0) && (
+                                          <tr><td colSpan="5" className="text-center py-4 text-muted x-small">No detailed records found</td></tr>
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      ) : null}
+    </div>
+  );
+}

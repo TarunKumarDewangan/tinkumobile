@@ -1,0 +1,515 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Product;
+use App\Models\Inventory;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+
+use App\Http\Resources\ProductResource;
+
+class ProductController extends Controller
+{
+    public function index(Request $request)
+    {
+        $user = $request->user();
+        $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
+
+        // If user wants ungrouped "every single product" view
+        if ($request->group_by_config === 'false' || $request->group_by_config === 'true') {
+            $query = \App\Models\PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
+                ->whereHas('invoice', function($q) use ($shopId, $request) {
+                    $q->where('status', 'received');
+                    if ($shopId) $q->where('shop_id', $shopId);
+                    if ($request->supplier_id) $q->where('supplier_id', $request->supplier_id);
+                    if ($request->from) $q->where('purchase_date', '>=', $request->from);
+                    if ($request->to) $q->where('purchase_date', '<=', $request->to);
+                })
+                ->whereHas('product', function($q) use ($request) {
+                    if ($request->category_id) $q->where('category_id', $request->category_id);
+                    if ($request->model) $q->where('name', 'like', "%{$request->model}%");
+                });
+
+            if ($request->search) {
+                $s = $request->search;
+                $query->where(function($q) use ($s) {
+                    $q->whereHas('product', function($pq) use ($s) {
+                        $pq->where('name', 'like', "%{$s}%")
+                          ->orWhere('attributes->model', 'like', "%{$s}%");
+                    })
+                    ->orWhere('imei', 'like', "%{$s}%");
+                });
+            }
+
+            if ($request->model) {
+                $query->whereHas('product', fn($q) => $q->where('name', 'like', "%{$request->model}%"));
+            }
+
+            if ($request->color)   $query->where('color', 'like', "%{$request->color}%");
+            if ($request->imei)    $query->where('imei', 'like', "%{$request->imei}%");
+            if ($request->ram)     $query->where('ram', 'like', "%{$request->ram}%");
+            if ($request->storage) $query->where('storage', 'like', "%{$request->storage}%");
+            
+            $items = $query->get();
+
+            // ── Subtract Sold Items Logically (Optimized) ──
+            $newCat = \App\Models\Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
+            $oldCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
+            $mobileCatIds = array_values(array_filter([$newCat?->id, $oldCat?->id]));
+
+            $saleItemsQuery = \App\Models\SaleItem::whereHas('invoice', function($q) use ($shopId) {
+                $q->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            });
+
+            if ($request->category_id) {
+                $saleItemsQuery->whereHas('product', fn($pq) => $pq->where('category_id', $request->category_id));
+            } else if (!empty($mobileCatIds)) {
+                $saleItemsQuery->whereHas('product', fn($pq) => $pq->whereIn('category_id', $mobileCatIds));
+            }
+
+            $saleItems = $saleItemsQuery->get();
+            $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
+            $soldCounts = []; 
+            foreach ($saleItems as $si) {
+                if ($si->imei) continue; 
+                $key = $this->generateGroupKey($si->product, $si->ram, $si->storage, $si->color);
+                $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
+            }
+
+            if ($request->group_by_config === 'true') {
+                $grouped = [];
+                foreach ($items as $item) {
+                    $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
+                    
+                    $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
+                    $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
+                    $availableImeiCount = count($unsoldImeis);
+                    
+                    $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
+                    $nonImeiQty = ($item->imei) ? 0 : $totalQty;
+                    
+                    if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
+                        $diff = min($nonImeiQty, $soldCounts[$key]);
+                        $nonImeiQty -= $diff;
+                        $soldCounts[$key] -= $diff;
+                    }
+
+                    $currentStock = $availableImeiCount + $nonImeiQty;
+                    if ($currentStock <= 0) continue;
+
+                    if (!isset($grouped[$key])) {
+                        $grouped[$key] = [
+                            'id' => 'group_' . md5($key),
+                            'product_id' => $item->product_id,
+                            'name' => $item->product->name,
+                            'attributes' => [
+                                'color' => $item->color,
+                                'ram' => $item->ram,
+                                'storage' => $item->storage,
+                                'imeis' => [] 
+                            ],
+                            'current_stock' => 0,
+                            'selling_price' => $item->selling_price,
+                            'wholeseller_price' => $item->wholeseller_price,
+                            'purchase_price' => $item->unit_price,
+                            'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
+                            'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                            'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                            'location' => $item->location ?? $item->product->location,
+                            'category' => $item->product->category,
+                            'brand' => $item->product->brand,
+                            'is_grouped' => true
+                        ];
+                    }
+                    
+                    $grouped[$key]['current_stock'] += $currentStock;
+                    $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
+                    if ($item->selling_price > $grouped[$key]['selling_price']) {
+                        $grouped[$key]['selling_price'] = $item->selling_price;
+                    }
+                }
+                return response()->json($this->sortStockItems(array_values($grouped)));
+            }
+
+            $expanded = [];
+            foreach ($items as $item) {
+                $itemImeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
+                $unsoldImeis = array_values(array_filter($itemImeis, fn($id) => !in_array($id, $soldImeis)));
+                
+                foreach ($unsoldImeis as $index => $imei) {
+                    $expanded[] = [
+                        'id' => 'item_' . $item->id . '_' . $index,
+                        'product_id' => $item->product_id,
+                        'name' => $item->product->name,
+                        'attributes' => [
+                            'color' => $item->color,
+                            'ram' => $item->ram,
+                            'storage' => $item->storage,
+                            'imei' => $imei
+                        ],
+                        'current_stock' => 1,
+                        'selling_price' => $item->selling_price,
+                        'wholeseller_price' => $item->wholeseller_price,
+                        'purchase_price' => $item->unit_price, 
+                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
+                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                        'location' => $item->location ?? $item->product->location,
+                        'category' => $item->product->category,
+                        'brand' => $item->product->brand
+                    ];
+                }
+
+                $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
+                $nonImeiQty = ($item->imei) ? 0 : $totalQty;
+                
+                $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
+
+                if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
+                    $diff = min($nonImeiQty, $soldCounts[$key]);
+                    $nonImeiQty -= $diff;
+                    $soldCounts[$key] -= $diff;
+                }
+
+                for ($i = 0; $i < $nonImeiQty; $i++) {
+                    $expanded[] = [
+                        'id' => 'item_ni_' . $item->id . '_' . $i,
+                        'product_id' => $item->product_id,
+                        'name' => $item->product->name,
+                        'attributes' => [
+                            'color' => $item->color,
+                            'ram' => $item->ram,
+                            'storage' => $item->storage,
+                            'imei' => null
+                        ],
+                        'current_stock' => 1,
+                        'selling_price' => $item->selling_price,
+                        'wholeseller_price' => $item->wholeseller_price,
+                        'purchase_price' => $item->unit_price,
+                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
+                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                        'location' => $item->location ?? $item->product->location,
+                        'category' => $item->product->category,
+                        'brand' => $item->product->brand
+                    ];
+                }
+            }
+            return response()->json($this->sortStockItems($expanded));
+        }
+
+        $query = Product::with(['category', 'brand', 'inventory' => function($q) use ($shopId) {
+            if ($shopId) {
+                $q->where('shop_id', $shopId);
+            }
+        }])->withTrashed()->where('deleted_at', null);
+        if ($request->category_id) $query->where('category_id', $request->category_id);
+        if ($request->search) {
+            $query->where(function($q) use ($request) {
+                $q->where('name', 'like', "%{$request->search}%")
+                  ->orWhere('attributes->model', 'like', "%{$request->search}%");
+            });
+        }
+        
+        return ProductResource::collection($query->latest()->get());
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'category_id'       => 'required|exists:categories,id',
+            'brand_id'          => 'nullable|exists:brands,id',
+            'name'              => 'required|string|max:200',
+            'sku'               => 'required|string|max:100|unique:products,sku',
+            'imei'              => 'nullable|string|max:20|unique:products,imei',
+            'purchase_price'    => 'required|numeric|min:0',
+            'selling_price'     => 'required|numeric|min:0',
+            'wholeseller_price' => 'nullable|numeric|min:0',
+            'min_selling_price' => 'nullable|numeric|min:0',
+            'max_selling_price' => 'nullable|numeric|min:0',
+            'condition'         => 'in:new,used',
+            'attributes'        => 'nullable|array',
+        ]);
+        return response()->json(Product::create($data), 201);
+    }
+
+    public function show(Request $request, Product $product)
+    {
+        $user = $request->user();
+        $shopId = $user->hasFullAccess() ? null : $user->shop_id;
+
+        return response()->json($product->load(['category', 'inventory' => function($q) use ($shopId) {
+            if ($shopId) {
+                $q->where('shop_id', $shopId);
+            }
+        }, 'inventory.shop']));
+    }
+
+    public function update(Request $request, Product $product)
+    {
+        $data = $request->validate([
+            'category_id'       => 'sometimes|exists:categories,id',
+            'brand_id'          => 'nullable|exists:brands,id',
+            'name'              => 'sometimes|string|max:200',
+            'sku'               => 'sometimes|string|max:100|unique:products,sku,' . $product->id,
+            'imei'              => 'nullable|string|max:20|unique:products,imei,' . $product->id,
+            'purchase_price'    => 'sometimes|numeric|min:0',
+            'selling_price'     => 'sometimes|numeric|min:0',
+            'wholeseller_price' => 'nullable|numeric|min:0',
+            'min_selling_price' => 'nullable|numeric|min:0',
+            'max_selling_price' => 'nullable|numeric|min:0',
+            'condition'         => 'in:new,used',
+            'attributes'        => 'nullable|array',
+        ]);
+        $product->update($data);
+        return response()->json($product);
+    }
+
+    public function destroy(Product $product)
+    {
+        $product->delete();
+        return response()->json(['message' => 'Product deleted']);
+    }
+
+    public function deleteStock(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (str_starts_with($id, 'item_ni_')) {
+            $parts = explode('_', $id); // ['item', 'ni', '123', '0']
+            $itemId = $parts[2];
+            $imeiIndex = null;
+        } else if (str_starts_with($id, 'item_')) {
+            $parts = explode('_', $id); // ['item', '123', '0']
+            $itemId = $parts[1];
+            $imeiIndex = isset($parts[2]) ? $parts[2] : null;
+        } else {
+            $itemId = $id;
+            $imeiIndex = null;
+        }
+
+        return DB::transaction(function () use ($itemId, $imeiIndex) {
+            $item = \App\Models\PurchaseItem::with('invoice')->findOrFail($itemId);
+            $invoice = $item->invoice;
+
+            // 1. Dec स्टॉक
+            Inventory::removeStock($invoice->shop_id, $item->product_id, 1);
+
+            // 2. Adjust or Delete PurchaseItem
+            if ($item->quantity > 1) {
+                if ($imeiIndex !== null && $item->imei) {
+                    $imeis = array_map('trim', explode(',', $item->imei));
+                    if (isset($imeis[$imeiIndex])) {
+                        unset($imeis[$imeiIndex]);
+                        $item->imei = implode(', ', $imeis);
+                    }
+                }
+                $item->decrement('quantity');
+                $item->decrement('received_quantity');
+                $item->total = $item->quantity * $item->unit_price;
+                $item->save();
+            } else {
+                $item->delete();
+            }
+
+            // 3. Recalculate Invoice Totals
+            $invoice->refresh();
+            $items = $invoice->items;
+            $totalAmount = $items->sum(fn($i) => $i->quantity * $i->unit_price);
+            
+            $cgstAmount = ($totalAmount * ($invoice->cgst_rate ?? 9)) / 100;
+            $sgstAmount = ($totalAmount * ($invoice->sgst_rate ?? 9)) / 100;
+            $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - ($invoice->discount ?? 0);
+            
+            if ($invoice->rounding_mode === 'up') $grandTotal = ceil($rawGrandTotal);
+            else if ($invoice->rounding_mode === 'down') $grandTotal = floor($rawGrandTotal);
+            else $grandTotal = round($rawGrandTotal);
+
+            $invoice->update([
+                'total_amount' => $totalAmount,
+                'cgst_amount'  => $cgstAmount,
+                'sgst_amount'  => $sgstAmount,
+                'grand_total'  => $grandTotal,
+            ]);
+            $invoice->updatePaymentStatus();
+
+            return response()->json(['message' => 'Stock item deleted and invoice updated successfully.']);
+        });
+    }
+
+    public function updateStock(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (str_starts_with($id, 'item_ni_')) {
+            $parts = explode('_', $id);
+            $itemId = $parts[2];
+            $imeiIndex = null;
+        } else if (str_starts_with($id, 'item_')) {
+            $parts = explode('_', $id);
+            $itemId = $parts[1];
+            $imeiIndex = isset($parts[2]) ? $parts[2] : null;
+        } else {
+            $itemId = $id;
+            $imeiIndex = null;
+        }
+
+        return DB::transaction(function () use ($request, $itemId, $imeiIndex) {
+            $item = \App\Models\PurchaseItem::with('invoice')->findOrFail($itemId);
+
+            // Update IMEI
+            if ($request->has('imei') && $imeiIndex !== null && $item->imei) {
+                $imeis = array_map('trim', explode(',', $item->imei));
+                if (isset($imeis[$imeiIndex])) {
+                    $imeis[$imeiIndex] = $request->imei;
+                    $item->imei = implode(', ', $imeis);
+                }
+            } else if ($request->has('imei') && (!$item->imei || $item->quantity == 1)) {
+                $item->imei = $request->imei;
+            }
+
+            // Update other fields
+            if ($request->has('color')) $item->color = $request->color;
+            if ($request->has('ram')) $item->ram = $request->ram;
+            if ($request->has('storage')) $item->storage = $request->storage;
+            if ($request->has('selling_price')) $item->selling_price = $request->selling_price;
+            if ($request->has('wholeseller_price')) $item->wholeseller_price = $request->wholeseller_price;
+            if ($request->has('min_selling_price')) $item->min_selling_price = $request->min_selling_price;
+            if ($request->has('incentive_amount')) $item->incentive_amount = $request->incentive_amount;
+
+            $recalcInvoice = false;
+            if ($request->has('unit_price') && $request->unit_price !== null && $request->unit_price !== '') {
+                if ($item->unit_price != $request->unit_price) {
+                    $item->unit_price = $request->unit_price;
+                    $item->total = $item->quantity * $item->unit_price;
+                    $recalcInvoice = true;
+                }
+            }
+
+            $item->save();
+
+            if ($recalcInvoice && $item->invoice) {
+                $invoice = $item->invoice;
+                $invoice->refresh();
+                $items = $invoice->items;
+                $totalAmount = $items->sum(fn($i) => $i->quantity * $i->unit_price);
+                
+                $cgstAmount = ($totalAmount * ($invoice->cgst_rate ?? 9)) / 100;
+                $sgstAmount = ($totalAmount * ($invoice->sgst_rate ?? 9)) / 100;
+                $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - ($invoice->discount ?? 0);
+                
+                if ($invoice->rounding_mode === 'up') $grandTotal = ceil($rawGrandTotal);
+                else if ($invoice->rounding_mode === 'down') $grandTotal = floor($rawGrandTotal);
+                else $grandTotal = round($rawGrandTotal);
+
+                $invoice->update([
+                    'total_amount' => $totalAmount,
+                    'cgst_amount'  => $cgstAmount,
+                    'sgst_amount'  => $sgstAmount,
+                    'grand_total'  => $grandTotal,
+                ]);
+                $invoice->updatePaymentStatus();
+            }
+
+            return response()->json(['message' => 'Stock item updated successfully.']);
+        });
+    }
+
+    private function generateGroupKey($product, $ram, $storage, $color)
+    {
+        $brandName = ($product && $product->brand) ? $product->brand->name : '';
+        $productName = $product ? $product->name : '';
+        
+        $fullName = $brandName . ' ' . $productName;
+        
+        // Normalize whitespace (replace non-breaking spaces, zero-width spaces, and collapse duplicate spaces)
+        $cleanName = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $fullName);
+        $cleanRam = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $ram ?? '-');
+        $cleanStorage = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $storage ?? '-');
+        $cleanColor = preg_replace('/[\x{00A0}\x{200B}\s]+/u', ' ', $color ?? '-');
+        
+        return sprintf(
+            '%s_%s_%s_%s',
+            strtoupper(trim($cleanName)),
+            strtoupper(trim($cleanRam)),
+            strtoupper(trim($cleanStorage)),
+            strtoupper(trim($cleanColor))
+        );
+    }
+
+    private function sortStockItems(array $items)
+    {
+        usort($items, function($a, $b) {
+            // 1. Sort by Product Name (brand + name) ascending
+            $brandA = '';
+            if (isset($a['brand'])) {
+                $brandA = is_object($a['brand']) ? ($a['brand']->name ?? '') : ($a['brand']['name'] ?? '');
+            }
+            $brandB = '';
+            if (isset($b['brand'])) {
+                $brandB = is_object($b['brand']) ? ($b['brand']->name ?? '') : ($b['brand']['name'] ?? '');
+            }
+            
+            $nameA = strtoupper(trim($brandA . ' ' . $a['name']));
+            $nameB = strtoupper(trim($brandB . ' ' . $b['name']));
+            
+            $cmp = strcmp($nameA, $nameB);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            
+            // 2. Sort by RAM descending (highest RAM first)
+            $ramA = isset($a['attributes']['ram']) ? $a['attributes']['ram'] : '';
+            $ramB = isset($b['attributes']['ram']) ? $b['attributes']['ram'] : '';
+            
+            $parseRam = function($val) {
+                if (!$val) return 0;
+                return (int)preg_replace('/[^0-9]/', '', $val);
+            };
+            
+            $numRamA = $parseRam($ramA);
+            $numRamB = $parseRam($ramB);
+            
+            if ($numRamA !== $numRamB) {
+                return $numRamB <=> $numRamA;
+            }
+            
+            // 3. Sort by Storage descending (highest Storage first)
+            $storA = isset($a['attributes']['storage']) ? $a['attributes']['storage'] : '';
+            $storB = isset($b['attributes']['storage']) ? $b['attributes']['storage'] : '';
+            
+            $parseStor = function($val) {
+                if (!$val) return 0;
+                $num = (int)preg_replace('/[^0-9]/', '', $val);
+                if (stripos($val, 'TB') !== false) {
+                    $num *= 1024;
+                }
+                return $num;
+            };
+            
+            $numStorA = $parseStor($storA);
+            $numStorB = $parseStor($storB);
+            
+            if ($numStorA !== $numStorB) {
+                return $numStorB <=> $numStorA;
+            }
+            
+            // 4. Sort by Color ascending (alphabetical)
+            $colorA = isset($a['attributes']['color']) ? strtoupper(trim($a['attributes']['color'])) : '';
+            $colorB = isset($b['attributes']['color']) ? strtoupper(trim($b['attributes']['color'])) : '';
+            return strcmp($colorA, $colorB);
+        });
+        
+        return $items;
+    }
+}
