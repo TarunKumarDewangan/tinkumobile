@@ -169,6 +169,7 @@ class AirtelRetailerController extends Controller
                 $totalRecoveries = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)->sum('amount');
                 $outstandingBalance = $totalDrops - $totalRecoveries;
 
+                /* 
                 if ($outstandingBalance <= 0) {
                     return response()->json([
                         'message' => 'No outstanding balance for this retailer. Current balance: ₹' . number_format($outstandingBalance, 2)
@@ -180,6 +181,7 @@ class AirtelRetailerController extends Controller
                         'message' => 'Recovery ₹' . number_format($validated['amount'], 2) . ' exceeds outstanding balance ₹' . number_format($outstandingBalance, 2)
                     ], 422);
                 }
+                */
 
                 $recovery = AirtelRecovery::create([
                     'retailer_id' => $retailer->id,
