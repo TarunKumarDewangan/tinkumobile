@@ -16,6 +16,8 @@ use App\Models\Inventory;
 use App\Models\StockAdjustment;
 use App\Models\Transaction;
 use App\Models\ActivityLog;
+use App\Models\CustomerEvent;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +71,8 @@ class SystemBackupController extends Controller
             'tasks'             => \App\Models\Task::all(),
             'task_updates'      => DB::table('task_updates')->get(),
             'emp_id_sequences'  => DB::table('emp_id_sequences')->get(),
+            'customer_events'   => CustomerEvent::all(),
+            'settings'          => Setting::all(),
         ];
 
         $filename = "tinku_mobiles_full_sync_" . date('Ymd_His') . ".json";
@@ -138,6 +142,8 @@ class SystemBackupController extends Controller
             DB::table('expense_categories')->delete();
             DB::table('employees')->delete();
             DB::table('retailers')->delete();
+            DB::table('customer_events')->delete();
+            DB::table('settings')->delete();
             DB::table('customers')->delete();
             DB::table('suppliers')->delete();
             DB::table('categories')->delete();
@@ -190,6 +196,8 @@ class SystemBackupController extends Controller
             $this->safeInsert('brands', array_map($cleanItem, $data['brands'] ?? []));
             $this->safeInsert('suppliers', array_map($cleanItem, $data['suppliers'] ?? []));
             $this->safeInsert('customers', array_map($cleanItem, $data['customers'] ?? []));
+            $this->safeInsert('customer_events', array_map($cleanItem, $data['customer_events'] ?? []));
+            $this->safeInsert('settings', array_map($cleanItem, $data['settings'] ?? []));
             $this->safeInsert('retailers', array_map($cleanItem, $data['retailers'] ?? []));
             $this->safeInsert('employees', array_map($cleanItem, $data['employees'] ?? []));
             $this->safeInsert('expense_categories', array_map($cleanItem, $data['expense_categories'] ?? []));
