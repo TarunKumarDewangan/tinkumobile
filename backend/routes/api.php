@@ -240,8 +240,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     });
 
     // Full System Sync — throttled to prevent abuse
-    Route::get('system/backup', [SystemBackupController::class, 'backup'])->middleware('throttle:2,1');
-    Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup'])->middleware('throttle:5,1');
+    Route::get('system/backup', [SystemBackupController::class, 'backup'])->middleware('throttle:60,1');
+    Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup'])->middleware('throttle:60,1');
     // Settings
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);

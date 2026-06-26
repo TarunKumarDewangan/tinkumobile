@@ -53,6 +53,22 @@ class SystemBackupController extends Controller
             'inventories'       => Inventory::all(),
             'stock_adjustments' => StockAdjustment::all(),
             'transactions'      => Transaction::all(),
+            
+            // New Sync tables
+            'brands'            => \App\Models\Brand::all(),
+            'old_mobile_purchases'=> \App\Models\OldMobilePurchase::all(),
+            'recharge_purchases'=> DB::table('recharge_purchases')->get(),
+            'recharge_sales'    => DB::table('recharge_sales')->get(),
+            'sim_cards'         => DB::table('sim_cards')->get(),
+            'gift_products'     => DB::table('gift_products')->get(),
+            'gift_inventory'    => DB::table('gift_inventory')->get(),
+            'follow_ups'        => \App\Models\FollowUp::all(),
+            'employee_incentives'=> DB::table('employee_incentives')->get(),
+            'company_offers'    => \App\Models\CompanyOffer::all(),
+            'offer_fulfillments'=> DB::table('offer_fulfillments')->get(),
+            'tasks'             => \App\Models\Task::all(),
+            'task_updates'      => DB::table('task_updates')->get(),
+            'emp_id_sequences'  => DB::table('emp_id_sequences')->get(),
         ];
 
         $filename = "tinku_mobiles_full_sync_" . date('Ymd_His') . ".json";
@@ -94,10 +110,13 @@ class SystemBackupController extends Controller
         }
 
         try {
-            DB::beginTransaction();
+            // Disable foreign keys BEFORE beginning the database transaction!
             Schema::disableForeignKeyConstraints();
+            DB::beginTransaction();
 
             // Sequence matters for deletion (reverse order of dependencies)
+            DB::table('task_updates')->delete();
+            DB::table('tasks')->delete();
             DB::table('ledgers')->delete();
             DB::table('transactions')->delete();
             DB::table('salary_payments')->delete();
@@ -122,6 +141,19 @@ class SystemBackupController extends Controller
             DB::table('customers')->delete();
             DB::table('suppliers')->delete();
             DB::table('categories')->delete();
+            DB::table('brands')->delete();
+            
+            DB::table('old_mobile_purchases')->delete();
+            DB::table('recharge_purchases')->delete();
+            DB::table('recharge_sales')->delete();
+            DB::table('sim_cards')->delete();
+            DB::table('gift_products')->delete();
+            DB::table('gift_inventory')->delete();
+            DB::table('follow_ups')->delete();
+            DB::table('employee_incentives')->delete();
+            DB::table('company_offers')->delete();
+            DB::table('offer_fulfillments')->delete();
+            DB::table('emp_id_sequences')->delete();
 
             $cleanItem = function($item) {
                 if (!$item) return $item;
@@ -145,32 +177,30 @@ class SystemBackupController extends Controller
                             }
                         }
                     }
-                }
-                if (isset($item['attributes']) && is_array($item['attributes'])) {
-                    $item['attributes'] = json_encode($item['attributes']);
-                }
-                if (isset($item['issue_description']) && is_array($item['issue_description'])) {
-                    $item['issue_description'] = json_encode($item['issue_description']);
+                    // Auto JSON encode any PHP arrays/objects to prevent array-to-string database conversion errors
+                    if (is_array($value)) {
+                        $item[$key] = json_encode($value);
+                    }
                 }
                 return $item;
             };
 
             // 1. Foundation Tables
-            if (!empty($data['categories'])) DB::table('categories')->insert(array_map($cleanItem, $data['categories']));
-            if (!empty($data['suppliers'])) DB::table('suppliers')->insert(array_map($cleanItem, $data['suppliers']));
-            if (!empty($data['customers'])) DB::table('customers')->insert(array_map($cleanItem, $data['customers']));
-            if (!empty($data['retailers'])) DB::table('retailers')->insert(array_map($cleanItem, $data['retailers']));
-            if (!empty($data['employees'])) DB::table('employees')->insert(array_map($cleanItem, $data['employees']));
-            if (!empty($data['expense_categories'])) DB::table('expense_categories')->insert(array_map($cleanItem, $data['expense_categories']));
+            $this->safeInsert('categories', array_map($cleanItem, $data['categories'] ?? []));
+            $this->safeInsert('brands', array_map($cleanItem, $data['brands'] ?? []));
+            $this->safeInsert('suppliers', array_map($cleanItem, $data['suppliers'] ?? []));
+            $this->safeInsert('customers', array_map($cleanItem, $data['customers'] ?? []));
+            $this->safeInsert('retailers', array_map($cleanItem, $data['retailers'] ?? []));
+            $this->safeInsert('employees', array_map($cleanItem, $data['employees'] ?? []));
+            $this->safeInsert('expense_categories', array_map($cleanItem, $data['expense_categories'] ?? []));
 
             // 2. Entities & Balances
-            if (!empty($data['entities'])) DB::table('entities')->insert(array_map($cleanItem, $data['entities']));
-            if (!empty($data['entity_balances'])) DB::table('entity_balances')->insert(array_map($cleanItem, $data['entity_balances']));
+            $this->safeInsert('entities', array_map($cleanItem, $data['entities'] ?? []));
+            $this->safeInsert('entity_balances', array_map($cleanItem, $data['entity_balances'] ?? []));
 
             // 3. Products
             if (!empty($data['products'])) {
-                $products = array_map($cleanItem, $data['products']);
-                foreach (array_chunk($products, 500) as $chunk) DB::table('products')->insert($chunk);
+                $this->safeInsert('products', array_map($cleanItem, $data['products']));
             }
 
             // 4. Purchases — batch insert invoices + items
@@ -183,8 +213,8 @@ class SystemBackupController extends Controller
                     $allInvoices[] = $cleanItem($inv);
                     foreach (($items ?: []) as $it) $allItems[] = $cleanItem($it);
                 }
-                foreach (array_chunk($allInvoices, 500) as $chunk) DB::table('purchase_invoices')->insert($chunk);
-                foreach (array_chunk($allItems, 500) as $chunk) DB::table('purchase_items')->insert($chunk);
+                $this->safeInsert('purchase_invoices', $allInvoices);
+                $this->safeInsert('purchase_items', $allItems);
             }
 
             // 5. Sales — batch insert invoices + items + gifts
@@ -200,37 +230,46 @@ class SystemBackupController extends Controller
                     foreach (($items ?: []) as $it) $allItems[] = $cleanItem($it);
                     foreach (($gifts ?: []) as $g) $allGifts[] = $cleanItem($g);
                 }
-                foreach (array_chunk($allInvoices, 500) as $chunk) DB::table('sale_invoices')->insert($chunk);
-                foreach (array_chunk($allItems, 500) as $chunk) DB::table('sale_items')->insert($chunk);
-                foreach (array_chunk($allGifts, 500) as $chunk) DB::table('sale_gift_items')->insert($chunk);
+                $this->safeInsert('sale_invoices', $allInvoices);
+                $this->safeInsert('sale_items', $allItems);
+                $this->safeInsert('sale_gift_items', $allGifts);
             }
 
             // 6. Repairs & Airtel
-            if (!empty($data['repair_requests'])) DB::table('repair_requests')->insert(array_map($cleanItem, $data['repair_requests']));
-            if (!empty($data['airtel_drops'])) DB::table('airtel_drops')->insert(array_map($cleanItem, $data['airtel_drops']));
-            if (!empty($data['airtel_recoveries'])) DB::table('airtel_recoveries')->insert(array_map($cleanItem, $data['airtel_recoveries']));
+            $this->safeInsert('repair_requests', array_map($cleanItem, $data['repair_requests'] ?? []));
+            $this->safeInsert('airtel_drops', array_map($cleanItem, $data['airtel_drops'] ?? []));
+            $this->safeInsert('airtel_recoveries', array_map($cleanItem, $data['airtel_recoveries'] ?? []));
 
             // 7. Loans & Salaries
-            if (!empty($data['loans'])) DB::table('loans')->insert(array_map($cleanItem, $data['loans']));
-            if (!empty($data['loan_payments'])) DB::table('loan_payments')->insert(array_map($cleanItem, $data['loan_payments']));
-            if (!empty($data['salary_payments'])) DB::table('salary_payments')->insert(array_map($cleanItem, $data['salary_payments']));
+            $this->safeInsert('loans', array_map($cleanItem, $data['loans'] ?? []));
+            $this->safeInsert('loan_payments', array_map($cleanItem, $data['loan_payments'] ?? []));
+            $this->safeInsert('salary_payments', array_map($cleanItem, $data['salary_payments'] ?? []));
 
             // 8. Inventory & Adjustments
-            if (!empty($data['inventories'])) DB::table('inventory')->insert(array_map($cleanItem, $data['inventories']));
-            if (!empty($data['stock_adjustments'])) DB::table('stock_adjustments')->insert(array_map($cleanItem, $data['stock_adjustments']));
+            $this->safeInsert('inventory', array_map($cleanItem, $data['inventories'] ?? []));
+            $this->safeInsert('stock_adjustments', array_map($cleanItem, $data['stock_adjustments'] ?? []));
 
             // 9. Transactions
-            if (!empty($data['transactions'])) {
-                $transactions = array_map($cleanItem, $data['transactions']);
-                foreach (array_chunk($transactions, 500) as $chunk) DB::table('transactions')->insert($chunk);
-            }
+            $this->safeInsert('transactions', array_map($cleanItem, $data['transactions'] ?? []));
 
-            Schema::enableForeignKeyConstraints();
-            ActivityLog::log('FULL_SYSTEM_RESTORE', null, 'Performed a full system data restore from sync file.');
+            // 10. New Sync Tables
+            $this->safeInsert('old_mobile_purchases', array_map($cleanItem, $data['old_mobile_purchases'] ?? []));
+            $this->safeInsert('recharge_purchases', array_map($cleanItem, $data['recharge_purchases'] ?? []));
+            $this->safeInsert('recharge_sales', array_map($cleanItem, $data['recharge_sales'] ?? []));
+            $this->safeInsert('sim_cards', array_map($cleanItem, $data['sim_cards'] ?? []));
+            $this->safeInsert('gift_products', array_map($cleanItem, $data['gift_products'] ?? []));
+            $this->safeInsert('gift_inventory', array_map($cleanItem, $data['gift_inventory'] ?? []));
+            $this->safeInsert('follow_ups', array_map($cleanItem, $data['follow_ups'] ?? []));
+            $this->safeInsert('employee_incentives', array_map($cleanItem, $data['employee_incentives'] ?? []));
+            $this->safeInsert('company_offers', array_map($cleanItem, $data['company_offers'] ?? []));
+            $this->safeInsert('offer_fulfillments', array_map($cleanItem, $data['offer_fulfillments'] ?? []));
+            $this->safeInsert('tasks', array_map($cleanItem, $data['tasks'] ?? []));
+            $this->safeInsert('task_updates', array_map($cleanItem, $data['task_updates'] ?? []));
+            $this->safeInsert('emp_id_sequences', array_map($cleanItem, $data['emp_id_sequences'] ?? []));
+
             DB::commit();
 
             // ── Post-commit: Rebuild ledger and balances (outside transaction) ──
-            // This avoids massive transaction log growth and timeout risks
             try {
                 \App\Models\AirtelDrop::chunk(100, function ($drops) {
                     foreach ($drops as $drop) $drop->postToLedger();
@@ -249,19 +288,42 @@ class SystemBackupController extends Controller
                 });
                 app(\App\Services\EntityService::class)->syncAll();
             } catch (\Exception $e) {
-                // Ledger rebuild failure is non-fatal — data is restored, ledger can be rebuilt manually
                 \Log::error('Post-restore ledger rebuild failed: ' . $e->getMessage());
             }
 
             return response()->json(['message' => 'Full system sync completed successfully! All data has been replaced.']);
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('[RestoreBackup] Database restore failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json(['message' => 'Sync failed: ' . $e->getMessage()], 500);
         } finally {
             // Always re-enable FK constraints, even on timeout or fatal error
             try { Schema::enableForeignKeyConstraints(); } catch (\Exception $e) {}
             // Always release the lock
             $lock->release();
+        }
+    }
+
+    /**
+     * Chunk insertion dynamically based on column count to avoid variable limit
+     */
+    private function safeInsert(string $table, array $rows): void
+    {
+        if (empty($rows)) {
+            return;
+        }
+
+        $firstRow = reset($rows);
+        $colCount = is_array($firstRow) ? count($firstRow) : (is_object($firstRow) ? count((array)$firstRow) : 1);
+
+        // SQLite limit is 999. MySQL limit is 65,535. Use a safe ceiling of 950.
+        $chunkSize = max(1, (int) floor(950 / $colCount));
+
+        foreach (array_chunk($rows, $chunkSize) as $chunk) {
+            DB::table($table)->insert($chunk);
         }
     }
 }

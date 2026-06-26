@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/axios';
 import DataBackupModal from '../components/DataBackupModal';
+import CloudSyncModal from '../components/CloudSyncModal';
 
 export default function Dashboard() {
   const { user, isOwner, can, hasFullAccess } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showCloudSyncModal, setShowCloudSyncModal] = useState(false);
   const [myTasks, setMyTasks] = useState([]);
   const [teamTasks, setTeamTasks] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -190,9 +192,14 @@ export default function Dashboard() {
                 </Link>
               ))}
               {hasFullAccess() && (
-                <button onClick={() => setShowSyncModal(true)} disabled={showSyncModal} className="btn btn-dark btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
-                  🔄 FULL SYSTEM SYNC
-                </button>
+                <>
+                  <button onClick={() => setShowCloudSyncModal(true)} disabled={showCloudSyncModal || showSyncModal} className="btn btn-primary btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
+                    ☁️ CLOUD SYNC
+                  </button>
+                  <button onClick={() => setShowSyncModal(true)} disabled={showCloudSyncModal || showSyncModal} className="btn btn-dark btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
+                    💾 LOCAL BACKUP
+                  </button>
+                </>
               )}
               {quickActions.length === 0 && <div className="text-muted small italic">No actions available</div>}
             </div>
@@ -207,6 +214,12 @@ export default function Dashboard() {
         title="Full System Sync (Master)"
         endpoint="/system"
         typeLabel="Entire System"
+      />
+
+      <CloudSyncModal
+        isOpen={showCloudSyncModal}
+        onClose={() => setShowCloudSyncModal(false)}
+        onRefresh={() => setRefreshKey(k => k + 1)}
       />
     </div>
   );
