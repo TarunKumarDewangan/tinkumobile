@@ -81,6 +81,15 @@ class AirtelDropController extends Controller
             });
         }
 
+        // Apply overpaid only filter
+        if ($request->overpaid_only) {
+            $query->where(function($q) {
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id AND airtel_drops.deleted_at IS NULL) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id AND airtel_recoveries.deleted_at IS NULL)";
+                $q->whereRaw("$debtSql < $paidSql");
+            });
+        }
+
         // 5. Eager load only the matching drops for these retailers, 
         // PLUS use withSum to get global totals for status calculation
         $query->withSum('drops', 'amount');
@@ -408,6 +417,16 @@ class AirtelDropController extends Controller
             });
         }
 
+        // Apply overpaid only filter to summary query
+        if ($request->overpaid_only) {
+            $query->whereIn('retailer_id', function($sub) {
+                $sub->select('id')->from('retailers');
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id AND airtel_drops.deleted_at IS NULL) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id AND airtel_recoveries.deleted_at IS NULL)";
+                $sub->whereRaw("$debtSql < $paidSql");
+            });
+        }
+
         // Filtered Opening Balance: sum of 'balance' for retailers who match the filters
         $retailerIdsByDrops = AirtelDrop::query()
             ->when($request->from_date && $request->to_date, function($q) use ($request) {
@@ -430,6 +449,14 @@ class AirtelDropController extends Controller
         if ($request->payment_mode) {
             $retailerQuery->whereHas('recoveries', function($q) use ($request) {
                 $q->where('notes', 'like', $request->payment_mode . '%');
+            });
+        }
+
+        if ($request->overpaid_only) {
+            $retailerQuery->where(function($q) {
+                $debtSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_drops WHERE airtel_drops.retailer_id = retailers.id AND airtel_drops.deleted_at IS NULL) + retailers.balance";
+                $paidSql = "(SELECT COALESCE(SUM(amount), 0) FROM airtel_recoveries WHERE airtel_recoveries.retailer_id = retailers.id AND airtel_recoveries.deleted_at IS NULL)";
+                $q->whereRaw("$debtSql < $paidSql");
             });
         }
 
@@ -488,6 +515,27 @@ class AirtelDropController extends Controller
         $global_opening = (float)\App\Models\Retailer::sum('balance');
         $global_recovered = (float)\App\Models\AirtelRecovery::sum('amount');
         $grand_total_pending = ($global_dropped + $global_opening) - $global_recovered;
+
+        // Calculate actual pending dues (excluding overpayments)
+        $actual_pending_receivable = \App\Models\Retailer::whereIn('id', $retailerIds)
+            ->select('id', 'balance')
+            ->selectRaw('(COALESCE(balance, 0) + 
+                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0) - 
+                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0)) as lifetime_pending')
+            ->get()
+            ->sum(function($r) {
+                return $r->lifetime_pending > 0 ? (float)$r->lifetime_pending : 0;
+            });
+
+        $global_actual_pending = \App\Models\Retailer::query()
+            ->select('id', 'balance')
+            ->selectRaw('(COALESCE(balance, 0) + 
+                COALESCE((SELECT SUM(amount) FROM airtel_drops WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0) - 
+                COALESCE((SELECT SUM(amount) FROM airtel_recoveries WHERE retailer_id = retailers.id AND deleted_at IS NULL), 0)) as lifetime_pending')
+            ->get()
+            ->sum(function($r) {
+                return $r->lifetime_pending > 0 ? (float)$r->lifetime_pending : 0;
+            });
         
         return response()->json([
             'total_dropped' => $total_dropped, 
@@ -496,6 +544,8 @@ class AirtelDropController extends Controller
             'opening_balance' => $opening_balance,
             'pending_recovery' => ($total_dropped + $opening_balance) - $total_recovered_period, // Corrected for filtered view
             'grand_total_pending' => $grand_total_pending,
+            'actual_pending_receivable' => $actual_pending_receivable,
+            'global_actual_pending' => $global_actual_pending,
         ]);
     }
 

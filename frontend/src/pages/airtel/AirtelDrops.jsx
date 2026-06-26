@@ -20,6 +20,7 @@ export default function AirtelDrops() {
   const [paymentMode, setPaymentMode] = useState('');
   const [status, setStatus] = useState('all');
   const [followUpOnly, setFollowUpOnly] = useState(false);
+  const [overpaidOnly, setOverpaidOnly] = useState(false);
   const [useRange, setUseRange] = useState(true);
   const [sortBy, setSortBy] = useState('name');
   const [order, setOrder] = useState('asc');
@@ -48,12 +49,13 @@ export default function AirtelDrops() {
   useEffect(() => {
     fetchDrops();
     fetchSummary();
-  }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, paymentMode, sortBy, order]);
+  }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, overpaidOnly, paymentMode, sortBy, order]);
 
   const getParams = () => {
     let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}&payment_mode=${paymentMode}&sort_by=${sortBy}&order=${order}`;
     if (status !== 'all') params += `&status=${status}`;
     if (followUpOnly) params += `&follow_up=1`;
+    if (overpaidOnly) params += `&overpaid_only=1`;
     if (useRange) {
       params += `&from_date=${fromDate}&to_date=${toDate}`;
     } else {
@@ -406,11 +408,17 @@ export default function AirtelDrops() {
                           <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="followUpSwitch">Follow-up Only</label>
                       </div>
                   </div>
+                  <div className="col-md-2">
+                      <div className="form-check form-switch mt-2">
+                          <input className="form-check-input" type="checkbox" id="overpaidSwitch" checked={overpaidOnly} onChange={e => setOverpaidOnly(e.target.checked)} />
+                          <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="overpaidSwitch">Overpaid Only</label>
+                      </div>
+                  </div>
                   <div className="col text-end">
                       <button 
                         className="btn btn-link btn-sm text-decoration-none text-muted p-0" 
                         onClick={() => {
-                            setRetailerName(''); setMinAmount(''); setMaxAmount(''); setStatus('all'); setPaymentMode(''); setFollowUpOnly(false); setUseRange(true);
+                            setRetailerName(''); setMinAmount(''); setMaxAmount(''); setStatus('all'); setPaymentMode(''); setFollowUpOnly(false); setOverpaidOnly(false); setUseRange(true);
                             setFromDate('2025-01-01'); setToDate(new Date().toISOString().split('T')[0]);
                         }}
                       >
@@ -431,7 +439,7 @@ export default function AirtelDrops() {
       </div>
 
       <div className="row g-2 mb-4 text-center">
-        <div className="col-md col-6">
+        <div className="col-md-2 col-6">
           <div className="card border-0 shadow-sm bg-white h-100 border-start border-4 border-primary">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 text-muted fw-bold">Opening Balance</div>
@@ -439,35 +447,44 @@ export default function AirtelDrops() {
             </div>
           </div>
         </div>
-        <div className="col-md col-6">
+        <div className="col-md-2 col-6">
           <div className="card border-0 shadow-sm bg-primary text-white h-100">
             <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Filtered Total' : 'Dropped Today'}</div>
-              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_dropped).toLocaleString()}</div>
+              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_dropped || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
-        <div className="col-md col-6">
+        <div className="col-md-2 col-6">
           <div className="card border-0 shadow-sm bg-success text-white h-100">
             <div className="card-body py-3">
-              <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Total Receivable' : 'Total Receivable'}</div>
+              <div className="x-small text-uppercase mb-1 opacity-75">Total Receivable</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_receivable || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
-        <div className="col-md col-6">
+        <div className="col-md-2 col-6">
           <div className="card border-0 shadow-sm bg-warning text-dark h-100">
             <div className="card-body py-3">
-              <div className="x-small text-uppercase mb-1 opacity-75">{useRange || retailerName ? 'Total Recovered' : 'Total Recovered'}</div>
+              <div className="x-small text-uppercase mb-1 opacity-75">Total Recovered</div>
               <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.total_recovered || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
-        <div className="col-md col-12">
+        <div className="col-md-2 col-6">
           <div className="card border-0 shadow-sm bg-danger text-white h-100">
             <div className="card-body py-3">
+              <div className="x-small text-uppercase mb-1 opacity-75" style={{ fontSize: '0.7rem' }}>Actual Pending Dues</div>
+              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.actual_pending_receivable || 0).toLocaleString()}</div>
+              <div className="x-small opacity-75 mt-1" style={{ fontSize: '0.65rem' }}>Global: ₹{parseFloat(summary.global_actual_pending || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-2 col-6">
+          <div className="card border-0 shadow-sm bg-dark text-white h-100">
+            <div className="card-body py-3">
               <div className="x-small text-uppercase mb-1 opacity-75">Grand Pending Total</div>
-              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.grand_total_pending).toLocaleString()}</div>
+              <div className="h5 mb-0 fw-bold">₹{parseFloat(summary.grand_total_pending || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
