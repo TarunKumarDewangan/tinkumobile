@@ -385,7 +385,7 @@ class ReportController extends Controller
 
         $shopId = $this->shopFilter($request);
 
-        $salesQuery = SaleItem::select('sale_items.product_id', 'products.name as product_name', 'sale_invoices.sale_date', DB::raw('SUM(sale_items.quantity) as total_qty'))
+        $salesQuery = SaleItem::select('sale_items.product_id', 'products.name as product_name', 'products.selling_price as mop_price', 'sale_invoices.sale_date', DB::raw('SUM(sale_items.quantity) as total_qty'))
             ->join('sale_invoices', 'sale_items.sale_invoice_id', '=', 'sale_invoices.id')
             ->join('products', 'sale_items.product_id', '=', 'products.id')
             ->whereIn('products.category_id', $catIds)
@@ -403,25 +403,31 @@ class ReportController extends Controller
             $salesQuery->where('products.name', 'like', $searchTerm);
         }
 
-        $salesData = $salesQuery->groupBy('sale_items.product_id', 'products.name', 'sale_invoices.sale_date')
+        $salesData = $salesQuery->groupBy('sale_items.product_id', 'products.name', 'products.selling_price', 'sale_invoices.sale_date')
             ->get();
 
         $products = [];
         $grandTotal = 0;
+        $grandMopTotal = 0;
         foreach ($salesData as $row) {
             $pid = $row->product_id;
+            $mopPrice = (float) ($row->mop_price ?? 0);
             if (!isset($products[$pid])) {
                 $products[$pid] = [
                     'product_id' => $pid,
                     'product_name' => $row->product_name,
+                    'mop_price' => $mopPrice,
                     'sales' => [],
-                    'total_sold' => 0
+                    'total_sold' => 0,
+                    'total_mop' => 0
                 ];
             }
             $qty = (int) $row->total_qty;
             $products[$pid]['sales'][$row->sale_date] = $qty;
             $products[$pid]['total_sold'] += $qty;
+            $products[$pid]['total_mop'] += ($qty * $mopPrice);
             $grandTotal += $qty;
+            $grandMopTotal += ($qty * $mopPrice);
         }
 
         usort($products, fn($a, $b) => strcasecmp($a['product_name'], $b['product_name']));
@@ -429,7 +435,8 @@ class ReportController extends Controller
         return response()->json([
             'dates' => $dates,
             'products' => array_values($products),
-            'grand_total' => $grandTotal
+            'grand_total' => $grandTotal,
+            'grand_mop_total' => $grandMopTotal
         ]);
     }
 }

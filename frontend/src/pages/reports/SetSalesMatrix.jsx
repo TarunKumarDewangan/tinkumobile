@@ -25,11 +25,14 @@ export default function SetSalesMatrix() {
   const [shopId, setShopId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
+  const [viewMode, setViewMode] = useState('count'); // 'count' or 'mop'
+
   // Report data from server
   const [reportData, setReportData] = useState({
     dates: [],
     products: [],
-    grand_total: 0
+    grand_total: 0,
+    grand_mop_total: 0
   });
 
   // Load shops for selector (if admin/owner)
@@ -98,9 +101,14 @@ export default function SetSalesMatrix() {
     return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  // Columns sum calculation
-  const getColumnSum = (dateStr) => {
+  // Columns sum calculation (Quantity)
+  const getColumnSumQty = (dateStr) => {
     return reportData.products.reduce((sum, p) => sum + (p.sales[dateStr] || 0), 0);
+  };
+
+  // Columns sum calculation (MOP Amount)
+  const getColumnSumMop = (dateStr) => {
+    return reportData.products.reduce((sum, p) => sum + ((p.sales[dateStr] || 0) * (p.mop_price || 0)), 0);
   };
 
   return (
@@ -131,19 +139,19 @@ export default function SetSalesMatrix() {
         <div className="row g-3 align-items-end">
           
           {/* Mode Selector */}
-          <div className="col-12 col-md-4">
+          <div className="col-12 col-md-3">
             <label className="form-label text-muted small fw-bold mb-2">Select View Mode</label>
             <div className="btn-group w-100" role="group">
               <button
                 type="button"
-                className={`btn py-2 fw-semibold ${selectionMode === 'month' ? 'btn-dark' : 'btn-outline-secondary'}`}
+                className={`btn py-2 fw-semibold btn-sm ${selectionMode === 'month' ? 'btn-dark' : 'btn-outline-secondary'}`}
                 onClick={() => setSelectionMode('month')}
               >
                 🗓️ Direct Month
               </button>
               <button
                 type="button"
-                className={`btn py-2 fw-semibold ${selectionMode === 'duration' ? 'btn-dark' : 'btn-outline-secondary'}`}
+                className={`btn py-2 fw-semibold btn-sm ${selectionMode === 'duration' ? 'btn-dark' : 'btn-outline-secondary'}`}
                 onClick={() => setSelectionMode('duration')}
               >
                 ⏱️ Custom Duration
@@ -153,13 +161,14 @@ export default function SetSalesMatrix() {
 
           {/* Month input (if mode is month) */}
           {selectionMode === 'month' && (
-            <div className="col-6 col-md-3 col-lg-2">
+            <div className="col-6 col-md-2">
               <label className="form-label text-muted small fw-bold mb-1">Choose Month</label>
               <input
                 type="month"
-                className="form-control border-secondary-subtle bg-light text-dark fw-semibold"
+                className="form-control form-control-sm border-secondary-subtle bg-light text-dark fw-semibold"
                 value={selectedMonth}
                 onChange={e => setSelectedMonth(e.target.value)}
+                style={{ height: '38px' }}
               />
             </div>
           )}
@@ -167,31 +176,54 @@ export default function SetSalesMatrix() {
           {/* Custom Duration Date Inputs (if mode is duration) */}
           {selectionMode === 'duration' && (
             <>
-              <div className="col-6 col-md-2 col-lg-2">
+              <div className="col-6 col-md-2">
                 <label className="form-label text-muted small fw-bold mb-1">From Date</label>
                 <input
                   type="date"
-                  className="form-control border-secondary-subtle bg-light text-dark fw-semibold"
+                  className="form-control form-control-sm border-secondary-subtle bg-light text-dark fw-semibold"
                   value={fromConfig}
                   onChange={e => setFromConfig(e.target.value)}
+                  style={{ height: '38px' }}
                 />
               </div>
-              <div className="col-6 col-md-2 col-lg-2">
+              <div className="col-6 col-md-2">
                 <label className="form-label text-muted small fw-bold mb-1">To Date</label>
                 <input
                   type="date"
-                  className="form-control border-secondary-subtle bg-light text-dark fw-semibold"
+                  className="form-control form-control-sm border-secondary-subtle bg-light text-dark fw-semibold"
                   value={toConfig}
                   onChange={e => setToConfig(e.target.value)}
+                  style={{ height: '38px' }}
                 />
               </div>
             </>
           )}
 
+          {/* Display Mode Selector */}
+          <div className="col-6 col-md-2">
+            <label className="form-label text-muted small fw-bold mb-1">Display Mode</label>
+            <div className="btn-group w-100" role="group">
+              <button
+                type="button"
+                className={`btn py-2 fw-semibold btn-sm ${viewMode === 'count' ? 'btn-dark' : 'btn-outline-secondary'}`}
+                onClick={() => setViewMode('count')}
+              >
+                🔢 Units
+              </button>
+              <button
+                type="button"
+                className={`btn py-2 fw-semibold btn-sm ${viewMode === 'mop' ? 'btn-dark' : 'btn-outline-secondary'}`}
+                onClick={() => setViewMode('mop')}
+              >
+                ₹ MOP
+              </button>
+            </div>
+          </div>
+
           {/* Search Set Filter */}
-          <div className="col-12 col-md-3 col-lg-3">
+          <div className="col-12 col-md-3">
             <label className="form-label text-muted small fw-bold mb-1">Search Set Specific</label>
-            <div className="input-group">
+            <div className="input-group input-group-sm">
               <span className="input-group-text bg-light border-secondary-subtle text-muted">🔍</span>
               <input
                 type="text"
@@ -199,18 +231,20 @@ export default function SetSalesMatrix() {
                 placeholder="Search set name..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
+                style={{ height: '38px' }}
               />
             </div>
           </div>
 
           {/* Shop Selector */}
           {hasFullAccess() && (
-            <div className="col-12 col-md-3 col-lg-3">
+            <div className="col-12 col-md-2">
               <label className="form-label text-muted small fw-bold mb-1">Shop Branch</label>
               <select
-                className="form-select border-secondary-subtle bg-light text-dark fw-semibold"
+                className="form-select form-select-sm border-secondary-subtle bg-light text-dark fw-semibold"
                 value={shopId}
                 onChange={e => setShopId(e.target.value)}
+                style={{ height: '38px' }}
               >
                 <option value="">ALL BRANCHES</option>
                 {shops.map(s => (
@@ -294,17 +328,25 @@ export default function SetSalesMatrix() {
                     </td>
                     {reportData.dates.map(dateStr => {
                       const qty = product.sales[dateStr];
+                      let displayVal = '';
+                      if (qty) {
+                        displayVal = viewMode === 'count' 
+                          ? qty 
+                          : `₹${(qty * product.mop_price).toLocaleString('en-IN')}`;
+                      }
                       return (
                         <td 
                           key={dateStr} 
                           className="text-center p-2 fw-bold"
                           style={{ 
                             backgroundColor: qty ? '#f0fdf4' : 'transparent',
-                            color: qty ? '#16a34a' : 'transparent' 
+                            color: qty ? '#15803d' : 'transparent',
+                            fontSize: viewMode === 'mop' ? '0.75rem' : '0.82rem',
+                            whiteSpace: 'nowrap'
                           }}
-                          title={`${product.product_name}: ${qty || 0} sold on ${getDayName(dateStr)}`}
+                          title={`${product.product_name}: ${qty || 0} sold on ${getDayName(dateStr)} (MOP: ₹${(product.mop_price || 0).toLocaleString('en-IN')})`}
                         >
-                          {qty || ''}
+                          {displayVal}
                         </td>
                       );
                     })}
@@ -312,9 +354,14 @@ export default function SetSalesMatrix() {
                       className="text-center p-3 fw-bold bg-light"
                       style={{ borderLeft: '2px solid #dee2e6' }}
                     >
-                      <span className="badge bg-dark rounded-pill px-2.5 py-1.5" style={{ fontSize: '0.8rem' }}>
-                        {product.total_sold}
-                      </span>
+                      <div className="d-flex flex-column align-items-center gap-1">
+                        <span className="badge bg-dark rounded-pill px-2.5 py-1.5" style={{ fontSize: '0.78rem' }}>
+                          {product.total_sold} units
+                        </span>
+                        <span className="text-success small fw-bold" style={{ fontSize: '0.75rem' }}>
+                          ₹{(product.total_mop || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -330,25 +377,40 @@ export default function SetSalesMatrix() {
                       borderRight: '2px solid #dee2e6' 
                     }}
                   >
-                    📈 Total Units Sold
+                    📈 Total Sales
                   </td>
                   {reportData.dates.map(dateStr => {
-                    const colSum = getColumnSum(dateStr);
+                    const colSumQty = getColumnSumQty(dateStr);
+                    const colSumMop = getColumnSumMop(dateStr);
                     return (
                       <td 
                         key={dateStr} 
                         className="text-center p-2"
-                        style={{ color: colSum ? '#000' : '#888' }}
+                        style={{ fontSize: '0.78rem' }}
                       >
-                        {colSum || '-'}
+                        {colSumQty > 0 ? (
+                          <div className="d-flex flex-column align-items-center">
+                            <span className="text-dark">{colSumQty}</span>
+                            <span className="text-success small fw-bold">₹{colSumMop.toLocaleString('en-IN')}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted opacity-50">-</span>
+                        )}
                       </td>
                     );
                   })}
                   <td 
                     className="text-center p-3 bg-dark text-white fw-bolder"
-                    style={{ borderLeft: '2px solid #dee2e6', fontSize: '0.9rem' }}
+                    style={{ borderLeft: '2px solid #dee2e6' }}
                   >
-                    {reportData.grand_total}
+                    <div className="d-flex flex-column align-items-center gap-1">
+                      <span className="badge bg-light text-dark rounded-pill px-2 py-1" style={{ fontSize: '0.78rem' }}>
+                        {reportData.grand_total} units
+                      </span>
+                      <span className="fw-bold" style={{ fontSize: '0.78rem', color: '#4ade80' }}>
+                        ₹{(reportData.grand_mop_total || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -360,8 +422,8 @@ export default function SetSalesMatrix() {
       {/* Quick stats indicator */}
       {!loading && reportData.products.length > 0 && (
         <div className="row g-3">
-          <div className="col-12 col-md-4">
-            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale">
+          <div className="col-12 col-sm-6 col-md-3">
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale h-100">
               <div className="d-flex justify-content-between align-items-center mb-2">
                 <span className="text-muted small fw-bold text-uppercase">Total Sets Sold</span>
                 <span className="fs-4">🛍️</span>
@@ -369,8 +431,17 @@ export default function SetSalesMatrix() {
               <h2 className="fw-black text-dark mb-0">{reportData.grand_total} units</h2>
             </div>
           </div>
-          <div className="col-12 col-md-4">
-            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale">
+          <div className="col-12 col-sm-6 col-md-3">
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale h-100">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <span className="text-muted small fw-bold text-uppercase">Total MOP Value</span>
+                <span className="fs-4">💰</span>
+              </div>
+              <h2 className="fw-black text-success mb-0">₹{(reportData.grand_mop_total || 0).toLocaleString('en-IN')}</h2>
+            </div>
+          </div>
+          <div className="col-12 col-sm-6 col-md-3">
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale h-100">
               <div className="d-flex justify-content-between align-items-center mb-2">
                 <span className="text-muted small fw-bold text-uppercase">Unique Sets Sold</span>
                 <span className="fs-4">📱</span>
@@ -378,14 +449,14 @@ export default function SetSalesMatrix() {
               <h2 className="fw-black text-dark mb-0">{reportData.products.length} models</h2>
             </div>
           </div>
-          <div className="col-12 col-md-4">
-            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale">
+          <div className="col-12 col-sm-6 col-md-3">
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white hover-scale h-100">
               <div className="d-flex justify-content-between align-items-center mb-2">
                 <span className="text-muted small fw-bold text-uppercase">Active Days with Sales</span>
                 <span className="fs-4">📅</span>
               </div>
               <h2 className="fw-black text-dark mb-0">
-                {reportData.dates.filter(d => getColumnSum(d) > 0).length} / {reportData.dates.length} days
+                {reportData.dates.filter(d => getColumnSumQty(d) > 0).length} / {reportData.dates.length} days
               </h2>
             </div>
           </div>
