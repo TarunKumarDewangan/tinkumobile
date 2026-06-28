@@ -13,6 +13,7 @@ export default function Sales() {
   const { hasFullAccess } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const category_group = searchParams.get('category_group') || 'new_mobile';
   const [showBackupModal, setShowBackupModal] = useState(false);
 
   const [filters, setFilters] = useState({ 
@@ -34,7 +35,7 @@ export default function Sales() {
   const loadInvoices = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/sale-invoices', { params: filters });
+      const { data } = await api.get('/sale-invoices', { params: { ...filters, category_group } });
       // If data.data exists (pagination), use it; otherwise use data
       setInvoices(data.data || data);
     } catch (e) {
@@ -95,12 +96,12 @@ export default function Sales() {
     <div className="container-fluid py-3">
       <div className="page-header mb-3 d-flex justify-content-between align-items-center">
         <div className="text-uppercase">
-           <h2 className="mb-0 fw-bold">🧾 SALES MANAGEMENT</h2>
-           <p className="text-muted small mb-0">MANAGE CUSTOMER INVOICES, PAYMENTS AND BILLING</p>
+           <h2 className="mb-0 fw-bold">🧾 {category_group === 'master' ? 'Master Sales Management' : (category_group === 'other' ? 'Other Sales Management' : 'SALES MANAGEMENT')}</h2>
+           <p className="text-muted small mb-0">{category_group === 'master' ? 'MANAGE CUSTOMER INVOICES ACROSS ALL CATEGORIES' : (category_group === 'other' ? 'MANAGE CUSTOMER INVOICES FOR ACCESSORIES & SIM CARDS' : 'MANAGE CUSTOMER INVOICES, PAYMENTS AND BILLING')}</p>
         </div>
         <div className="d-flex gap-2">
           <button onClick={() => setShowBackupModal(true)} className="btn btn-outline-dark shadow-sm text-uppercase fw-bold">Backup / Restore</button>
-          <button onClick={() => navigate('/sales/new')} className="btn btn-primary shadow-sm text-uppercase fw-bold">+ New Sale</button>
+          <button onClick={() => navigate(category_group === 'master' ? '/sales/new-master' : (category_group && category_group !== 'master' ? `/sales/new?category_group=${category_group}` : '/sales/new?category_group=new_mobile'))} className="btn btn-primary shadow-sm text-uppercase fw-bold">+ New Sale</button>
         </div>
       </div>
 
@@ -180,7 +181,7 @@ export default function Sales() {
                 return (
                   <tr key={inv.id} className={inv.is_cancelled ? 'opacity-50 text-decoration-line-through' : ''}>
                     {/* 1. Customer Name (clickable) */}
-                    <td className="ps-4 cursor-pointer" onClick={() => navigate(`/sales/${inv.id}`)}>
+                    <td className="ps-4 cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
                         <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.customer?.name}</span>
                         <div className="x-small text-muted" style={{ textDecoration: 'none' }}>📞 {inv.customer?.phone}</div>
                     </td>
@@ -212,8 +213,8 @@ export default function Sales() {
                         <div className="d-flex justify-content-center gap-1">
                             {!inv.is_cancelled && (
                                 <>
-                                    <button onClick={() => navigate(`/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
-                                    <button onClick={() => navigate(`/sales/${inv.id}/edit`)} className="pm-act-btn btn-xs">EDIT</button>
+                                    <button onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
+                                    <button onClick={() => navigate(category_group === 'master' ? `/sales/${inv.id}/edit-master` : (category_group ? `/sales/${inv.id}/edit?category_group=${category_group}` : `/sales/${inv.id}/edit`))} className="pm-act-btn btn-xs">EDIT</button>
                                     {inv.bill_type === 'kaccha' && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
                                     <button onClick={() => handleCancel(inv.id)} className="pm-act-btn btn-xs">CANCEL</button>
                                 </>
@@ -223,7 +224,7 @@ export default function Sales() {
                     </td>
 
                     {/* 7. Invoice # (clickable) */}
-                    <td className="cursor-pointer" onClick={() => navigate(`/sales/${inv.id}`)}>
+                    <td className="cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
                         <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.invoice_no}</span>
                         <div className="d-flex flex-wrap gap-1 mt-1">
                           <span className="badge-received" style={{ fontSize: '0.6rem', padding: '2px 6px' }}>{inv.bill_type.toUpperCase()}</span>

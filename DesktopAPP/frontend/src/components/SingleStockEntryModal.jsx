@@ -3,7 +3,7 @@ import { Modal } from 'react-bootstrap';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 
-export default function SingleStockEntryModal({ show, onHide, baseProducts, categories, shops, onSuccess }) {
+export default function SingleStockEntryModal({ show, onHide, baseProducts, categories, shops, onSuccess, category_group = 'new_mobile' }) {
   const [loading, setLoading] = useState(false);
   
   // Basic Info
@@ -46,9 +46,14 @@ export default function SingleStockEntryModal({ show, onHide, baseProducts, cate
       const mainShop = shops.find(s => s.is_main) || shops[0];
       setShopId(mainShop ? mainShop.id : '');
       
-      // Default to "Mobile New" category
-      const newMobileCat = categories.find(c => c.slug === 'mobile-new' || c.name?.toLowerCase().includes('new'));
-      setSelectedCategoryId(newMobileCat ? newMobileCat.id : (categories[0]?.id || ''));
+      // Default to Category
+      if (category_group === 'other') {
+        const accessoryCat = categories.find(c => c.slug === 'accessory' || c.id == 3);
+        setSelectedCategoryId(accessoryCat ? accessoryCat.id : (categories.filter(c => c.slug !== 'mobile-new' && c.slug !== 'mobile-old')[0]?.id || ''));
+      } else {
+        const newMobileCat = categories.find(c => c.slug === 'mobile-new' || c.name?.toLowerCase().includes('new'));
+        setSelectedCategoryId(newMobileCat ? newMobileCat.id : (categories[0]?.id || ''));
+      }
 
       // Reset item inputs
       setIsNew(false);
@@ -242,7 +247,16 @@ export default function SingleStockEntryModal({ show, onHide, baseProducts, cate
                   <div className="col-12 col-md-4">
                     <label className="form-label small fw-bold text-muted text-uppercase">Category *</label>
                     <select className="form-select border-secondary-subtle" required value={selectedCategoryId} onChange={e => setSelectedCategoryId(e.target.value)}>
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)}
+                      {categories
+                        .filter(c => {
+                          if (category_group === 'other') {
+                            return c.slug !== 'mobile-new' && c.slug !== 'mobile-old';
+                          } else {
+                            return c.slug === 'mobile-new' || c.slug === 'mobile-old';
+                          }
+                        })
+                        .map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)
+                      }
                     </select>
                   </div>
                 </>
@@ -289,11 +303,13 @@ export default function SingleStockEntryModal({ show, onHide, baseProducts, cate
             {/* SPECS & QUANTITY */}
             <div className="row g-3">
               <div className="col-12 col-md-5">
-                <label className="form-label small fw-bold text-muted text-uppercase">IMEI / Serial Number</label>
+                <label className="form-label small fw-bold text-muted text-uppercase">
+                  {category_group === 'other' ? 'Serial / Batch (Optional)' : 'IMEI / Serial Number'}
+                </label>
                 <input 
                   type="text" 
                   className="form-control border-secondary-subtle fw-bold" 
-                  placeholder="IMEI/SN (Optional for non-mobiles)" 
+                  placeholder={category_group === 'other' ? 'ENTER SERIAL OR BATCH...' : 'IMEI/SN (Optional for non-mobiles)'} 
                   value={imei} 
                   onChange={e => setImei(e.target.value)} 
                 />

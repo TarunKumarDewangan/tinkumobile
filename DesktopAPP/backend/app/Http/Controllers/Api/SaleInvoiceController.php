@@ -43,7 +43,22 @@ class SaleInvoiceController extends Controller
         if ($request->from) $query->where('sale_date', '>=', $request->from);
         if ($request->to) $query->where('sale_date', '<=', $request->to);
 
-        if ($request->has('is_old_mobile')) {
+        if ($request->category_group) {
+            $group = $request->category_group;
+            if ($group === 'new_mobile') {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-NEW', 'mobile-new']);
+                });
+            } elseif ($group === 'old_mobile') {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']);
+                });
+            } elseif ($group === 'other') {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']);
+                });
+            }
+        } elseif ($request->has('is_old_mobile')) {
             $isOld = filter_var($request->is_old_mobile, FILTER_VALIDATE_BOOLEAN);
             if ($isOld) {
                 $query->whereHas('items.product.category', function($q) {

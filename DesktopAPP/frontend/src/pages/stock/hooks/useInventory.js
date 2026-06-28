@@ -3,7 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../../../api/axios';
 import { useAuth } from '../../../contexts/AuthContext';
 
-export default function useInventory(filters, form, setForm) {
+export default function useInventory(filters, form, setForm, category_group) {
     const [products, setProducts] = useState([]);
     const [baseProducts, setBaseProducts] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
@@ -18,14 +18,14 @@ export default function useInventory(filters, form, setForm) {
     const loadFilteredProducts = useCallback(async () => {
         setLoading(true);
         try {
-            const prodRes = await api.get('/products', { params: filters });
+            const prodRes = await api.get('/products', { params: { ...filters, category_group } });
             setProducts(prodRes.data.data || prodRes.data);
         } catch (e) {
             toast.error("Failed to load inventory products");
         } finally {
             setLoading(false);
         }
-    }, [filters]);
+    }, [filters, category_group]);
 
     useEffect(() => {
         loadFilteredProducts();
@@ -34,7 +34,7 @@ export default function useInventory(filters, form, setForm) {
     // Fetch static metadata once on mount
     useEffect(() => {
         // Load base products
-        api.get('/products')
+        api.get('/products', { params: { category_group } })
             .then(r => setBaseProducts(r.data.data || r.data))
             .catch(() => {});
 

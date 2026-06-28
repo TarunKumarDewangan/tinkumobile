@@ -30,6 +30,16 @@ class ProductController extends Controller
                 })
                 ->whereHas('product', function($q) use ($request) {
                     if ($request->category_id) $q->where('category_id', $request->category_id);
+                    if ($request->category_group) {
+                        $group = $request->category_group;
+                        if ($group === 'new_mobile') {
+                            $q->whereHas('category', fn($cq) => $cq->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
+                        } elseif ($group === 'old_mobile') {
+                            $q->whereHas('category', fn($cq) => $cq->whereIn('slug', ['MOBILE-OLD', 'mobile-old']));
+                        } elseif ($group === 'other') {
+                            $q->whereHas('category', fn($cq) => $cq->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']));
+                        }
+                    }
                     if ($request->model) $q->where('name', 'like', "%{$request->model}%");
                 });
 
@@ -208,6 +218,22 @@ class ProductController extends Controller
             }
         }])->withTrashed()->where('deleted_at', null);
         if ($request->category_id) $query->where('category_id', $request->category_id);
+        if ($request->category_group) {
+            $group = $request->category_group;
+            if ($group === 'new_mobile') {
+                $query->whereHas('category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-NEW', 'mobile-new']);
+                });
+            } elseif ($group === 'old_mobile') {
+                $query->whereHas('category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']);
+                });
+            } elseif ($group === 'other') {
+                $query->whereHas('category', function($q) {
+                    $q->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']);
+                });
+            }
+        }
         if ($request->search) {
             $query->where(function($q) use ($request) {
                 $q->where('name', 'like', "%{$request->search}%")
@@ -233,7 +259,18 @@ class ProductController extends Controller
             'max_selling_price' => 'nullable|numeric|min:0',
             'condition'         => 'in:new,used',
             'attributes'        => 'nullable|array',
+            'location'          => 'nullable|string|max:200',
+            'subcategory'       => 'nullable|string|max:100',
         ]);
+
+        if (!empty($data['subcategory'])) {
+            $sub = trim($data['subcategory']);
+            \App\Models\Subcategory::firstOrCreate([
+                'name' => strtoupper($sub),
+            ]);
+            $data['subcategory'] = strtoupper($sub);
+        }
+
         return response()->json(Product::create($data), 201);
     }
 
@@ -264,7 +301,18 @@ class ProductController extends Controller
             'max_selling_price' => 'nullable|numeric|min:0',
             'condition'         => 'in:new,used',
             'attributes'        => 'nullable|array',
+            'location'          => 'nullable|string|max:200',
+            'subcategory'       => 'nullable|string|max:100',
         ]);
+
+        if (array_key_exists('subcategory', $data) && !empty($data['subcategory'])) {
+            $sub = trim($data['subcategory']);
+            \App\Models\Subcategory::firstOrCreate([
+                'name' => strtoupper($sub),
+            ]);
+            $data['subcategory'] = strtoupper($sub);
+        }
+
         $product->update($data);
         return response()->json($product);
     }

@@ -57,6 +57,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('customers/send-offer', [CustomerController::class, 'sendOffer']);
     Route::apiResource('customers', CustomerController::class);
     Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class);
+    Route::apiResource('subcategories', \App\Http\Controllers\Api\SubcategoryController::class)->only(['index', 'store']);
 
     // Products
     Route::delete('/products/stock/{id}', [ProductController::class, 'deleteStock']);

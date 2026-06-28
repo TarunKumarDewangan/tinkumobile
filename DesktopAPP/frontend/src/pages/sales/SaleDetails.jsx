@@ -22,6 +22,13 @@ const NumberToWords = (num) => {
 };
 
 export default function SaleDetails() {
+  const getProductFullName = (product) => {
+    if (!product) return '';
+    const brandName = (product.brand?.name || product.attributes?.brand || '').trim().toUpperCase();
+    const prodName = (product.name || '').trim().toUpperCase();
+    return brandName ? `${brandName} ${prodName}` : prodName;
+  };
+
   const { id } = useParams();
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState(null);
@@ -159,7 +166,7 @@ export default function SaleDetails() {
                                           <tr key={i}>
                                               <td className="ps-3 fw-bold text-muted">{i + 1}</td>
                                               <td className="py-2">
-                                                  <div className="fw-black text-dark">{item.product?.name}</div>
+                                                  <div className="fw-black text-dark">{getProductFullName(item.product)}</div>
                                                    <div className="mt-1 d-flex flex-wrap gap-2 align-items-center">
                                                        {item.imei ? (
                                                             <span className="badge bg-dark text-white px-2 py-1" style={{ fontSize: '0.8rem' }}>IMEI: {item.imei}</span>
@@ -334,7 +341,7 @@ export default function SaleDetails() {
                                               <tr key={i} className="small text-center align-middle">
                                                   <td>{i + 1}</td>
                                                   <td className="text-start ps-2 py-2">
-                                                      <div className="fw-black">{item.product?.name}</div>
+                                                      <div className="fw-black">{getProductFullName(item.product)}</div>
                                                       <div className="x-small text-muted fw-bold">
                                                           {item.imei && <span>Serial No: {item.imei}</span>}
                                                           {(item.ram || item.storage || item.color) && (

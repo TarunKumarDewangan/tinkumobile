@@ -13,7 +13,7 @@ class Product extends Model
     use SoftDeletes, UppercaseStrings;
 
     protected $fillable = [
-        'category_id', 'brand_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'condition', 'attributes', 'location'
+        'category_id', 'brand_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'condition', 'attributes', 'location', 'subcategory'
     ];
 
     protected $casts = [

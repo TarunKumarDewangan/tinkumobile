@@ -57,6 +57,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('customers/send-offer', [CustomerController::class, 'sendOffer']);
     Route::apiResource('customers', CustomerController::class);
     Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class);
+    Route::apiResource('subcategories', \App\Http\Controllers\Api\SubcategoryController::class)->only(['index', 'store']);
 
     // Products
     Route::delete('/products/stock/{id}', [ProductController::class, 'deleteStock']);
@@ -242,11 +243,6 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Full System Sync — throttled to prevent abuse
     Route::get('system/backup', [SystemBackupController::class, 'backup'])->middleware('throttle:60,1');
     Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup'])->middleware('throttle:60,1');
-
-    // ── Cloud Sync (Desktop ↔ Live Server) ──────────────────────────────────────
-    Route::post('cloud-sync/test', [\App\Http\Controllers\Api\CloudSyncController::class, 'testConnection']);
-    Route::post('cloud-sync/pull', [\App\Http\Controllers\Api\CloudSyncController::class, 'pullFromCloud']);
-    Route::post('cloud-sync/push', [\App\Http\Controllers\Api\CloudSyncController::class, 'pushToCloud']);
     // Settings
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ── Per-category attribute schemas ─────────────────────────────────────────
 const CATEGORY_SCHEMAS = {
@@ -80,25 +81,106 @@ const CATEGORY_SCHEMAS = {
       { key: 'time_required', label: 'Time Required',  type: 'text', placeholder: 'e.g. 30 mins, 2 hours, 1 day' },
     ]
   },
+  'laptop': {
+    label: '💻 Laptop Details',
+    fields: [
+      { key: 'brand',     label: 'Brand',         type: 'text', placeholder: 'e.g. HP, Dell, Lenovo, Apple' },
+      { key: 'model',     label: 'Model / Series', type: 'text', placeholder: 'e.g. Pavilion 15, Inspiron 14' },
+      { key: 'processor', label: 'Processor',     type: 'text', placeholder: 'e.g. Core i5 12th Gen, Ryzen 5 5600U' },
+      { key: 'storage',   label: 'Storage',       type: 'select', options: ['128GB SSD','256GB SSD','512GB SSD','1TB SSD','2TB SSD','1TB HDD'] },
+      { key: 'ram',       label: 'RAM',           type: 'select', options: ['4GB','8GB','16GB','32GB','64GB'] },
+      { key: 'color',     label: 'Color',         type: 'text', placeholder: 'e.g. Platinum Silver, Space Gray' },
+      { key: 'os',        label: 'OS',            type: 'select', options: ['Windows 11','Windows 10','macOS','Ubuntu / Linux','DOS'] },
+      { key: 'display',   label: 'Display Size',  type: 'select', options: ['13.3"','14"','15.6"','16"','17.3"'] },
+      { key: 'gpu',       label: 'Graphics (GPU)', type: 'text', placeholder: 'e.g. Intel Iris Xe, RTX 3050' },
+      { key: 'warranty',  label: 'Warranty',      type: 'text', placeholder: 'e.g. 1 Year Brand Warranty' },
+    ]
+  },
+  'tablet': {
+    label: '📟 Tablet Details',
+    fields: [
+      { key: 'brand',     label: 'Brand',         type: 'text', placeholder: 'e.g. Apple, Samsung, Lenovo' },
+      { key: 'model',     label: 'Model',         type: 'text', placeholder: 'e.g. iPad Air 5, Galaxy Tab S9' },
+      { key: 'storage',   label: 'Storage',       type: 'select', options: ['32GB','64GB','128GB','256GB','512GB','1TB'] },
+      { key: 'ram',       label: 'RAM',           type: 'select', options: ['2GB','3GB','4GB','6GB','8GB','12GB','16GB'] },
+      { key: 'color',     label: 'Color',         type: 'text', placeholder: 'e.g. Space Gray, Silver' },
+      { key: 'display',   label: 'Display Size',  type: 'text', placeholder: 'e.g. 10.9", 11", 12.4"' },
+      { key: 'network',   label: 'Connectivity',  type: 'select', options: ['Wi-Fi Only','Wi-Fi + Cellular (LTE/55G)'] },
+      { key: 'os',        label: 'OS',            type: 'text', placeholder: 'e.g. iPadOS 17, Android 13' },
+      { key: 'warranty',  label: 'Warranty',      type: 'text', placeholder: 'e.g. 1 Year Brand Warranty' },
+    ]
+  },
 };
 
 export default function ProductForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const category_group = searchParams.get('category_group');
   const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   const [selectedCatSlug, setSelectedCatSlug] = useState('');
   const [form, setForm] = useState({
     purchase_price: '', selling_price: '', wholeseller_price: '',
     min_selling_price: '', max_selling_price: '', incentive_amount: '',
-    condition: 'new'
+    condition: 'new', sku: '', name: '', imei: '', category_id: '', shop_id: '',
+    subcategory: ''
   });
   const [attrs, setAttrs] = useState({});
   const [location, setLocation] = useState('');
 
+  // Accessory/Other category specific states
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [customSubcategory, setCustomSubcategory] = useState('');
+  const [brandToggle, setBrandToggle] = useState(false);
+  const [gstToggle, setGstToggle] = useState(false);
+  const [currentStock, setCurrentStock] = useState(0);
+  const [shops, setShops] = useState([]);
+
+  const { user, isOwner, hasFullAccess } = useAuth();
   const schema = CATEGORY_SCHEMAS[selectedCatSlug] || null;
 
+  const filteredCategories = categories.filter(c => {
+    const slug = c.slug?.toLowerCase() || '';
+    if (category_group === 'other') {
+      return slug !== 'mobile-new' && slug !== 'mobile-old';
+    }
+    if (category_group === 'new_mobile') {
+      return slug === 'mobile-new';
+    }
+    if (category_group === 'old_mobile') {
+      return slug === 'mobile-old';
+    }
+    return true;
+  });
+
   useEffect(() => {
-    api.get('/categories').then(r => setCategories(r.data));
+    api.get('/categories').then(r => {
+      setCategories(r.data);
+      if (!id && category_group === 'other') {
+        const acc = r.data.find(c => c.slug?.toLowerCase() === 'accessory');
+        if (acc) {
+          setForm(f => ({ ...f, category_id: acc.id }));
+          setSelectedCatSlug('accessory');
+        }
+      }
+    });
+    api.get('/subcategories').then(r => setSubcategories(r.data));
+  }, [id, category_group]);
+
+  useEffect(() => {
+    if (hasFullAccess()) {
+      api.get('/shops').then(r => setShops(r.data));
+    }
+  }, [hasFullAccess]);
+
+  useEffect(() => {
+    if (user && !form.shop_id) {
+      setForm(f => ({ ...f, shop_id: user.shop_id || '' }));
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (id) {
       api.get(`/products/${id}`).then(r => {
         const p = r.data;
@@ -109,37 +191,124 @@ export default function ProductForm() {
           min_selling_price: p.min_selling_price || '',
           max_selling_price: p.max_selling_price || '',
           incentive_amount: p.incentive_amount || '',
-          condition: p.condition
+          condition: p.condition,
+          subcategory: p.subcategory || ''
         });
         setAttrs(p.attributes || {});
         setLocation(p.location || '');
-        const cat = categories.find(c => c.id == p.category_id);
-        if (cat) setSelectedCatSlug(cat.slug);
+        if (p.attributes) {
+          if (p.attributes.brand) setBrandToggle(true);
+          if (p.attributes.gst_rate) setGstToggle(true);
+        }
       });
     }
   }, [id]);
 
+  useEffect(() => {
+    if (categories.length > 0 && form.category_id) {
+      const cat = categories.find(c => c.id == form.category_id);
+      if (cat) setSelectedCatSlug(cat.slug?.toLowerCase() || '');
+    }
+  }, [categories, form.category_id]);
+
   const handleCategoryChange = (e) => {
     const catId = e.target.value;
+    if (catId === 'NEW_CAT') {
+      setForm(f => ({ ...f, category_id: catId }));
+      setSelectedCatSlug('');
+      return;
+    }
     const cat = categories.find(c => c.id == catId);
     setForm(f => ({ ...f, category_id: catId }));
-    setSelectedCatSlug(cat?.slug || '');
+    setSelectedCatSlug(cat?.slug?.toLowerCase() || '');
     setAttrs({}); // reset attrs on category change
+    setBrandToggle(false);
+    setGstToggle(false);
   };
 
   const setAttr = (key, val) => setAttrs(prev => ({ ...prev, [key]: val }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const cleanAttrs = Object.fromEntries(Object.entries(attrs).filter(([, v]) => v && v !== ''));
-    const payload = { ...form, attributes: cleanAttrs, location };
+    let finalCategoryId = form.category_id;
+
     try {
-      if (id) await api.put(`/products/${id}`, payload);
-      else await api.post('/products', payload);
+      if (finalCategoryId === 'NEW_CAT') {
+        if (!customCategoryName || !customCategoryName.trim()) {
+          toast.error("Please enter a category name");
+          return;
+        }
+        const catRes = await api.post('/categories', { name: customCategoryName.trim() });
+        finalCategoryId = catRes.data.id;
+        toast.success(`Category "${customCategoryName}" created!`);
+      }
+
+      let finalSku = form.sku;
+      if (category_group === 'other' && !finalSku) {
+        const cleanName = form.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-');
+        const cleanBrand = attrs.brand ? attrs.brand.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-') : 'ACC';
+        finalSku = `${cleanBrand}-${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      const cleanAttrs = Object.fromEntries(
+        Object.entries(attrs).filter(([, v]) => v !== undefined && v !== null && v !== '')
+      );
+
+      // Clean toggles for category_group === 'other'
+      if (category_group === 'other') {
+        if (!brandToggle) delete cleanAttrs.brand;
+        if (!gstToggle) delete cleanAttrs.gst_rate;
+      }
+
+      let finalSubcategory = form.subcategory;
+      if (selectedCatSlug === 'accessory') {
+        if (finalSubcategory === 'OTHER') {
+          if (!customSubcategory || !customSubcategory.trim()) {
+            toast.error("Please enter a subcategory name");
+            return;
+          }
+          finalSubcategory = customSubcategory.trim().toUpperCase();
+        }
+      } else {
+        finalSubcategory = null;
+      }
+
+      const payload = {
+        ...form,
+        category_id: finalCategoryId,
+        sku: finalSku,
+        attributes: cleanAttrs,
+        location,
+        subcategory: finalSubcategory
+      };
+
+      let createdProduct;
+      if (id) {
+        const res = await api.put(`/products/${id}`, payload);
+        createdProduct = res.data;
+      } else {
+        const res = await api.post('/products', payload);
+        createdProduct = res.data;
+      }
+
+      if (!id && category_group === 'other' && currentStock > 0) {
+        const targetShopId = hasFullAccess() && form.shop_id ? form.shop_id : (user.shop_id || 1);
+        await api.post('/stock-adjustments', {
+          product_id: createdProduct.id,
+          shop_id: targetShopId,
+          type: 'add',
+          quantity: currentStock,
+          reason: 'opening_stock',
+          purchase_price: form.purchase_price,
+          adjustment_date: new Date().toISOString().slice(0, 10),
+          notes: 'Opening Stock via Product Entry'
+        });
+      }
+
       toast.success(id ? '✅ Product updated!' : '✅ Product created!');
-      navigate('/products');
-    } catch (e) {
-      toast.error(e.response?.data?.message || 'Error saving product');
+      navigate(category_group ? `/products?category_group=${category_group}` : '/products');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error saving product');
     }
   };
 
@@ -166,11 +335,232 @@ export default function ProductForm() {
     );
   };
 
+  // ── Layout 1: Accessory & Other products layout ──────────────────────────
+  if (category_group === 'other') {
+    const pPrice = parseFloat(form.purchase_price) || 0;
+    const sPrice = parseFloat(form.selling_price) || 0;
+    const calcProfit = sPrice - pPrice;
+    const calcMargin = sPrice ? ((calcProfit / sPrice) * 100) : 0;
+
+    return (
+      <div>
+        <div className="page-header">
+          <h2>📦 {id ? '✏️ Edit' : '➕ Add'} Other Product / Accessory</h2>
+          <button type="button" onClick={() => navigate('/products?category_group=other')} className="btn btn-outline-secondary btn-sm">← Back</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-card mb-3">
+            <div className="form-card-title">📦 Product Information</div>
+            <div className="row g-3">
+              {/* Category selector */}
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-semibold">Category <span className="text-danger">*</span></label>
+                <select className="form-select" required value={form.category_id} onChange={handleCategoryChange}>
+                  <option value="">Select category</option>
+                  {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="NEW_CAT">+ Other (Add Custom Category)...</option>
+                </select>
+              </div>
+
+              {/* Enter Category Name (only if NEW_CAT selected) */}
+              {form.category_id === 'NEW_CAT' && (
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold">Enter Category Name <span className="text-danger">*</span></label>
+                  <input className="form-control" required placeholder="e.g. Charger, Tempered Glass, SIM Card"
+                    value={customCategoryName} onChange={e => setCustomCategoryName(e.target.value)} />
+                </div>
+              )}
+
+              {/* Subcategory selector for Accessory category */}
+              {selectedCatSlug === 'accessory' && (
+                <>
+                  <div className="col-12 col-md-6">
+                    <label className="form-label fw-semibold">Subcategory <span className="text-danger">*</span></label>
+                    <select className="form-select" required value={form.subcategory} onChange={e => setForm({ ...form, subcategory: e.target.value })}>
+                      <option value="">Select subcategory</option>
+                      {subcategories.map(sub => (
+                        <option key={sub.id} value={sub.name}>{sub.name}</option>
+                      ))}
+                      <option value="OTHER">+ Other (Add Custom Subcategory)...</option>
+                    </select>
+                  </div>
+
+                  {form.subcategory === 'OTHER' && (
+                    <div className="col-12 col-md-6">
+                      <label className="form-label fw-semibold">Enter Subcategory Name <span className="text-danger">*</span></label>
+                      <input className="form-control" required placeholder="e.g. Neck Band, Charger, USB Cable"
+                        value={customSubcategory} onChange={e => setCustomSubcategory(e.target.value)} />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Brand Toggle */}
+              <div className="col-12">
+                <div className="form-check form-switch mt-2">
+                  <input className="form-check-input" type="checkbox" id="brandToggle" checked={brandToggle} onChange={e => {
+                    setBrandToggle(e.target.checked);
+                    if (!e.target.checked) setAttr('brand', '');
+                  }} />
+                  <label className="form-check-label fw-semibold" htmlFor="brandToggle">Product has Brand</label>
+                </div>
+              </div>
+
+              {/* Brand Name Input */}
+              {brandToggle && (
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold">Brand Name <span className="text-danger">*</span></label>
+                  <input className="form-control" required={brandToggle} placeholder="e.g. Samsung / Boat / Portronics"
+                    value={attrs.brand || ''} onChange={e => setAttr('brand', e.target.value)} />
+                </div>
+              )}
+
+              {/* Product Name */}
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-semibold">Product Name <span className="text-danger">*</span></label>
+                <input className="form-control" required placeholder="e.g. 25W Fast Charger, Jio 5G SIM"
+                  value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} />
+              </div>
+
+              {/* Purchase Price */}
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-semibold">Purchase Price ₹ <span className="text-danger">*</span></label>
+                <div className="input-group">
+                  <span className="input-group-text">₹</span>
+                  <input className="form-control" type="number" step="0.01" required min="0" placeholder="0"
+                    id="purchase" value={form.purchase_price || ''} onChange={e => setForm({ ...form, purchase_price: e.target.value })} />
+                </div>
+              </div>
+
+              {/* Selling Price */}
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-semibold text-success">Selling Price ₹ <span className="text-danger">*</span></label>
+                <div className="input-group">
+                  <span className="input-group-text text-success">₹</span>
+                  <input className="form-control border-success text-success fw-bold" type="number" step="0.01" required min="0" placeholder="0"
+                    id="selling" value={form.selling_price || ''} onChange={e => setForm({ ...form, selling_price: e.target.value })} />
+                </div>
+              </div>
+
+              {/* GST Toggle */}
+              <div className="col-12">
+                <div className="form-check form-switch mt-2">
+                  <input className="form-check-input" type="checkbox" id="gstToggle" checked={gstToggle} onChange={e => {
+                    setGstToggle(e.target.checked);
+                    if (e.target.checked && !attrs.gst_rate) {
+                      setAttr('gst_rate', '18%');
+                    } else if (!e.target.checked) {
+                      setAttr('gst_rate', '');
+                    }
+                  }} />
+                  <label className="form-check-label fw-semibold" htmlFor="gstToggle">Apply GST</label>
+                </div>
+              </div>
+
+              {/* GST rate dropdown */}
+              {gstToggle && (
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold">GST % <span className="text-danger">*</span></label>
+                  <select className="form-select" required value={attrs.gst_rate || '18%'} onChange={e => setAttr('gst_rate', e.target.value)}>
+                    <option value="0%">0%</option>
+                    <option value="5%">5%</option>
+                    <option value="12%">12%</option>
+                    <option value="18%">18%</option>
+                    <option value="28%">28%</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Current Stock (only on create) */}
+              {!id && (
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold">Current Stock (Opening Stock)</label>
+                  <input className="form-control" type="number" min="0" placeholder="0"
+                    value={currentStock} onChange={e => setCurrentStock(parseInt(e.target.value) || 0)} />
+                </div>
+              )}
+
+              {/* Target Shop / Branch for opening stock (only for owners on create with stock > 0) */}
+              {!id && currentStock > 0 && hasFullAccess() && (
+                <div className="col-12 col-md-6">
+                  <label className="form-label fw-semibold" style={{color:'#6366f1'}}>Target Shop / Branch for Stock <span className="text-danger">*</span></label>
+                  <select className="form-select" style={{borderColor:'#6366f1'}} required value={form.shop_id} onChange={e => setForm({...form, shop_id: e.target.value})}>
+                    <option value="">Select target shop</option>
+                    {shops.map(s => (
+                      <option key={s.id} value={s.id}>{s.name.toUpperCase()} {s.is_main ? '⭐' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Rack Location */}
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-semibold">Rack Location</label>
+                <input className="form-control" placeholder="Rack A-01"
+                  value={location} onChange={e => setLocation(e.target.value)} />
+              </div>
+
+              {/* Warranty */}
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-semibold">Warranty</label>
+                <select className="form-select" value={attrs.warranty || 'No Warranty'} onChange={e => setAttr('warranty', e.target.value)}>
+                  <option value="No Warranty">No Warranty</option>
+                  <option value="7 Days">7 Days</option>
+                  <option value="30 Days">30 Days</option>
+                  <option value="3 Months">3 Months</option>
+                  <option value="6 Months">6 Months</option>
+                  <option value="1 Year">1 Year</option>
+                </select>
+              </div>
+
+              {/* Profit & Margin Boxes (Styled exactly like mockup boxes) */}
+              <div className="col-12">
+                <div className="row g-3 mt-2">
+                  <div className="col-6">
+                    <div className="p-3 text-center rounded-3" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                      <div className="fw-semibold text-muted mb-1" style={{ fontSize: '0.85rem' }}>Profit</div>
+                      <span className="fs-4 fw-bold text-primary">₹{calcProfit.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="col-6">
+                    <div className="p-3 text-center rounded-3" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                      <div className="fw-semibold text-muted mb-1" style={{ fontSize: '0.85rem' }}>Margin</div>
+                      <span className="fs-4 fw-bold text-primary">{calcMargin.toFixed(2)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="col-12">
+                <label className="form-label fw-semibold">Description</label>
+                <textarea className="form-control" rows="3" placeholder="Product description..."
+                  value={attrs.description || ''} onChange={e => setAttr('description', e.target.value)}></textarea>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="d-flex gap-2">
+            <button type="submit" className="btn btn-primary px-4 py-2 fw-semibold">
+              💾 Save Product
+            </button>
+            <button type="button" className="btn btn-outline-secondary px-4 py-2" onClick={() => navigate('/products?category_group=other')}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // ── Layout 2: Mobile / Default products layout ───────────────────────────
   return (
     <div>
       <div className="page-header">
         <h2>{id ? '✏️ Edit' : '➕ Add'} Product</h2>
-        <button onClick={() => navigate('/products')} className="btn btn-outline-secondary btn-sm">← Back</button>
+        <button type="button" onClick={() => navigate(category_group ? `/products?category_group=${category_group}` : '/products')} className="btn btn-outline-secondary btn-sm">← Back</button>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -182,7 +572,7 @@ export default function ProductForm() {
               <label className="form-label fw-semibold">Category <span className="text-danger">*</span></label>
               <select className="form-select" required value={form.category_id} onChange={handleCategoryChange}>
                 <option value="">Select category</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div className="col-12 col-md-6">
@@ -311,7 +701,7 @@ export default function ProductForm() {
           <button type="submit" className="btn btn-primary px-4 py-2 fw-semibold">
             💾 {id ? 'Update Product' : 'Save Product'}
           </button>
-          <button type="button" className="btn btn-outline-secondary" onClick={() => navigate('/products')}>
+          <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(category_group ? `/products?category_group=${category_group}` : '/products')}>
             Cancel
           </button>
           {profit !== null && (

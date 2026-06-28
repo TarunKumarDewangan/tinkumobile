@@ -33,6 +33,7 @@ class ProductResource extends JsonResource
             'stock' => $this->whenLoaded('inventory', fn() => $this->inventory->sum('stock')),
             'condition' => $this->condition,
             'location' => $this->location,
+            'subcategory' => $this->subcategory,
         ];
     }
 }

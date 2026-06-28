@@ -17,7 +17,8 @@ export default function OpeningStockForm({
   isOwner, 
   loading, 
   setLoading,
-  onSuccess 
+  onSuccess,
+  category_group = 'new_mobile'
 }) {
   const [showBulkScan, setShowBulkScan] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
@@ -29,7 +30,7 @@ export default function OpeningStockForm({
     newItems[i][field] = val;
     
     // Auto-split IMEIs if they are comma/space/tab-separated
-    if (field === 'imei' && (val.includes(',') || val.includes('\n') || val.includes('\t') || (val.includes(' ') && val.trim().split(/[\s,]+/).length > 1))) {
+    if (category_group !== 'other' && field === 'imei' && (val.includes(',') || val.includes('\n') || val.includes('\t') || (val.includes(' ') && val.trim().split(/[\s,]+/).length > 1))) {
       const imeis = val.split(/[\s,\t\r\n]+/).filter(Boolean);
       if (imeis.length > 1) {
           const baseItem = { ...newItems[i] };
@@ -44,6 +45,16 @@ export default function OpeningStockForm({
           newItems.splice(i + 1, 0, ...newRows);
           setOpeningStockItems(newItems);
           return;
+      }
+    }
+
+    if (field === 'is_new' && val) {
+      if (category_group === 'other') {
+        const accessoryCat = categories.find(c => c.slug === 'accessory' || c.id == 3);
+        newItems[i].category_id = accessoryCat ? accessoryCat.id : (categories.filter(c => c.slug !== 'mobile-new' && c.slug !== 'mobile-old')[0]?.id || '');
+      } else {
+        const newMobileCat = categories.find(c => c.slug === 'mobile-new' || c.name?.toLowerCase().includes('new'));
+        newItems[i].category_id = newMobileCat ? newMobileCat.id : (categories[0]?.id || '');
       }
     }
 
@@ -270,7 +281,30 @@ export default function OpeningStockForm({
                     </label>
                   </div>
                   {item.is_new ? (
-                    <input type="text" className="pf-inp" placeholder="PRODUCT NAME" required value={item.new_product_name} onChange={e => updateOpeningItem(i, 'new_product_name', e.target.value.toUpperCase())} />
+                    <>
+                      <input type="text" className="pf-inp" placeholder="PRODUCT NAME" required value={item.new_product_name} onChange={e => updateOpeningItem(i, 'new_product_name', e.target.value.toUpperCase())} />
+                      <div className="mt-1">
+                        <select 
+                          className="pf-inp" 
+                          style={{ fontSize: '0.72rem', padding: '4px 8px' }}
+                          required 
+                          value={item.category_id || ''} 
+                          onChange={e => updateOpeningItem(i, 'category_id', e.target.value)}
+                        >
+                          <option value="">— SELECT CATEGORY —</option>
+                          {categories
+                            .filter(c => {
+                              if (category_group === 'other') {
+                                return c.slug !== 'mobile-new' && c.slug !== 'mobile-old';
+                              } else {
+                                return c.slug === 'mobile-new' || c.slug === 'mobile-old';
+                              }
+                            })
+                            .map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)
+                          }
+                        </select>
+                      </div>
+                    </>
                   ) : (
                     <select className="pf-inp" required value={item.product_id} onChange={e => updateOpeningItem(i, 'product_id', e.target.value)}>
                       <option value="">— CHOOSE PRODUCT —</option>
@@ -280,38 +314,51 @@ export default function OpeningStockForm({
                 </div>
 
                 <div className="col-12 col-md-4">
-                  <span className="pf-lbl">IMEI / Serial Numbers</span>
+                  <span className="pf-lbl">{category_group === 'other' ? 'Serial / Batch (Optional)' : 'IMEI / Serial Numbers'}</span>
                   <div className="d-flex flex-column gap-1">
-                    {[...Array(item.quantity || 1)].map((_, idx) => {
-                      const imeis = item.imei ? item.imei.split(/[\s,]+/).filter(Boolean) : [];
-                      return (
-                        <div key={idx} style={{display:'flex',gap:4}}>
-                          <input 
-                            type="text" 
-                            className="pf-inp" 
-                            style={{fontSize:'.72rem',padding:'4px 8px'}}
-                            placeholder={`IMEI ${idx + 1}`} 
-                            value={imeis[idx] || ''} 
-                            onChange={e => {
-                              const currentImeis = [...imeis];
-                              currentImeis[idx] = e.target.value.toUpperCase();
-                              updateOpeningItem(i, 'imei', currentImeis.join(' '));
-                            }} 
-                            onPaste={e => {
-                              const pastedText = e.clipboardData.getData('text');
-                              const splitImeis = pastedText.split(/[\s,]+/).filter(Boolean);
-                              if (splitImeis.length > 1) {
-                                  e.preventDefault();
-                                  updateOpeningItem(i, 'imei', splitImeis.join(','));
-                              }
-                            }}
-                          />
-                          {idx === 0 && (
-                            <button type="button" onClick={() => setScanner({ show: true, itemIndex: i })} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:7,padding:'0 9px',cursor:'pointer',fontSize:'.8rem'}}>📷</button>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {category_group === 'other' ? (
+                      <div style={{display:'flex',gap:4}}>
+                        <input 
+                          type="text" 
+                          className="pf-inp" 
+                          style={{fontSize:'.72rem',padding:'4px 8px'}}
+                          placeholder="ENTER SERIAL OR BATCH..." 
+                          value={item.imei || ''} 
+                          onChange={e => updateOpeningItem(i, 'imei', e.target.value.toUpperCase())} 
+                        />
+                      </div>
+                    ) : (
+                      [...Array(item.quantity || 1)].map((_, idx) => {
+                        const imeis = item.imei ? item.imei.split(/[\s,]+/).filter(Boolean) : [];
+                        return (
+                          <div key={idx} style={{display:'flex',gap:4}}>
+                            <input 
+                              type="text" 
+                              className="pf-inp" 
+                              style={{fontSize:'.72rem',padding:'4px 8px'}}
+                              placeholder={`IMEI ${idx + 1}`} 
+                              value={imeis[idx] || ''} 
+                              onChange={e => {
+                                const currentImeis = [...imeis];
+                                currentImeis[idx] = e.target.value.toUpperCase();
+                                updateOpeningItem(i, 'imei', currentImeis.join(' '));
+                              }} 
+                              onPaste={e => {
+                                const pastedText = e.clipboardData.getData('text');
+                                const splitImeis = pastedText.split(/[\s,]+/).filter(Boolean);
+                                if (splitImeis.length > 1) {
+                                    e.preventDefault();
+                                    updateOpeningItem(i, 'imei', splitImeis.join(','));
+                                }
+                              }}
+                            />
+                            {idx === 0 && (
+                              <button type="button" onClick={() => setScanner({ show: true, itemIndex: i })} style={{background:'#6366f1',border:'none',color:'#fff',borderRadius:7,padding:'0 9px',cursor:'pointer',fontSize:'.8rem'}}>📷</button>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 
@@ -414,6 +461,7 @@ export default function OpeningStockForm({
         categories={categories}
         shops={shops}
         onSuccess={onSuccess}
+        category_group={category_group}
       />
     </form>
   );

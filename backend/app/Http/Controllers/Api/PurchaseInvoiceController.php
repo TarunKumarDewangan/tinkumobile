@@ -39,6 +39,26 @@ class PurchaseInvoiceController extends Controller
         if ($request->status) $query->where('status', $request->status);
         if ($request->supplier_id) $query->where('supplier_id', $request->supplier_id);
 
+        if ($request->category_id) {
+            $query->whereHas('items.product', fn($q) => $q->where('category_id', $request->category_id));
+        }
+        if ($request->category_group) {
+            $group = $request->category_group;
+            if ($group === 'new_mobile') {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-NEW', 'mobile-new']);
+                });
+            } elseif ($group === 'old_mobile') {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']);
+                });
+            } elseif ($group === 'other') {
+                $query->whereHas('items.product.category', function($q) {
+                    $q->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']);
+                });
+            }
+        }
+
         // Attribute Filters
         if ($request->ram) {
             $query->whereHas('items', fn($q) => $q->where('ram', 'like', "%{$request->ram}%"));
@@ -113,6 +133,12 @@ class PurchaseInvoiceController extends Controller
             'items.*.min_selling_price' => 'nullable|numeric|min:0',
             'items.*.max_selling_price' => 'nullable|numeric|min:0',
             'items.*.incentive_amount' => 'nullable|numeric|min:0',
+            'items.*.subcategory'      => 'nullable|string|max:255',
+            'items.*.location'         => 'nullable|string|max:255',
+            'items.*.gst_rate'         => 'nullable|string|max:50',
+            'items.*.warranty'         => 'nullable|string|max:255',
+            'items.*.description'      => 'nullable|string',
+            'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
 
         return DB::transaction(function () use ($data, $shopId, $user) {
@@ -174,10 +200,16 @@ class PurchaseInvoiceController extends Controller
                             'sku'            => 'AUTO-' . strtoupper(substr(uniqid(), -6)),
                             'purchase_price' => $item['unit_price'],
                             'selling_price'  => $item['selling_price'] ?? ($item['unit_price'] * 1.2),
+                            'subcategory'    => $item['subcategory'] ?? null,
+                            'location'       => $item['location'] ?? null,
                             'attributes'     => [
-                                'ram'     => $item['ram'] ?? null,
-                                'storage' => $item['storage'] ?? null,
-                                'color'   => $item['color'] ?? null,
+                                'ram'         => $item['ram'] ?? null,
+                                'storage'     => $item['storage'] ?? null,
+                                'color'       => $item['color'] ?? null,
+                                'brand'       => $item['brand_name'] ?? null,
+                                'gst_rate'    => $item['gst_rate'] ?? null,
+                                'warranty'    => $item['warranty'] ?? null,
+                                'description' => $item['description'] ?? null,
                             ],
                             'min_selling_price' => $item['min_selling_price'] ?? null,
                             'max_selling_price' => $item['max_selling_price'] ?? null,
@@ -198,7 +230,20 @@ class PurchaseInvoiceController extends Controller
                         if (isset($item['min_selling_price'])) $p->min_selling_price = $item['min_selling_price'];
                         if (isset($item['max_selling_price'])) $p->max_selling_price = $item['max_selling_price'];
                         if (isset($item['wholeseller_price'])) $p->wholeseller_price = $item['wholeseller_price'];
-                        if (isset($item['incentive_amount'])) $p->incentive_amount = $item['incentive_amount'];
+                        if (isset($item['incentive_amount']))  $p->incentive_amount  = $item['incentive_amount'];
+                        if (isset($item['subcategory']))       $p->subcategory       = $item['subcategory'];
+                        if (isset($item['location']))          $p->location          = $item['location'];
+                        
+                        $attrs = $p->attributes ?? [];
+                        if (isset($item['ram']))         $attrs['ram']         = $item['ram'];
+                        if (isset($item['storage']))     $attrs['storage']     = $item['storage'];
+                        if (isset($item['color']))       $attrs['color']       = $item['color'];
+                        if (isset($item['brand_name']))  $attrs['brand']       = $item['brand_name'];
+                        if (isset($item['gst_rate']))    $attrs['gst_rate']    = $item['gst_rate'];
+                        if (isset($item['warranty']))    $attrs['warranty']    = $item['warranty'];
+                        if (isset($item['description'])) $attrs['description'] = $item['description'];
+                        $p->attributes = $attrs;
+                        
                         $p->save();
                     }
                 }
@@ -289,6 +334,12 @@ class PurchaseInvoiceController extends Controller
             'items.*.min_selling_price' => 'nullable|numeric|min:0',
             'items.*.max_selling_price' => 'nullable|numeric|min:0',
             'items.*.incentive_amount' => 'nullable|numeric|min:0',
+            'items.*.subcategory'      => 'nullable|string|max:255',
+            'items.*.location'         => 'nullable|string|max:255',
+            'items.*.gst_rate'         => 'nullable|string|max:50',
+            'items.*.warranty'         => 'nullable|string|max:255',
+            'items.*.description'      => 'nullable|string',
+            'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
 
         return DB::transaction(function () use ($data, $purchaseInvoice) {
@@ -336,10 +387,16 @@ class PurchaseInvoiceController extends Controller
                             'sku'            => 'AUTO-' . strtoupper(substr(uniqid(), -6)),
                             'purchase_price' => $item['unit_price'],
                             'selling_price'  => $item['selling_price'] ?? ($item['unit_price'] * 1.2),
+                            'subcategory'    => $item['subcategory'] ?? null,
+                            'location'       => $item['location'] ?? null,
                             'attributes'     => [
-                                'ram'     => $item['ram'] ?? null,
-                                'storage' => $item['storage'] ?? null,
-                                'color'   => $item['color'] ?? null,
+                                'ram'         => $item['ram'] ?? null,
+                                'storage'     => $item['storage'] ?? null,
+                                'color'       => $item['color'] ?? null,
+                                'brand'       => $item['brand_name'] ?? null,
+                                'gst_rate'    => $item['gst_rate'] ?? null,
+                                'warranty'    => $item['warranty'] ?? null,
+                                'description' => $item['description'] ?? null,
                             ],
                             'min_selling_price' => $item['min_selling_price'] ?? null,
                             'max_selling_price' => $item['max_selling_price'] ?? null,
@@ -360,6 +417,19 @@ class PurchaseInvoiceController extends Controller
                         if (isset($item['max_selling_price'])) $p->max_selling_price = $item['max_selling_price'];
                         if (isset($item['wholeseller_price'])) $p->wholeseller_price = $item['wholeseller_price'];
                         if (isset($item['incentive_amount']))  $p->incentive_amount  = $item['incentive_amount'];
+                        if (isset($item['subcategory']))       $p->subcategory       = $item['subcategory'];
+                        if (isset($item['location']))          $p->location          = $item['location'];
+                        
+                        $attrs = $p->attributes ?? [];
+                        if (isset($item['ram']))         $attrs['ram']         = $item['ram'];
+                        if (isset($item['storage']))     $attrs['storage']     = $item['storage'];
+                        if (isset($item['color']))       $attrs['color']       = $item['color'];
+                        if (isset($item['brand_name']))  $attrs['brand']       = $item['brand_name'];
+                        if (isset($item['gst_rate']))    $attrs['gst_rate']    = $item['gst_rate'];
+                        if (isset($item['warranty']))    $attrs['warranty']    = $item['warranty'];
+                        if (isset($item['description'])) $attrs['description'] = $item['description'];
+                        $p->attributes = $attrs;
+                        
                         $p->save();
                     }
                 }
@@ -516,7 +586,15 @@ class PurchaseInvoiceController extends Controller
                 }
             })
             ->whereHas('product', function ($q) use ($request) {
-                $q->where('category_id', 1); // Mobile
+                if ($request->category_id) {
+                    $q->where('category_id', $request->category_id);
+                } elseif ($request->category_group === 'other') {
+                    $q->whereNotIn('category_id', [1, 2]);
+                } elseif ($request->category_group === 'old_mobile') {
+                    $q->where('category_id', 2);
+                } else {
+                    $q->where('category_id', 1);
+                }
                 if ($request->search) {
                     $q->where('name', 'like', "%{$request->search}%");
                 }

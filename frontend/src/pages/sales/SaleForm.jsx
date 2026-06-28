@@ -31,6 +31,7 @@ export default function SaleForm() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const isOldMobileSale = location.pathname.includes('/old-mobiles');
+  const category_group = searchParams.get('category_group') || (isOldMobileSale ? 'old_mobile' : 'new_mobile');
 
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -171,12 +172,16 @@ export default function SaleForm() {
     if (imei && products.length > 0) {
       handleImeiPreFill(imei);
     } else if (productIdParam && products.length > 0 && items.length === 0) {
-      const p = products.find(prod => prod.product_id.toString() === productIdParam);
+      const p = products.find(prod => 
+        (prod.product_id && prod.product_id.toString() === productIdParam) ||
+        (prod.id && prod.id.toString() === productIdParam)
+      );
       if (p) {
         setItems([{
           selection_id: p.id,
-          product_id: p.product_id,
+          product_id: p.product_id || p.id,
           product_name: p.name || '',
+          brand_name: (p.brand?.name || p.attributes?.brand || '').trim(),
           imei: p.imei || p.attributes?.imei || '',
           imeis: [p.imei || p.attributes?.imei || ''],
           ram: p.attributes?.ram || '',
@@ -188,7 +193,13 @@ export default function SaleForm() {
           min_selling_price: p.min_selling_price || 0,
           max_selling_price: p.max_selling_price || 0
         }]);
-        setSearchParams({ category: 'mobile-old' }, { replace: true });
+        const newParams = {};
+        if (category_group) {
+          newParams.category_group = category_group;
+        } else {
+          newParams.category = 'mobile-old';
+        }
+        setSearchParams(newParams, { replace: true });
       }
     }
   }, [products]);
@@ -198,10 +209,22 @@ export default function SaleForm() {
       const { data } = await api.get(`/products?imei=${imei}&group_by_config=false`);
       if (data && data.length > 0) {
         const p = data[0];
+        // Find best matching product variation in frontend products list
+        let matchedProduct = products.find(px => 
+          px.name.toUpperCase() === p.name.toUpperCase() &&
+          String(px.attributes?.ram || '') === String(p.attributes?.ram || '') &&
+          String(px.attributes?.storage || '') === String(p.attributes?.storage || '') &&
+          String(px.attributes?.color || '').toUpperCase() === String(p.attributes?.color || '').toUpperCase()
+        );
+        
+        const selId = matchedProduct ? matchedProduct.id : (p.product_id || p.id);
+        const prodId = matchedProduct ? (matchedProduct.product_id || matchedProduct.id) : (p.product_id || p.id);
+
         setItems([{
-          selection_id: p.id,
-          product_id: p.product_id || p.id,
+          selection_id: selId,
+          product_id: prodId,
           product_name: p.name || '',
+          brand_name: (p.brand?.name || p.attributes?.brand || '').trim(),
           imei: p.imei || p.attributes?.imei || imei,
           imeis: [p.imei || p.attributes?.imei || imei],
           ram: p.attributes?.ram || '',
@@ -261,6 +284,7 @@ export default function SaleForm() {
           selection_id: i.product_id,
           product_id: i.product_id,
           product_name: i.product?.name || '',
+          brand_name: (i.product?.brand?.name || i.product?.attributes?.brand || '').trim(),
           imei: i.imei || '',
           imeis: itemImeis,
           ram: i.ram || '',
@@ -299,16 +323,15 @@ export default function SaleForm() {
   const loadProducts = async (shopId) => {
     if (!shopId) return;
     try {
-      const categoryFilter = searchParams.get('category');
-      const params = { shop_id: shopId };
+      const params = { shop_id: shopId, category_group };
       
-      if (categoryFilter !== 'mobile-old') {
+      if (category_group === 'new_mobile') {
         params.group_by_config = 'false';
       }
       
       const { data } = await api.get('/products', { params });
       
-      if (categoryFilter === 'mobile-old') {
+      if (category_group === 'old_mobile') {
         const productsData = data.data || data;
         const oldMobiles = productsData.filter(p => 
           p.category?.slug === 'MOBILE-OLD' || 
@@ -364,14 +387,26 @@ export default function SaleForm() {
         setScanResult(null); 
     }
   };
-
   const addScannedItem = (existing = null) => {
     const p = existing || scanResult;
     if (!p) return;
+
+    // Find best matching product variation in frontend products list
+    let matchedProduct = products.find(px => 
+      px.name.toUpperCase() === p.name.toUpperCase() &&
+      String(px.attributes?.ram || '') === String(p.attributes?.ram || '') &&
+      String(px.attributes?.storage || '') === String(p.attributes?.storage || '') &&
+      String(px.attributes?.color || '').toUpperCase() === String(p.attributes?.color || '').toUpperCase()
+    );
+    
+    const selId = matchedProduct ? matchedProduct.id : (p.product_id || p.id);
+    const prodId = matchedProduct ? (matchedProduct.product_id || matchedProduct.id) : (p.product_id || p.id);
+
     const newItem = {
-        selection_id: p.id,
-        product_id: p.product_id,
+        selection_id: selId,
+        product_id: prodId,
         product_name: p.name || '',
+        brand_name: (p.brand?.name || p.attributes?.brand || '').trim(),
         imei: p.imei || p.attributes?.imei || '',
         imeis: [p.imei || p.attributes?.imei || ''],
         ram: p.attributes?.ram || '',
@@ -383,8 +418,6 @@ export default function SaleForm() {
         min_selling_price: p.min_selling_price || 0,
         max_selling_price: p.max_selling_price || 0
     };
-    
-    // Always append to list
     if (!items.find(it => it.imei && it.imei === newItem.imei)) {
        setItems([...items, newItem]);
     } else {
@@ -465,13 +498,14 @@ export default function SaleForm() {
       // Find product by ID or by generated Name string
       const p = products.find(p => 
         p.id == val || 
-        (p.name + " (" + (p.attributes?.ram || '') + "/" + (p.attributes?.storage || '') + "/" + (p.attributes?.color || '') + ") / IMEI: " + (p.imei || p.attributes?.imei || '')).toUpperCase() === val.toUpperCase()
+        (getProductFullName(p) + " (" + (p.attributes?.ram || '') + "/" + (p.attributes?.storage || '') + "/" + (p.attributes?.color || '') + ") / IMEI: " + (p.imei || p.attributes?.imei || '')).toUpperCase() === val.toUpperCase()
       );
 
       if (p) {
           arr[i].selection_id = p.id;
           arr[i].product_id = p.product_id || p.id;
           arr[i].product_name = p.name || '';
+          arr[i].brand_name = (p.brand?.name || p.attributes?.brand || '').trim();
           arr[i].unit_price = (priceMode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0);
           arr[i].base_price = p.purchase_price || 0;
           arr[i].min_selling_price = p.min_selling_price || 0,
@@ -490,16 +524,18 @@ export default function SaleForm() {
     }
     if (field === 'quantity') {
       const qty = parseInt(val) || 1;
-      const currentImeis = arr[i].imeis || [arr[i].imei || ''];
-      const newImeis = [...currentImeis];
-      if (newImeis.length < qty) {
-        while (newImeis.length < qty) {
-          newImeis.push('');
+      if (category_group !== 'other') {
+        const currentImeis = arr[i].imeis || [arr[i].imei || ''];
+        const newImeis = [...currentImeis];
+        if (newImeis.length < qty) {
+          while (newImeis.length < qty) {
+            newImeis.push('');
+          }
+        } else if (newImeis.length > qty) {
+          newImeis.splice(qty);
         }
-      } else if (newImeis.length > qty) {
-        newImeis.splice(qty);
+        arr[i].imeis = newImeis;
       }
-      arr[i].imeis = newImeis;
     }
     if (field === 'imei') {
       if (!arr[i].imeis) arr[i].imeis = [];
@@ -725,7 +761,7 @@ export default function SaleForm() {
     try {
       const finalItems = [];
       items.forEach(item => {
-        if (item.quantity > 1) {
+        if (category_group !== 'other' && item.quantity > 1) {
           const qty = item.quantity;
           const imeis = item.imeis || [item.imei || ''];
           for (let k = 0; k < qty; k++) {
@@ -760,7 +796,11 @@ export default function SaleForm() {
         await api.post('/sale-invoices', finalForm);
         toast.success('✅ Sale recorded successfully');
       }
-      navigate(isOldMobileSale ? '/old-mobiles/sales' : '/sales');
+      if (category_group === 'other') {
+        navigate('/sales?category_group=other');
+      } else {
+        navigate(isOldMobileSale ? '/old-mobiles/sales' : '/sales');
+      }
     } catch (e) { 
         toast.error(e.response?.data?.message || 'Error saving sale'); 
     } finally {
@@ -769,17 +809,47 @@ export default function SaleForm() {
     }
   };
 
+  const getProductFullName = (p) => {
+    const brandName = (p.brand?.name || p.attributes?.brand || '').trim().toUpperCase();
+    const prodName = (p.name || '').trim().toUpperCase();
+    return brandName ? `${brandName} ${prodName}` : prodName;
+  };
+
+  const getProductOptionLabel = (p) => {
+    const parts = [];
+    if (p.attributes?.ram) parts.push(p.attributes.ram);
+    if (p.attributes?.storage) parts.push(p.attributes.storage);
+    if (p.attributes?.color) parts.push(p.attributes.color);
+    const attrs = parts.length > 0 ? ` (${parts.join('/')})` : '';
+    const imeiVal = p.imei || p.attributes?.imei;
+    const imeiStr = imeiVal ? ` / IMEI: ${imeiVal}` : '';
+    return `${getProductFullName(p)}${attrs}${imeiStr}`;
+  };
   const getProductDisplayName = (item) => {
-    const found = products.find(px => px.id == item.selection_id || (item.product_id && px.product_id == item.product_id));
+    let found = products.find(px => px.id == item.selection_id);
+    if (!found && item.product_id) {
+      found = products.find(px => px.id == item.product_id || px.product_id == item.product_id);
+    }
+    
+    if (!found && item.product_name) {
+      found = products.find(px => 
+        px.name?.toUpperCase() === item.product_name?.toUpperCase() &&
+        String(px.attributes?.ram || '') === String(item.ram || '') &&
+        String(px.attributes?.storage || '') === String(item.storage || '') &&
+        String(px.attributes?.color || '').toUpperCase() === String(item.color || '').toUpperCase()
+      );
+    }
+
     if (found) {
-      return found.name + " (" + (found.attributes?.ram || '') + "/" + (found.attributes?.storage || '') + "/" + (found.attributes?.color || '') + ") / IMEI: " + (found.imei || found.attributes?.imei || '');
+      const brandStr = found.brand?.name || found.attributes?.brand || '';
+      return `${brandStr ? brandStr + ' ' : ''}${found.name}`.trim().toUpperCase();
     }
     if (item.product_name) {
-      return item.product_name + " (" + (item.ram || '') + "/" + (item.storage || '') + "/" + (item.color || '') + ") / IMEI: " + (item.imei || '');
+      const brandStr = item.brand_name ? `${item.brand_name.toUpperCase()} ` : '';
+      return `${brandStr}${item.product_name.toUpperCase()}`.trim();
     }
     return item.selection_id || '';
   };
-
   const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(newEntity.type);
   const isCustomType = customTypes.includes(newEntity.type);
   const showCustomInput = newEntity.type === 'OTHER' || (!isDefaultType && !isCustomType && newEntity.type !== '');
@@ -788,10 +858,15 @@ export default function SaleForm() {
     <div className="container-fluid py-2">
       <div className="page-header mb-3 d-flex justify-content-between align-items-center">
         <div className="text-uppercase">
-           <h2 className="mb-0 fw-bold">{isOldMobileSale ? (id ? '✍️ EDIT 2ND HAND SALE' : '➕ 2ND HAND SALE ENTRY') : (id ? '✍️ EDIT SALE' : '➕ NEW SALE ENTRY')}</h2>
+           <h2 className="mb-0 fw-bold">
+              {category_group === 'other' 
+                ? (id ? '✍️ EDIT OTHER SALE' : '➕ OTHER SALE ENTRY')
+                : (isOldMobileSale ? (id ? '✍️ EDIT 2ND HAND SALE' : '➕ 2ND HAND SALE ENTRY') : (id ? '✍️ EDIT SALE' : '➕ NEW SALE ENTRY'))
+              }
+           </h2>
            <p className="text-muted small mb-0">RECORD PRODUCT SALES, CONFIGURATIONS AND GST</p>
         </div>
-        <button onClick={() => navigate(isOldMobileSale ? '/old-mobiles/sales' : '/sales')} className="btn btn-outline-secondary btn-sm text-uppercase fw-bold">← Back to List</button>
+        <button onClick={() => navigate(category_group === 'other' ? '/sales?category_group=other' : (isOldMobileSale ? '/old-mobiles/sales' : '/sales'))} className="btn btn-outline-secondary btn-sm text-uppercase fw-bold">← Back to List</button>
       </div>
 
       <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
@@ -909,13 +984,21 @@ export default function SaleForm() {
                                         {showProductList && (
                                             <div className="list-group shadow-sm mt-1 position-absolute w-100 z-3 border animate-fade-in" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                                 {products
-                                                    .filter(p => !productSearch || p.name.toUpperCase().includes(productSearch.toUpperCase()) || (p.imei && p.imei.includes(productSearch.toUpperCase())) || (p.attributes?.imei && p.attributes.imei.includes(productSearch.toUpperCase())))
+                                                    .filter(p => {
+                                                        const fullName = getProductFullName(p);
+                                                        return !productSearch || 
+                                                            fullName.includes(productSearch.toUpperCase()) || 
+                                                            (p.imei && p.imei.includes(productSearch.toUpperCase())) || 
+                                                            (p.attributes?.imei && p.attributes.imei.includes(productSearch.toUpperCase()));
+                                                    })
                                                     .slice(0, 20)
                                                     .map(p => {
+                                                        const fullName = getProductFullName(p);
                                                         const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color) 
                                                             ? `(${p.attributes.ram || '-'}/${p.attributes.storage || '-'}/${p.attributes.color || '-'})`
                                                             : '';
                                                         const imeiSuffix = (p.imei || p.attributes?.imei) ? ` / IMEI: ${p.imei || p.attributes.imei}` : '';
+                                                        const stockStr = p.stock !== undefined ? ` | Stock: ${p.stock}` : (p.current_stock !== undefined ? ` | Stock: ${p.current_stock}` : '');
                                                         return (
                                                             <button key={p.id} type="button" className="list-group-item list-group-item-action py-2 text-uppercase small" 
                                                                 onClick={() => {
@@ -923,8 +1006,8 @@ export default function SaleForm() {
                                                                     setProductSearch('');
                                                                     setShowProductList(false);
                                                                 }}>
-                                                                <div className="fw-bold">{p.name.toUpperCase()} {configStr}</div>
-                                                                <div className="x-small text-muted">{imeiSuffix} | 💰 ₹{p.selling_price}</div>
+                                                                <div className="fw-bold">{fullName} {configStr}</div>
+                                                                <div className="x-small text-muted">{imeiSuffix} | 💰 ₹{p.selling_price}{stockStr}</div>
                                                             </button>
                                                         );
                                                     })}
@@ -996,19 +1079,21 @@ export default function SaleForm() {
                                             />
                                             <datalist id={`productOptions-${i}`}>
                                                 {products.map(p => (
-                                                    <option key={p.id} value={`${p.name.toUpperCase()} (${(p.attributes?.ram || '')}/${(p.attributes?.storage || '')}/${(p.attributes?.color || '')}) / IMEI: ${p.imei || p.attributes?.imei || ''}`} />
+                                                    <option key={p.id} value={getProductOptionLabel(p)} />
                                                 ))}
                                             </datalist>
                                             
                                             <div className="row g-1 text-uppercase">
                                                 <div className="col-12 mb-1">
-                                                    <label className="x-small fw-bold text-primary mb-0">IMEI/SERIAL NUMBER</label>
+                                                    <label className="x-small fw-bold text-primary mb-0">
+                                                        {category_group === 'other' ? 'SERIAL / BATCH (OPTIONAL)' : 'IMEI/SERIAL NUMBER'}
+                                                    </label>
                                                     <input 
                                                         type="text" 
                                                         list={`stockImeis-${i}-0`}
                                                         className="form-control form-control-sm fw-bold border-primary shadow-sm" 
-                                                        placeholder="ENTER 15-DIGIT IMEI..." 
-                                                        value={item.imei} 
+                                                        placeholder={category_group === 'other' ? 'ENTER SERIAL OR BATCH...' : 'ENTER 15-DIGIT IMEI...'} 
+                                                        value={item.imei || ''} 
                                                         onChange={e => updateItem(i,'imei', e.target.value.toUpperCase())} 
                                                     />
                                                     <datalist id={`stockImeis-${i}-0`}>
@@ -1017,7 +1102,7 @@ export default function SaleForm() {
                                                         ))}
                                                     </datalist>
                                                 </div>
-                                                {item.quantity > 1 && Array.from({ length: item.quantity - 1 }).map((_, imeiIdxPlusOne) => {
+                                                {category_group !== 'other' && item.quantity > 1 && Array.from({ length: item.quantity - 1 }).map((_, imeiIdxPlusOne) => {
                                                     const imeiIdx = imeiIdxPlusOne + 1;
                                                     const imeiVal = (item.imeis && item.imeis[imeiIdx]) || '';
                                                     return (

@@ -12,9 +12,11 @@ const Products = lazy(() => import('./pages/products/Products'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
 const Purchases = lazy(() => import('./pages/purchases/Purchases'));
 const PurchaseForm = lazy(() => import('./pages/purchases/PurchaseForm'));
+const MasterPurchaseForm = lazy(() => import('./pages/purchases/MasterPurchaseForm'));
 const PurchaseDetails = lazy(() => import('./pages/purchases/PurchaseDetails'));
 const Sales = lazy(() => import('./pages/sales/Sales'));
 const SaleForm = lazy(() => import('./pages/sales/SaleForm'));
+const MasterSaleForm = lazy(() => import('./pages/sales/MasterSaleForm'));
 const SaleDetails = lazy(() => import('./pages/sales/SaleDetails'));
 const Customers = lazy(() => import('./pages/Customers'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
@@ -102,11 +104,15 @@ function AppRoutes() {
           <Route path="products/:id/edit" element={<ProductForm />} />
           <Route path="purchases" element={<Purchases />} />
           <Route path="purchases/new" element={<PurchaseForm />} />
+          <Route path="purchases/new-master" element={<MasterPurchaseForm />} />
           <Route path="purchases/:id/edit" element={<PurchaseForm />} />
+          <Route path="purchases/:id/edit-master" element={<MasterPurchaseForm />} />
           <Route path="purchases/:id" element={<PurchaseDetails />} />
           <Route path="sales" element={<Sales />} />
           <Route path="sales/new" element={<SaleForm />} />
+          <Route path="sales/new-master" element={<MasterSaleForm />} />
           <Route path="sales/:id/edit" element={<SaleForm />} />
+          <Route path="sales/:id/edit-master" element={<MasterSaleForm />} />
           <Route path="sales/:id" element={<SaleDetails />} />
           <Route path="customers" element={<Customers />} />
           <Route path="suppliers" element={<Suppliers />} />

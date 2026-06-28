@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -7,6 +7,15 @@ import api from '../api/axios';
 const NAV = [
   { section: 'Main' },
   { to: '/', icon: '📊', label: 'Dashboard', perm: 'view_dashboard', end: true },
+  
+  { 
+    section: 'Master Entries', 
+    dropdown: true,
+    children: [
+        { to: '/purchases?category_group=master', icon: '🛒', label: 'Master Purchase', perm: 'view_purchases' },
+        { to: '/sales?category_group=master',     icon: '🧾', label: 'Master Sales',    perm: 'view_sales' },
+    ]
+  },
   
   { 
     section: 'New Mobile', 
@@ -28,17 +37,15 @@ const NAV = [
     ]
   },
   
-  /*
   { 
-    section: 'Other Inventory', 
+    section: 'Other Products', 
     dropdown: true,
     children: [
-        { to: '/products',    icon: '📱', label: 'Products',   perm: 'view_products' },
-        { to: '/sim-cards',   icon: '📶', label: 'SIM Cards',  perm: 'view_sims' },
-        { to: '/gifts',       icon: '🎁', label: 'Gifts',      perm: 'view_gifts' },
+        { to: '/products?category_group=other',    icon: '📱', label: 'Products Entry', perm: 'view_products' },
+        { to: '/purchases?category_group=other',   icon: '🛒', label: 'Purchases',      perm: 'view_purchases' },
+        { to: '/sales?category_group=other',       icon: '🧾', label: 'Sales',          perm: 'view_sales' },
     ]
   },
-  */
 
   { 
     section: 'Services', 
@@ -117,8 +124,48 @@ const BOTTOM_TABS = [
 export default function Layout() {
   const { user, logout, can, isOwner, isAdmin, isManager, hasFullAccess } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Inventory': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
+  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
+  
+  const getNavLinkClass = (to, end) => {
+    try {
+      const currentPath = location.pathname;
+      const currentSearch = new URLSearchParams(location.search);
+      
+      const toUrl = new URL(to, window.location.origin);
+      const toPath = toUrl.pathname;
+      const toSearch = toUrl.searchParams;
+      
+      let pathMatches = false;
+      if (end) {
+        pathMatches = currentPath === toPath;
+      } else {
+        pathMatches = currentPath === toPath || currentPath.startsWith(toPath + '/');
+      }
+      
+      if (!pathMatches) return '';
+      
+      let currentCatGroup = currentSearch.get('category_group');
+      if (currentPath.includes('-master')) {
+        currentCatGroup = 'master';
+      }
+      const toCatGroup = toSearch.get('category_group');
+      
+      const isFilteredRoute = toPath.includes('/purchases') || toPath.includes('/sales') || toPath.includes('/products');
+      if (isFilteredRoute) {
+        const normalizedCurrent = currentCatGroup || 'new_mobile';
+        const normalizedTo = toCatGroup || 'new_mobile';
+        if (normalizedCurrent !== normalizedTo) {
+          return '';
+        }
+      }
+      
+      return 'active';
+    } catch (e) {
+      return '';
+    }
+  };
   
   const toggleSection = (section) => {
     setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
@@ -206,9 +253,10 @@ export default function Layout() {
                         <button className="sidebar-dropdown-toggle" onClick={() => toggleSection(item.section)}>
                             <div className="d-flex align-items-center gap-2">
                                 <span style={{fontSize:'0.9rem'}}>
-                                    {item.section === 'New Mobile' ? '📦' : 
+                                    {item.section === 'Master Entries' ? '🗂️' :
+                                     item.section === 'New Mobile' ? '📦' : 
                                      item.section === 'Old/2nd Mobile' ? '📲' :
-                                     item.section === 'Other Inventory' ? '🗃️' :
+                                     item.section === 'Other Products' ? '🗃️' :
                                      item.section === 'Services' ? '🛠️' :
                                      item.section === 'Business' ? '💼' :
                                      item.section === 'Accounts' ? '🏦' :
@@ -228,7 +276,7 @@ export default function Layout() {
                                             {child.icon} {child.label}
                                         </button>
                                     ) : (
-                                        <NavLink key={child.to} to={child.to} end={child.end} onClick={closeSidebar}>
+                                        <NavLink key={child.to} to={child.to} end={child.end} onClick={closeSidebar} className={() => getNavLinkClass(child.to, child.end)}>
                                             {child.icon} {child.label}
                                         </NavLink>
                                     )
@@ -240,8 +288,8 @@ export default function Layout() {
             }
 
             if (!isVisible(item)) return null;
-            return (
-              <NavLink key={item.to} to={item.to} end={item.end} onClick={closeSidebar}>
+             return (
+              <NavLink key={item.to} to={item.to} end={item.end} onClick={closeSidebar} className={() => getNavLinkClass(item.to, item.end)}>
                 {item.icon} {item.label}
               </NavLink>
             );
@@ -294,7 +342,7 @@ export default function Layout() {
       <nav className="mobile-navbar">
         <div className="mobile-navbar-inner">
           {BOTTOM_TABS.filter(isVisible).map(t => (
-            <NavLink key={t.to} to={t.to} end={t.end} className="mobile-nav-item" onClick={closeSidebar}>
+             <NavLink key={t.to} to={t.to} end={t.end} className={() => `mobile-nav-item ${getNavLinkClass(t.to, t.end)}`} onClick={closeSidebar}>
               <span className="nav-icon">{t.icon}</span>
               {t.label}
             </NavLink>

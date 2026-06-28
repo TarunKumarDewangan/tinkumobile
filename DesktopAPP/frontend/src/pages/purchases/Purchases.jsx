@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
@@ -8,6 +8,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import DataBackupModal from '../../components/DataBackupModal';
 
 export default function Purchases() {
+  const [searchParams] = useSearchParams();
+  const category_group = searchParams.get('category_group') || 'new_mobile';
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [confirmModal, setConfirmModal] = useState({ show: false, id: null, type: '' });
@@ -32,6 +34,11 @@ export default function Purchases() {
   const [activeTab, setActiveTab] = useState('purchases');
   const [availableStock, setAvailableStock] = useState([]);
   const [pendingStock, setPendingStock] = useState([]);
+  const [fullStocksData, setFullStocksData] = useState([]);
+  const [editingStock, setEditingStock] = useState(null);
+  const [showEditStockModal, setShowEditStockModal] = useState(false);
+  const [viewingStock, setViewingStock] = useState(null);
+  const [showViewStockModal, setShowViewStockModal] = useState(false);
   const [loadingStocks, setLoadingStocks] = useState(false);
   const [groupStocks, setGroupStocks] = useState(true);
   const [groupPending, setGroupPending] = useState(true);
@@ -55,6 +62,8 @@ export default function Purchases() {
       loadAvailableStock();
     } else if (activeTab === 'pending') {
       loadPendingStock();
+    } else if (activeTab === 'full') {
+      loadFullStocks();
     }
   }, [filters, activeTab, groupStocks, groupPending]);
 
@@ -75,7 +84,7 @@ export default function Purchases() {
   const loadPurchases = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/purchase-invoices', { params: { ...filters, category_id: 1, with_items: 1 } });
+      const { data } = await api.get('/purchase-invoices', { params: { ...filters, category_group, with_items: 1 } });
       setPurchases(data.data || data); // Fallback for non-paginated or error
     } catch(e) {
       toast.error('Failed to load purchases');
@@ -87,8 +96,7 @@ export default function Purchases() {
   const loadAvailableStock = async () => {
     setLoadingStocks(true);
     try {
-      // Category 1 = Mobile
-      const { data } = await api.get('/products', { params: { ...filters, category_id: 1, group_by_config: groupStocks } });
+      const { data } = await api.get('/products', { params: { ...filters, category_group, group_by_config: groupStocks } });
       setAvailableStock(data.data || data);
     } catch(e) {
       toast.error('Failed to load available stock');
@@ -100,10 +108,22 @@ export default function Purchases() {
   const loadPendingStock = async () => {
     setLoadingStocks(true);
     try {
-      const { data } = await api.get('/purchase-invoices/pending-stocks', { params: { ...filters, group_by_config: groupPending } });
+      const { data } = await api.get('/purchase-invoices/pending-stocks', { params: { ...filters, category_group, group_by_config: groupPending } });
       setPendingStock(data.data || data);
     } catch(e) {
       toast.error('Failed to load pending stock');
+    } finally {
+      setLoadingStocks(false);
+    }
+  };
+
+  const loadFullStocks = async () => {
+    setLoadingStocks(true);
+    try {
+      const { data } = await api.get('/products', { params: { ...filters, category_group, group_by_config: 'false' } });
+      setFullStocksData(data.data || data);
+    } catch(e) {
+      toast.error('Failed to load full stock items');
     } finally {
       setLoadingStocks(false);
     }
@@ -184,10 +204,37 @@ export default function Purchases() {
         await api.delete(`/products/stock/${id}`);
         toast.success('Stock item removed and invoice adjusted');
         loadAvailableStock();
+        loadFullStocks();
         loadPurchases();
       } catch (e) {
         toast.error(e.response?.data?.message || 'Error deleting stock');
       }
+    }
+  };
+
+  const handleEditStockSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/products/stock/${editingStock.id}`, {
+        color: editingStock.color,
+        ram: editingStock.ram,
+        storage: editingStock.storage,
+        imei: editingStock.imei,
+        selling_price: editingStock.selling_price,
+        wholeseller_price: editingStock.wholeseller_price,
+        min_selling_price: editingStock.min_selling_price,
+        incentive_amount: editingStock.incentive_amount,
+        unit_price: editingStock.unit_price,
+        location: editingStock.location
+      });
+      toast.success('Stock item updated successfully');
+      setShowEditStockModal(false);
+      setEditingStock(null);
+      loadFullStocks();
+      loadAvailableStock();
+      loadPurchases();
+    } catch(err) {
+      toast.error(err.response?.data?.message || 'Error updating stock item');
     }
   };
 
@@ -258,14 +305,14 @@ export default function Purchases() {
       {/* Hero Header */}
       <div className="pm-hero">
         <div>
-          <h2>📱 New Mobiles Manager</h2>
-          <p>PURCHASES · INVENTORY · STOCK TRACKING</p>
+          <h2>{category_group === 'master' ? '📊 Master Purchases Manager' : (category_group === 'other' ? '🗃️ Other Products Manager' : '📱 New Mobiles Manager')}</h2>
+          <p>{category_group === 'master' ? 'ALL CATEGORIES · INVENTORY · STOCK TRACKING' : (category_group === 'other' ? 'ACCESSORIES & SIMS · INVENTORY · STOCK' : 'PURCHASES · INVENTORY · STOCK TRACKING')}</p>
         </div>
         <div className="d-flex gap-2">
           <button onClick={() => setShowBackupModal(true)} className="pm-new-btn" style={{background: 'linear-gradient(135deg, #1e293b, #334155)'}}>
             📥 Backup / Restore
           </button>
-          <Link to="/purchases/new" className="pm-new-btn">+ New Purchase</Link>
+          <Link to={category_group === 'master' ? '/purchases/new-master' : (category_group && category_group !== 'master' ? `/purchases/new?category_group=${category_group}` : '/purchases/new?category_group=new_mobile')} className="pm-new-btn">+ New Purchase</Link>
         </div>
       </div>
 
@@ -351,6 +398,7 @@ export default function Purchases() {
         <button className={`pm-tab${activeTab==='purchases'?' active':''}`} onClick={() => setActiveTab('purchases')}>📋 Purchase History</button>
         <button className={`pm-tab${activeTab==='available'?' active':''}`} onClick={() => setActiveTab('available')}>✅ Stocks Available</button>
         <button className={`pm-tab${activeTab==='pending'?' active':''}`} onClick={() => setActiveTab('pending')}>⏳ Stocks Pending</button>
+        <button className={`pm-tab${activeTab==='full'?' active':''}`} onClick={() => setActiveTab('full')}>📦 Full Stocks</button>
       </div>
 
       {/* ── PURCHASE HISTORY ── */}
@@ -442,8 +490,8 @@ export default function Purchases() {
                         {p.status==='ordered' && (
                           <button onClick={() => handleMarkReceived(p)} className="pm-act-btn" style={{background:'#f8fafc',borderColor:'#cbd5e1',color:'#1e293b'}}>✓ Receive</button>
                         )}
-                        <Link to={`/purchases/${p.id}/edit`} className="pm-act-btn">Edit</Link>
-                        <Link to={`/purchases/${p.id}`} className="pm-act-btn">View</Link>
+                        <Link to={category_group === 'master' ? `/purchases/${p.id}/edit-master` : (category_group ? `/purchases/${p.id}/edit?category_group=${category_group}` : `/purchases/${p.id}/edit`)} className="pm-act-btn">Edit</Link>
+                        <Link to={category_group ? `/purchases/${p.id}?category_group=${category_group}` : `/purchases/${p.id}`} className="pm-act-btn">View</Link>
                         <button onClick={() => handleDelete(p.id)} className="pm-act-btn" style={{color:'#b91c1c',borderColor:'#fca5a5'}}>Del</button>
                       </div>
                     </td>
@@ -550,6 +598,128 @@ export default function Purchases() {
         </div>
       )}
 
+      {/* ── FULL STOCKS ── */}
+      {activeTab === 'full' && (
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <h5 className="mb-0 fw-bold text-uppercase" style={{color:'#1e293b', fontSize:'.85rem', letterSpacing:'.5px'}}>📦 Individual Stock Item Inventory</h5>
+            <button className="pm-act-btn" style={{padding:'6px 14px'}} onClick={() => loadFullStocks()}>🔄 Refresh List</button>
+          </div>
+          <div className="pm-table-wrap">
+            <table className="pm-table">
+              <thead>
+                <tr>
+                  <th>Product Details</th>
+                  <th>Specifications</th>
+                  <th>IMEI / Serial</th>
+                  <th style={{textAlign:'right'}}>Purchase Price</th>
+                  <th style={{textAlign:'right'}}>Retail Price</th>
+                  <th style={{textAlign:'right'}}>Wholeseller Price</th>
+                  <th>Location</th>
+                  <th style={{textAlign:'right',width:'280px'}}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingStocks ? (
+                  <tr><td colSpan={8} style={{textAlign:'center',padding:'40px'}}><div className="spinner-border spinner-border-sm"/></td></tr>
+                ) : (fullStocksData||[]).length === 0 ? (
+                  <tr><td colSpan={8} style={{textAlign:'center',padding:'40px',color:'#94a3b8'}}>No stock items found in this view.</td></tr>
+                ) : (fullStocksData||[]).map((p, idx) => {
+                  const hasImei = p.attributes?.imei || p.imei;
+                  return (
+                    <tr key={p.id||idx}>
+                      <td style={{fontWeight:700,color:'#1e293b'}}>
+                        <div style={{fontWeight:800}}>{(p.brand?.name || p.attributes?.brand || '').toUpperCase()} {p.name}</div>
+                        <div className="x-small text-muted" style={{fontSize:'.65rem',marginTop:2}}>{(p.category?.name || p.category?.slug || '').toUpperCase()}</div>
+                      </td>
+                      <td style={{fontSize:'.75rem'}}>
+                        <span style={{background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:4,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{p.attributes?.color||'-'}</span>
+                        <span style={{color:'#475569'}}>{p.attributes?.ram||'-'}/{p.attributes?.storage||'-'}</span>
+                      </td>
+                      <td style={{fontWeight:600,color:'#475569'}}>
+                        {hasImei ? (
+                          <code style={{fontSize:'.75rem',color:'#0f172a'}}>{hasImei}</code>
+                        ) : (
+                          <span className="text-muted small">—</span>
+                        )}
+                      </td>
+                      <td style={{textAlign:'right',fontWeight:700,color:'#475569'}}>₹{parseFloat(p.purchase_price || p.unit_price || 0).toLocaleString('en-IN')}</td>
+                      <td style={{textAlign:'right',fontWeight:700,color:'#16a34a'}}>₹{parseFloat(p.selling_price||0).toLocaleString('en-IN')}</td>
+                      <td style={{textAlign:'right',fontWeight:700,color:'#2563eb'}}>₹{parseFloat(p.wholeseller_price||0).toLocaleString('en-IN')}</td>
+                      <td style={{fontWeight:600,color:'#475569'}}>
+                        📍 {p.location || 'Not Specified'}
+                      </td>
+                      <td style={{textAlign:'right'}}>
+                        <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
+                          <button 
+                            onClick={() => {
+                              const sUrl = category_group === 'master' 
+                                ? `/sales/new-master?product_id=${p.product_id || p.id}&imei=${hasImei || ''}` 
+                                : `/sales/new?category_group=${category_group}&product_id=${p.product_id || p.id}&imei=${hasImei || ''}`;
+                              window.location.href = sUrl;
+                            }} 
+                            className="pm-act-btn"
+                            style={{background:'#22c55e',borderColor:'#22c55e',color:'#fff',fontWeight:800}}
+                          >
+                            🟢 Sell
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setViewingStock(p);
+                              setShowViewStockModal(true);
+                            }} 
+                            className="pm-act-btn"
+                          >
+                            👁️ View
+                          </button>
+                          {isOwner() && (
+                            <>
+                              <button 
+                                onClick={() => {
+                                  setEditingStock({
+                                    id: p.id,
+                                    name: p.name,
+                                    brand: p.brand?.name || p.attributes?.brand || '',
+                                    category: p.category?.name || p.category?.slug || '',
+                                    color: p.attributes?.color || '',
+                                    ram: p.attributes?.ram || '',
+                                    storage: p.attributes?.storage || '',
+                                    imei: hasImei || '',
+                                    purchase_price: p.purchase_price || p.unit_price || 0,
+                                    unit_price: p.purchase_price || p.unit_price || 0,
+                                    selling_price: p.selling_price || 0,
+                                    wholeseller_price: p.wholeseller_price || 0,
+                                    min_selling_price: p.min_selling_price || 0,
+                                    incentive_amount: p.incentive_amount || 0,
+                                    location: p.location || ''
+                                  });
+                                  setShowEditStockModal(true);
+                                }} 
+                                className="pm-act-btn"
+                                style={{color:'#2563eb',borderColor:'#93c5fd'}}
+                              >
+                                📝 Edit
+                              </button>
+                              <button 
+                                onClick={() => setConfirmModal({show:true,id:p.id,type:'delete_stock'})} 
+                                className="pm-act-btn" 
+                                style={{color:'#b91c1c',borderColor:'#fca5a5'}}
+                              >
+                                ❌ Del
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Pro Tip */}
       <div className="pm-tip">
         💡 <strong>PRO TIP:</strong> Orders in <span style={{color:'#f59e0b',fontWeight:700}}>ORDERED</span> status do not affect inventory. Stock is added only when you click <span style={{color:'#059669',fontWeight:700}}>"MARK RECEIVED"</span>.
@@ -563,7 +733,9 @@ export default function Purchases() {
         <Modal.Body style={{padding:'24px',fontSize:'.85rem',color:'#475569'}}>
           {confirmModal.type==='delete'
             ? 'Are you sure you want to delete this purchase order? This will reverse any stock added.'
-            : 'Mark this order as received? Items will be added to inventory stock.'}
+            : confirmModal.type==='delete_stock'
+              ? 'Are you sure you want to delete this stock item? This will remove the item from inventory and adjust the source purchase invoice.'
+              : 'Mark this order as received? Items will be added to inventory stock.'}
         </Modal.Body>
         <Modal.Footer style={{borderTop:'1px solid #f1f5f9',padding:'12px 20px'}}>
           <Button variant="light" className="fw-bold" onClick={() => setConfirmModal({show:false,id:null,type:''})}>Cancel</Button>
@@ -624,6 +796,157 @@ export default function Purchases() {
         <Modal.Footer style={{borderTop:'none',padding:'0 24px 20px'}}>
           <Button variant="light" className="fw-bold" onClick={() => setLocationModal({...locationModal,show:false})}>Cancel</Button>
           <Button className="fw-bold px-4" style={{background:'linear-gradient(135deg,#6366f1,#8b5cf6)',borderColor:'transparent'}} onClick={handleUpdateLocation}>Save Location</Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Edit Stock Modal */}
+      <Modal show={showEditStockModal} onHide={() => { setShowEditStockModal(false); setEditingStock(null); }} centered size="lg">
+        <Modal.Header closeButton style={{background:'linear-gradient(135deg, #1e3a8a, #3b82f6)',borderBottom:'none'}}>
+          <Modal.Title style={{color:'#fff',fontWeight:700,fontSize:'1rem'}}>📝 Edit Stock Item: {editingStock?.name}</Modal.Title>
+        </Modal.Header>
+        <form onSubmit={handleEditStockSubmit}>
+          <Modal.Body style={{padding:'24px'}}>
+            <div className="row g-3">
+              <div className="col-12 col-md-6">
+                <label className="form-label small fw-bold text-muted">PRODUCT NAME</label>
+                <input type="text" className="form-control fw-bold bg-light" value={editingStock?.name || ''} readOnly />
+              </div>
+              <div className="col-6 col-md-3">
+                <label className="form-label small fw-bold text-muted">BRAND</label>
+                <input type="text" className="form-control fw-bold bg-light" value={editingStock?.brand || ''} readOnly />
+              </div>
+              <div className="col-6 col-md-3">
+                <label className="form-label small fw-bold text-muted">CATEGORY</label>
+                <input type="text" className="form-control fw-bold bg-light" value={editingStock?.category || ''} readOnly />
+              </div>
+
+              <div className="col-12 col-md-4">
+                <label className="form-label small fw-bold text-primary">COLOR</label>
+                <input type="text" className="form-control fw-bold" value={editingStock?.color || ''} onChange={e => setEditingStock({...editingStock, color: e.target.value.toUpperCase()})} />
+              </div>
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold text-primary">RAM (GB)</label>
+                <input type="text" className="form-control fw-bold" value={editingStock?.ram || ''} onChange={e => setEditingStock({...editingStock, ram: e.target.value.toUpperCase()})} />
+              </div>
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold text-primary">STORAGE (GB)</label>
+                <input type="text" className="form-control fw-bold" value={editingStock?.storage || ''} onChange={e => setEditingStock({...editingStock, storage: e.target.value.toUpperCase()})} />
+              </div>
+
+              <div className="col-12 col-md-6">
+                <label className="form-label small fw-bold text-primary">IMEI / SERIAL NUMBER</label>
+                <input type="text" className="form-control fw-bold" value={editingStock?.imei || ''} onChange={e => setEditingStock({...editingStock, imei: e.target.value.toUpperCase()})} />
+              </div>
+              <div className="col-12 col-md-6">
+                <label className="form-label small fw-bold text-primary">CURRENT LOCATION</label>
+                <input type="text" className="form-control fw-bold" value={editingStock?.location || ''} onChange={e => setEditingStock({...editingStock, location: e.target.value.toUpperCase()})} placeholder="E.G. COUNTER 1" />
+              </div>
+
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold text-primary">PURCHASE PRICE (BASE)</label>
+                <input type="number" step="0.01" className="form-control fw-bold" value={editingStock?.unit_price || 0} onChange={e => setEditingStock({...editingStock, unit_price: parseFloat(e.target.value) || 0})} />
+              </div>
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold text-primary">RETAIL SELLING PRICE</label>
+                <input type="number" step="0.01" className="form-control fw-bold" value={editingStock?.selling_price || 0} onChange={e => setEditingStock({...editingStock, selling_price: parseFloat(e.target.value) || 0})} />
+              </div>
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold text-primary">WHOLESALE PRICE</label>
+                <input type="number" step="0.01" className="form-control fw-bold" value={editingStock?.wholeseller_price || 0} onChange={e => setEditingStock({...editingStock, wholeseller_price: parseFloat(e.target.value) || 0})} />
+              </div>
+
+              <div className="col-6 col-md-6">
+                <label className="form-label small fw-bold text-primary">MIN SELLING PRICE</label>
+                <input type="number" step="0.01" className="form-control fw-bold" value={editingStock?.min_selling_price || 0} onChange={e => setEditingStock({...editingStock, min_selling_price: parseFloat(e.target.value) || 0})} />
+              </div>
+              <div className="col-6 col-md-6">
+                <label className="form-label small fw-bold text-primary">INCENTIVE / COMMISSION</label>
+                <input type="number" step="0.01" className="form-control fw-bold" value={editingStock?.incentive_amount || 0} onChange={e => setEditingStock({...editingStock, incentive_amount: parseFloat(e.target.value) || 0})} />
+              </div>
+            </div>
+          </Modal.Body>
+          <Modal.Footer style={{borderTop:'1px solid #f1f5f9',padding:'12px 20px'}}>
+            <Button variant="light" className="fw-bold" onClick={() => { setShowEditStockModal(false); setEditingStock(null); }}>Cancel</Button>
+            <Button type="submit" variant="primary" className="fw-bold px-4">Save Changes</Button>
+          </Modal.Footer>
+        </form>
+      </Modal>
+
+      {/* View Stock Modal */}
+      <Modal show={showViewStockModal} onHide={() => { setShowViewStockModal(false); setViewingStock(null); }} centered>
+        <Modal.Header closeButton style={{background:'#1f2937',borderBottom:'none'}}>
+          <Modal.Title style={{color:'#fff',fontWeight:700,fontSize:'1rem'}}>👁️ Stock Item Details</Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{padding:'24px',fontSize:'.82rem'}}>
+          <div className="d-flex flex-column gap-3">
+            <div>
+              <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>Product Name</span>
+              <span className="fw-bold" style={{fontSize:'1rem',color:'#111827'}}>{viewingStock?.brand?.name || viewingStock?.attributes?.brand} {viewingStock?.name}</span>
+            </div>
+            
+            <div className="row g-2">
+              <div className="col-6">
+                <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>Category</span>
+                <span className="fw-bold">{viewingStock?.category?.name || viewingStock?.category?.slug || '—'}</span>
+              </div>
+              <div className="col-6">
+                <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>Location</span>
+                <span className="fw-bold text-primary">📍 {viewingStock?.location || 'Not Specified'}</span>
+              </div>
+            </div>
+
+            <div className="row g-2">
+              <div className="col-4">
+                <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>Color</span>
+                <span className="fw-bold bg-light px-2 py-1 rounded border d-inline-block mt-1">{viewingStock?.attributes?.color || '—'}</span>
+              </div>
+              <div className="col-4">
+                <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>RAM</span>
+                <span className="fw-bold bg-light px-2 py-1 rounded border d-inline-block mt-1">{viewingStock?.attributes?.ram || '—'}</span>
+              </div>
+              <div className="col-4">
+                <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>Storage</span>
+                <span className="fw-bold bg-light px-2 py-1 rounded border d-inline-block mt-1">{viewingStock?.attributes?.storage || '—'}</span>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>IMEI / Serial Number</span>
+              <code style={{fontSize:'.9rem',color:'#0f172a',fontWeight:700}}>{viewingStock?.attributes?.imei || viewingStock?.imei || '—'}</code>
+            </div>
+
+            <hr className="my-1" />
+
+            <div className="row g-2 text-uppercase">
+              <div className="col-6">
+                <span className="text-muted fw-bold d-block" style={{fontSize:'.65rem'}}>Purchase Price</span>
+                <span className="fw-bold text-dark" style={{fontSize:'.95rem'}}>₹{parseFloat(viewingStock?.purchase_price || viewingStock?.unit_price || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="col-6">
+                <span className="text-muted fw-bold d-block" style={{fontSize:'.65rem'}}>Retail Selling Price</span>
+                <span className="fw-bold text-success" style={{fontSize:'.95rem'}}>₹{parseFloat(viewingStock?.selling_price || 0).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div className="row g-2 text-uppercase">
+              <div className="col-6">
+                <span className="text-muted fw-bold d-block" style={{fontSize:'.65rem'}}>Wholesale Price</span>
+                <span className="fw-bold text-primary" style={{fontSize:'.95rem'}}>₹{parseFloat(viewingStock?.wholeseller_price || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="col-6">
+                <span className="text-muted fw-bold d-block" style={{fontSize:'.65rem'}}>Min Selling Price</span>
+                <span className="fw-bold text-danger" style={{fontSize:'.95rem'}}>₹{parseFloat(viewingStock?.min_selling_price || 0).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-muted fw-bold text-uppercase d-block" style={{fontSize:'.65rem'}}>Incentive / Commission</span>
+              <span className="fw-bold">₹{parseFloat(viewingStock?.incentive_amount || 0).toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        </Modal.Body>
+        <Modal.Footer style={{borderTop:'none',padding:'12px 20px'}}>
+          <Button variant="secondary" className="fw-bold px-4" onClick={() => { setShowViewStockModal(false); setViewingStock(null); }}>Close</Button>
         </Modal.Footer>
       </Modal>
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import Select from 'react-select';
@@ -10,6 +10,9 @@ import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import BulkScanModal from '../../components/BulkScanModal';
 
 export default function PurchaseForm() {
+  const [searchParams] = useSearchParams();
+  const category_group = searchParams.get('category_group') || 'new_mobile';
+  const defaultCategoryId = category_group === 'other' ? 3 : 1;
   const [suppliers, setSuppliers] = useState([]);
   const [entitySuppliers, setEntitySuppliers] = useState([]);
   const [products, setProducts]   = useState([]);
@@ -96,9 +99,8 @@ export default function PurchaseForm() {
 
   useEffect(() => {
     loadSuppliers();
-    api.get('/products').then(r  => {
-      // Filter for Mobile New (Category ID: 1)
-      setProducts(r.data.filter(p => p.category_id == 1));
+    api.get('/products', { params: { category_group } }).then(r  => {
+      setProducts(r.data);
     });
     api.get('/categories').then(r => setCategories(r.data));
     api.get('/brands').then(r => setBrands(r.data));
@@ -153,7 +155,7 @@ export default function PurchaseForm() {
             is_new: false,
             new_product_name: '',
             category_id: i.product?.category_id || '',
-            imei_list: i.imei ? i.imei.split(/[\s,]+/).filter(Boolean) : [],
+            imei_list: i.imei ? i.imei.split(/[\s,]+/).filter(Boolean) : (category_group === 'other' ? [''] : []),
             ram: i.ram || '',
             storage: i.storage || '',
             color: i.color || '',
@@ -352,7 +354,9 @@ export default function PurchaseForm() {
     const imeis = [...(a[itemIndex].imei_list || [])];
     imeis[imeiIndex] = value;
     a[itemIndex].imei_list = imeis;
-    a[itemIndex].quantity = imeis.length;
+    if (category_group !== 'other') {
+      a[itemIndex].quantity = imeis.length;
+    }
     setItems(a);
   };
   
@@ -364,16 +368,20 @@ export default function PurchaseForm() {
       setItems(a);
       return;
     }
-    const qty = Math.max(1, Math.min(25, parseInt(newQty) || 1));
-    const currentImeis = [...(a[itemIndex].imei_list || [])];
-    if (qty > currentImeis.length) {
-      const toAdd = qty - currentImeis.length;
-      for (let i = 0; i < toAdd; i++) currentImeis.push('');
-    } else if (qty < currentImeis.length) {
-      currentImeis.splice(qty);
-    }
-    a[itemIndex].imei_list = currentImeis;
+    const qty = Math.max(1, parseInt(newQty) || 1);
     a[itemIndex].quantity = qty;
+    if (category_group !== 'other') {
+      const mobileQty = Math.min(25, qty);
+      a[itemIndex].quantity = mobileQty;
+      const currentImeis = [...(a[itemIndex].imei_list || [])];
+      if (mobileQty > currentImeis.length) {
+        const toAdd = mobileQty - currentImeis.length;
+        for (let i = 0; i < toAdd; i++) currentImeis.push('');
+      } else if (mobileQty < currentImeis.length) {
+        currentImeis.splice(mobileQty);
+      }
+      a[itemIndex].imei_list = currentImeis;
+    }
     setItems(a);
   };
   
@@ -582,17 +590,21 @@ export default function PurchaseForm() {
         is_gst_manual: isManualGst
       };
       
-      // Flatten grouped items so backend receives exactly 1 item per IMEI as expected
+      // Flatten grouped items so backend receives exactly 1 item per IMEI as expected (only for mobiles)
       let flatItems = [];
       items.forEach(it => {
         const { imei_list, ...rest } = it;
-        const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
-        if (imeiArr.length > 0) {
-          imeiArr.forEach(imei => {
-            flatItems.push({ ...rest, imei: imei, quantity: 1 });
-          });
+        if (category_group === 'other') {
+          flatItems.push({ ...rest, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
         } else {
-          flatItems.push({ ...rest, imei: '', quantity: rest.quantity || 1 });
+          const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
+          if (imeiArr.length > 0) {
+            imeiArr.forEach(imei => {
+              flatItems.push({ ...rest, imei: imei, quantity: 1 });
+            });
+          } else {
+            flatItems.push({ ...rest, imei: '', quantity: rest.quantity || 1 });
+          }
         }
       });
       
@@ -609,7 +621,7 @@ export default function PurchaseForm() {
         await api.post('/purchase-invoices', finalForm);
         toast.success(form.status === 'received' ? '✅ Purchase saved and stock updated!' : '📦 Purchase Order saved!');
       }
-      navigate('/purchases');
+      navigate(category_group ? `/purchases?category_group=${category_group}` : '/purchases');
     } catch (e) {
       toast.error(e.response?.data?.message || 'Error saving purchase');
     } finally {
@@ -668,7 +680,7 @@ export default function PurchaseForm() {
           <h2>{id ? '✍️ Edit Purchase' : '🛒 New Purchase'}</h2>
           <p>Manage purchase record and supplier details</p>
         </div>
-        <button type="button" className="pf-back" onClick={() => navigate('/purchases')}>← Back</button>
+        <button type="button" className="pf-back" onClick={() => navigate(category_group ? `/purchases?category_group=${category_group}` : '/purchases')}>← Back</button>
       </div>
 
       {loading ? (
@@ -760,7 +772,7 @@ export default function PurchaseForm() {
                     {items.length > 0 && (
                       <>
                         <button type="button" style={{background:'linear-gradient(135deg,#10b981,#059669)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
-                          onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:1,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
+                          onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
                           ➕ Add Row
                         </button>
                         <button type="button" style={{background:'linear-gradient(135deg,#0ea5e9,#0284c7)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
@@ -780,7 +792,7 @@ export default function PurchaseForm() {
                     <div style={{fontSize:'2.5rem',opacity:.3,marginBottom:8}}>🛒</div>
                     <div style={{fontWeight:700,fontSize:'.82rem',marginBottom:4}}>No items added yet</div>
                     <button type="button" style={{background:'#f1f5f9',border:'1.5px solid #e2e8f0',borderRadius:8,padding:'6px 16px',fontSize:'.75rem',fontWeight:700,cursor:'pointer',color:'#6366f1'}}
-                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:1,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: ''}])}>
+                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: ''}])}>
                       + Add Item
                     </button>
                   </div>
@@ -829,6 +841,22 @@ export default function PurchaseForm() {
                                       />
                                     </div>
                                   </div>
+                                  {item.is_new && category_group === 'other' && (
+                                    <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase' }}>Category:</span>
+                                      <select
+                                        className="form-select form-select-sm"
+                                        style={{ fontSize: '0.75rem', padding: '2px 6px', width: 'auto' }}
+                                        value={item.category_id || ''}
+                                        onChange={e => updateItem(i, 'category_id', parseInt(e.target.value))}
+                                      >
+                                        <option value="">— Select Category —</option>
+                                        {categories.filter(c => c.slug !== 'mobile-new' && c.slug !== 'mobile-old').map(c => (
+                                          <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
                                   
                                   <div style={{display: 'flex', gap: 4, marginBottom: 6}}>
                                     <input ref={el=>ramRefs.current[i]=el} type="text" list="ramOptions" className="pf-inp" style={{padding: '4px 8px', fontSize: '0.75rem', borderRadius: '6px'}} placeholder="RAM" value={item.ram} onChange={e=>updateItem(i,'ram',e.target.value)} tabIndex={baseTabIndex + 2}/>
@@ -842,18 +870,30 @@ export default function PurchaseForm() {
                                       <button type="button" onClick={()=>setScanner({show:true,itemIndex:i})} style={{background:'#6366f1', border:'none', color:'#fff', borderRadius:4, padding:'2px 8px', cursor:'pointer', fontSize:'.65rem', fontWeight:700}}>📷 SCAN</button>
                                     </div>
                                     <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: 4}}>
-                                      {item.imei_list.map((imeiVal, imeiIdx) => (
+                                      {category_group === 'other' ? (
                                         <input
-                                          key={imeiIdx}
                                           type="text"
                                           className="pf-inp"
                                           style={{padding: '3px 6px', fontSize: '0.75rem', borderRadius: '4px', borderColor: '#a5b4fc', color: '#3730a3', fontWeight: 600}}
-                                          placeholder={`IMEI ${imeiIdx + 1}`}
-                                          value={imeiVal}
-                                          onChange={e => updateImei(i, imeiIdx, e.target.value)}
-                                          tabIndex={baseTabIndex + 6 + imeiIdx}
+                                          placeholder="Serial / Batch (optional)"
+                                          value={item.imei_list[0] || ''}
+                                          onChange={e => updateImei(i, 0, e.target.value)}
+                                          tabIndex={baseTabIndex + 6}
                                         />
-                                      ))}
+                                      ) : (
+                                        item.imei_list.map((imeiVal, imeiIdx) => (
+                                          <input
+                                            key={imeiIdx}
+                                            type="text"
+                                            className="pf-inp"
+                                            style={{padding: '3px 6px', fontSize: '0.75rem', borderRadius: '4px', borderColor: '#a5b4fc', color: '#3730a3', fontWeight: 600}}
+                                            placeholder={`IMEI ${imeiIdx + 1}`}
+                                            value={imeiVal}
+                                            onChange={e => updateImei(i, imeiIdx, e.target.value)}
+                                            tabIndex={baseTabIndex + 6 + imeiIdx}
+                                          />
+                                        ))
+                                      )}
                                     </div>
                                   </div>
 
@@ -877,7 +917,7 @@ export default function PurchaseForm() {
                                   </div>
 
                                   <div style={{display: 'flex', gap: 4, justifyContent: 'flex-end'}}>
-                                    <button type="button" onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:1,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])} style={{background:'#e0e7ff', border:'1px solid #c7d2fe', color:'#4338ca', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 9}>➕ NEW ROW</button>
+                                    <button type="button" onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])} style={{background:'#e0e7ff', border:'1px solid #c7d2fe', color:'#4338ca', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 9}>➕ NEW ROW</button>
                                     <button type="button" onClick={()=>duplicateRow(i,'color')} style={{background:'#f0fdf4', border:'1px solid #86efac', color:'#16a34a', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 10}>➕ COLOR</button>
                                     <button type="button" onClick={()=>duplicateRow(i,'specs')} style={{background:'#fefce8', border:'1px solid #fde047', color:'#ca8a04', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 11}>➕ SPECS</button>
                                     <button type="button" onClick={()=>removeItem(i)} style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#ef4444', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 12}>🗑 REMOVE</button>
@@ -889,7 +929,7 @@ export default function PurchaseForm() {
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'center', verticalAlign: 'top', width: '80px'}}>
-                                  <input type="number" className="pf-inp" min="1" max="25" value={item.quantity} onChange={e=>handleQtyChange(i, e.target.value)} onBlur={e=>{if(e.target.value===''||parseInt(e.target.value)<1)handleQtyChange(i,1);}} style={{textAlign:'center', fontWeight:800, padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 5} ref={el=>qtyRefs.current[i]=el}/>
+                                  <input type="number" className="pf-inp" min="1" {...(category_group !== 'other' ? { max: 25 } : {})} value={item.quantity} onChange={e=>handleQtyChange(i, e.target.value)} onBlur={e=>{if(e.target.value===''||parseInt(e.target.value)<1)handleQtyChange(i,1);}} style={{textAlign:'center', fontWeight:800, padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 5} ref={el=>qtyRefs.current[i]=el}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '110px'}}>
@@ -1112,7 +1152,7 @@ export default function PurchaseForm() {
                     </div>
                     
                     <button type="button" style={{background:'#fff',color:'#6366f1',border:'2px dashed #a5b4fc',borderRadius:12,padding:'11px 28px',fontSize:'.8rem',fontWeight:700,cursor:'pointer',width:'100%',marginTop:10}}
-                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:1,imei_list:[],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
+                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
                       + Add More Items
                     </button>
                   </>
@@ -1164,7 +1204,7 @@ export default function PurchaseForm() {
                 </div>
                 
                 <div style={{marginTop:16,display:'flex',justifyContent:'flex-end',gap:8}}>
-                  <button type="button" onClick={()=>navigate('/purchases')} style={{background:'#f1f5f9',border:'1px solid #cbd5e1',color:'#475569',fontWeight:700,fontSize:'.85rem',padding:'10px 24px',borderRadius:10,cursor:'pointer'}}>Cancel</button>
+                  <button type="button" onClick={()=>navigate(category_group ? `/purchases?category_group=${category_group}` : '/purchases')} style={{background:'#f1f5f9',border:'1px solid #cbd5e1',color:'#475569',fontWeight:700,fontSize:'.85rem',padding:'10px 24px',borderRadius:10,cursor:'pointer'}}>Cancel</button>
                   <button type="submit" disabled={loading || submitting} className={`pf-submit${form.status==='received'?' green':''}`} style={{fontSize:'.85rem',padding:'10px 32px'}}>
                     {loading || submitting ? 'Processing...' : id ? `Update ${form.bill_type} Purchase` : (form.status==='received'?`✅ Save & Add Stock`:`📦 Save Order`)}
                   </button>

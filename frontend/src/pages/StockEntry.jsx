@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,6 +15,9 @@ import DuplicateImeiModal from '../components/DuplicateImeiModal';
 import ClearStockModal from './stock/components/ClearStockModal';
 
 export default function StockEntry() {
+  const [searchParams] = useSearchParams();
+  const category_group = searchParams.get('category_group') || 'new_mobile';
+
   const [tab, setTab] = useState('stocks');
   const [filters, setFilters] = useState({
     search: '', supplier_id: '', from: '', to: '', ram: '', storage: '', color: '', model: '', imei: '', group_by_config: true
@@ -32,7 +36,7 @@ export default function StockEntry() {
   const [showClearModal, setShowClearModal] = useState(false);
 
   const { user, isOwner, hasFullAccess } = useAuth();
-  const inventory = useInventory(filters, form, setForm);
+  const inventory = useInventory(filters, form, setForm, category_group);
 
   const handleFilterChange = (name, value) => setFilters(prev => ({ ...prev, [name]: value }));
   const clearFilters = () => setFilters({
@@ -141,8 +145,8 @@ export default function StockEntry() {
 
       <div className="pm-hero">
         <div>
-          <h2>📦 STOCKS</h2>
-          <p>Comprehensive Inventory & Stock Management</p>
+          <h2>📦 {category_group === 'other' ? 'OTHER PRODUCTS STOCKS' : 'STOCKS'}</h2>
+          <p>{category_group === 'other' ? 'Inventory & Stock Entry for Accessories & SIMs' : 'Comprehensive Inventory & Stock Management'}</p>
         </div>
         <div className="d-flex gap-2 align-items-center">
           {hasFullAccess() && (
@@ -211,6 +215,7 @@ export default function StockEntry() {
             loading={loading}
             setLoading={setLoading}
             onSuccess={inventory.refresh}
+            category_group={category_group}
         />
       )}
 
