@@ -248,7 +248,6 @@ export default function MasterPurchaseForm() {
       setSupplierSubmitting(false);
     }
   };
-
   const handleTypeChange = (i, type) => {
     const a = [...items];
     a[i].item_type = type;
@@ -267,8 +266,16 @@ export default function MasterPurchaseForm() {
     a[i].new_product_name = '';
     a[i].brand_id = null;
     setItems(a);
-  };
 
+    if (type === 'other') {
+      setTimeout(() => {
+        const catSelect = document.getElementById(`purchase-item-category-${i}`);
+        if (catSelect) {
+          catSelect.focus();
+        }
+      }, 50);
+    }
+  };
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
   
   const handleCreateBrand = async (inputValue) => {
@@ -706,6 +713,7 @@ export default function MasterPurchaseForm() {
           <div>
             <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '3px' }}>Category *</span>
             <select
+              id={`purchase-item-category-${i}`}
               className="pf-inp"
               style={{ padding: '4px 6px', fontSize: '0.75rem', height: '32px' }}
               value={item.category_id || ''}
