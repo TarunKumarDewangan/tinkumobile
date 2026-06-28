@@ -251,6 +251,7 @@ export default function MasterPurchaseForm() {
       setSupplierSubmitting(false);
     }
   };
+
   const handleTypeChange = (i, type) => {
     const a = [...items];
     a[i].item_type = type;
@@ -258,16 +259,50 @@ export default function MasterPurchaseForm() {
     if (type === 'mobile') {
       a[i].category_id = defaultCategoryId;
       a[i].imei_list = [''];
+      a[i].trade_disc_pct = 3.85;
+      a[i].cash_disc_pct = 2;
     } else {
       const otherCat = categories.find(c => !MOBILE_CATEGORIES.includes(c.slug?.toLowerCase()));
       a[i].category_id = otherCat ? otherCat.id : '';
       a[i].imei_list = [];
       a[i].ram = '';
       a[i].storage = '';
+      a[i].trade_disc_pct = 0;
+      a[i].cash_disc_pct = 0;
     }
     a[i].product_id = '';
     a[i].new_product_name = '';
     a[i].brand_id = null;
+
+    // Recalculate price/unit_price using correct discounts
+    const gst = parseFloat(a[i].calc_gst_rate ?? 18) || 0;
+    const tDisc = parseFloat(a[i].trade_disc_pct) || 0;
+    const cDisc = parseFloat(a[i].cash_disc_pct) || 0;
+    const baseExGst = parseFloat(a[i].rate_ex_gst) || 0;
+    const dp = parseFloat(a[i].dp_inc_gst) || 0;
+    const sp = parseFloat(a[i].selling_price) || 0;
+
+    if (!a[i].apply_gst && sp > 0) {
+      a[i].dp_inc_gst = sp;
+      a[i].rate_ex_gst = sp;
+      const afterTDisc = sp - (sp * tDisc / 100);
+      const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
+      a[i].unit_price = parseFloat(afterCDisc.toFixed(2));
+    } else if (baseExGst > 0) {
+      a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+      a[i].selling_price = a[i].dp_inc_gst;
+      const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
+      const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
+      a[i].unit_price = parseFloat(afterCDisc.toFixed(2));
+    } else if (dp > 0) {
+      const calcBase = dp / (1 + (gst / 100));
+      a[i].rate_ex_gst = parseFloat(calcBase.toFixed(2));
+      a[i].selling_price = dp;
+      const afterTDisc = calcBase - (calcBase * tDisc / 100);
+      const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
+      a[i].unit_price = parseFloat(afterCDisc.toFixed(2));
+    }
+
     setItems(a);
 
     if (type === 'other') {
@@ -279,6 +314,7 @@ export default function MasterPurchaseForm() {
       }, 50);
     }
   };
+
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
   
   const handleCreateBrand = async (inputValue) => {
@@ -996,25 +1032,25 @@ export default function MasterPurchaseForm() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', background: '#f0fdf4', padding: '6px', borderRadius: '8px', border: '1px solid #b7e4c7' }}>
           <div>
             <span style={{ fontSize: '0.58rem', color: '#16a34a', display: 'block', fontWeight: 800, textAlign: 'center' }}>MOP</span>
-            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, borderColor: '#86efac', background: '#fff' }} tabIndex={baseTabIndex + 12} value={item.selling_price} onChange={e=>updateItem(i,'selling_price',parseFloat(e.target.value))} />
+            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, borderColor: '#86efac', background: '#fff' }} tabIndex={baseTabIndex + 15} value={item.selling_price} onChange={e=>updateItem(i,'selling_price',parseFloat(e.target.value))} />
           </div>
           <div>
             <span style={{ fontSize: '0.58rem', color: '#4f46e5', display: 'block', fontWeight: 800, textAlign: 'center' }}>WHOLE.</span>
-            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 13} value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))} />
+            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 16} value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))} />
           </div>
           <div>
             <span style={{ fontSize: '0.58rem', color: '#dc2626', display: 'block', fontWeight: 800, textAlign: 'center' }}>MIN</span>
-            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 14} value={item.min_selling_price} onChange={e=>updateItem(i,'min_selling_price',parseFloat(e.target.value))} />
+            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 17} value={item.min_selling_price} onChange={e=>updateItem(i,'min_selling_price',parseFloat(e.target.value))} />
           </div>
           <div>
             <span style={{ fontSize: '0.58rem', color: '#7c3aed', display: 'block', fontWeight: 800, textAlign: 'center' }}>COMM.</span>
-            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 15} value={item.incentive_amount} onChange={e=>updateItem(i,'incentive_amount',parseFloat(e.target.value))} />
+            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 18} value={item.incentive_amount} onChange={e=>updateItem(i,'incentive_amount',parseFloat(e.target.value))} />
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', marginTop: '2px' }}>
-          <button type="button" onClick={() => setItems([...items, { product_id: '', brand_id: null, is_new: false, new_product_name: '', category_id: defaultCategoryId, imei_list: [''], ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0, wholeseller_price: 0, min_selling_price: 0, max_selling_price: 0, incentive_amount: 0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: '', item_type: 'other', apply_gst: true }])} style={{ background: '#e0e7ff', border: '1px solid #c7d2fe', color: '#4338ca', borderRadius: 6, padding: '3px 8px', fontSize: '.65rem', cursor: 'pointer', fontWeight: 700 }} tabIndex={baseTabIndex + 16}>➕ NEW ROW</button>
-          <button type="button" onClick={() => removeItem(i)} style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: 6, padding: '3px 8px', fontSize: '.65rem', cursor: 'pointer', fontWeight: 700 }} tabIndex={baseTabIndex + 17}>🗑 REMOVE</button>
+          <button type="button" onClick={() => setItems([...items, { product_id: '', brand_id: null, is_new: false, new_product_name: '', category_id: defaultCategoryId, imei_list: [''], ram: '', storage: '', color: '', quantity: 1, unit_price: 0, selling_price: 0, wholeseller_price: 0, min_selling_price: 0, max_selling_price: 0, incentive_amount: 0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 0, cash_disc_pct: 0, rate_ex_gst: '', item_type: 'other', apply_gst: true }])} style={{ background: '#e0e7ff', border: '1px solid #c7d2fe', color: '#4338ca', borderRadius: 6, padding: '3px 8px', fontSize: '.65rem', cursor: 'pointer', fontWeight: 700 }} tabIndex={baseTabIndex + 19}>➕ NEW ROW</button>
+          <button type="button" onClick={() => removeItem(i)} style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: 6, padding: '3px 8px', fontSize: '.65rem', cursor: 'pointer', fontWeight: 700 }} tabIndex={baseTabIndex + 20}>🗑 REMOVE</button>
         </div>
       </div>
     );
@@ -1378,15 +1414,15 @@ export default function MasterPurchaseForm() {
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'center', verticalAlign: 'top', width: '80px'}}>
-                                  <input type="number" className="pf-inp" min="1" {...(needsImei ? { max: 25 } : {})} value={item.quantity} onChange={e=>handleQtyChange(i, e.target.value)} onBlur={e=>{if(e.target.value===''||parseInt(e.target.value)<1)handleQtyChange(i,1);}} style={{textAlign:'center', fontWeight:800, padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 5} ref={el=>qtyRefs.current[i]=el}/>
+                                  <input type="number" className="pf-inp" min="1" {...(needsImei ? { max: 25 } : {})} value={item.quantity} onChange={e=>handleQtyChange(i, e.target.value)} onBlur={e=>{if(e.target.value===''||parseInt(e.target.value)<1)handleQtyChange(i,1);}} style={{textAlign:'center', fontWeight:800, padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={item.item_type === 'other' ? baseTabIndex + 12 : baseTabIndex + 5} ref={el=>qtyRefs.current[i]=el}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '110px'}}>
-                                  <input type="number" className="pf-inp" placeholder="0.00" value={item.dp_inc_gst||''} onChange={e=>updateItem(i,'dp_inc_gst',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 2}/>
+                                  <input type="number" className="pf-inp" placeholder="0.00" value={item.dp_inc_gst||''} onChange={e=>updateItem(i,'dp_inc_gst',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={item.item_type === 'other' ? baseTabIndex + 14 : baseTabIndex + 6 + item.imei_list.length + 2}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '110px'}}>
-                                  <input type="number" className="pf-inp" step=".01" value={item.rate_ex_gst||''} onChange={e=>updateItem(i,'rate_ex_gst',parseFloat(e.target.value))} style={{textAlign:'right', fontWeight:800, color:'#4f46e5', background:'#eef2ff', borderColor:'#c7d2fe', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length}/>
+                                  <input type="number" className="pf-inp" step=".01" value={item.rate_ex_gst||''} onChange={e=>updateItem(i,'rate_ex_gst',parseFloat(e.target.value))} style={{textAlign:'right', fontWeight:800, color:'#4f46e5', background:'#eef2ff', borderColor:'#c7d2fe', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={item.item_type === 'other' ? baseTabIndex + 13 : baseTabIndex + 6 + item.imei_list.length}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'center', verticalAlign: 'top'}}>
@@ -1394,13 +1430,12 @@ export default function MasterPurchaseForm() {
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '85px'}}>
-                                  <input type="number" className="pf-inp" value={item.trade_disc_pct??3.85} onChange={e=>updateItem(i,'trade_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 3}/>
+                                  <input type="number" className="pf-inp" value={item.trade_disc_pct??(item.item_type === 'other' ? 0 : 3.85)} onChange={e=>updateItem(i,'trade_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={item.item_type === 'other' ? baseTabIndex + 21 : baseTabIndex + 6 + item.imei_list.length + 3}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '85px'}}>
-                                  <input type="number" className="pf-inp" value={item.cash_disc_pct??2} onChange={e=>updateItem(i,'cash_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 4}/>
+                                  <input type="number" className="pf-inp" value={item.cash_disc_pct??(item.item_type === 'other' ? 0 : 2)} onChange={e=>updateItem(i,'cash_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={item.item_type === 'other' ? baseTabIndex + 22 : baseTabIndex + 6 + item.imei_list.length + 4}/>
                                 </td>
-
                                 <td style={{border: '1.5px solid #0f172a', padding: '8px 10px', textAlign: 'right', verticalAlign: 'top', width: '120px', fontWeight: 800, fontSize: '0.85rem'}}>
                                   ₹{lineTotal.toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits: 2})}
                                 </td>
