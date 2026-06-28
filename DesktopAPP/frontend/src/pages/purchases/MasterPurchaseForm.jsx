@@ -145,12 +145,6 @@ export default function MasterPurchaseForm() {
         setItems(p.items.map(i => {
           const unit_price = parseFloat(i.unit_price) || 0;
           const gst = parseFloat(i.calc_gst_rate ?? 18) || 0;
-          const tDisc = parseFloat(i.trade_disc_pct ?? 3.85) || 0;
-          const cDisc = parseFloat(i.cash_disc_pct ?? 2) || 0;
-          
-          const factor = (1 - tDisc/100) * (1 - cDisc/100);
-          const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
-          const dp_inc_gst = parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2));
 
           const slug = i.product?.category?.slug?.toLowerCase() || '';
           let derivedItemType = 'mobile';
@@ -163,6 +157,15 @@ export default function MasterPurchaseForm() {
               derivedItemType = 'other';
             }
           }
+
+          const defaultTradeDisc = derivedItemType === 'other' ? 0 : 3.85;
+          const defaultCashDisc = derivedItemType === 'other' ? 0 : 2;
+          const tDisc = parseFloat(i.trade_disc_pct ?? defaultTradeDisc) || 0;
+          const cDisc = parseFloat(i.cash_disc_pct ?? defaultCashDisc) || 0;
+          
+          const factor = (1 - tDisc/100) * (1 - cDisc/100);
+          const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
+          const dp_inc_gst = parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2));
 
           const pAttrs = i.product?.attributes || {};
           return {
