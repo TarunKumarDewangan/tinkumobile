@@ -87,12 +87,14 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // ── 3. Main shop ────────────────────────────────────────────────────
-        $shop = Shop::firstOrCreate(
-            ['name' => 'TinkuMobiles Main Branch'],
+        $shop = Shop::updateOrCreate(
+            ['is_main' => true],
             [
-                'address' => '123 Main Street, City',
-                'phone'   => '9876543210',
+                'name'    => 'Tinku Mobile Dhamtari',
+                'address' => 'Nehru Gardan Complex, Dhamtari',
+                'phone'   => '9098795200',
                 'email'   => 'main@tinkumobile.in',
+                'gstin'   => '22CHZPD5946A1ZC',
                 'is_main' => true,
             ]
         );

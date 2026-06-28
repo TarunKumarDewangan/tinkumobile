@@ -127,17 +127,17 @@ export default function SaleDetails() {
                   {viewMode === 'v1' ? (
                       <div className="card-body p-4 p-md-5">
                           {/* Header Section */}
-                          <div className="d-flex justify-content-between align-items-start mb-4 border-bottom pb-4">
+                           <div className="d-flex justify-content-between align-items-start mb-4 border-bottom pb-4">
                               <div>
-                                  <h1 className="fw-black text-primary mb-1 text-uppercase" style={{ fontSize: '2.5rem' }}>TINKU MOBILE</h1>
-                                  <p className="text-muted small mb-0 text-uppercase">{invoice.shop?.address || 'Premium Mobile Solutions'}</p>
+                                  <h1 className="fw-black text-primary mb-1 text-uppercase" style={{ fontSize: '2.2rem' }}>{(invoice.shop?.name || 'TINKU MOBILE DHAMTARI').toUpperCase()}</h1>
+                                  <p className="text-muted small mb-0 text-uppercase">{invoice.shop?.address || 'NEHRU GARDAN COMPLEX, DHAMTARI'}</p>
                               </div>
-                              <div className="text-end text-uppercase">
+                              <div className="text-end">
                                   <h4 className="fw-bold mb-0">INVOICE</h4>
                                   <div className="fw-bold text-primary">#{invoice.invoice_no}</div>
                                   <div className="small text-muted fw-bold mt-1">DATE: {formatDate(invoice.sale_date)}</div>
                               </div>
-                          </div>
+                           </div>
 
                           {/* Info Section */}
                           <div className="row mb-4 text-uppercase">
@@ -280,10 +280,11 @@ export default function SaleDetails() {
                                       {/* Logo Placeholder like in Photo */}
                                       <div className="bg-primary text-white p-2 rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', fontSize: '1.5rem', fontWeight: 900 }}>TM</div>
                                       <div>
-                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">TINKU MOBILE</h1>
-                                          <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">{invoice.shop?.address || 'Main Road, Local Market, Kanker'}</p>
+                                          <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">{(invoice.shop?.name || 'TINKU MOBILE DHAMTARI').toUpperCase()}</h1>
+                                          <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">{invoice.shop?.address || 'NEHRU GARDAN COMPLEX, DHAMTARI'}</p>
                                           <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">📞 MOBILE: {invoice.shop?.phone || '9098795200'}</p>
-                                          <p className="mb-0 x-small fw-black text-primary text-uppercase">GSTIN: {invoice.shop?.gstin || '22AXIPR7683P1ZJ'}</p>
+                                          <p className="mb-0 x-small fw-black text-primary text-uppercase">GSTIN: {invoice.shop?.gstin || '22CHZPD5946A1ZC'}</p>
+                                          <p className="mb-0 x-small fw-bold text-secondary text-uppercase">State Name: Chhattisgarh, Code: 22</p>
                                       </div>
                                   </div>
                               </div>
