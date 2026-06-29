@@ -9,7 +9,7 @@ class SaleItem extends Model
 {
     public $timestamps = false;
     protected $fillable = [
-        'sale_invoice_id', 'product_id', 'imei', 'ram', 'storage', 'color', 
+        'sale_invoice_id', 'product_id', 'imei', 'ram', 'storage', 'color', 'description', 
         'quantity', 'unit_price', 'total'
     ];
 

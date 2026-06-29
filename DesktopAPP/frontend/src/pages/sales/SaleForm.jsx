@@ -187,6 +187,7 @@ export default function SaleForm() {
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
           color: p.attributes?.color || '',
+          description: p.attributes?.description || '',
           quantity: 1,
           unit_price: p.selling_price || 0,
           base_price: p.purchase_price || 0,
@@ -230,13 +231,13 @@ export default function SaleForm() {
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
           color: p.attributes?.color || '',
+          description: p.attributes?.description || '',
           quantity: 1,
           unit_price: p.selling_price,
           base_price: p.purchase_price || 0,
           min_selling_price: p.min_selling_price || 0,
           max_selling_price: p.max_selling_price || 0
         }]);
-      }
     } catch (e) {}
   };
 
@@ -290,6 +291,7 @@ export default function SaleForm() {
           ram: i.ram || '',
           storage: i.storage || '',
           color: i.color || '',
+          description: i.description || '',
           quantity: itemQty,
           unit_price: i.unit_price,
           base_price: i.product?.purchase_price || 0,
@@ -412,6 +414,7 @@ export default function SaleForm() {
         ram: p.attributes?.ram || '',
         storage: p.attributes?.storage || '',
         color: p.attributes?.color || '',
+        description: p.attributes?.description || '',
         quantity: 1,
         unit_price: (priceMode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0),
         base_price: p.purchase_price || 0,
@@ -445,8 +448,7 @@ export default function SaleForm() {
         } catch (e) {}
     }
   };
-
-  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', imeis: [''], ram: '', storage: '', color: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
+  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', imeis: [''], ram: '', storage: '', color: '', description: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
 
   const getMatchingStockItems = (item, excludeImeiIdx) => {
@@ -514,6 +516,7 @@ export default function SaleForm() {
               arr[i].ram = p.attributes.ram || '';
               arr[i].storage = p.attributes.storage || '';
               arr[i].color = p.attributes.color || '';
+              arr[i].description = p.attributes.description || '';
               arr[i].imei = p.imei || p.attributes.imei || '';
               arr[i].imeis = [p.imei || p.attributes.imei || ''];
           }
@@ -1133,6 +1136,11 @@ export default function SaleForm() {
                                                 <div className="col-4">
                                                     <input type="text" className="form-control form-control-xs" placeholder="COLOR" value={item.color} onChange={e => updateItem(i,'color', e.target.value.toUpperCase())} />
                                                 </div>
+                                                {category_group === 'other' && (
+                                                    <div className="col-12 mt-1">
+                                                        <input type="text" className="form-control form-control-xs" placeholder="DESCRIPTION" value={item.description || ''} onChange={e => updateItem(i,'description', e.target.value.toUpperCase())} />
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div className={`x-small mt-2 fw-bold ${pProfit >= 0 ? 'text-success' : 'text-danger'}`}>

@@ -59,9 +59,9 @@ class ReportController extends Controller
             $discountGiven = (float)($inv->discount ?? 0)
                 + ($inv->is_cash_discount_on_bill ? (float)($inv->cash_discount ?? 0) : 0);
 
-            $grandTotal  = (float)$inv->grand_total;
-            $profit      = $grandTotal - $totalItemCost;
-            $margin      = $grandTotal > 0 ? round(($profit / $grandTotal) * 100, 2) : 0;
+            $revenueExclTax = (float)$inv->total_amount;
+            $profit      = $revenueExclTax - $discountGiven - $totalItemCost;
+            $margin      = $revenueExclTax > 0 ? round(($profit / $revenueExclTax) * 100, 2) : 0;
 
             return [
                 'invoice_no'      => $inv->invoice_no,

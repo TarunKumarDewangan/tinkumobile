@@ -162,12 +162,13 @@ export default function MasterPurchaseForm() {
           const defaultCashDisc = derivedItemType === 'other' ? 0 : 2;
           const tDisc = parseFloat(i.trade_disc_pct ?? defaultTradeDisc) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? defaultCashDisc) || 0;
-          
+          const pAttrs = i.product?.attributes || {};
+          const applyGst = !!pAttrs.gst_rate;
+
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
-          const dp_inc_gst = parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2));
+          const dp_inc_gst = applyGst ? parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2)) : rate_ex_gst;
 
-          const pAttrs = i.product?.attributes || {};
           return {
             item_type: derivedItemType,
             product_id: i.product_id,

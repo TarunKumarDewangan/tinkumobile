@@ -155,7 +155,7 @@ export default function PurchaseForm() {
             is_new: false,
             new_product_name: '',
             category_id: i.product?.category_id || '',
-            imei_list: i.imei ? i.imei.split(/[\s,]+/).filter(Boolean) : (category_group === 'other' ? [''] : []),
+            imei_list: i.imei ? i.imei.split(/[\s,]+/).filter(Boolean) : [''],
             ram: i.ram || '',
             storage: i.storage || '',
             color: i.color || '',
@@ -240,7 +240,7 @@ export default function PurchaseForm() {
   };
 
   const duplicateRow = (i, type) => {
-    const item = { ...items[i], imei_list: [] };
+    const item = { ...items[i], imei_list: [''], quantity: 1 };
     if (type === 'color') {
       item.color = '';
     } else if (type === 'specs') {
@@ -772,7 +772,7 @@ export default function PurchaseForm() {
                     {items.length > 0 && (
                       <>
                         <button type="button" style={{background:'linear-gradient(135deg,#10b981,#059669)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
-                          onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
+                          onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
                           ➕ Add Row
                         </button>
                         <button type="button" style={{background:'linear-gradient(135deg,#0ea5e9,#0284c7)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
@@ -792,7 +792,7 @@ export default function PurchaseForm() {
                     <div style={{fontSize:'2.5rem',opacity:.3,marginBottom:8}}>🛒</div>
                     <div style={{fontWeight:700,fontSize:'.82rem',marginBottom:4}}>No items added yet</div>
                     <button type="button" style={{background:'#f1f5f9',border:'1.5px solid #e2e8f0',borderRadius:8,padding:'6px 16px',fontSize:'.75rem',fontWeight:700,cursor:'pointer',color:'#6366f1'}}
-                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: ''}])}>
+                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: ''}])}>
                       + Add Item
                     </button>
                   </div>
@@ -917,7 +917,7 @@ export default function PurchaseForm() {
                                   </div>
 
                                   <div style={{display: 'flex', gap: 4, justifyContent: 'flex-end'}}>
-                                    <button type="button" onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])} style={{background:'#e0e7ff', border:'1px solid #c7d2fe', color:'#4338ca', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 9}>➕ NEW ROW</button>
+                                    <button type="button" onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])} style={{background:'#e0e7ff', border:'1px solid #c7d2fe', color:'#4338ca', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 9}>➕ NEW ROW</button>
                                     <button type="button" onClick={()=>duplicateRow(i,'color')} style={{background:'#f0fdf4', border:'1px solid #86efac', color:'#16a34a', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 10}>➕ COLOR</button>
                                     <button type="button" onClick={()=>duplicateRow(i,'specs')} style={{background:'#fefce8', border:'1px solid #fde047', color:'#ca8a04', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 11}>➕ SPECS</button>
                                     <button type="button" onClick={()=>removeItem(i)} style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#ef4444', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 12}>🗑 REMOVE</button>
@@ -1152,7 +1152,7 @@ export default function PurchaseForm() {
                     </div>
                     
                     <button type="button" style={{background:'#fff',color:'#6366f1',border:'2px dashed #a5b4fc',borderRadius:12,padding:'11px 28px',fontSize:'.8rem',fontWeight:700,cursor:'pointer',width:'100%',marginTop:10}}
-                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:(category_group === 'other' ? [''] : []),ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
+                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
                       + Add More Items
                     </button>
                   </>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
@@ -31,6 +31,8 @@ export default function SaleDetails() {
 
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const categoryGroup = searchParams.get('category_group') || '';
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   
@@ -114,7 +116,7 @@ export default function SaleDetails() {
             <button onClick={() => setViewMode(viewMode === 'v1' ? 'v2' : 'v1')} className={`btn btn-sm fw-bold border-2 text-uppercase ${viewMode === 'v1' ? 'btn-outline-primary' : 'btn-primary'}`}>
                 {viewMode === 'v1' ? '✨ Switch to Tax Invoice' : '💎 Switch to Standard Bill'}
             </button>
-            <button onClick={() => navigate('/sales')} className="btn btn-outline-secondary btn-sm fw-bold border-2 text-uppercase">← List</button>
+            <button onClick={() => navigate(categoryGroup ? `/sales?category_group=${categoryGroup}` : '/sales')} className="btn btn-outline-secondary btn-sm fw-bold border-2 text-uppercase">← List</button>
             <button onClick={handlePrint} className="btn btn-dark btn-sm fw-bold shadow-sm text-uppercase">🖨️ Print</button>
         </div>
       </div>
@@ -167,6 +169,9 @@ export default function SaleDetails() {
                                               <td className="ps-3 fw-bold text-muted">{i + 1}</td>
                                               <td className="py-2">
                                                   <div className="fw-black text-dark">{getProductFullName(item.product)}</div>
+                                                  {item.description && (
+                                                      <div className="text-muted small fw-bold" style={{ fontSize: '0.85rem' }}>{item.description}</div>
+                                                  )}
                                                    <div className="mt-1 d-flex flex-wrap gap-2 align-items-center">
                                                        {item.imei ? (
                                                             <span className="badge bg-dark text-white px-2 py-1" style={{ fontSize: '0.8rem' }}>IMEI: {item.imei}</span>
@@ -334,17 +339,25 @@ export default function SaleDetails() {
                                   </thead>
                                   <tbody>
                                       {invoice.items?.map((item, i) => {
-                                          const taxable = invoice.calculate_gst ? (parseFloat(item.total) / (1 + (parseFloat(invoice.cgst_rate || 0) + parseFloat(invoice.sgst_rate || 0)) / 100)) : parseFloat(item.total);
-                                          const cgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.cgst_rate || 0) / 100) : 0;
-                                          const sgstPer = invoice.calculate_gst ? (taxable * parseFloat(invoice.sgst_rate || 0) / 100) : 0;
+                                          const shouldApplyGst = invoice.calculate_gst && (item.apply_gst !== false);
+                                          const taxable = shouldApplyGst ? (parseFloat(item.total) / (1 + (parseFloat(invoice.cgst_rate || 0) + parseFloat(invoice.sgst_rate || 0)) / 100)) : parseFloat(item.total);
+                                          const cgstPer = shouldApplyGst ? (taxable * parseFloat(invoice.cgst_rate || 0) / 100) : 0;
+                                          const sgstPer = shouldApplyGst ? (taxable * parseFloat(invoice.sgst_rate || 0) / 100) : 0;
                                           
                                           return (
                                               <tr key={i} className="small text-center align-middle">
                                                   <td>{i + 1}</td>
                                                   <td className="text-start ps-2 py-2">
                                                       <div className="fw-black">{getProductFullName(item.product)}</div>
-                                                      <div className="x-small text-muted fw-bold">
-                                                          {item.imei && <span>Serial No: {item.imei}</span>}
+                                                      {item.description && (
+                                                          <div className="text-muted small fw-bold" style={{ fontSize: '0.85rem' }}>{item.description}</div>
+                                                      )}
+                                                      <div className="x-small text-muted fw-bold mt-1">
+                                                          {item.imei && (
+                                                              <span>
+                                                                  {['mobile-new', 'mobile-old'].includes((item.product?.category?.slug || item.product?.category?.name || '').toLowerCase()) ? 'IMEI' : 'Serial No'}: {item.imei}
+                                                              </span>
+                                                          )}
                                                           {(item.ram || item.storage || item.color) && (
                                                               <div className="opacity-75">CONFIG: {item.ram}/{item.storage}/{item.color}</div>
                                                           )}
@@ -355,7 +368,7 @@ export default function SaleDetails() {
                                                   <td>{parseFloat(item.unit_price).toFixed(2)}</td>
                                                   <td>0.00</td>
                                                   <td className="text-end pe-1">{taxable.toFixed(2)}</td>
-                                                  <td>{parseFloat(invoice.cgst_rate || 0) + parseFloat(invoice.sgst_rate || 0)}</td>
+                                                  <td>{shouldApplyGst ? (parseFloat(invoice.cgst_rate || 0) + parseFloat(invoice.sgst_rate || 0)) : 0}</td>
                                                   <td className="text-end pe-1">{cgstPer.toFixed(2)}</td>
                                                   <td className="text-end pe-1">{sgstPer.toFixed(2)}</td>
                                                   <td className="text-end pe-1 fw-bold">{parseFloat(item.total).toFixed(2)}</td>

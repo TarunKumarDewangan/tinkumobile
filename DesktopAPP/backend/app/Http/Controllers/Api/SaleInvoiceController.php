@@ -122,6 +122,7 @@ class SaleInvoiceController extends Controller
             'items.*.ram'         => 'nullable|string',
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
+            'items.*.description' => 'nullable|string',
             'gift_items'          => 'nullable|array',
             'gift_items.*.gift_product_id' => 'exists:gift_products,id',
             'gift_items.*.quantity'        => 'integer|min:1',
@@ -253,6 +254,7 @@ class SaleInvoiceController extends Controller
                     'ram'             => $item['ram'] ?? null,
                     'storage'         => $item['storage'] ?? null,
                     'color'           => $item['color'] ?? null,
+                    'description'     => $item['description'] ?? null,
                     'quantity'        => $item['quantity'],
                     'unit_price'      => $item['unit_price'],
                     'total'           => $total,
@@ -393,6 +395,7 @@ class SaleInvoiceController extends Controller
             'items.*.ram'         => 'nullable|string',
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
+            'items.*.description' => 'nullable|string',
             'total_paid'             => 'nullable|numeric|min:0',
             'exchange_paid'          => 'nullable|numeric|min:0',
             // Finance/EMI fields
@@ -466,10 +469,12 @@ class SaleInvoiceController extends Controller
                     'ram'             => $item['ram'] ?? null,
                     'storage'         => $item['storage'] ?? null,
                     'color'           => $item['color'] ?? null,
+                    'description'     => $item['description'] ?? null,
                     'quantity'        => $item['quantity'],
                     'unit_price'      => $item['unit_price'],
                     'total'           => $item['quantity'] * $item['unit_price'],
                 ]);
+
                 Inventory::removeStock($saleInvoice->shop_id, $item['product_id'], $item['quantity']);
             }
 
@@ -576,6 +581,7 @@ class SaleInvoiceController extends Controller
                     'ram'             => $item->ram,
                     'storage'         => $item->storage,
                     'color'           => $item->color,
+                    'description'     => $item->description,
                     'quantity'        => $item->quantity,
                     'unit_price'      => $item->unit_price,
                     'total'           => $item->total,

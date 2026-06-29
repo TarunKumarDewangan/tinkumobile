@@ -1,0 +1,1 @@
+var e=e=>{if(!e)return`-`;try{let t=new Date(e);return isNaN(t.getTime())?e:`${String(t.getDate()).padStart(2,`0`)}/${String(t.getMonth()+1).padStart(2,`0`)}/${t.getFullYear()}`}catch{return e}};export{e as t};

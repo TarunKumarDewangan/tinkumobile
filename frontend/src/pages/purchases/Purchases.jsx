@@ -28,7 +28,8 @@ export default function Purchases() {
     storage: '',
     color: '',
     model: '',
-    imei: ''
+    imei: '',
+    description: ''
   });
 
   const [activeTab, setActiveTab] = useState('purchases');
@@ -144,7 +145,8 @@ export default function Purchases() {
       storage: '',
       color: '',
       model: '',
-      imei: ''
+      imei: '',
+      description: ''
     });
   };
 
@@ -343,6 +345,11 @@ export default function Purchases() {
             <input className="pm-finput" placeholder="Search by IMEI" value={filters.imei}
               onChange={e => handleFilterChange('imei', e.target.value)} />
           </div>
+          <div className="col-6 col-md-2">
+            <span className="pm-flabel">📝 Description</span>
+            <input className="pm-finput" placeholder="e.g. SSD, RAM, I3" value={filters.description}
+              onChange={e => handleFilterChange('description', e.target.value.toUpperCase())} />
+          </div>
           <div className="col-4 col-md-1">
             <span className="pm-flabel">🎨 Color</span>
             <input className="pm-finput" placeholder="e.g. BLACK" value={filters.color}
@@ -428,7 +435,7 @@ export default function Purchases() {
                     <td style={{fontSize:'.75rem',maxWidth:280}}>
                       {(() => {
                         // Filter items client-side if any item-level filters are active
-                        const hasItemFilter = filters.model || filters.imei || filters.color || filters.ram || filters.storage;
+                        const hasItemFilter = filters.model || filters.imei || filters.color || filters.ram || filters.storage || filters.description;
                         const filteredAll = hasItemFilter ? (p.items || []).filter(item => {
                           const name = (item.product?.name || '').toUpperCase();
                           if (filters.model && !name.includes(filters.model.toUpperCase())) return false;
@@ -436,6 +443,7 @@ export default function Purchases() {
                           if (filters.color && !(item.color || '').toUpperCase().includes(filters.color.toUpperCase())) return false;
                           if (filters.ram && !(item.ram || '').includes(filters.ram)) return false;
                           if (filters.storage && !(item.storage || '').includes(filters.storage)) return false;
+                          if (filters.description && !(item.product?.attributes?.description || '').toUpperCase().includes(filters.description.toUpperCase())) return false;
                           return true;
                         }) : (p.items || []);
                         const isExpanded = expandedRows[p.id];
@@ -461,7 +469,7 @@ export default function Purchases() {
                                   {[item.ram, item.storage, item.color].filter(Boolean).join(' / ')}
                                   {item.imei && (
                                     <span style={{display:'inline-block',marginLeft:6,color:'#475569',fontWeight:700}}>
-                                      🆔 <Link to={`/sales/new?imei=${item.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{item.imei}</Link>
+                                      🆔 <Link to={category_group === 'master' ? `/sales/new-master?imei=${item.imei}` : `/sales/new?category_group=${category_group}&imei=${item.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{item.imei}</Link>
                                     </span>
                                   )}
                                 </div>
@@ -525,11 +533,17 @@ export default function Purchases() {
                       {p.brand ? p.brand.name.toUpperCase() + ' ' : ''}{p.name}
                     </td>
                     <td style={{fontSize:'.75rem'}}>
-                      <span style={{background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:4,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{p.attributes?.color||'-'}</span>
-                      <span style={{color:'#475569'}}>{p.attributes?.ram||'-'}/{p.attributes?.storage||'-'}</span>
+                      {['mobile-new', 'mobile-old'].includes((p.category?.slug || p.category?.name || '').toLowerCase()) ? (
+                        <>
+                          <span style={{background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:4,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{p.attributes?.color||'-'}</span>
+                          <span style={{color:'#475569'}}>{p.attributes?.ram||'-'}/{p.attributes?.storage||'-'}</span>
+                        </>
+                      ) : (
+                        <span style={{color:'#475569', fontWeight: 700, textTransform: 'uppercase'}}>{p.attributes?.description || '—'}</span>
+                      )}
                       {p.attributes?.imei && (
                         <div style={{color:'#16a34a',fontSize:'.63rem',fontWeight:700}}>
-                          🆔<Link to={`/sales/new?imei=${p.attributes.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{p.attributes.imei}</Link>
+                          🆔<Link to={category_group === 'master' ? `/sales/new-master?imei=${p.attributes.imei}` : `/sales/new?category_group=${category_group}&imei=${p.attributes.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{p.attributes.imei}</Link>
                         </div>
                       )}
                     </td>
@@ -578,11 +592,17 @@ export default function Purchases() {
                       {(item.product?.brand ? item.product.brand.name.toUpperCase() + ' ' : '') + (item.product?.name || '')}
                     </td>
                     <td style={{fontSize:'.75rem'}}>
-                      <span style={{background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:4,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{item.color||'-'}</span>
-                      <span style={{color:'#475569'}}>{item.ram||'-'}/{item.storage||'-'}</span>
+                      {['mobile-new', 'mobile-old'].includes((item.product?.category?.slug || item.product?.category?.name || '').toLowerCase()) ? (
+                        <>
+                          <span style={{background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:4,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{item.color||'-'}</span>
+                          <span style={{color:'#475569'}}>{item.ram||'-'}/{item.storage||'-'}</span>
+                        </>
+                      ) : (
+                        <span style={{color:'#475569', fontWeight: 700, textTransform: 'uppercase'}}>{item.product?.attributes?.description || '—'}</span>
+                      )}
                       {item.imei && (
                         <div style={{color:'#475569',fontSize:'.63rem',fontWeight:700}}>
-                          🆔<Link to={`/sales/new?imei=${item.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{item.imei}</Link>
+                          🆔<Link to={category_group === 'master' ? `/sales/new-master?imei=${item.imei}` : `/sales/new?category_group=${category_group}&imei=${item.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{item.imei}</Link>
                         </div>
                       )}
                     </td>

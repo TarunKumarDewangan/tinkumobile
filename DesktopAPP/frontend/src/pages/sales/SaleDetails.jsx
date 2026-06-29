@@ -180,6 +180,9 @@ export default function SaleDetails() {
                                                                {item.color && <span>{item.color}</span>}
                                                            </span>
                                                        )}
+                                                       {item.description && (
+                                                           <div className="w-100 mt-1 text-dark small fw-black">DESC: {item.description}</div>
+                                                       )}
                                                    </div>
                                               </td>
                                               <td className="text-center fw-bold">{item.quantity}</td>
@@ -347,6 +350,9 @@ export default function SaleDetails() {
                                                           {item.imei && <span>Serial No: {item.imei}</span>}
                                                           {(item.ram || item.storage || item.color) && (
                                                               <div className="opacity-75">CONFIG: {item.ram}/{item.storage}/{item.color}</div>
+                                                          )}
+                                                          {item.description && (
+                                                              <div className="text-dark small fw-black mt-1">DESC: {item.description}</div>
                                                           )}
                                                       </div>
                                                   </td>

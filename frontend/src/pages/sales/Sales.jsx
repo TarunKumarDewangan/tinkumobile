@@ -159,6 +159,7 @@ export default function Sales() {
             <thead>
               <tr>
                 <th className="ps-4">Customer Name</th>
+                <th>Products & Description</th>
                 <th>Date / Shop</th>
                 <th className="text-end">Grand Total</th>
                 <th className="text-end" style={{color:'#475569'}}>Discount</th>
@@ -171,9 +172,9 @@ export default function Sales() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+                <tr><td colSpan={10} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
               ) : invoices.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
+                <tr><td colSpan={10} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
               ) : invoices.map(inv => {
                 const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
                 const totalPaid = parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
@@ -184,6 +185,26 @@ export default function Sales() {
                     <td className="ps-4 cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
                         <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.customer?.name}</span>
                         <div className="x-small text-muted" style={{ textDecoration: 'none' }}>📞 {inv.customer?.phone}</div>
+                    </td>
+
+                    {/* Products & Description */}
+                    <td>
+                      {inv.items?.map((item, idx) => {
+                        const brandStr = item.product?.brand?.name || item.product?.attributes?.brand || '';
+                        const fullName = `${brandStr ? brandStr + ' ' : ''}${item.product?.name || 'UNKNOWN PRODUCT'}`.toUpperCase();
+                        return (
+                          <div key={idx} className="mb-2" style={{ borderBottom: idx < inv.items.length - 1 ? '1px dashed #cbd5e1' : 'none', paddingBottom: idx < inv.items.length - 1 ? '6px' : '0' }}>
+                            <div className="fw-bold" style={{ fontSize: '.75rem', color: '#1e293b' }}>
+                              {fullName}
+                            </div>
+                            {item.description && (
+                              <div className="x-small text-muted fw-semibold" style={{ marginTop: '2px' }}>
+                                DESCRIPTION: {item.description}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </td>
 
                     {/* 2. Date / Shop */}
