@@ -38,6 +38,13 @@ export default function SaleForm() {
   const [shops, setShops]       = useState([]);
   const [staff, setStaff]       = useState([]);
 
+  const shouldDefaultGstOn = (product) => {
+    if (category_group === 'other') return false;
+    if (!product) return true;
+    const slug = (product.category?.slug || product.category?.name || '').toLowerCase();
+    return ['mobile-new', 'mobile-old'].includes(slug);
+  };
+
   const [form, setForm] = useState({ 
     shop_id: '',
     customer_id: '', 
@@ -238,6 +245,7 @@ export default function SaleForm() {
           min_selling_price: p.min_selling_price || 0,
           max_selling_price: p.max_selling_price || 0
         }]);
+      }
     } catch (e) {}
   };
 
@@ -294,6 +302,7 @@ export default function SaleForm() {
           description: i.description || '',
           quantity: itemQty,
           unit_price: i.unit_price,
+          apply_gst: i.apply_gst ?? shouldDefaultGstOn(i.product),
           base_price: i.product?.purchase_price || 0,
           min_selling_price: i.product?.min_selling_price || 0,
           max_selling_price: i.product?.max_selling_price || 0
@@ -419,7 +428,8 @@ export default function SaleForm() {
         unit_price: (priceMode === 'WHOLESALE' && p.wholeseller_price > 0) ? p.wholeseller_price : (p.selling_price || 0),
         base_price: p.purchase_price || 0,
         min_selling_price: p.min_selling_price || 0,
-        max_selling_price: p.max_selling_price || 0
+        max_selling_price: p.max_selling_price || 0,
+        apply_gst: shouldDefaultGstOn(p)
     };
     if (!items.find(it => it.imei && it.imei === newItem.imei)) {
        setItems([...items, newItem]);
@@ -448,7 +458,7 @@ export default function SaleForm() {
         } catch (e) {}
     }
   };
-  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', imeis: [''], ram: '', storage: '', color: '', description: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0 }]);
+  const addItem = () => setItems([...items, { selection_id: '', product_id: '', product_name: '', imei: '', imeis: [''], ram: '', storage: '', color: '', description: '', quantity: 1, unit_price: '', base_price: 0, min_selling_price: 0, max_selling_price: 0, apply_gst: category_group !== 'other' }]);
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
 
   const getMatchingStockItems = (item, excludeImeiIdx) => {
@@ -500,7 +510,7 @@ export default function SaleForm() {
       // Find product by ID or by generated Name string
       const p = products.find(p => 
         p.id == val || 
-        (getProductFullName(p) + " (" + (p.attributes?.ram || '') + "/" + (p.attributes?.storage || '') + "/" + (p.attributes?.color || '') + ") / IMEI: " + (p.imei || p.attributes?.imei || '')).toUpperCase() === val.toUpperCase()
+        getProductOptionLabel(p).toUpperCase() === val.toUpperCase()
       );
 
       if (p) {
@@ -512,6 +522,7 @@ export default function SaleForm() {
           arr[i].base_price = p.purchase_price || 0;
           arr[i].min_selling_price = p.min_selling_price || 0,
           arr[i].max_selling_price = p.max_selling_price || 0;
+          arr[i].apply_gst = shouldDefaultGstOn(p);
           if (p.attributes) {
               arr[i].ram = p.attributes.ram || '';
               arr[i].storage = p.attributes.storage || '';
@@ -549,6 +560,8 @@ export default function SaleForm() {
 
   // Calculations
   const totalInclusive = items.reduce((s, i) => s + (i.quantity * i.unit_price || 0), 0);
+  const taxableInclusive = items.filter(i => i.apply_gst !== false).reduce((s, i) => s + (i.quantity * i.unit_price || 0), 0);
+
   let subtotal = totalInclusive;
   let autoCgstAmount = 0;
   let autoSgstAmount = 0;
@@ -558,8 +571,8 @@ export default function SaleForm() {
       const sgstR = parseFloat(form.sgst_rate) || 0;
       const totalGstRate = cgstR + sgstR;
       
-      const calcSubtotal = totalInclusive / (1 + (totalGstRate / 100));
-      const totalGstAmount = totalInclusive - calcSubtotal;
+      const calcTaxableSubtotal = taxableInclusive / (1 + (totalGstRate / 100));
+      const totalGstAmount = taxableInclusive - calcTaxableSubtotal;
       
       if (totalGstRate > 0) {
          // Round taxes to 2 decimals
@@ -613,8 +626,11 @@ export default function SaleForm() {
     }
   }, [grandTotal, customerCredit, form.payment_method]);
 
-  const totalCost = items.reduce((s, i) => s + (i.quantity * i.base_price || 0), 0);
-  const totalProfit = grandTotal - totalCost;
+  const totalProfit = items.reduce((s, item) => {
+    const itemGstRate = item.apply_gst !== false ? (form.calculate_gst ? (parseFloat(form.cgst_rate || 0) + parseFloat(form.sgst_rate || 0)) : 0) : 0;
+    const rateExcl = item.unit_price / (1 + (itemGstRate / 100));
+    return s + ((rateExcl - item.base_price) * item.quantity || 0);
+  }, 0) - (parseFloat(form.discount) || 0) - (form.is_cash_discount_on_bill ? (parseFloat(form.cash_discount) || 0) : 0);
   const profitColor = totalProfit > 0 ? 'text-success' : 'text-danger';
 
   const handleRoundClick = (type) => {
@@ -1049,24 +1065,24 @@ export default function SaleForm() {
                     </div>
                 </div>
                 <div className="table-responsive">
-                    <table className="table table-hover mb-0 align-middle">
+                    <table className="table table-hover mb-0 align-middle" style={{ minWidth: '915px' }}>
                         <thead className="bg-light text-uppercase x-small fw-bold">
                             <tr>
-                                <th className="ps-4">Product & Configuration</th>
-                                <th style={{ width: '80px' }} className="text-center">QTY</th>
-                                <th style={{ width: '150px' }} className="text-end">RATE (INCL)</th>
-                                <th style={{ width: '120px' }} className="text-end">RATE (EXCL)</th>
-                                <th style={{ width: '80px' }} className="text-center">GST %</th>
-                                <th style={{ width: '150px' }} className="text-end">TOTAL (EXCL)</th>
-                                <th style={{ width: '150px' }} className="text-end">NET TOTAL</th>
-                                <th style={{ width: '50px' }}></th>
+                                <th style={{ width: '320px' }} className="ps-4">Product & Configuration</th>
+                                <th style={{ width: '60px' }} className="text-center">QTY</th>
+                                <th style={{ width: '120px' }} className="text-end">RATE (INCL)</th>
+                                <th style={{ width: '100px' }} className="text-end">RATE (EXCL)</th>
+                                <th style={{ width: '65px' }} className="text-center">GST %</th>
+                                <th style={{ width: '100px' }} className="text-end">TOTAL (EXCL)</th>
+                                <th style={{ width: '110px' }} className="text-end">NET TOTAL</th>
+                                <th style={{ width: '40px' }}></th>
                             </tr>
                         </thead>
                         <tbody>
                             {items.map((item, i) => {
-                                const pProfit = (item.unit_price - item.base_price) * item.quantity;
-                                const gstRate = form.calculate_gst ? (parseFloat(form.cgst_rate || 0) + parseFloat(form.sgst_rate || 0)) : 0;
-                                const rateExcl = item.unit_price / (1 + (gstRate / 100));
+                                const itemGstRate = item.apply_gst !== false ? (form.calculate_gst ? (parseFloat(form.cgst_rate || 0) + parseFloat(form.sgst_rate || 0)) : 0) : 0;
+                                const rateExcl = item.unit_price / (1 + (itemGstRate / 100));
+                                const pProfit = (rateExcl - item.base_price) * item.quantity;
                                 const totalExcl = rateExcl * item.quantity;
                                 const netTotal = item.unit_price * item.quantity;
                                 return (
@@ -1127,20 +1143,24 @@ export default function SaleForm() {
                                                         </div>
                                                     );
                                                 })}
-                                                <div className="col-4">
+                                                <div className="col-3">
                                                     <input type="text" className="form-control form-control-xs" placeholder="RAM" value={item.ram} onChange={e => updateItem(i,'ram', e.target.value.toUpperCase())} />
                                                 </div>
-                                                <div className="col-4">
-                                                    <input type="text" className="form-control form-control-xs" placeholder="STORAGE" value={item.storage} onChange={e => updateItem(i,'storage', e.target.value.toUpperCase())} />
+                                                <div className="col-3">
+                                                    <input type="text" className="form-control form-control-xs" placeholder="STOR." value={item.storage} onChange={e => updateItem(i,'storage', e.target.value.toUpperCase())} />
                                                 </div>
-                                                <div className="col-4">
+                                                <div className="col-6">
                                                     <input type="text" className="form-control form-control-xs" placeholder="COLOR" value={item.color} onChange={e => updateItem(i,'color', e.target.value.toUpperCase())} />
                                                 </div>
-                                                {category_group === 'other' && (
-                                                    <div className="col-12 mt-1">
-                                                        <input type="text" className="form-control form-control-xs" placeholder="DESCRIPTION" value={item.description || ''} onChange={e => updateItem(i,'description', e.target.value.toUpperCase())} />
-                                                    </div>
-                                                )}
+                                                <div className="col-12 mt-1">
+                                                    <input 
+                                                        type="text" 
+                                                        className="form-control form-control-xs" 
+                                                        placeholder="DESCRIPTION" 
+                                                        value={item.description || ''} 
+                                                        onChange={e => updateItem(i, 'description', e.target.value.toUpperCase())} 
+                                                    />
+                                                </div>
                                             </div>
 
                                             <div className={`x-small mt-2 fw-bold ${pProfit >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -1152,8 +1172,8 @@ export default function SaleForm() {
                                         </td>
                                         <td>
                                             <div className="input-group input-group-sm mb-1">
-                                                <span className="input-group-text">₹</span>
-                                                <input type="number" step="0.01" className="form-control text-end fw-bold" required value={item.unit_price} onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value))} />
+                                                <span className="input-group-text" style={{ padding: '2px 4px', fontSize: '0.7rem' }}>₹</span>
+                                                <input type="number" step="0.01" className="form-control text-end fw-bold" style={{ padding: '2px 4px', fontSize: '0.72rem' }} required value={item.unit_price} onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value))} />
                                             </div>
                                             {priceMode === 'WHOLESALE' && (
                                                 <div className="text-center text-warning text-dark x-small fw-bold mb-1" style={{ fontSize: '10px' }}>
@@ -1165,7 +1185,21 @@ export default function SaleForm() {
                                             </div>
                                         </td>
                                         <td className="text-end text-muted fw-bold align-middle">₹{rateExcl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                        <td className="text-center fw-bold text-muted align-middle">{gstRate}%</td>
+                                        <td className="text-center fw-bold text-muted align-middle">
+                                            <div className="d-flex flex-column align-items-center">
+                                                <span style={{ fontSize: '0.72rem' }}>{itemGstRate}%</span>
+                                                <div className="form-check form-switch p-0 m-0 mt-1">
+                                                    <input 
+                                                        className="form-check-input ms-0" 
+                                                        type="checkbox"
+                                                        style={{ width: '20px', height: '10px', cursor: 'pointer' }}
+                                                        checked={item.apply_gst !== false}
+                                                        onChange={e => updateItem(i, 'apply_gst', e.target.checked)} 
+                                                        title="Apply GST to this product"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </td>
                                         <td className="text-end fw-bold text-dark align-middle">₹{totalExcl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                         <td className="text-end fw-bold text-primary align-middle fs-6">₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                         <td className="pe-3 text-center" style={{ width: '50px' }}>
@@ -1244,41 +1278,16 @@ export default function SaleForm() {
                         </div>
                     </div>
 
-                    {/* ── Payment + Rounding ── */}
-                    <div className="row g-1 mb-2">
-                        <div className="col-7">
-                            <label style={{fontSize:'.6rem', fontWeight:700, color:'#94a3b8', display:'block', marginBottom:2}}>PAYMENT</label>
-                            <select className="form-select form-select-sm" style={{fontSize:'.73rem'}} value={form.payment_method} onChange={e => handlePaymentMethodChange(e.target.value)}>
-                                <option value="cash">CASH</option>
-                                <option value="card">CARD</option>
-                                <option value="mobile">UPI / MOBILE</option>
-                                <option value="bank">BANK / NEFT</option>
-                                {customerCredit > 0 && (
-                                    <>
-                                        <option value="EXCHANGE">EXCHANGE CREDIT</option>
-                                        <option value="EXCHANGE + CASH">EXCHANGE + CASH</option>
-                                        <option value="EXCHANGE + UPI">EXCHANGE + UPI</option>
-                                    </>
-                                )}
-                                <option value="other">OTHER</option>
-                            </select>
-                        </div>
-                        <div className="col-5">
-                            <label style={{fontSize:'.6rem', fontWeight:700, color:'#94a3b8', display:'block', marginBottom:2}}>ROUNDING</label>
-                            <select className="form-select form-select-sm" style={{fontSize:'.73rem'}} value={form.rounding_mode} onChange={e => { setForm({...form, rounding_mode: e.target.value}); setIsManualRound(false); }}>
-                                <option value="auto">AUTO</option>
-                                <option value="up">ROUND UP</option>
-                                <option value="down">ROUND DOWN</option>
-                                <option value="manual">MANUAL</option>
-                            </select>
-                        </div>
+                    {/* ── Rounding ── */}
+                    <div className="mb-2">
+                        <label style={{fontSize:'.6rem', fontWeight:700, color:'#94a3b8', display:'block', marginBottom:2}}>ROUNDING</label>
+                        <select className="form-select form-select-sm" style={{fontSize:'.73rem'}} value={form.rounding_mode} onChange={e => { setForm({...form, rounding_mode: e.target.value}); setIsManualRound(false); }}>
+                            <option value="auto">AUTO</option>
+                            <option value="up">ROUND UP</option>
+                            <option value="down">ROUND DOWN</option>
+                            <option value="manual">MANUAL</option>
+                        </select>
                     </div>
-                    {form.payment_method === 'other' && (
-                        <input type="text" className="form-control form-control-sm border-danger fw-bold text-uppercase mb-2" style={{fontSize:'.73rem'}}
-                            placeholder="SPECIFY PAYMENT MODE *"
-                            required value={form.other_payment_mode}
-                            onChange={e => setForm({...form, other_payment_mode: e.target.value.toUpperCase()})} />
-                    )}
 
                     {/* ── Totals Table ── */}
                     <div style={{background:'#fff', borderRadius:10, border:'1px solid #e8ecf0', overflow:'hidden', marginBottom:10}}>
@@ -1515,8 +1524,34 @@ export default function SaleForm() {
                         </div>
                     )}
 
-                    {/* ── Amount Paid ── */}
-                    <div className="mb-2">
+                    {/* ── Payment Mode & Amount Paid ── */}
+                    <div className="mb-2 p-3 rounded-3" style={{background:'#f8fafc', border:'1px solid #e2e8f0'}}>
+                        {!form.payment_method?.startsWith('EXCHANGE') && (
+                            <div className="mb-2">
+                                <label style={{fontSize:'.68rem', fontWeight:700, color:'#475569', display:'block', marginBottom:4}}>PAYMENT MODE</label>
+                                <select className="form-select form-select-sm fw-bold text-uppercase border-primary" style={{fontSize:'.78rem', borderRadius:8}} value={form.payment_method} onChange={e => handlePaymentMethodChange(e.target.value)}>
+                                    <option value="CASH">CASH</option>
+                                    <option value="PHONEPE">PHONEPE</option>
+                                    <option value="GPAY">GPAY</option>
+                                    <option value="BANK / NEFT">BANK / NEFT</option>
+                                    {customerCredit > 0 && (
+                                        <>
+                                            <option value="EXCHANGE">EXCHANGE CREDIT</option>
+                                            <option value="EXCHANGE + CASH">EXCHANGE + CASH</option>
+                                            <option value="EXCHANGE + UPI">EXCHANGE + UPI</option>
+                                        </>
+                                    )}
+                                    <option value="OTHER">OTHER</option>
+                                </select>
+                                {form.payment_method === 'OTHER' && (
+                                    <input className="form-control form-control-sm mt-1 text-uppercase fw-bold border-primary" style={{fontSize:'.72rem'}}
+                                        placeholder="SPECIFY MODE (E.G. CHEQUE)"
+                                        value={form.other_mode}
+                                        onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})} />
+                                )}
+                            </div>
+                        )}
+
                         <label style={{fontSize:'.68rem', fontWeight:700, color:'#16a34a', display:'block', marginBottom:4}}>{useFinance ? 'DOWN PAYMENT (CASH COLLECTED)' : 'AMOUNT PAID (INITIAL)'}</label>
                         <input type="number" step="0.01"
                             className="form-control fw-bold border-success"
@@ -1532,23 +1567,7 @@ export default function SaleForm() {
                                     ...(useFinance ? { down_payment: val, finance_amount: Math.max(0, parseFloat((grandTotal - val).toFixed(2))) } : {})
                                 }));
                             }} />
-                        {parseFloat(form.total_paid) > 0 && !form.payment_method?.startsWith('EXCHANGE') && (
-                            <div className="mt-1 animate-fade-in">
-                                <select className="form-select form-select-sm fw-bold text-uppercase border-success" style={{fontSize:'.72rem'}} value={form.payment_method} onChange={e => setForm({...form, payment_method: e.target.value})}>
-                                    <option value="CASH">CASH</option>
-                                    <option value="PHONEPE">PHONEPE</option>
-                                    <option value="GPAY">GPAY</option>
-                                    <option value="BANK / NEFT">BANK / NEFT</option>
-                                    <option value="OTHER">OTHER</option>
-                                </select>
-                                {form.payment_method === 'OTHER' && (
-                                    <input className="form-control form-control-sm mt-1 text-uppercase fw-bold border-primary" style={{fontSize:'.72rem'}}
-                                        placeholder="SPECIFY MODE (E.G. CHEQUE)"
-                                        value={form.other_mode}
-                                        onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})} />
-                                )}
-                            </div>
-                        )}
+                        
                         {/* Pending balance — exclude finance_amount if RECEIVED */}
                         {(() => {
                             const financePaid = useFinance && form.finance_payment_status === 'RECEIVED' ? parseFloat(form.finance_amount || 0) : 0;
@@ -1860,7 +1879,7 @@ export default function SaleForm() {
 
       <style>{`
           .x-small { font-size: 0.7rem; }
-          .form-control-xs { padding: 0.25rem 0.5rem; font-size: 0.65rem; height: auto; }
+          .form-control-xs { padding: 0.25rem 0.25rem; font-size: 0.65rem; height: auto; text-align: center; }
           .fw-black { font-weight: 900; }
           .z-3 { z-index: 1030; }
           .shadow-primary { box-shadow: 0 4px 15px rgba(13, 110, 253, 0.25) !important; }

@@ -119,6 +119,7 @@ class PurchaseInvoiceController extends Controller
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
+            'items.*.apply_gst'  => 'nullable|boolean',
             'items.*.new_product_name' => 'nullable|string|max:255',
             'items.*.category_id'      => 'nullable|exists:categories,id',
             'items.*.brand_id'         => 'nullable|exists:brands,id',
@@ -320,6 +321,7 @@ class PurchaseInvoiceController extends Controller
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
+            'items.*.apply_gst'  => 'nullable|boolean',
             'items.*.new_product_name' => 'nullable|string|max:255',
             'items.*.category_id'      => 'nullable|exists:categories,id',
             'items.*.brand_id'         => 'nullable|exists:brands,id',
@@ -367,7 +369,37 @@ class PurchaseInvoiceController extends Controller
                 'total_paid'    => $data['total_paid'] ?? $purchaseInvoice->total_paid,
                 'notes'         => $data['notes'] ?? null,
             ]));
-            $purchaseInvoice->updatePaymentStatus();
+             $purchaseInvoice->updatePaymentStatus();
+
+            // Delete old transactions individually so Eloquent delete events fire
+            $oldTransactions = \App\Models\Transaction::where('entity_type', get_class($purchaseInvoice))
+                ->where('entity_id', $purchaseInvoice->id)
+                ->whereIn('category', ['PURCHASE', 'CASH_DISCOUNT'])
+                ->get();
+            foreach ($oldTransactions as $tx) {
+                $tx->delete();
+            }
+
+            // Record updated Transaction using Service if total_paid > 0
+            if ($purchaseInvoice->total_paid > 0) {
+                $this->transactionService->recordForModel($purchaseInvoice, [
+                    'type'             => 'OUT',
+                    'category'         => 'PURCHASE',
+                    'amount'           => $purchaseInvoice->total_paid,
+                    'description'      => "Initial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+                    'entity_name'      => $purchaseInvoice->supplier?->name,
+                ]);
+            }
+
+            // Record separate Transaction for Cash Discount if not on bill
+            if (isset($data['cash_discount']) && $data['cash_discount'] > 0 && !($data['is_cash_discount_on_bill'] ?? true)) {
+                $this->transactionService->recordForModel($purchaseInvoice, [
+                    'type'             => 'IN',
+                    'category'         => 'CASH_DISCOUNT',
+                    'amount'           => $data['cash_discount'],
+                    'description'      => "Cash discount (not on bill) for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+                ]);
+            }
 
             $createdProducts = []; 
             // 4. Create new items and apply stock if received
@@ -559,6 +591,14 @@ class PurchaseInvoiceController extends Controller
                     Inventory::removeStock($purchaseInvoice->shop_id, $item->product_id, $item->quantity);
                 }
             }
+            // Delete associated transactions in a loop so Eloquent events fire
+            $transactions = \App\Models\Transaction::where('entity_type', get_class($purchaseInvoice))
+                ->where('entity_id', $purchaseInvoice->id)
+                ->get();
+            foreach ($transactions as $tx) {
+                $tx->delete();
+            }
+
             $purchaseInvoice->delete();
             // Audit log
             ActivityLog::log('PURCHASE_DELETED', $user, "Purchase #{$purchaseInvoice->invoice_no} deleted");

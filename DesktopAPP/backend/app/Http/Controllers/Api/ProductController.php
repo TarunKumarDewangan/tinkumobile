@@ -62,6 +62,12 @@ class ProductController extends Controller
             if ($request->imei)    $query->where('imei', 'like', "%{$request->imei}%");
             if ($request->ram)     $query->where('ram', 'like', "%{$request->ram}%");
             if ($request->storage) $query->where('storage', 'like', "%{$request->storage}%");
+            if ($request->description) {
+                $desc = $request->description;
+                $query->whereHas('product', function($q) use ($desc) {
+                    $q->where('attributes->description', 'like', "%{$desc}%");
+                });
+            }
             
             $items = $query->get();
 
@@ -77,6 +83,15 @@ class ProductController extends Controller
 
             if ($request->category_id) {
                 $saleItemsQuery->whereHas('product', fn($pq) => $pq->where('category_id', $request->category_id));
+            } elseif ($request->category_group) {
+                $group = $request->category_group;
+                if ($group === 'new_mobile') {
+                    $saleItemsQuery->whereHas('product.category', fn($cq) => $cq->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
+                } elseif ($group === 'old_mobile') {
+                    $saleItemsQuery->whereHas('product.category', fn($cq) => $cq->whereIn('slug', ['MOBILE-OLD', 'mobile-old']));
+                } elseif ($group === 'other') {
+                    $saleItemsQuery->whereHas('product.category', fn($cq) => $cq->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']));
+                }
             } else if (!empty($mobileCatIds)) {
                 $saleItemsQuery->whereHas('product', fn($pq) => $pq->whereIn('category_id', $mobileCatIds));
             }
@@ -120,7 +135,8 @@ class ProductController extends Controller
                                 'color' => $item->color,
                                 'ram' => $item->ram,
                                 'storage' => $item->storage,
-                                'imeis' => [] 
+                                'imeis' => [],
+                                'description' => $item->product->attributes['description'] ?? ''
                             ],
                             'current_stock' => 0,
                             'selling_price' => $item->selling_price,
@@ -159,7 +175,8 @@ class ProductController extends Controller
                             'color' => $item->color,
                             'ram' => $item->ram,
                             'storage' => $item->storage,
-                            'imei' => $imei
+                            'imei' => $imei,
+                            'description' => $item->product->attributes['description'] ?? ''
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
@@ -194,7 +211,8 @@ class ProductController extends Controller
                             'color' => $item->color,
                             'ram' => $item->ram,
                             'storage' => $item->storage,
-                            'imei' => null
+                            'imei' => null,
+                            'description' => $item->product->attributes['description'] ?? ''
                         ],
                         'current_stock' => 1,
                         'selling_price' => $item->selling_price,
@@ -239,6 +257,9 @@ class ProductController extends Controller
                 $q->where('name', 'like', "%{$request->search}%")
                   ->orWhere('attributes->model', 'like', "%{$request->search}%");
             });
+        }
+        if ($request->description) {
+            $query->where('attributes->description', 'like', "%{$request->description}%");
         }
         
         return ProductResource::collection($query->latest()->get());

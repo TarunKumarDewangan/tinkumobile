@@ -106,14 +106,18 @@ export default function StockList({ products, loading, filters, handleFilterChan
                     </div>
                   </td>
                   <td>
-                    <div className="d-flex align-items-center gap-1 flex-wrap">
-                      <span className="pm-badge text-uppercase" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1' }}>
-                        {p.attributes?.color || '-'}
-                      </span>
-                      <span className="pm-badge" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1' }}>
-                        {p.attributes?.ram || '-' } / {p.attributes?.storage || '-'}
-                      </span>
-                    </div>
+                    {['mobile-new', 'mobile-old'].includes((p.category?.slug || p.category?.name || '').toLowerCase()) ? (
+                      <div className="d-flex align-items-center gap-1 flex-wrap">
+                        <span className="pm-badge text-uppercase" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1' }}>
+                          {p.attributes?.color || '-'}
+                        </span>
+                        <span className="pm-badge" style={{ background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1' }}>
+                          {p.attributes?.ram || '-' } / {p.attributes?.storage || '-'}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="fw-bold text-muted small text-uppercase">{p.attributes?.description || '—'}</span>
+                    )}
                   </td>
                   <td>
                     <div className="d-flex flex-wrap gap-1">

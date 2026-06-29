@@ -123,6 +123,7 @@ class SaleInvoiceController extends Controller
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
             'items.*.description' => 'nullable|string',
+            'items.*.apply_gst'   => 'nullable|boolean',
             'gift_items'          => 'nullable|array',
             'gift_items.*.gift_product_id' => 'exists:gift_products,id',
             'gift_items.*.quantity'        => 'integer|min:1',
@@ -152,10 +153,8 @@ class SaleInvoiceController extends Controller
 
         DB::beginTransaction();
         try {
-            $inclusiveTotal = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
-
             // GST calculation via shared method
-            $gst = $this->calculateGst($data, $inclusiveTotal);
+            $gst = $this->calculateGst($data, $data['items']);
             extract($gst);
 
             $roundingMode = $data['rounding_mode'] ?? 'auto';
@@ -258,6 +257,7 @@ class SaleInvoiceController extends Controller
                     'quantity'        => $item['quantity'],
                     'unit_price'      => $item['unit_price'],
                     'total'           => $total,
+                    'apply_gst'       => !isset($item['apply_gst']) || filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN),
                 ]);
 
                 Inventory::removeStock($shopId, $item['product_id'], $item['quantity']);
@@ -396,6 +396,7 @@ class SaleInvoiceController extends Controller
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
             'items.*.description' => 'nullable|string',
+            'items.*.apply_gst'   => 'nullable|boolean',
             'total_paid'             => 'nullable|numeric|min:0',
             'exchange_paid'          => 'nullable|numeric|min:0',
             // Finance/EMI fields
@@ -414,10 +415,8 @@ class SaleInvoiceController extends Controller
             $saleInvoice->items()->delete();
             $saleInvoice->giftItems()->delete(); 
 
-            $inclusiveTotal = collect($data['items'])->sum(fn($i) => $i['quantity'] * $i['unit_price']);
-
-            // GST calculation via shared method
-            $gst = $this->calculateGst($data, $inclusiveTotal);
+            // Recalculate invoice totals using helper
+            $gst = $this->calculateGst($data, $data['items']);
             extract($gst);
 
             $roundingMode = $data['rounding_mode'] ?? 'auto';
@@ -473,6 +472,7 @@ class SaleInvoiceController extends Controller
                     'quantity'        => $item['quantity'],
                     'unit_price'      => $item['unit_price'],
                     'total'           => $item['quantity'] * $item['unit_price'],
+                    'apply_gst'       => !isset($item['apply_gst']) || filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN),
                 ]);
 
                 Inventory::removeStock($saleInvoice->shop_id, $item['product_id'], $item['quantity']);
@@ -585,6 +585,7 @@ class SaleInvoiceController extends Controller
                     'quantity'        => $item->quantity,
                     'unit_price'      => $item->unit_price,
                     'total'           => $item->total,
+                    'apply_gst'       => (bool)$item->apply_gst,
                 ]);
             }
 
@@ -838,12 +839,13 @@ class SaleInvoiceController extends Controller
     /**
      * Shared GST calculation — used by both store() and update().
      */
-    private function calculateGst(array $data, float $inclusiveTotal): array
+    private function calculateGst(array $data, array $items): array
     {
         $discount         = (float) ($data['discount'] ?? 0);
         $cashDiscount     = (float) ($data['cash_discount'] ?? 0);
         $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
         $calculateGst     = (bool) ($data['calculate_gst'] ?? true);
+        $inclusiveTotal   = collect($items)->sum(fn($i) => ($i['quantity'] ?? 1) * ($i['unit_price'] ?? 0));
 
         if ($calculateGst) {
             $cgstRate = (float) ($data['cgst_rate'] ?? 9);
@@ -854,9 +856,14 @@ class SaleInvoiceController extends Controller
                 $sgstAmount  = (float) $data['sgst_amount'];
                 $totalAmount = $inclusiveTotal - $cgstAmount - $sgstAmount;
             } else {
+                $taxableInclusiveTotal = collect($items)->sum(function($i) {
+                    $applyGst = !isset($i['apply_gst']) || filter_var($i['apply_gst'], FILTER_VALIDATE_BOOLEAN);
+                    return $applyGst ? (($i['quantity'] ?? 1) * ($i['unit_price'] ?? 0)) : 0;
+                });
+
                 $totalGstRate  = $cgstRate + $sgstRate;
-                $exclusiveTotal = $inclusiveTotal / (1 + ($totalGstRate / 100));
-                $totalGstAmount = $inclusiveTotal - $exclusiveTotal;
+                $exclusiveTaxableTotal = $taxableInclusiveTotal / (1 + ($totalGstRate / 100));
+                $totalGstAmount = $taxableInclusiveTotal - $exclusiveTaxableTotal;
 
                 $cgstAmount  = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
                 $sgstAmount  = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;

@@ -28,8 +28,12 @@ class InvoiceService
                 $cgstAmount = (float) $data['cgst_amount'];
                 $sgstAmount = (float) $data['sgst_amount'];
             } else {
-                $cgstAmount = ($totalAmount * $cgstRate) / 100;
-                $sgstAmount = ($totalAmount * $sgstRate) / 100;
+                $gstTaxableTotal = collect($items)->sum(function($i) {
+                    $applyGst = !isset($i['apply_gst']) || filter_var($i['apply_gst'], FILTER_VALIDATE_BOOLEAN);
+                    return $applyGst ? (($i['quantity'] ?? 1) * ($i['unit_price'] ?? 0)) : 0;
+                });
+                $cgstAmount = ($gstTaxableTotal * $cgstRate) / 100;
+                $sgstAmount = ($gstTaxableTotal * $sgstRate) / 100;
             }
         }
 

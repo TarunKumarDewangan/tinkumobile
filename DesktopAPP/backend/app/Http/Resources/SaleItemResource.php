@@ -22,9 +22,11 @@ class SaleItemResource extends JsonResource
             'ram' => $this->ram,
             'storage' => $this->storage,
             'color' => $this->color,
+            'description' => $this->description,
             'quantity' => $this->quantity,
             'unit_price' => $this->unit_price,
             'total' => $this->total,
+            'apply_gst' => $this->apply_gst !== null ? (bool)$this->apply_gst : true,
         ];
     }
 }

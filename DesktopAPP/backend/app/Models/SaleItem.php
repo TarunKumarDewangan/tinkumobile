@@ -10,7 +10,11 @@ class SaleItem extends Model
     public $timestamps = false;
     protected $fillable = [
         'sale_invoice_id', 'product_id', 'imei', 'ram', 'storage', 'color', 'description', 
-        'quantity', 'unit_price', 'total'
+        'quantity', 'unit_price', 'total', 'apply_gst'
+    ];
+
+    protected $casts = [
+        'apply_gst' => 'boolean',
     ];
 
     protected static function boot()
