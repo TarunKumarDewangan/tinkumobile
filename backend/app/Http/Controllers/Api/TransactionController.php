@@ -94,14 +94,33 @@ class TransactionController extends Controller
         return response()->json($transaction, 201);
     }
 
-    public function destroy(Request $request, Transaction $transaction)
+    public function destroy(Request $request, $id)
     {
         $user = $request->user();
         if (!$user->hasFullAccess()) {
             return response()->json(['message' => 'Only Admin/Owner can delete transactions'], 403);
         }
 
-        $transaction->delete();
+        // Use withTrashed() so already-soft-deleted transactions (orphaned ledger entries) can still be cleaned up
+        $transaction = Transaction::withTrashed()->find($id);
+        if (!$transaction) {
+            return response()->json(['message' => 'Transaction not found'], 404);
+        }
+
+        // Clean up ledger table entries linked to this transaction
+        \App\Models\Ledger::whereIn('voucher_type', ['RECEIPT', 'PAYMENT'])
+            ->where('voucher_id', $transaction->id)
+            ->delete();
+
+        // Sync entity balance after removal
+        if ($transaction->accounting_entity_id) {
+            $entity = \App\Models\Entity::find($transaction->accounting_entity_id);
+            if ($entity) {
+                app(\App\Services\EntityService::class)->syncBalance($entity);
+            }
+        }
+
+        $transaction->forceDelete();
         return response()->json(['message' => 'Transaction deleted']);
     }
 

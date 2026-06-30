@@ -97,12 +97,18 @@ class LedgerController extends Controller
         $statement = [];
         
         foreach ($ledgers as $ledger) {
-            $runningBalance += ($ledger->debit - $ledger->credit);
-            $ledger->running_balance = $runningBalance;
-            
-            $isNonMobile = false;
             $vType = $ledger->voucher_type;
             $vId = $ledger->voucher_id;
+
+            // Skip RECEIPT/PAYMENT entries whose transaction was soft-deleted (orphaned ledger rows)
+            if (($vType === 'RECEIPT' || $vType === 'PAYMENT') && !isset($transactions[$vId])) {
+                continue;
+            }
+
+            $runningBalance += ($ledger->debit - $ledger->credit);
+            $ledger->running_balance = $runningBalance;
+
+            $isNonMobile = false;
             
             if ($vType === 'SALE' || $vType === 'SALE_FINANCE') {
                 $invoice = $saleInvoices[$vId] ?? null;
