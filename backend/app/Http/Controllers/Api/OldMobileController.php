@@ -267,10 +267,28 @@ class OldMobileController extends Controller
             }
         }
 
-        // Delete associated transaction record
-        \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
+        // Delete associated transaction records (individual deletes fire model events → cleans ledger table)
+        $linkedTransactions = \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
             ->where('entity_id', $oldMobilePurchase->id)
-            ->delete();
+            ->get();
+
+        // Fallback: catch transactions created without entity_type/entity_id (older records or duplicate entries)
+        if ($linkedTransactions->isEmpty()) {
+            $oldMobilePurchase->loadMissing('customer');
+            $category = $oldMobilePurchase->is_exchange ? 'OLD_MOBILE_EXCHANGE' : 'OLD_MOBILE_PURCHASE';
+            $customerName = $oldMobilePurchase->customer?->name;
+            if ($customerName) {
+                $linkedTransactions = \App\Models\Transaction::where('category', $category)
+                    ->where('amount', $oldMobilePurchase->purchase_price)
+                    ->where('transaction_date', $oldMobilePurchase->purchase_date)
+                    ->where('entity_name', $customerName)
+                    ->get();
+            }
+        }
+
+        foreach ($linkedTransactions as $tx) {
+            $tx->delete();
+        }
 
         // Revert stock and delete associated product
         if ($oldMobilePurchase->product_id) {
