@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\OldMobilePurchase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OldMobileController extends Controller
 {
@@ -47,66 +48,70 @@ class OldMobileController extends Controller
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
         }
 
+        // Sanitize IMEI: treat placeholder values (000000, empty, all-zeros) as null
+        // so MySQL's unique constraint doesn't block multiple phones without real IMEIs.
+        $data['imei'] = $this->sanitizeImei($data['imei'] ?? null);
+
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
-        
-        $purchase = OldMobilePurchase::create($data);
 
-        // 1. Automatically create a Product for inventory reselling
-        $category = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-        $categoryId = $category ? $category->id : null;
+        return DB::transaction(function () use ($data) {
+            $purchase = OldMobilePurchase::create($data);
 
-        $product = \App\Models\Product::create([
-            'category_id'       => $categoryId,
-            'name'              => $purchase->model_name,
-            'sku'               => \App\Models\Product::generateSku($purchase->model_name),
-            'imei'              => $purchase->imei,
-            'purchase_price'    => $purchase->purchase_price,
-            'selling_price'     => $purchase->selling_price ?? 0,
-            'attributes'        => [
-                'ram'     => $purchase->ram,
-                'storage' => $purchase->storage,
-                'color'   => $purchase->color,
-            ]
-        ]);
+            // 1. Automatically create a Product for inventory reselling
+            $category = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
+            $categoryId = $category ? $category->id : null;
 
-        // Link the product back to the purchase
-        $purchase->update(['product_id' => $product->id]);
+            $product = \App\Models\Product::create([
+                'category_id'       => $categoryId,
+                'name'              => $purchase->model_name,
+                'sku'               => \App\Models\Product::generateSku($purchase->model_name),
+                'imei'              => $purchase->imei, // already sanitized (null if placeholder)
+                'purchase_price'    => $purchase->purchase_price,
+                'selling_price'     => $purchase->selling_price ?? 0,
+                'attributes'        => [
+                    'ram'     => $purchase->ram,
+                    'storage' => $purchase->storage,
+                    'color'   => $purchase->color,
+                ]
+            ]);
 
-        // Add 1 stock to the shop's inventory for this product
-        \App\Models\Inventory::addStock($purchase->shop_id, $product->id, 1);
+            // Link the product back to the purchase
+            $purchase->update(['product_id' => $product->id]);
 
-        $purchase->load('customer');
+            // Add 1 stock to the shop's inventory for this product
+            \App\Models\Inventory::addStock($purchase->shop_id, $product->id, 1);
 
-        // 2. Record Transaction
-        if ($purchase->purchase_price > 0) {
-            if ($purchase->is_exchange) {
-                // Exchange adds credit to Customer Ledger: transaction type IN, mode EXCHANGE
-                $this->transactionService->recordForModel($purchase, [
-                    'type'             => 'IN',
-                    'category'         => 'OLD_MOBILE_EXCHANGE',
-                    'amount'           => $purchase->purchase_price,
-                    'payment_mode'     => 'EXCHANGE',
-                    'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                    'transaction_date' => $purchase->purchase_date,
-                    'shop_id'          => $purchase->shop_id,
-                ]);
-            } else {
-                // Direct purchase payouts: transaction type OUT, mode CASH
-                $this->transactionService->recordForModel($purchase, [
-                    'type'             => 'OUT',
-                    'category'         => 'OLD_MOBILE_PURCHASE',
-                    'amount'           => $purchase->purchase_price,
-                    'payment_mode'     => 'CASH',
-                    'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                    'transaction_date' => $purchase->purchase_date,
-                    'shop_id'          => $purchase->shop_id,
-                ]);
+            $purchase->load('customer');
+
+            // 2. Record Transaction
+            if ($purchase->purchase_price > 0) {
+                if ($purchase->is_exchange) {
+                    $this->transactionService->recordForModel($purchase, [
+                        'type'             => 'IN',
+                        'category'         => 'OLD_MOBILE_EXCHANGE',
+                        'amount'           => $purchase->purchase_price,
+                        'payment_mode'     => 'EXCHANGE',
+                        'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                        'transaction_date' => $purchase->purchase_date,
+                        'shop_id'          => $purchase->shop_id,
+                    ]);
+                } else {
+                    $this->transactionService->recordForModel($purchase, [
+                        'type'             => 'OUT',
+                        'category'         => 'OLD_MOBILE_PURCHASE',
+                        'amount'           => $purchase->purchase_price,
+                        'payment_mode'     => 'CASH',
+                        'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                        'transaction_date' => $purchase->purchase_date,
+                        'shop_id'          => $purchase->shop_id,
+                    ]);
+                }
             }
-        }
 
-        return response()->json($purchase, 201);
+            return response()->json($purchase, 201);
+        });
     }
 
     public function show(Request $request, OldMobilePurchase $oldMobilePurchase)
@@ -162,6 +167,9 @@ class OldMobileController extends Controller
         // Update purchase record
         $oldMobilePurchase->update($data);
 
+        // Sanitize IMEI before updating
+        $data['imei'] = $this->sanitizeImei($data['imei'] ?? null);
+
         // Update associated product
         if ($oldMobilePurchase->product_id) {
             $category = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
@@ -172,7 +180,7 @@ class OldMobileController extends Controller
                 $product->update([
                     'category_id'    => $categoryId,
                     'name'           => $oldMobilePurchase->model_name,
-                    'imei'           => $oldMobilePurchase->imei,
+                    'imei'           => $this->sanitizeImei($oldMobilePurchase->imei),
                     'purchase_price' => $oldMobilePurchase->purchase_price,
                     'selling_price'  => $oldMobilePurchase->selling_price ?? 0,
                     'attributes'     => [
@@ -273,5 +281,25 @@ class OldMobileController extends Controller
         $oldMobilePurchase->delete();
 
         return response()->json(['message' => 'Old mobile purchase deleted successfully.']);
+    }
+
+    /**
+     * Sanitize IMEI: convert placeholder/blank values to null.
+     * MySQL unique constraint allows multiple NULL values, but blocks duplicate non-null values.
+     * Users often enter '000000' or similar when they don't have the actual IMEI.
+     */
+    private function sanitizeImei(?string $imei): ?string
+    {
+        if (empty($imei)) return null;
+
+        $cleaned = trim($imei);
+
+        // Treat all-zero strings of any length as null (e.g. 000000, 000000000000000)
+        if (preg_match('/^0+$/', $cleaned)) return null;
+
+        // Treat obviously invalid/placeholder values as null
+        if (in_array(strtolower($cleaned), ['na', 'n/a', 'none', '-', '--', '000'])) return null;
+
+        return $cleaned;
     }
 }
