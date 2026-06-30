@@ -20,100 +20,106 @@ class ProductController extends Controller
 
         // If user wants ungrouped "every single product" view
         if ($request->group_by_config === 'false' || $request->group_by_config === 'true') {
-            $query = \App\Models\PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
-                ->whereHas('invoice', function($q) use ($shopId, $request) {
-                    $q->where('status', 'received');
-                    if ($shopId) $q->where('shop_id', $shopId);
-                    if ($request->supplier_id) $q->where('supplier_id', $request->supplier_id);
-                    if ($request->from) $q->where('purchase_date', '>=', $request->from);
-                    if ($request->to) $q->where('purchase_date', '<=', $request->to);
-                })
-                ->whereHas('product', function($q) use ($request) {
-                    if ($request->category_id) $q->where('category_id', $request->category_id);
-                    if ($request->category_group) {
-                        $group = $request->category_group;
-                        if ($group === 'new_mobile') {
-                            $q->whereHas('category', fn($cq) => $cq->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
-                        } elseif ($group === 'old_mobile') {
-                            $q->whereHas('category', fn($cq) => $cq->whereIn('slug', ['MOBILE-OLD', 'mobile-old']));
-                        } elseif ($group === 'other') {
-                            $q->whereHas('category', fn($cq) => $cq->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']));
-                        }
+            $grouped = [];
+
+            if ($request->category_group !== 'new_mobile') {
+                $oldMobileStock = $this->getOldMobileStock($shopId, $request);
+                foreach ($oldMobileStock as $item) {
+                    $key = $this->generateGroupKey($item['product'], $item['ram'], $item['storage'], $item['color']);
+                    if (!isset($grouped[$key])) {
+                        $grouped[$key] = [
+                            'id'          => 'group_' . md5($key),
+                            'product_id'  => $item['product_id'],
+                            'name'        => $item['product']->name,
+                            'imei'        => $item['imei'],   // root-level IMEI for individual devices
+                            'attributes'  => [
+                                'color'       => $item['color'],
+                                'ram'         => $item['ram'],
+                                'storage'     => $item['storage'],
+                                'imei'        => $item['imei'],   // for display in Available Stock table
+                                'imeis'       => $item['imei'] ? [$item['imei']] : [],
+                                'description' => $item['product']->attributes['description'] ?? '',
+                            ],
+                            'current_stock'    => 0,
+                            'selling_price'    => $item['selling_price'],
+                            'wholeseller_price' => $item['product']->wholeseller_price ?? 0,
+                            'purchase_price'   => $item['product']->purchase_price ?? 0,
+                            'incentive_amount' => $item['product']->incentive_amount ?? 0,
+                            'min_selling_price' => $item['product']->min_selling_price ?? 0,
+                            'max_selling_price' => $item['product']->max_selling_price ?? 0,
+                            'location'    => $item['product']->location,
+                            'category'    => $item['product']->category,
+                            'brand'       => $item['product']->brand,
+                            'is_grouped'  => true,
+                            'is_old_mobile' => true,
+                        ];
                     }
-                    if ($request->model) $q->where('name', 'like', "%{$request->model}%");
-                });
-
-            if ($request->search) {
-                $s = $request->search;
-                $query->where(function($q) use ($s) {
-                    $q->whereHas('product', function($pq) use ($s) {
-                        $pq->where('name', 'like', "%{$s}%")
-                          ->orWhere('attributes->model', 'like', "%{$s}%");
-                    })
-                    ->orWhere('imei', 'like', "%{$s}%");
-                });
-            }
-
-            if ($request->model) {
-                $query->whereHas('product', fn($q) => $q->where('name', 'like', "%{$request->model}%"));
-            }
-
-            if ($request->color)   $query->where('color', 'like', "%{$request->color}%");
-            if ($request->imei)    $query->where('imei', 'like', "%{$request->imei}%");
-            if ($request->ram)     $query->where('ram', 'like', "%{$request->ram}%");
-            if ($request->storage) $query->where('storage', 'like', "%{$request->storage}%");
-            if ($request->description) {
-                $desc = $request->description;
-                $query->whereHas('product', function($q) use ($desc) {
-                    $q->where('attributes->description', 'like', "%{$desc}%");
-                });
-            }
-            
-            $items = $query->get();
-
-            // ── Subtract Sold Items Logically (Optimized) ──
-            $newCat = \App\Models\Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
-            $oldCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-            $mobileCatIds = array_values(array_filter([$newCat?->id, $oldCat?->id]));
-
-            $saleItemsQuery = \App\Models\SaleItem::whereHas('invoice', function($q) use ($shopId) {
-                $q->where('is_cancelled', false);
-                if ($shopId) $q->where('shop_id', $shopId);
-            });
-
-            if ($request->category_id) {
-                $saleItemsQuery->whereHas('product', fn($pq) => $pq->where('category_id', $request->category_id));
-            } elseif ($request->category_group) {
-                $group = $request->category_group;
-                if ($group === 'new_mobile') {
-                    $saleItemsQuery->whereHas('product.category', fn($cq) => $cq->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
-                } elseif ($group === 'old_mobile') {
-                    $saleItemsQuery->whereHas('product.category', fn($cq) => $cq->whereIn('slug', ['MOBILE-OLD', 'mobile-old']));
-                } elseif ($group === 'other') {
-                    $saleItemsQuery->whereHas('product.category', fn($cq) => $cq->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']));
+                    $grouped[$key]['current_stock'] += $item['quantity'];
                 }
-            } else if (!empty($mobileCatIds)) {
-                $saleItemsQuery->whereHas('product', fn($pq) => $pq->whereIn('category_id', $mobileCatIds));
             }
 
-            $saleItems = $saleItemsQuery->get();
-            $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
-            $soldCounts = []; 
-            foreach ($saleItems as $si) {
-                if ($si->imei) continue; 
-                $key = $this->generateGroupKey($si->product, $si->ram, $si->storage, $si->color);
-                $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
-            }
+            if ($request->category_group !== 'old_mobile') {
+                $query = \App\Models\PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
+                    ->whereHas('invoice', function($q) use ($shopId, $request) {
+                        $q->where('status', 'received');
+                        if ($shopId) $q->where('shop_id', $shopId);
+                        if ($request->supplier_id) $q->where('supplier_id', $request->supplier_id);
+                        if ($request->from) $q->where('purchase_date', '>=', $request->from);
+                        if ($request->to) $q->where('purchase_date', '<=', $request->to);
+                    })
+                    ->whereHas('product', function($q) use ($request) {
+                        if ($request->category_id) $q->where('category_id', $request->category_id);
+                        if ($request->category_group) {
+                            $group = $request->category_group;
+                            if ($group === 'new_mobile') {
+                                $q->whereHas('category', fn($cq) => $cq->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
+                            } elseif ($group === 'other') {
+                                $q->whereHas('category', fn($cq) => $cq->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']));
+                            }
+                        }
+                        if ($request->model) $q->where('name', 'like', "%{$request->model}%");
+                    });
 
-            if ($request->group_by_config === 'true') {
-                $grouped = [];
+                if ($request->search) {
+                    $s = $request->search;
+                    $query->where(function($q) use ($s) {
+                        $q->whereHas('product', function($pq) use ($s) {
+                            $pq->where('name', 'like', "%{$s}%")
+                              ->orWhere('attributes->model', 'like', "%{$s}%");
+                        })
+                        ->orWhere('imei', 'like', "%{$s}%");
+                    });
+                }
+
+                if ($request->color)   $query->where('color', 'like', "%{$request->color}%");
+                if ($request->imei)    $query->where('imei', 'like', "%{$request->imei}%");
+                if ($request->ram)     $query->where('ram', 'like', "%{$request->ram}%");
+                if ($request->storage) $query->where('storage', 'like', "%{$request->storage}%");
+                
+                $items = $query->get();
+
+                $saleItemsQuery = \App\Models\SaleItem::whereHas('invoice', function($q) use ($shopId) {
+                    $q->where('is_cancelled', false);
+                    if ($shopId) $q->where('shop_id', $shopId);
+                });
+                if ($request->category_id) {
+                    $saleItemsQuery->whereHas('product', fn($pq) => $pq->where('category_id', $request->category_id));
+                }
+                
+                $saleItems = $saleItemsQuery->get();
+                $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
+                $soldCounts = []; 
+                foreach ($saleItems as $si) {
+                    if ($si->imei) continue; 
+                    $key = $this->generateGroupKey($si->product, $si->ram, $si->storage, $si->color);
+                    $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
+                }
+
                 foreach ($items as $item) {
                     $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
-                    
                     $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
                     $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
                     $availableImeiCount = count($unsoldImeis);
-                    
                     $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
                     $nonImeiQty = ($item->imei) ? 0 : $totalQty;
                     
@@ -131,103 +137,15 @@ class ProductController extends Controller
                             'id' => 'group_' . md5($key),
                             'product_id' => $item->product_id,
                             'name' => $item->product->name,
-                            'attributes' => [
-                                'color' => $item->color,
-                                'ram' => $item->ram,
-                                'storage' => $item->storage,
-                                'imeis' => [],
-                                'description' => $item->product->attributes['description'] ?? ''
-                            ],
-                            'current_stock' => 0,
-                            'selling_price' => $item->selling_price,
-                            'wholeseller_price' => $item->wholeseller_price,
-                            'purchase_price' => $item->unit_price,
-                            'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
-                            'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
-                            'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
-                            'location' => $item->location ?? $item->product->location,
-                            'category' => $item->product->category,
-                            'brand' => $item->product->brand,
-                            'is_grouped' => true
+                            'attributes' => ['color' => $item->color, 'ram' => $item->ram, 'storage' => $item->storage, 'imeis' => [], 'description' => $item->product->attributes['description'] ?? ''],
+                            'current_stock' => 0, 'selling_price' => $item->selling_price, 'wholeseller_price' => $item->wholeseller_price, 'purchase_price' => $item->unit_price, 'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount, 'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price, 'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price, 'location' => $item->location ?? $item->product->location, 'category' => $item->product->category, 'brand' => $item->product->brand, 'is_grouped' => true
                         ];
                     }
-                    
                     $grouped[$key]['current_stock'] += $currentStock;
                     $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
-                    if ($item->selling_price > $grouped[$key]['selling_price']) {
-                        $grouped[$key]['selling_price'] = $item->selling_price;
-                    }
-                }
-                return response()->json($this->sortStockItems(array_values($grouped)));
-            }
-
-            $expanded = [];
-            foreach ($items as $item) {
-                $itemImeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
-                $unsoldImeis = array_values(array_filter($itemImeis, fn($id) => !in_array($id, $soldImeis)));
-                
-                foreach ($unsoldImeis as $index => $imei) {
-                    $expanded[] = [
-                        'id' => 'item_' . $item->id . '_' . $index,
-                        'product_id' => $item->product_id,
-                        'name' => $item->product->name,
-                        'attributes' => [
-                            'color' => $item->color,
-                            'ram' => $item->ram,
-                            'storage' => $item->storage,
-                            'imei' => $imei,
-                            'description' => $item->product->attributes['description'] ?? ''
-                        ],
-                        'current_stock' => 1,
-                        'selling_price' => $item->selling_price,
-                        'wholeseller_price' => $item->wholeseller_price,
-                        'purchase_price' => $item->unit_price, 
-                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
-                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
-                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
-                        'location' => $item->location ?? $item->product->location,
-                        'category' => $item->product->category,
-                        'brand' => $item->product->brand
-                    ];
-                }
-
-                $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
-                $nonImeiQty = ($item->imei) ? 0 : $totalQty;
-                
-                $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
-
-                if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
-                    $diff = min($nonImeiQty, $soldCounts[$key]);
-                    $nonImeiQty -= $diff;
-                    $soldCounts[$key] -= $diff;
-                }
-
-                for ($i = 0; $i < $nonImeiQty; $i++) {
-                    $expanded[] = [
-                        'id' => 'item_ni_' . $item->id . '_' . $i,
-                        'product_id' => $item->product_id,
-                        'name' => $item->product->name,
-                        'attributes' => [
-                            'color' => $item->color,
-                            'ram' => $item->ram,
-                            'storage' => $item->storage,
-                            'imei' => null,
-                            'description' => $item->product->attributes['description'] ?? ''
-                        ],
-                        'current_stock' => 1,
-                        'selling_price' => $item->selling_price,
-                        'wholeseller_price' => $item->wholeseller_price,
-                        'purchase_price' => $item->unit_price,
-                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
-                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
-                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
-                        'location' => $item->location ?? $item->product->location,
-                        'category' => $item->product->category,
-                        'brand' => $item->product->brand
-                    ];
                 }
             }
-            return response()->json($this->sortStockItems($expanded));
+            return response()->json($this->sortStockItems(array_values($grouped)));
         }
 
         $query = Product::with(['category', 'brand', 'inventory' => function($q) use ($shopId) {
@@ -580,5 +498,98 @@ class ProductController extends Controller
         });
         
         return $items;
+    }
+
+    /**
+     * Fetch old-mobile products from Product+Inventory tables.
+     * Old mobiles purchased via trade-in/exchange use OldMobilePurchase which directly
+     * inserts into Product + Inventory — NOT into PurchaseItem. So we must read from
+     * the product/inventory tables for the old_mobile Available Stock view.
+     */
+    private function getOldMobileStock($shopId, $request): array
+    {
+        $oldMobileCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
+        if (!$oldMobileCat) return [];
+
+        // Fetch products in MOBILE-OLD category that have inventory stock > 0
+        $productQuery = Product::with(['category', 'brand'])
+            ->where('category_id', $oldMobileCat->id)
+            ->where('deleted_at', null)
+            ->whereHas('inventory', function($q) use ($shopId) {
+                $q->where('stock', '>', 0);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->with(['inventory' => function($q) use ($shopId) {
+                if ($shopId) $q->where('shop_id', $shopId);
+            }]);
+
+        // Apply search / model filter
+        if ($request->search) {
+            $s = $request->search;
+            $productQuery->where(function($q) use ($s) {
+                $q->where('name', 'like', "%{$s}%")->orWhere('imei', 'like', "%{$s}%");
+            });
+        }
+        if ($request->model) {
+            $productQuery->where('name', 'like', "%{$request->model}%");
+        }
+        if ($request->imei) {
+            $productQuery->where('imei', 'like', "%{$request->imei}%");
+        }
+        if ($request->color) {
+            $productQuery->where(function($q) use ($request) {
+                $q->where('attributes->color', 'like', "%{$request->color}%");
+            });
+        }
+        if ($request->ram) {
+            $productQuery->where('attributes->ram', 'like', "%{$request->ram}%");
+        }
+        if ($request->storage) {
+            $productQuery->where('attributes->storage', 'like', "%{$request->storage}%");
+        }
+
+        $products = $productQuery->get();
+
+        // Exclude already-sold products (sold via SaleItem)
+        $soldProductIds = \App\Models\SaleItem::whereHas('invoice', function($q) use ($shopId) {
+            $q->where('is_cancelled', false);
+            if ($shopId) $q->where('shop_id', $shopId);
+        })
+        ->whereHas('product', function($q) use ($oldMobileCat) {
+            $q->where('category_id', $oldMobileCat->id);
+        })
+        ->pluck('product_id')
+        ->toArray();
+
+        $result = [];
+        foreach ($products as $product) {
+            // Calculate actual available stock from inventory minus sold
+            $inventoryStock = $product->inventory->sum('stock');
+            // Count how many times this product was sold
+            $soldCount = \App\Models\SaleItem::whereHas('invoice', function($q) use ($shopId) {
+                $q->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })->where('product_id', $product->id)->sum('quantity');
+
+            $available = max(0, $inventoryStock - (int)$soldCount);
+            if ($available <= 0) continue;
+
+            $ram     = $product->attributes['ram'] ?? null;
+            $storage = $product->attributes['storage'] ?? null;
+            $color   = $product->attributes['color'] ?? null;
+
+            $result[] = [
+                'product_id'    => $product->id,
+                'product'       => $product,
+                'ram'           => $ram,
+                'storage'       => $storage,
+                'color'         => $color,
+                'selling_price' => $product->selling_price ?? 0,
+                'quantity'      => $available,
+                'imei'          => $product->imei,
+            ];
+        }
+
+        return $result;
     }
 }

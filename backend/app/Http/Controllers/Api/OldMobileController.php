@@ -54,7 +54,7 @@ class OldMobileController extends Controller
         $purchase = OldMobilePurchase::create($data);
 
         // 1. Automatically create a Product for inventory reselling
-        $category = \App\Models\Category::where('slug', 'MOBILE-OLD')->first();
+        $category = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
         $categoryId = $category ? $category->id : null;
 
         $product = \App\Models\Product::create([
@@ -164,7 +164,7 @@ class OldMobileController extends Controller
 
         // Update associated product
         if ($oldMobilePurchase->product_id) {
-            $category = \App\Models\Category::where('slug', 'MOBILE-OLD')->first();
+            $category = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
             $categoryId = $category ? $category->id : null;
 
             $product = \App\Models\Product::find($oldMobilePurchase->product_id);

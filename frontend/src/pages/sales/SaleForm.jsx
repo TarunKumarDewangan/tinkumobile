@@ -340,33 +340,32 @@ export default function SaleForm() {
         params.group_by_config = 'false';
       }
       
-      const { data } = await api.get('/products', { params });
-      
       if (category_group === 'old_mobile') {
+        // Old mobile exchange purchases go into Product+Inventory directly (not PurchaseItem).
+        // Use the standard product list endpoint (no group_by_config) which reads from products table.
+        const { data } = await api.get('/products', { params });
         const productsData = data.data || data;
-        const oldMobiles = productsData.filter(p => 
-          p.category?.slug === 'MOBILE-OLD' || 
-          p.category?.name?.toUpperCase() === 'MOBILE OLD' || 
-          p.category?.slug === 'mobile-old'
-        );
-        
-        // Map old mobiles to the expanded item format
-        const mapped = oldMobiles.map(p => ({
-          id: `item_${p.id}_0`,
-          product_id: p.id,
-          name: p.name,
-          imei: p.imei,
-          attributes: p.attributes || {},
-          current_stock: p.stock || 1,
-          selling_price: p.selling_price,
-          wholeseller_price: p.wholeseller_price,
-          purchase_price: p.purchase_price,
-          min_selling_price: p.min_selling_price,
-          max_selling_price: p.max_selling_price,
-          category: p.category
-        }));
+
+        // Map to sale-form item format — filter out items with 0 stock
+        const mapped = productsData
+          .filter(p => (p.stock ?? 0) > 0) // Only show products with available stock
+          .map(p => ({
+            id: `item_${p.id}_0`,
+            product_id: p.id,
+            name: p.name,
+            imei: p.imei,
+            attributes: p.attributes || {},
+            current_stock: p.stock ?? 0,
+            selling_price: p.selling_price,
+            wholeseller_price: p.wholeseller_price,
+            purchase_price: p.purchase_price,
+            min_selling_price: p.min_selling_price,
+            max_selling_price: p.max_selling_price,
+            category: p.category
+          }));
         setProducts(mapped);
       } else {
+        const { data } = await api.get('/products', { params });
         setProducts(data);
       }
     } catch (e) { toast.error('Error loading products'); }
