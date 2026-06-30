@@ -214,6 +214,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('entities/summary', [EntityLedgerController::class, 'summary']);
     Route::get('entities/report', [EntityLedgerController::class, 'report']);
     Route::get('entities/statements', [EntityLedgerController::class, 'index']);
+    Route::get('entities/customer-ledger', [EntityLedgerController::class, 'showForCustomer']);
     Route::get('entities/{name}/ledger', [EntityLedgerController::class, 'show']);
     Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
 

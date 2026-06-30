@@ -312,8 +312,9 @@ export default function SaleForm() {
       setCustomerInputText(data.customer?.name || '');
       setSelectedCustomer(data.customer || null);
       if (data.customer) {
-        const url = `/entities/${encodeURIComponent(data.customer.name)}/ledger` + (id ? `?exclude_sale_invoice_id=${id}` : '');
-        api.get(url)
+        const params = new URLSearchParams({ customer_id: data.customer.id });
+        if (id) params.set('exclude_sale_invoice_id', id);
+        api.get(`/entities/customer-ledger?${params}`)
           .then(res => {
             const bal = parseFloat(res.data.entity?.net_balance || 0);
             const initialCreditUsed = parseFloat(data.exchange_paid || 0);
@@ -649,9 +650,10 @@ export default function SaleForm() {
     setCustomerInputText(c.name);
     setSelectedCustomer(c);
     setPriceMode(c.category === 'SHOP' ? 'WHOLESALE' : 'RETAIL');
-    if (c.name) {
-      const url = `/entities/${encodeURIComponent(c.name)}/ledger` + (id ? `?exclude_sale_invoice_id=${id}` : '');
-      api.get(url)
+    if (c.id) {
+      const params = new URLSearchParams({ customer_id: c.id });
+      if (id) params.set('exclude_sale_invoice_id', id);
+      api.get(`/entities/customer-ledger?${params}`)
         .then(res => {
           const bal = parseFloat(res.data.entity?.net_balance || 0);
           if (bal < 0) {

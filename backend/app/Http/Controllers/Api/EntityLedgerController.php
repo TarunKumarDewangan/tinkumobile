@@ -194,6 +194,22 @@ class EntityLedgerController extends Controller
     }
 
     /**
+     * Get ledger by customer_id (safe for customer names containing '/' or other special URL chars).
+     */
+    public function showForCustomer(Request $request)
+    {
+        $customerId = $request->query('customer_id');
+        if (!$customerId) {
+            return response()->json(['message' => 'customer_id is required'], 422);
+        }
+        $customer = \App\Models\Customer::find($customerId);
+        if (!$customer) {
+            return response()->json(['message' => 'Customer not found'], 404);
+        }
+        return $this->show($request, $customer->name);
+    }
+
+    /**
      * Get detailed ledger for a single entity.
      */
     public function show(Request $request, $entityName)
