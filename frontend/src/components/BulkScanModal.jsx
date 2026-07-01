@@ -37,7 +37,7 @@ export default function BulkScanModal({ show, onHide, products, categories, onAd
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
 
   // "Mobile New" category id for new products (id=1 typically; use categories prop to find it)
-  const mobileNewCatId = categories?.find(c => c.slug === 'mobile-new')?.id
+  const mobileNewCatId = categories?.find(c => c.slug?.toLowerCase() === 'mobile-new')?.id
     || categories?.find(c => c.name?.toLowerCase().includes('mobile new'))?.id
     || 1;
 

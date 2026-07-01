@@ -50,10 +50,10 @@ export default function OpeningStockForm({
 
     if (field === 'is_new' && val) {
       if (category_group === 'other') {
-        const accessoryCat = categories.find(c => c.slug === 'accessory' || c.id == 3);
-        newItems[i].category_id = accessoryCat ? accessoryCat.id : (categories.filter(c => c.slug !== 'mobile-new' && c.slug !== 'mobile-old')[0]?.id || '');
+        const accessoryCat = categories.find(c => c.slug?.toLowerCase() === 'accessory' || c.id == 3);
+        newItems[i].category_id = accessoryCat ? accessoryCat.id : (categories.filter(c => { const s = c.slug?.toLowerCase(); return s !== 'mobile-new' && s !== 'mobile-old'; })[0]?.id || '');
       } else {
-        const newMobileCat = categories.find(c => c.slug === 'mobile-new' || c.name?.toLowerCase().includes('new'));
+        const newMobileCat = categories.find(c => c.slug?.toLowerCase() === 'mobile-new' || c.name?.toLowerCase().includes('new'));
         newItems[i].category_id = newMobileCat ? newMobileCat.id : (categories[0]?.id || '');
       }
     }
@@ -294,10 +294,11 @@ export default function OpeningStockForm({
                           <option value="">— SELECT CATEGORY —</option>
                           {categories
                             .filter(c => {
+                              const s = c.slug?.toLowerCase();
                               if (category_group === 'other') {
-                                return c.slug !== 'mobile-new' && c.slug !== 'mobile-old';
+                                return s !== 'mobile-new' && s !== 'mobile-old';
                               } else {
-                                return c.slug === 'mobile-new' || c.slug === 'mobile-old';
+                                return s === 'mobile-new' || s === 'mobile-old';
                               }
                             })
                             .map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)
