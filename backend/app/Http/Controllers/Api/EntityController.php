@@ -180,14 +180,16 @@ class EntityController extends Controller
                 ];
                 
                 if ($relation instanceof \App\Models\Customer) {
-                    $relationData['category'] = $entity->type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR';
+                    $relationData['category'] = in_array($data['type'], ['SHOP_CUSTOMER']) ? 'SHOP' : 'REGULAR';
                     $relationData['email'] = $entity->email;
                     $relationData['address'] = $entity->description;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relationData['voucher_code'] = $data['voucher_code'] ?? null;
-                    
-                    $relation->update($relationData);
-                    
+
+                    // Use saveQuietly to prevent SyncsWithMasterEntity from firing and
+                    // overwriting the entity type we just explicitly set above.
+                    $relation->fill($relationData)->saveQuietly();
+
                     $relation->events()->delete();
                     if (!empty($data['events'])) {
                         foreach ($data['events'] as $evt) {
@@ -197,12 +199,12 @@ class EntityController extends Controller
                 } elseif ($relation instanceof \App\Models\Supplier) {
                     $relationData['address'] = $entity->description;
                     $relationData['gst_no'] = $entity->gst_number;
-                    $relation->update($relationData);
+                    $relation->fill($relationData)->saveQuietly();
                 } elseif ($relation instanceof \App\Models\Shop) {
                     $relationData['address'] = $entity->description;
                     $relationData['email'] = $entity->email;
                     $relationData['gstin'] = $entity->gst_number;
-                    $relation->update($relationData);
+                    $relation->fill($relationData)->saveQuietly();
                 }
             }
             
