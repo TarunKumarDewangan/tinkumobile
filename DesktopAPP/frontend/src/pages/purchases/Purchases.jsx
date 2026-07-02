@@ -531,9 +531,12 @@ export default function Purchases() {
                   <tr key={p.id||idx}>
                     <td style={{fontWeight:700,color:'#1e293b'}}>
                       {p.brand ? p.brand.name.toUpperCase() + ' ' : ''}{p.name}
+                      {p.is_old_mobile && (
+                        <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',border:'1px solid #fcd34d',fontSize:'.58rem',fontWeight:700,padding:'1px 5px',borderRadius:3}}>2ND HAND</span>
+                      )}
                     </td>
                     <td style={{fontSize:'.75rem'}}>
-                      {['mobile-new', 'mobile-old'].includes((p.category?.slug || p.category?.name || '').toLowerCase()) ? (
+                      {['mobile-new', 'mobile-old', 'MOBILE-NEW', 'MOBILE-OLD'].includes((p.category?.slug || p.category?.name || '').toUpperCase().replace(' ', '-')) ? (
                         <>
                           <span style={{background:'#f1f5f9',border:'1px solid #cbd5e1',borderRadius:4,padding:'2px 8px',fontSize:'.65rem',fontWeight:700,marginRight:6}}>{p.attributes?.color||'-'}</span>
                           <span style={{color:'#475569'}}>{p.attributes?.ram||'-'}/{p.attributes?.storage||'-'}</span>
@@ -541,9 +544,10 @@ export default function Purchases() {
                       ) : (
                         <span style={{color:'#475569', fontWeight: 700, textTransform: 'uppercase'}}>{p.attributes?.description || '—'}</span>
                       )}
-                      {p.attributes?.imei && (
+                      {/* Show IMEI — check both attributes.imei (new mobile) and root p.imei (old mobile exchange) */}
+                      {(p.attributes?.imei || p.imei) && (
                         <div style={{color:'#16a34a',fontSize:'.63rem',fontWeight:700}}>
-                          🆔<Link to={category_group === 'master' ? `/sales/new-master?imei=${p.attributes.imei}` : `/sales/new?category_group=${category_group}&imei=${p.attributes.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{p.attributes.imei}</Link>
+                          🆔<Link to={category_group === 'master' ? `/sales/new-master?imei=${p.attributes?.imei || p.imei}` : `/sales/new?category_group=${category_group}&imei=${p.attributes?.imei || p.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{p.attributes?.imei || p.imei}</Link>
                         </div>
                       )}
                     </td>

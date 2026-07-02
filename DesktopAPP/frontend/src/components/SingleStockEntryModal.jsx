@@ -48,10 +48,10 @@ export default function SingleStockEntryModal({ show, onHide, baseProducts, cate
       
       // Default to Category
       if (category_group === 'other') {
-        const accessoryCat = categories.find(c => c.slug === 'accessory' || c.id == 3);
-        setSelectedCategoryId(accessoryCat ? accessoryCat.id : (categories.filter(c => c.slug !== 'mobile-new' && c.slug !== 'mobile-old')[0]?.id || ''));
+        const accessoryCat = categories.find(c => c.slug?.toLowerCase() === 'accessory' || c.id == 3);
+        setSelectedCategoryId(accessoryCat ? accessoryCat.id : (categories.filter(c => { const s = c.slug?.toLowerCase(); return s !== 'mobile-new' && s !== 'mobile-old'; })[0]?.id || ''));
       } else {
-        const newMobileCat = categories.find(c => c.slug === 'mobile-new' || c.name?.toLowerCase().includes('new'));
+        const newMobileCat = categories.find(c => c.slug?.toLowerCase() === 'mobile-new' || c.name?.toLowerCase().includes('new'));
         setSelectedCategoryId(newMobileCat ? newMobileCat.id : (categories[0]?.id || ''));
       }
 
@@ -249,10 +249,11 @@ export default function SingleStockEntryModal({ show, onHide, baseProducts, cate
                     <select className="form-select border-secondary-subtle" required value={selectedCategoryId} onChange={e => setSelectedCategoryId(e.target.value)}>
                       {categories
                         .filter(c => {
+                          const s = c.slug?.toLowerCase();
                           if (category_group === 'other') {
-                            return c.slug !== 'mobile-new' && c.slug !== 'mobile-old';
+                            return s !== 'mobile-new' && s !== 'mobile-old';
                           } else {
-                            return c.slug === 'mobile-new' || c.slug === 'mobile-old';
+                            return s === 'mobile-new' || s === 'mobile-old';
                           }
                         })
                         .map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)

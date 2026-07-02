@@ -347,10 +347,17 @@ class PurchaseInvoiceController extends Controller
         return DB::transaction(function () use ($data, $purchaseInvoice) {
             $shopId = $purchaseInvoice->shop_id;
 
-            // 1. If old status was 'received', revert stock
-            if ($purchaseInvoice->status === 'received') {
-                foreach ($purchaseInvoice->items as $item) {
-                    Inventory::removeStock($shopId, $item->product_id, $item->quantity);
+            // ── Smart stock adjustment: compute per-product quantity snapshot BEFORE clearing items ──
+            // We use a diff approach instead of full revert+reapply, because some units may already
+            // be sold — a full removeStock() would fail with "Insufficient stock" for those units.
+            $oldWasReceived = ($purchaseInvoice->status === 'received');
+
+            // Build map: product_id => total old purchased qty (from this invoice)
+            $oldQtyByProduct = [];
+            if ($oldWasReceived) {
+                foreach ($purchaseInvoice->items as $oldItem) {
+                    $pid = $oldItem->product_id;
+                    $oldQtyByProduct[$pid] = ($oldQtyByProduct[$pid] ?? 0) + $oldItem->quantity;
                 }
             }
 
@@ -369,7 +376,7 @@ class PurchaseInvoiceController extends Controller
                 'total_paid'    => $data['total_paid'] ?? $purchaseInvoice->total_paid,
                 'notes'         => $data['notes'] ?? null,
             ]));
-             $purchaseInvoice->updatePaymentStatus();
+            $purchaseInvoice->updatePaymentStatus();
 
             // Delete old transactions individually so Eloquent delete events fire
             $oldTransactions = \App\Models\Transaction::where('entity_type', get_class($purchaseInvoice))
@@ -401,8 +408,21 @@ class PurchaseInvoiceController extends Controller
                 ]);
             }
 
-            $createdProducts = []; 
-            // 4. Create new items and apply stock if received
+            $newIsReceived = ($data['status'] === 'received');
+
+            // Build map: product_id => total new purchased qty (from submitted items)
+            $newQtyByProduct = [];
+            if ($newIsReceived) {
+                foreach ($data['items'] as $item) {
+                    $pid = $item['product_id'] ?? null;
+                    if ($pid) {
+                        $newQtyByProduct[$pid] = ($newQtyByProduct[$pid] ?? 0) + $item['quantity'];
+                    }
+                }
+            }
+
+            $createdProducts = [];
+            // 4. Create new items
             foreach ($data['items'] as $item) {
                 $productId = $item['product_id'];
 
@@ -437,6 +457,10 @@ class PurchaseInvoiceController extends Controller
                         ]);
                         $productId = $product->id;
                         $createdProducts[$item['new_product_name']] = $productId;
+                        // Track new product qty for diff
+                        if ($newIsReceived) {
+                            $newQtyByProduct[$productId] = ($newQtyByProduct[$productId] ?? 0) + $item['quantity'];
+                        }
                     }
                 } else if ($productId) {
                     $p = Product::find($productId);
@@ -451,7 +475,7 @@ class PurchaseInvoiceController extends Controller
                         if (isset($item['incentive_amount']))  $p->incentive_amount  = $item['incentive_amount'];
                         if (isset($item['subcategory']))       $p->subcategory       = $item['subcategory'];
                         if (isset($item['location']))          $p->location          = $item['location'];
-                        
+
                         $attrs = $p->attributes ?? [];
                         if (isset($item['ram']))         $attrs['ram']         = $item['ram'];
                         if (isset($item['storage']))     $attrs['storage']     = $item['storage'];
@@ -461,7 +485,7 @@ class PurchaseInvoiceController extends Controller
                         if (isset($item['warranty']))    $attrs['warranty']    = $item['warranty'];
                         if (isset($item['description'])) $attrs['description'] = $item['description'];
                         $p->attributes = $attrs;
-                        
+
                         $p->save();
                     }
                 }
@@ -474,7 +498,7 @@ class PurchaseInvoiceController extends Controller
                     'storage'             => $item['storage'] ?? null,
                     'color'               => $item['color'] ?? null,
                     'quantity'            => $item['quantity'],
-                    'received_quantity'   => $data['status'] === 'received' ? $item['quantity'] : 0,
+                    'received_quantity'   => $newIsReceived ? $item['quantity'] : 0,
                     'damaged_quantity'    => 0,
                     'unit_price'          => $item['unit_price'],
                     'selling_price'       => $item['selling_price'] ?? null,
@@ -484,9 +508,52 @@ class PurchaseInvoiceController extends Controller
                     'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
                 ]);
+            }
 
-                if ($data['status'] === 'received') {
-                    Inventory::addStock($shopId, $productId, $item['quantity']);
+            // ── Apply stock adjustment using NET DIFF to avoid RuntimeException when items are sold ──
+            // Collect all product IDs involved (union of old and new)
+            $allProductIds = array_unique(array_merge(
+                array_keys($oldQtyByProduct),
+                array_keys($newQtyByProduct)
+            ));
+
+            foreach ($allProductIds as $pid) {
+                $oldQty = $oldQtyByProduct[$pid] ?? 0;
+                $newQty = $newQtyByProduct[$pid] ?? 0;
+                $diff   = $newQty - $oldQty;
+
+                if ($diff > 0) {
+                    // More units purchased — add to stock
+                    Inventory::addStock($shopId, $pid, $diff);
+                } elseif ($diff < 0) {
+                    // Fewer units — remove from stock, but only what's actually available
+                    // (avoid crashing when some units are already sold)
+                    $inventory = \App\Models\Inventory::where('shop_id', $shopId)
+                        ->where('product_id', $pid)
+                        ->first();
+                    $canRemove = $inventory ? min(abs($diff), $inventory->stock) : 0;
+                    if ($canRemove > 0) {
+                        Inventory::removeStock($shopId, $pid, $canRemove);
+                    }
+                }
+                // diff === 0: no change needed (same quantity, just updating IMEI/details)
+            }
+
+            // Handle transition: ordered → received (no old stock, now receiving)
+            if (!$oldWasReceived && $newIsReceived) {
+                foreach ($newQtyByProduct as $pid => $qty) {
+                    Inventory::addStock($shopId, $pid, $qty);
+                }
+            }
+            // Handle transition: received → ordered (had stock, now unreceiving)
+            if ($oldWasReceived && !$newIsReceived) {
+                foreach ($oldQtyByProduct as $pid => $oldQty) {
+                    $inventory = \App\Models\Inventory::where('shop_id', $shopId)
+                        ->where('product_id', $pid)->first();
+                    $canRemove = $inventory ? min($oldQty, $inventory->stock) : 0;
+                    if ($canRemove > 0) {
+                        Inventory::removeStock($shopId, $pid, $canRemove);
+                    }
                 }
             }
 

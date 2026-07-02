@@ -10,7 +10,7 @@ export default function StockExcelImportModal({ show, onHide, products, categori
       const lines = importText.split('\n');
       const items = [];
       
-      const mobileNewCatId = categories?.find(c => c.slug === 'mobile-new')?.id || 1;
+      const mobileNewCatId = categories?.find(c => c.slug?.toLowerCase() === 'mobile-new')?.id || 1;
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();

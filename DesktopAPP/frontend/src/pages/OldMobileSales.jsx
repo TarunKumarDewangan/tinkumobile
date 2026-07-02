@@ -30,7 +30,7 @@ export default function OldMobileSales() {
   useEffect(() => {
     api.get('/categories')
       .then(res => {
-        const cat = res.data.find(c => c.slug === 'mobile-old' || c.name?.toLowerCase() === 'mobile old');
+        const cat = res.data.find(c => c.slug?.toLowerCase() === 'mobile-old' || c.name?.toLowerCase() === 'mobile old');
         if (cat) {
           setOldMobileCategoryId(cat.id);
         }

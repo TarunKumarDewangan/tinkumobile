@@ -851,7 +851,7 @@ export default function PurchaseForm() {
                                         onChange={e => updateItem(i, 'category_id', parseInt(e.target.value))}
                                       >
                                         <option value="">— Select Category —</option>
-                                        {categories.filter(c => c.slug !== 'mobile-new' && c.slug !== 'mobile-old').map(c => (
+                                        {categories.filter(c => { const s = c.slug?.toLowerCase(); return s !== 'mobile-new' && s !== 'mobile-old'; }).map(c => (
                                           <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>
                                         ))}
                                       </select>
