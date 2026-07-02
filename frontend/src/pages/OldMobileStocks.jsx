@@ -10,6 +10,7 @@ export default function OldMobileStocks() {
   
   // State
   const [products, setProducts] = useState([]);
+  const [sellerMap, setSellerMap] = useState({});
   const [shops, setShops] = useState([]);
   const [selectedShop, setSelectedShop] = useState('');
   const [search, setSearch] = useState('');
@@ -32,21 +33,27 @@ export default function OldMobileStocks() {
   const loadStocks = () => {
     if (!selectedShop) return;
     setLoading(true);
-    
-    // Fetch products for the shop
-    api.get('/products', { 
-      params: { 
-        shop_id: selectedShop
-      } 
-    })
-      .then(res => {
-        const data = res.data.data || res.data;
-        // Filter: only Category "Mobile Old" and stock > 0
-        const oldMobiles = data.filter(p => 
+
+    Promise.all([
+      api.get('/products', { params: { shop_id: selectedShop } }),
+      api.get('/old-mobiles', { params: { shop_id: selectedShop } }),
+    ])
+      .then(([prodRes, omRes]) => {
+        const data = prodRes.data.data || prodRes.data;
+        const oldMobiles = data.filter(p =>
           (p.category?.slug === 'MOBILE-OLD' || p.category?.name?.toUpperCase() === 'MOBILE OLD' || p.category?.slug === 'mobile-old') &&
           (p.stock > 0)
         );
         setProducts(oldMobiles);
+
+        // Build productId → customer name map from old mobile purchases
+        const map = {};
+        (omRes.data || []).forEach(om => {
+          if (om.product_id) {
+            map[om.product_id] = om.customer?.name || om.customer_name || '—';
+          }
+        });
+        setSellerMap(map);
       })
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
@@ -140,6 +147,7 @@ export default function OldMobileStocks() {
                   <th className="py-3 text-muted">Purchase Price</th>
                   <th className="py-3 text-muted">Target Selling Price</th>
                   <th className="py-3 px-4 text-muted text-center">Available Stock</th>
+                  <th className="py-3 text-muted">Seller (Customer)</th>
                   <th className="py-3 px-4 text-muted text-end">Actions</th>
                 </tr>
               </thead>
@@ -184,6 +192,11 @@ export default function OldMobileStocks() {
                         {p.stock} Devices
                       </span>
                     </td>
+                    <td className="py-3">
+                      <span className="fw-semibold text-dark" style={{fontSize:'.85rem'}}>
+                        {sellerMap[p.id] || '—'}
+                      </span>
+                    </td>
                     <td className="py-3 px-4 text-end">
                       <div className="d-flex justify-content-end gap-2">
                         <button onClick={() => navigate(`/products/${p.id}/edit`)} className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold">✏️ EDIT</button>
@@ -197,7 +210,7 @@ export default function OldMobileStocks() {
                 ))}
                 {filteredProducts.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-5 text-muted">
+                    <td colSpan={8} className="text-center py-5 text-muted">
                       <div className="fs-1 mb-2">📭</div>
                       No second-hand mobile devices currently in stock.
                     </td>

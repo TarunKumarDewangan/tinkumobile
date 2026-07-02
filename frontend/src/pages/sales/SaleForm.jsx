@@ -1006,21 +1006,24 @@ export default function SaleForm() {
                                                 {products
                                                     .filter(p => {
                                                         const fullName = getProductFullName(p);
-                                                        return !productSearch || 
-                                                            fullName.includes(productSearch.toUpperCase()) || 
-                                                            (p.imei && p.imei.includes(productSearch.toUpperCase())) || 
-                                                            (p.attributes?.imei && p.attributes.imei.includes(productSearch.toUpperCase()));
+                                                        const q = productSearch.toUpperCase();
+                                                        const imeiMatch =
+                                                            (p.imei && p.imei.includes(q)) ||
+                                                            (p.attributes?.imei && p.attributes.imei.includes(q)) ||
+                                                            (Array.isArray(p.attributes?.imeis) && p.attributes.imeis.some(im => im && im.includes(q)));
+                                                        return !productSearch || fullName.includes(q) || imeiMatch;
                                                     })
                                                     .slice(0, 20)
                                                     .map(p => {
                                                         const fullName = getProductFullName(p);
-                                                        const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color) 
+                                                        const configStr = (p.attributes?.ram || p.attributes?.storage || p.attributes?.color)
                                                             ? `(${p.attributes.ram || '-'}/${p.attributes.storage || '-'}/${p.attributes.color || '-'})`
                                                             : '';
-                                                        const imeiSuffix = (p.imei || p.attributes?.imei) ? ` / IMEI: ${p.imei || p.attributes.imei}` : '';
+                                                        const firstImei = p.imei || p.attributes?.imei || p.attributes?.imeis?.[0] || '';
+                                                        const imeiSuffix = firstImei ? ` / IMEI: ${firstImei}` : '';
                                                         const stockStr = p.stock !== undefined ? ` | Stock: ${p.stock}` : (p.current_stock !== undefined ? ` | Stock: ${p.current_stock}` : '');
                                                         return (
-                                                            <button key={p.id} type="button" className="list-group-item list-group-item-action py-2 text-uppercase small" 
+                                                            <button key={p.id} type="button" className="list-group-item list-group-item-action py-2 text-uppercase small"
                                                                 onClick={() => {
                                                                     addScannedItem(p);
                                                                     setProductSearch('');
