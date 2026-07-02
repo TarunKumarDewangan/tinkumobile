@@ -44,9 +44,10 @@ class EntityController extends Controller
 
     public function show(Entity $entity)
     {
-        $entity->load('relation.events');
+        $entity->load('relation');
         $result = $entity->toArray();
         if ($entity->relation instanceof \App\Models\Customer) {
+            $entity->relation->load('events');
             $result['voucher_code'] = $entity->relation->voucher_code;
             $result['events'] = $entity->relation->events;
         } else {
