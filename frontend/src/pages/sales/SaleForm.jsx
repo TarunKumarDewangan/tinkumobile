@@ -413,13 +413,17 @@ export default function SaleForm() {
     const selId = matchedProduct ? matchedProduct.id : (p.product_id || p.id);
     const prodId = matchedProduct ? (matchedProduct.product_id || matchedProduct.id) : (p.product_id || p.id);
 
+    const firstImei = p.imei || p.attributes?.imei || p.attributes?.imeis?.[0] || '';
+    const allImeis = p.attributes?.imeis?.filter(Boolean).length
+      ? [...p.attributes.imeis.filter(Boolean)]
+      : [firstImei];
     const newItem = {
         selection_id: selId,
         product_id: prodId,
         product_name: p.name || '',
         brand_name: (p.brand?.name || p.attributes?.brand || '').trim(),
-        imei: p.imei || p.attributes?.imei || '',
-        imeis: [p.imei || p.attributes?.imei || ''],
+        imei: firstImei,
+        imeis: allImeis,
         ram: p.attributes?.ram || '',
         storage: p.attributes?.storage || '',
         color: p.attributes?.color || '',
@@ -528,8 +532,9 @@ export default function SaleForm() {
               arr[i].storage = p.attributes.storage || '';
               arr[i].color = p.attributes.color || '';
               arr[i].description = p.attributes.description || '';
-              arr[i].imei = p.imei || p.attributes.imei || '';
-              arr[i].imeis = [p.imei || p.attributes.imei || ''];
+              const fi = p.imei || p.attributes.imei || p.attributes.imeis?.[0] || '';
+              arr[i].imei = fi;
+              arr[i].imeis = p.attributes.imeis?.filter(Boolean).length ? [...p.attributes.imeis.filter(Boolean)] : [fi];
           }
       } else {
           arr[i].product_id = '';
@@ -841,7 +846,7 @@ export default function SaleForm() {
     if (p.attributes?.storage) parts.push(p.attributes.storage);
     if (p.attributes?.color) parts.push(p.attributes.color);
     const attrs = parts.length > 0 ? ` (${parts.join('/')})` : '';
-    const imeiVal = p.imei || p.attributes?.imei;
+    const imeiVal = p.imei || p.attributes?.imei || p.attributes?.imeis?.[0];
     const imeiStr = imeiVal ? ` / IMEI: ${imeiVal}` : '';
     return `${getProductFullName(p)}${attrs}${imeiStr}`;
   };
