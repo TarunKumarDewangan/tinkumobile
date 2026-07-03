@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\EntityLedgerController;
 use App\Http\Controllers\Api\EntityController;
 use App\Http\Controllers\Api\SystemBackupController;
+use App\Http\Controllers\Api\FinancePlanController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
@@ -240,6 +241,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         app(\App\Services\EntityService::class)->syncAll();
         return response()->json(['message' => 'All balances synced successfully']);
     });
+
+    // Shop Finance Plans (Personal EMI & Favor)
+    Route::get('finance-plans', [FinancePlanController::class, 'index']);
+    Route::post('finance-plans', [FinancePlanController::class, 'store']);
+    Route::get('finance-plans/{financePlan}', [FinancePlanController::class, 'show']);
+    Route::post('finance-plans/{financePlan}/add-payment', [FinancePlanController::class, 'addPayment']);
+    Route::post('finance-plans/{financePlan}/settle', [FinancePlanController::class, 'settle']);
 
     // Full System Sync — throttled to prevent abuse
     Route::get('system/backup', [SystemBackupController::class, 'backup'])->middleware('throttle:60,1');

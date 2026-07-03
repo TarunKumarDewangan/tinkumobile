@@ -17,13 +17,14 @@ const NAV = [
     ]
   },
   
-  { 
-    section: 'New Mobile', 
+  {
+    section: 'New Mobile',
     dropdown: true,
     children: [
-        { to: '/purchases',   icon: '🛒', label: 'Purchases',  perm: 'view_purchases' },
-        { to: '/stock-entry', icon: '📦', label: 'Stocks',       perm: 'create_purchases' },
-        { to: '/sales',       icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+        { to: '/purchases',       icon: '🛒', label: 'Purchases',  perm: 'view_purchases' },
+        { to: '/stock-entry',     icon: '📦', label: 'Stocks',     perm: 'create_purchases' },
+        { to: '/sales',           icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+        { to: '/finance-tracker', icon: '💳', label: 'Finance',    perm: 'view_sales' },
     ]
   },
   
@@ -126,7 +127,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
+  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Tasks': false, 'Settings': false });
   
   const getNavLinkClass = (to, end) => {
     try {

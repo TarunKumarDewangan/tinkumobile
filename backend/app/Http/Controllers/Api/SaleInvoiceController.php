@@ -127,11 +127,18 @@ class SaleInvoiceController extends Controller
             'gift_items'          => 'nullable|array',
             'gift_items.*.gift_product_id' => 'exists:gift_products,id',
             'gift_items.*.quantity'        => 'integer|min:1',
-            // Finance / EMI fields
+            // External Finance / EMI (Bajaj, HDB, etc.)
             'financer_id'              => 'nullable|exists:entities,id',
             'down_payment'             => 'nullable|numeric|min:0',
             'finance_amount'           => 'nullable|numeric|min:0',
             'finance_payment_status'   => 'nullable|in:RECEIVED,PENDING',
+            // Shop Finance Plan (Personal EMI or Favor)
+            'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR',
+            'shop_finance.principal'      => 'nullable|numeric|min:0.01',
+            'shop_finance.down_payment'   => 'nullable|numeric|min:0',
+            'shop_finance.interest_rate'  => 'nullable|numeric|min:0',
+            'shop_finance.tenure_months'  => 'nullable|integer|min:1|max:360',
+            'shop_finance.emi_start_date' => 'nullable|date',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -297,6 +304,33 @@ class SaleInvoiceController extends Controller
             // Track idempotency_key on the invoice if provided
             if (!empty($data['idempotency_key'])) {
                 DB::table('sale_invoices')->where('id', $invoice->id)->update(['idempotency_key' => $data['idempotency_key']]);
+            }
+
+            // Create Shop Finance Plan if requested
+            if (!empty($data['shop_finance']['type']) && !empty($data['shop_finance']['principal'])) {
+                $sf = $data['shop_finance'];
+                [$monthlyEmi, $totalPayable] = \App\Http\Controllers\Api\FinancePlanController::calcEmi(
+                    (float) $sf['principal'],
+                    (float) ($sf['interest_rate'] ?? 0),
+                    (int)   ($sf['tenure_months'] ?? 0)
+                );
+                \App\Models\SaleFinancePlan::create([
+                    'sale_invoice_id' => $invoice->id,
+                    'customer_id'     => $invoice->customer_id,
+                    'type'            => $sf['type'],
+                    'down_payment'    => $sf['down_payment'] ?? 0,
+                    'principal'       => $sf['principal'],
+                    'interest_rate'   => $sf['interest_rate'] ?? null,
+                    'tenure_months'   => $sf['tenure_months'] ?? null,
+                    'monthly_emi'     => $sf['type'] === 'PERSONAL' ? $monthlyEmi : null,
+                    'emi_start_date'  => $sf['type'] === 'PERSONAL'
+                                            ? ($sf['emi_start_date'] ?? now()->addMonth()->startOfMonth()->toDateString())
+                                            : null,
+                    'total_payable'   => $sf['type'] === 'PERSONAL' ? $totalPayable : (float) $sf['principal'],
+                    'total_paid'      => 0,
+                    'status'          => 'ACTIVE',
+                    'created_by'      => $user->id,
+                ]);
             }
 
             DB::commit();

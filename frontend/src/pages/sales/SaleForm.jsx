@@ -78,11 +78,18 @@ export default function SaleForm() {
   // Exchange credit state
   const [customerCredit, setCustomerCredit] = useState(0);
   
-  // Finance / EMI state
+  // External Finance / EMI (Bajaj, HDB, etc.)
   const [useFinance, setUseFinance] = useState(false);
   const [financers, setFinancers] = useState([]);
   const [showFinancerModal, setShowFinancerModal] = useState(false);
   const [newFinancer, setNewFinancer] = useState({ name: '', phone: '', gst_number: '', description: '' });
+
+  // Shop Finance (Personal EMI / Favor)
+  const [useShopFinance, setUseShopFinance] = useState(false);
+  const [shopFinanceType, setShopFinanceType] = useState('PERSONAL');
+  const [shopFinance, setShopFinance] = useState({
+    down_payment: 0, principal: 0, interest_rate: 0, tenure_months: 12, emi_start_date: '',
+  });
   
   // Internal state to track if round_off is manually overridden
   const [isManualRound, setIsManualRound] = useState(false);
@@ -606,6 +613,19 @@ export default function SaleForm() {
 
   const grandTotal = rawTotal + (parseFloat(form.round_off) || 0);
 
+  // Shop Finance EMI calculator
+  const shopFinanceCalc = useMemo(() => {
+    const p = parseFloat(shopFinance.principal) || 0;
+    const r = parseFloat(shopFinance.interest_rate) || 0;
+    const n = parseInt(shopFinance.tenure_months) || 0;
+    if (!p || shopFinanceType !== 'PERSONAL') return { monthlyEmi: 0, totalPayable: p };
+    if (!n) return { monthlyEmi: 0, totalPayable: p };
+    if (!r) return { monthlyEmi: parseFloat((p / n).toFixed(2)), totalPayable: p };
+    const rate = r / 12 / 100;
+    const emi  = p * rate * Math.pow(1 + rate, n) / (Math.pow(1 + rate, n) - 1);
+    return { monthlyEmi: parseFloat(emi.toFixed(2)), totalPayable: parseFloat((emi * n).toFixed(2)) };
+  }, [shopFinance.principal, shopFinance.interest_rate, shopFinance.tenure_months, shopFinanceType]);
+
   // Auto-calculate exchange payment split when grand total or credit changes
   useEffect(() => {
     if (form.payment_method === 'EXCHANGE') {
@@ -813,7 +833,19 @@ export default function SaleForm() {
       if (form.payment_method === 'OTHER' && form.other_mode) {
           finalForm.payment_method = form.other_mode;
       }
-      
+
+      // Attach shop finance plan data if enabled (new sale only)
+      if (!id && useShopFinance && shopFinance.principal > 0) {
+          finalForm.shop_finance = {
+              type:           shopFinanceType,
+              down_payment:   shopFinance.down_payment,
+              principal:      shopFinance.principal,
+              interest_rate:  shopFinanceType === 'PERSONAL' ? (shopFinance.interest_rate || 0) : null,
+              tenure_months:  shopFinanceType === 'PERSONAL' ? (shopFinance.tenure_months || null) : null,
+              emi_start_date: shopFinanceType === 'PERSONAL' ? (shopFinance.emi_start_date || null) : null,
+          };
+      }
+
       if (id) {
         await api.put(`/sale-invoices/${id}`, finalForm);
         toast.success('✅ Sale updated successfully');
@@ -1514,6 +1546,149 @@ export default function SaleForm() {
                                         <div style={{fontSize:'.6rem', color:'#dc2626', marginTop:4, fontWeight:600}}>⚠️ Finance amount will show as RECEIVABLE in {financers.find(f=>f.id==form.financer_id)?.name || 'financer'}'s ledger</div>
                                     )}
                                 </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Shop Finance Section (Personal EMI / Favor) ── */}
+                    <div style={{background:'#fff', borderRadius:10, border:'1px solid #e8ecf0', marginBottom:10, overflow:'hidden'}}>
+                        <div className="d-flex justify-content-between align-items-center" style={{padding:'8px 12px', background: useShopFinance ? '#eff6ff' : '#f8fafc', borderBottom: useShopFinance ? '1px solid #bfdbfe' : 'none'}}>
+                            <div>
+                                <span style={{fontSize:'.75rem', fontWeight:800, color: useShopFinance ? '#1d4ed8' : '#64748b'}}>💳 SHOP FINANCE</span>
+                                {!useShopFinance && <span style={{fontSize:'.6rem', color:'#94a3b8', marginLeft:6}}>Personal EMI / Favor</span>}
+                            </div>
+                            <div className="form-check form-switch p-0 m-0">
+                                <input className="form-check-input ms-0" type="checkbox" checked={useShopFinance}
+                                    onChange={e => {
+                                        const on = e.target.checked;
+                                        setUseShopFinance(on);
+                                        if (on) {
+                                            const remaining = Math.max(0, grandTotal - parseFloat(form.total_paid || 0));
+                                            setShopFinance(f => ({ ...f, principal: parseFloat(remaining.toFixed(2)) }));
+                                        }
+                                    }} />
+                            </div>
+                        </div>
+
+                        {useShopFinance && (
+                            <div style={{padding:'10px 12px'}}>
+                                {/* Type toggle */}
+                                <div className="d-flex gap-2 mb-3">
+                                    <button type="button"
+                                        onClick={() => setShopFinanceType('PERSONAL')}
+                                        style={{flex:1, padding:'6px 0', fontSize:'.68rem', fontWeight:800, borderRadius:8, border:'none',
+                                            background: shopFinanceType === 'PERSONAL' ? '#1d4ed8' : '#e2e8f0',
+                                            color: shopFinanceType === 'PERSONAL' ? '#fff' : '#64748b'}}>
+                                        📅 PERSONAL EMI
+                                    </button>
+                                    <button type="button"
+                                        onClick={() => setShopFinanceType('FAVOR')}
+                                        style={{flex:1, padding:'6px 0', fontSize:'.68rem', fontWeight:800, borderRadius:8, border:'none',
+                                            background: shopFinanceType === 'FAVOR' ? '#0891b2' : '#e2e8f0',
+                                            color: shopFinanceType === 'FAVOR' ? '#fff' : '#64748b'}}>
+                                        🤝 FAVOR (FLEXIBLE)
+                                    </button>
+                                </div>
+
+                                {/* Down Payment + Principal */}
+                                <div className="row g-1 mb-2">
+                                    <div className="col-6">
+                                        <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>DOWN PAYMENT</label>
+                                        <div className="input-group input-group-sm">
+                                            <span className="input-group-text" style={{fontSize:'.7rem'}}>₹</span>
+                                            <input type="number" step="0.01" min="0"
+                                                className="form-control fw-bold text-end"
+                                                style={{fontSize:'.78rem', borderColor:'#86efac', color:'#16a34a'}}
+                                                value={shopFinance.down_payment || ''}
+                                                onFocus={e => e.target.select()}
+                                                onChange={e => {
+                                                    const dp = parseFloat(e.target.value) || 0;
+                                                    const pr = Math.max(0, grandTotal - dp);
+                                                    setShopFinance(f => ({ ...f, down_payment: dp, principal: parseFloat(pr.toFixed(2)) }));
+                                                }} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6">
+                                        <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>FINANCED AMOUNT</label>
+                                        <div className="input-group input-group-sm">
+                                            <span className="input-group-text" style={{fontSize:'.7rem'}}>₹</span>
+                                            <input type="number" step="0.01" min="0"
+                                                className="form-control fw-bold text-end"
+                                                style={{fontSize:'.78rem', borderColor:'#bfdbfe', color:'#1d4ed8', background:'#eff6ff'}}
+                                                value={shopFinance.principal || ''}
+                                                onFocus={e => e.target.select()}
+                                                onChange={e => setShopFinance(f => ({ ...f, principal: parseFloat(e.target.value) || 0 }))} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Personal EMI fields */}
+                                {shopFinanceType === 'PERSONAL' && (
+                                    <>
+                                        <div className="row g-1 mb-2">
+                                            <div className="col-4">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>INTEREST % p.a.</label>
+                                                <input type="number" step="0.1" min="0" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor:'#fcd34d'}}
+                                                    value={shopFinance.interest_rate || ''}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => setShopFinance(f => ({ ...f, interest_rate: parseFloat(e.target.value) || 0 }))} />
+                                            </div>
+                                            <div className="col-4">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TENURE (MONTHS)</label>
+                                                <input type="number" step="1" min="1" max="360" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor:'#fcd34d'}}
+                                                    value={shopFinance.tenure_months || ''}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => setShopFinance(f => ({ ...f, tenure_months: parseInt(e.target.value) || 0 }))} />
+                                            </div>
+                                            <div className="col-4">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>1st EMI DATE</label>
+                                                <input type="date" className="form-control form-control-sm"
+                                                    style={{fontSize:'.72rem'}}
+                                                    value={shopFinance.emi_start_date}
+                                                    onChange={e => setShopFinance(f => ({ ...f, emi_start_date: e.target.value }))} />
+                                            </div>
+                                        </div>
+
+                                        {/* EMI preview card */}
+                                        {shopFinanceCalc.monthlyEmi > 0 && (
+                                            <div style={{background:'#eff6ff', borderRadius:8, padding:'8px 12px', border:'1px solid #bfdbfe'}}>
+                                                <div className="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <div style={{fontSize:'.62rem', color:'#1d4ed8', fontWeight:700}}>MONTHLY EMI</div>
+                                                        <div style={{fontSize:'1.1rem', fontWeight:900, color:'#1d4ed8'}}>
+                                                            ₹{shopFinanceCalc.monthlyEmi.toLocaleString('en-IN')}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <div style={{fontSize:'.62rem', color:'#64748b', fontWeight:700}}>× {shopFinance.tenure_months} MONTHS</div>
+                                                        <div style={{fontSize:'.62rem', color:'#64748b', fontWeight:700}}>= TOTAL PAYABLE</div>
+                                                    </div>
+                                                    <div className="text-end">
+                                                        <div style={{fontSize:'.62rem', color:'#64748b', fontWeight:700}}>TOTAL PAYABLE</div>
+                                                        <div style={{fontSize:'1.1rem', fontWeight:900, color:'#0f172a'}}>
+                                                            ₹{shopFinanceCalc.totalPayable.toLocaleString('en-IN')}
+                                                        </div>
+                                                        {shopFinanceCalc.totalPayable > shopFinance.principal && (
+                                                            <div style={{fontSize:'.58rem', color:'#dc2626'}}>
+                                                                Interest: ₹{(shopFinanceCalc.totalPayable - shopFinance.principal).toLocaleString('en-IN')}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                {/* Favor info */}
+                                {shopFinanceType === 'FAVOR' && (
+                                    <div style={{background:'#ecfeff', borderRadius:8, padding:'8px 12px', border:'1px solid #a5f3fc', fontSize:'.68rem', color:'#0891b2', fontWeight:600}}>
+                                        🤝 Flexible repayment — customer can pay any time in any amount.<br/>
+                                        No interest. Balance = ₹{(parseFloat(shopFinance.principal) || 0).toLocaleString('en-IN')}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
