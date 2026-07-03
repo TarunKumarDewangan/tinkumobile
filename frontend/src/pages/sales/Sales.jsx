@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
@@ -16,9 +16,10 @@ export default function Sales() {
   const category_group = searchParams.get('category_group') || 'new_mobile';
   const [showBackupModal, setShowBackupModal] = useState(false);
 
-  const [filters, setFilters] = useState({ 
-    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false 
+  const [filters, setFilters] = useState({
+    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false
   });
+  const [sortMode, setSortMode] = useState('date'); // 'date' | 'entry'
 
   useEffect(() => {
     const q = searchParams.get('search') || '';
@@ -83,6 +84,16 @@ export default function Sales() {
     } catch (e) { toast.error('Conversion failed'); }
   };
 
+  const sortedInvoices = useMemo(() => {
+    const arr = [...invoices];
+    if (sortMode === 'entry') {
+      arr.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+    } else {
+      arr.sort((a, b) => new Date(b.sale_date) - new Date(a.sale_date));
+    }
+    return arr;
+  }, [invoices, sortMode]);
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'paid': return <span className="badge-paid">PAID</span>;
@@ -115,7 +126,7 @@ export default function Sales() {
       />
 
       {/* Filters Card */}
-      <div className="card sales-card shadow-sm mb-4 p-3 bg-white">
+      <div className="card sales-card shadow-sm mb-3 p-3 bg-white">
         <div className="row g-2 text-uppercase">
             <div className="col-12 col-md-3">
                 <label className="small text-muted mb-1 fw-bold">Date Range</label>
@@ -150,6 +161,26 @@ export default function Sales() {
                 <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false})}>RESET</button>
             </div>
         </div>
+
+        {/* Sort toggle */}
+        <div className="d-flex align-items-center gap-2 mt-3 pt-2" style={{ borderTop: '1px solid #e2e8f0' }}>
+          <span className="x-small text-muted fw-bold text-uppercase" style={{ whiteSpace: 'nowrap' }}>View By:</span>
+          <button
+            className={`sort-toggle-btn ${sortMode === 'date' ? 'active' : ''}`}
+            onClick={() => setSortMode('date')}
+          >
+            📅 Sale Date
+          </button>
+          <button
+            className={`sort-toggle-btn ${sortMode === 'entry' ? 'active' : ''}`}
+            onClick={() => setSortMode('entry')}
+          >
+            🕒 Last Modified
+          </button>
+          <span className="x-small text-muted ms-1">
+            {sortMode === 'entry' ? '— showing most recently added / edited entries first' : '— showing newest sale date first'}
+          </span>
+        </div>
       </div>
 
       {/* Table Card */}
@@ -158,98 +189,88 @@ export default function Sales() {
           <table className="sales-table mb-0 text-uppercase">
             <thead>
               <tr>
-                <th className="ps-4">Customer Name</th>
-                <th>Products & Description</th>
                 <th>Date / Shop</th>
+                <th className="ps-3">Customer Name</th>
+                <th>Products & Description</th>
                 <th className="text-end">Grand Total</th>
                 <th className="text-end" style={{color:'#475569'}}>Discount</th>
                 <th className="text-end">Paid</th>
                 <th className="text-end">Balance</th>
-                <th className="text-center" style={{width: '230px'}}>Actions</th>
-                <th>Invoice #</th>
                 <th className="text-center">Status</th>
+                <th>Invoice #</th>
+                <th className="text-center" style={{width: '230px'}}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr><td colSpan={10} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : invoices.length === 0 ? (
+              ) : sortedInvoices.length === 0 ? (
                 <tr><td colSpan={10} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
-              ) : invoices.map(inv => {
+              ) : sortedInvoices.map(inv => {
                 const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
                 const totalPaid = parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
                 const balance = Math.max(0, parseFloat(inv.grand_total) - totalPaid);
+                const navTo = (path) => navigate(category_group ? `${path}?category_group=${category_group}` : path);
                 return (
                   <tr key={inv.id} className={inv.is_cancelled ? 'opacity-50 text-decoration-line-through' : ''}>
-                    {/* 1. Customer Name (clickable) */}
-                    <td className="ps-4 cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
-                        <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.customer?.name}</span>
-                        <div className="x-small text-muted" style={{ textDecoration: 'none' }}>📞 {inv.customer?.phone}</div>
+
+                    {/* 1. Date / Shop */}
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <div className="fw-bold">{formatDate(inv.sale_date)}</div>
+                      <div className="x-small text-muted">{inv.shop?.name}</div>
+                      {sortMode === 'entry' && inv.updated_at && (
+                        <div className="x-small" style={{ color: '#94a3b8', marginTop: '2px' }}>
+                          edited {formatDate(inv.updated_at)}
+                        </div>
+                      )}
                     </td>
 
-                    {/* Products & Description */}
+                    {/* 2. Customer Name */}
+                    <td className="ps-3 cursor-pointer" onClick={() => navTo(`/sales/${inv.id}`)}>
+                      <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.customer?.name}</span>
+                      <div className="x-small text-muted" style={{ textDecoration: 'none' }}>📞 {inv.customer?.phone}</div>
+                    </td>
+
+                    {/* 3. Products & Description (with specs) */}
                     <td>
                       {inv.items?.map((item, idx) => {
                         const brandStr = item.product?.brand?.name || item.product?.attributes?.brand || '';
                         const fullName = `${brandStr ? brandStr + ' ' : ''}${item.product?.name || 'UNKNOWN PRODUCT'}`.toUpperCase();
+                        const specs = [item.ram, item.storage, item.color].filter(Boolean).join(' / ');
+                        const imei = item.imei ? item.imei.split(',')[0] : '';
                         return (
-                          <div key={idx} className="mb-2" style={{ borderBottom: idx < inv.items.length - 1 ? '1px dashed #cbd5e1' : 'none', paddingBottom: idx < inv.items.length - 1 ? '6px' : '0' }}>
-                            <div className="fw-bold" style={{ fontSize: '.75rem', color: '#1e293b' }}>
-                              {fullName}
-                            </div>
+                          <div key={idx} style={{ borderBottom: idx < inv.items.length - 1 ? '1px dashed #cbd5e1' : 'none', paddingBottom: idx < inv.items.length - 1 ? '6px' : '0', marginBottom: idx < inv.items.length - 1 ? '6px' : '0' }}>
+                            <div className="fw-bold" style={{ fontSize: '.75rem', color: '#1e293b' }}>{fullName}</div>
+                            {specs && (
+                              <div className="x-small fw-semibold" style={{ color: '#475569', marginTop: '2px' }}>{specs}</div>
+                            )}
+                            {imei && (
+                              <div className="x-small" style={{ color: '#94a3b8', marginTop: '1px' }}>IMEI: {imei}</div>
+                            )}
                             {item.description && (
-                              <div className="x-small text-muted fw-semibold" style={{ marginTop: '2px' }}>
-                                DESCRIPTION: {item.description}
-                              </div>
+                              <div className="x-small text-muted" style={{ marginTop: '2px' }}>{item.description}</div>
                             )}
                           </div>
                         );
                       })}
                     </td>
 
-                    {/* 2. Date / Shop */}
-                    <td>
-                        <div className="fw-bold">{formatDate(inv.sale_date)}</div>
-                        <div className="x-small text-muted">{inv.shop?.name}</div>
-                    </td>
+                    {/* 4. Grand Total */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>₹{parseFloat(inv.grand_total).toLocaleString('en-IN')}</td>
 
-                    {/* 3. Grand Total */}
-                    <td className="text-end fw-bold">₹{parseFloat(inv.grand_total).toLocaleString('en-IN')}</td>
-
-                    {/* 4. Discount */}
-                    <td className="text-end fw-bold" style={{color: '#475569'}}>
+                    {/* 5. Discount */}
+                    <td className="text-end fw-bold" style={{ color: '#475569', whiteSpace: 'nowrap' }}>
                       {(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0
                         ? `- ₹${(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)).toLocaleString('en-IN')}`
                         : '—'}
                     </td>
 
-                    {/* 5. Paid */}
-                    <td className="text-end fw-bold" style={{color: '#1e293b'}}>₹{parseFloat(inv.total_paid).toLocaleString('en-IN')}</td>
+                    {/* 6. Paid */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>₹{parseFloat(inv.total_paid).toLocaleString('en-IN')}</td>
 
-                    {/* 5b. Balance */}
-                    <td className="text-end fw-bold" style={{color: balance > 0 ? '#1e293b' : '#64748b'}}>₹{balance.toLocaleString('en-IN')}</td>
-
-                    {/* 6. Actions */}
-                    <td className="text-center">
-                        <div className="d-flex justify-content-center gap-1">
-                            {!inv.is_cancelled && (
-                                <>
-                                    <button onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
-                                    <button onClick={() => navigate(category_group === 'master' ? `/sales/${inv.id}/edit-master` : (category_group ? `/sales/${inv.id}/edit?category_group=${category_group}` : `/sales/${inv.id}/edit`))} className="pm-act-btn btn-xs">EDIT</button>
-                                    {inv.bill_type === 'kaccha' && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
-                                    <button onClick={() => handleCancel(inv.id)} className="pm-act-btn btn-xs">CANCEL</button>
-                                </>
-                            )}
-                            <button onClick={() => handleDelete(inv.id)} className="pm-act-btn btn-xs" style={{color:'#b91c1c',borderColor:'#fca5a5'}}>DEL</button>
-                        </div>
-                    </td>
-
-                    {/* 7. Invoice # (clickable) */}
-                    <td className="cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
-                        <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.invoice_no}</span>
-                        <div className="d-flex flex-wrap gap-1 mt-1">
-                          <span className="badge-received" style={{ fontSize: '0.6rem', padding: '2px 6px' }}>{inv.bill_type.toUpperCase()}</span>
-                        </div>
+                    {/* 7. Balance */}
+                    <td className="text-end fw-bold" style={{ color: balance > 0 ? '#b91c1c' : '#16a34a', whiteSpace: 'nowrap' }}>
+                      ₹{balance.toLocaleString('en-IN')}
                     </td>
 
                     {/* 8. Status */}
@@ -265,8 +286,8 @@ export default function Sales() {
                                 EMI PAID: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')})
                               </span>
                             ) : (
-                              <span 
-                                className="badge-unpaid cursor-pointer" 
+                              <span
+                                className="badge-unpaid cursor-pointer"
                                 style={{ fontSize: '0.6rem', marginTop: '2px', cursor: 'pointer' }}
                                 title="Click to mark finance payment as received"
                                 onClick={() => handleReceiveFinance(inv.id)}
@@ -277,6 +298,29 @@ export default function Sales() {
                           )}
                         </div>
                       )}
+                    </td>
+
+                    {/* 9. Invoice # */}
+                    <td className="cursor-pointer" onClick={() => navTo(`/sales/${inv.id}`)}>
+                      <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.invoice_no}</span>
+                      <div className="d-flex flex-wrap gap-1 mt-1">
+                        <span className="badge-received" style={{ fontSize: '0.6rem', padding: '2px 6px' }}>{inv.bill_type.toUpperCase()}</span>
+                      </div>
+                    </td>
+
+                    {/* 10. Actions */}
+                    <td className="text-center">
+                      <div className="d-flex justify-content-center gap-1 flex-wrap">
+                        {!inv.is_cancelled && (
+                          <>
+                            <button onClick={() => navTo(`/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
+                            <button onClick={() => navigate(category_group === 'master' ? `/sales/${inv.id}/edit-master` : `/sales/${inv.id}/edit${category_group ? `?category_group=${category_group}` : ''}`)} className="pm-act-btn btn-xs">EDIT</button>
+                            {inv.bill_type === 'kaccha' && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
+                            <button onClick={() => handleCancel(inv.id)} className="pm-act-btn btn-xs">CANCEL</button>
+                          </>
+                        )}
+                        <button onClick={() => handleDelete(inv.id)} className="pm-act-btn btn-xs" style={{color:'#b91c1c',borderColor:'#fca5a5'}}>DEL</button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -289,6 +333,25 @@ export default function Sales() {
       <style>{`
           .x-small { font-size: 0.65rem; }
           .btn-xs { padding: 2px 6px; font-size: 0.7rem; font-weight: bold; }
+          .sort-toggle-btn {
+              padding: 3px 12px;
+              font-size: 0.68rem;
+              font-weight: 700;
+              border-radius: 20px;
+              border: 1.5px solid #cbd5e1;
+              background: #f8fafc;
+              color: #64748b;
+              cursor: pointer;
+              letter-spacing: 0.3px;
+              transition: all 0.15s;
+              text-transform: uppercase;
+          }
+          .sort-toggle-btn:hover { border-color: #94a3b8; color: #1e293b; }
+          .sort-toggle-btn.active {
+              background: #1e293b;
+              color: #fff;
+              border-color: #1e293b;
+          }
           .sales-card {
               border: 1px solid #cbd5e1 !important;
               box-shadow: none !important;
