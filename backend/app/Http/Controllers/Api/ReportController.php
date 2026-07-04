@@ -439,5 +439,109 @@ class ReportController extends Controller
             'grand_mop_total' => $grandMopTotal
         ]);
     }
+
+    /** Financer Report — all financed sales with drill-down */
+    public function financerReport(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+
+        $query = SaleInvoice::with('customer', 'items.product.category', 'financer', 'shop', 'user')
+            ->where('is_cancelled', false)
+            ->where('finance_amount', '>', 0)
+            ->whereNotNull('financer_id');
+
+        if ($shopId)               $query->where('shop_id', $shopId);
+        if ($request->from)        $query->where('sale_date', '>=', $request->from);
+        if ($request->to)          $query->where('sale_date', '<=', $request->to);
+        if ($request->financer_id) $query->where('financer_id', $request->financer_id);
+        if ($request->bill_type)   $query->where('bill_type', $request->bill_type);
+        if ($request->finance_status) $query->where('finance_payment_status', $request->finance_status);
+
+        if ($request->sale_type) {
+            $type = $request->sale_type;
+            if ($type === 'new') {
+                $query->whereHas('items.product.category', fn($q) => $q->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
+            } elseif ($type === 'old') {
+                $query->whereHas('items.product.category', fn($q) => $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']));
+            } elseif ($type === 'other') {
+                $query->whereHas('items.product.category', fn($q) =>
+                    $q->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old'])
+                );
+            }
+        }
+
+        $invoices = $query->latest('sale_date')->get();
+
+        // Per-invoice: determine sale type label from items
+        $rows = $invoices->map(function ($inv) {
+            $saleType = 'Other';
+            foreach ($inv->items as $item) {
+                $slug = strtolower($item->product?->category?->slug ?? '');
+                if (str_contains($slug, 'mobile-new')) { $saleType = 'New Mobile'; break; }
+                if (str_contains($slug, 'mobile-old')) { $saleType = '2nd Hand'; break; }
+            }
+            $firstItem  = $inv->items->first();
+            $productName = $firstItem?->product?->name ?? '—';
+            $specs = implode(' / ', array_filter([$firstItem?->ram, $firstItem?->storage, $firstItem?->color]));
+            $imei  = $firstItem?->imei ? explode(',', $firstItem->imei)[0] : null;
+            return [
+                'id'                     => $inv->id,
+                'invoice_no'             => $inv->invoice_no,
+                'sale_date'              => $inv->sale_date,
+                'bill_type'              => $inv->bill_type,
+                'sale_type'              => $saleType,
+                'customer_name'          => $inv->customer?->name ?? '—',
+                'customer_phone'         => $inv->customer?->phone ?? '',
+                'product_name'           => $productName,
+                'specs'                  => $specs,
+                'imei'                   => $imei,
+                'grand_total'            => $inv->grand_total,
+                'down_payment'           => $inv->down_payment,
+                'finance_amount'         => $inv->finance_amount,
+                'finance_payment_status' => $inv->finance_payment_status,
+                'financer_id'            => $inv->financer_id,
+                'financer_name'          => $inv->financer?->name ?? 'Unknown',
+                'shop_name'              => $inv->shop?->name ?? '—',
+                'staff_name'             => $inv->user?->name ?? '—',
+            ];
+        });
+
+        // Summary by financer
+        $byFinancer = $rows->groupBy('financer_id')->map(function ($group, $fId) {
+            return [
+                'financer_id'     => $fId,
+                'financer_name'   => $group->first()['financer_name'],
+                'count'           => $group->count(),
+                'total_financed'  => $group->sum('finance_amount'),
+                'total_received'  => $group->where('finance_payment_status', 'RECEIVED')->sum('finance_amount'),
+                'total_pending'   => $group->where('finance_payment_status', 'PENDING')->sum('finance_amount'),
+            ];
+        })->values();
+
+        // All distinct financers (for filter dropdown — all financed invoices regardless of current filters)
+        $allFinancers = SaleInvoice::with('financer')
+            ->where('is_cancelled', false)
+            ->where('finance_amount', '>', 0)
+            ->whereNotNull('financer_id')
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->select('financer_id')
+            ->distinct()
+            ->get()
+            ->map(fn($inv) => ['id' => $inv->financer_id, 'name' => $inv->financer?->name ?? 'Unknown'])
+            ->unique('id')
+            ->values();
+
+        return response()->json([
+            'invoices'     => $rows,
+            'by_financer'  => $byFinancer,
+            'financers'    => $allFinancers,
+            'summary' => [
+                'total_sales'    => $rows->count(),
+                'total_financed' => $rows->sum('finance_amount'),
+                'total_received' => $rows->where('finance_payment_status', 'RECEIVED')->sum('finance_amount'),
+                'total_pending'  => $rows->where('finance_payment_status', 'PENDING')->sum('finance_amount'),
+            ],
+        ]);
+    }
 }
 

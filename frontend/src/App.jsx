@@ -68,6 +68,7 @@ const Tasks = lazy(() => import('./pages/tasks/Tasks'));
 const TaskForm = lazy(() => import('./pages/tasks/TaskForm'));
 const TaskDetail = lazy(() => import('./pages/tasks/TaskDetail'));
 const FinanceTracker = lazy(() => import('./pages/finance/FinanceTracker'));
+const FinancerReport = lazy(() => import('./pages/reports/FinancerReport'));
 
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
 const CustomerProfile = lazy(() => import('./pages/customer/CustomerProfile'));
@@ -166,6 +167,8 @@ function AppRoutes() {
 
           {/* Finance Tracker */}
           <Route path="finance-tracker" element={<FinanceTracker />} />
+          {/* Financer Report */}
+          <Route path="reports/financer" element={<FinancerReport />} />
 
           {/* Tasks */}
           <Route path="tasks" element={<PermissionRoute permission="view_tasks"><Tasks /></PermissionRoute>} />

@@ -68,9 +68,10 @@ const NAV = [
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
         { to: '/send-offers', icon: '✉️', label: 'Send Offers', perm: 'manage_offers' },
-        { to: '/reports',     icon: '📈', label: 'Reports',    perm: 'view_reports', end: true },
-        { to: '/reports/combined-sales', icon: '📊', label: 'Combined Sales', perm: 'view_reports' },
-        { to: '/reports/set-sales-matrix', icon: '📅', label: 'Set Sales Matrix', perm: 'view_reports' },
+        { to: '/reports',                  icon: '📈', label: 'Reports',          perm: 'view_reports', end: true },
+        { to: '/reports/combined-sales',   icon: '📊', label: 'Combined Sales',    perm: 'view_reports' },
+        { to: '/reports/set-sales-matrix', icon: '📅', label: 'Set Sales Matrix',  perm: 'view_reports' },
+        { to: '/reports/financer',         icon: '🏦', label: 'Financer Report',   perm: 'view_reports' },
     ]
   },
 

@@ -188,6 +188,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         Route::get('/gift-stock', [ReportController::class, 'giftStock']);
         Route::get('/bill-conversion', [ReportController::class, 'billConversion']);
         Route::get('/dashboard', [ReportController::class, 'dashboard']);
+        Route::get('/financer', [ReportController::class, 'financerReport']);
     });
 
     // Airtel Recovery System
