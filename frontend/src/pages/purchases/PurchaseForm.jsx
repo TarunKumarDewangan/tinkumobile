@@ -139,15 +139,19 @@ export default function PurchaseForm() {
         });
         if (p.rounding_mode === 'manual') setIsManualRound(true);
         if (p.is_gst_manual) setIsManualGst(true);
-        setItems(p.items.map(i => {
+        const rawRows = p.items.map(i => {
           const unit_price = parseFloat(i.unit_price) || 0;
           const gst = parseFloat(i.calc_gst_rate ?? 18) || 0;
           const tDisc = parseFloat(i.trade_disc_pct ?? 3.85) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? 2) || 0;
-          
+          const pAttrs = i.product?.attributes || {};
+          const applyGst = (i.apply_gst !== null && i.apply_gst !== undefined)
+            ? !!i.apply_gst
+            : (!!pAttrs.gst_rate && (p.calculate_gst ?? true));
+
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
-          const dp_inc_gst = parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2));
+          const dp_inc_gst = applyGst ? parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2)) : rate_ex_gst;
 
           return {
             product_id: i.product_id,
@@ -166,13 +170,29 @@ export default function PurchaseForm() {
             calc_gst_rate: gst,
             trade_disc_pct: tDisc,
             cash_disc_pct: cDisc,
+            apply_gst: applyGst,
             selling_price: i.selling_price || '',
             wholeseller_price: i.wholeseller_price || '',
             min_selling_price: i.min_selling_price || '',
             max_selling_price: i.max_selling_price || '',
             incentive_amount: i.incentive_amount || ''
           };
-        }));
+        });
+        // Merge rows with same product+specs+price (old purchases saved one-row-per-IMEI)
+        const grouped = [];
+        const seenKeys = {};
+        rawRows.forEach(row => {
+          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${String(row.unit_price)}`;
+          const idx = seenKeys[key];
+          if (idx !== undefined) {
+            grouped[idx].imei_list.push(...row.imei_list);
+            grouped[idx].quantity = grouped[idx].imei_list.filter(Boolean).length || grouped[idx].quantity + row.quantity;
+          } else {
+            seenKeys[key] = grouped.length;
+            grouped.push({ ...row, imei_list: [...row.imei_list] });
+          }
+        });
+        setItems(grouped);
       }).finally(() => setLoading(false));
     }
   }, [isOwner, id]);
@@ -590,21 +610,15 @@ export default function PurchaseForm() {
         is_gst_manual: isManualGst
       };
       
-      // Flatten grouped items so backend receives exactly 1 item per IMEI as expected (only for mobiles)
       let flatItems = [];
       items.forEach(it => {
         const { imei_list, ...rest } = it;
         if (category_group === 'other') {
           flatItems.push({ ...rest, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
         } else {
+          // Store all IMEIs as comma-separated in one row so edit loads as one row
           const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
-          if (imeiArr.length > 0) {
-            imeiArr.forEach(imei => {
-              flatItems.push({ ...rest, imei: imei, quantity: 1 });
-            });
-          } else {
-            flatItems.push({ ...rest, imei: '', quantity: rest.quantity || 1 });
-          }
+          flatItems.push({ ...rest, imei: imeiArr.join(','), quantity: imeiArr.length || rest.quantity || 1 });
         }
       });
       
