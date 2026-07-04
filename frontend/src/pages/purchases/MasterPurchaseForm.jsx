@@ -208,7 +208,22 @@ export default function MasterPurchaseForm() {
           };
         });
 
-        setItems(rawRows);
+        // Merge rows with same product+specs+price into one row with combined IMEIs.
+        // Handles old purchases that were saved one-row-per-IMEI.
+        const grouped = [];
+        const seenKeys = {};
+        rawRows.forEach(row => {
+          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${String(row.unit_price)}`;
+          const idx = seenKeys[key];
+          if (idx !== undefined) {
+            grouped[idx].imei_list.push(...row.imei_list);
+            grouped[idx].quantity = grouped[idx].imei_list.filter(Boolean).length || grouped[idx].quantity + row.quantity;
+          } else {
+            seenKeys[key] = grouped.length;
+            grouped.push({ ...row, imei_list: [...row.imei_list] });
+          }
+        });
+        setItems(grouped);
       }).finally(() => setLoading(false));
     }
   }, [isOwner, id]);
