@@ -63,8 +63,9 @@ const NAV = [
     section: 'Business', 
     dropdown: true,
     children: [
-        { to: '/admin/users', icon: '👷', label: 'Staff Details', perm: 'manage_users' },
-        { to: '/admin/shops', icon: '🏪', label: 'Shops Manager',  perm: 'manage_shops' },
+        { to: '/admin/users',            icon: '👷', label: 'Staff Details',     perm: 'manage_users' },
+        { to: '/admin/shops',            icon: '🏪', label: 'Shops Manager',     perm: 'manage_shops' },
+        { to: '/admin/role-permissions', icon: '🔑', label: 'Role Permissions',  perm: 'manage_users' },
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
         { to: '/send-offers', icon: '✉️', label: 'Send Offers', perm: 'manage_offers' },

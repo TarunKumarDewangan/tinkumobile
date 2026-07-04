@@ -69,6 +69,7 @@ const TaskForm = lazy(() => import('./pages/tasks/TaskForm'));
 const TaskDetail = lazy(() => import('./pages/tasks/TaskDetail'));
 const FinanceTracker = lazy(() => import('./pages/finance/FinanceTracker'));
 const FinancerReport = lazy(() => import('./pages/reports/FinancerReport'));
+const RolePermissions = lazy(() => import('./pages/admin/RolePermissions'));
 
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
 const CustomerProfile = lazy(() => import('./pages/customer/CustomerProfile'));
@@ -140,6 +141,7 @@ function AppRoutes() {
           <Route path="send-offers" element={<SendOffers />} />
           <Route path="admin/users" element={<Users />} />
           <Route path="admin/shops" element={<Shops />} />
+          <Route path="admin/role-permissions" element={<RolePermissions />} />
           <Route path="admin/activity-logs" element={<ActivityLogs />} />
           <Route path="admin/trash" element={<TrashManager />} />
           <Route path="reports" element={<Reports />} />

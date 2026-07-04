@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\EntityLedgerController;
 use App\Http\Controllers\Api\EntityController;
 use App\Http\Controllers\Api\SystemBackupController;
 use App\Http\Controllers\Api\FinancePlanController;
+use App\Http\Controllers\Api\RolePermissionController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
@@ -85,6 +86,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Users & role management
     Route::apiResource('users', UserController::class);
+
+    // Role permission management (owner only)
+    Route::get('role-permissions', [RolePermissionController::class, 'index']);
+    Route::post('role-permissions/{roleName}/sync', [RolePermissionController::class, 'sync']);
 
     // Employees
     Route::apiResource('employees', EmployeeController::class);
