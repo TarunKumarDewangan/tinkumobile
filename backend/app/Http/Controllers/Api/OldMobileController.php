@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\OldMobilePurchase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +111,9 @@ class OldMobileController extends Controller
                 }
             }
 
+            ActivityLog::log('OLD_MOBILE_PURCHASED', $purchase,
+                "Old mobile purchased: {$purchase->model_name} from " . ($purchase->customer?->name ?? $purchase->customer_name) . " ₹{$purchase->purchase_price}"
+            );
             return response()->json($purchase, 201);
         });
     }
@@ -245,6 +249,9 @@ class OldMobileController extends Controller
             }
         }
 
+        ActivityLog::log('OLD_MOBILE_UPDATED', $oldMobilePurchase,
+            "Old mobile updated: {$oldMobilePurchase->model_name} — ₹{$oldMobilePurchase->purchase_price}"
+        );
         return response()->json($oldMobilePurchase->load('customer', 'user'));
     }
 
@@ -296,6 +303,9 @@ class OldMobileController extends Controller
             \App\Models\Product::where('id', $oldMobilePurchase->product_id)->delete();
         }
 
+        ActivityLog::log('OLD_MOBILE_DELETED', $oldMobilePurchase,
+            "Old mobile deleted: {$oldMobilePurchase->model_name} (₹{$oldMobilePurchase->purchase_price})"
+        );
         $oldMobilePurchase->delete();
 
         return response()->json(['message' => 'Old mobile purchase deleted successfully.']);

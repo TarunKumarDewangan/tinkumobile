@@ -259,7 +259,7 @@ class ReportController extends Controller
                     ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
                     ->sum('stock');
 
-                if ($sold === 0) continue;
+                if ($sold === 0 && $stock === 0) continue;
 
                 $reportData[] = [
                     'brand_id'    => 'product_' . $product->id,
@@ -305,7 +305,7 @@ class ReportController extends Controller
                 if ($oldCatId) $q->where('category_id', $oldCatId);
             })->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
 
-            if ($newSold === 0 && $oldSold === 0) continue;
+            if ($newSold === 0 && $oldSold === 0 && $newStock === 0 && $oldStock === 0) continue;
 
             // Per-product breakdown for this brand
             $productsData = [];

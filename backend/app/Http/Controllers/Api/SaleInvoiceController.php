@@ -31,7 +31,7 @@ class SaleInvoiceController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = SaleInvoice::with('customer', 'user', 'items.product', 'financer');
+        $query = SaleInvoice::with('customer', 'user', 'items.product', 'financer', 'financePlan');
 
         if (! $user->hasFullAccess()) {
             $query->where('shop_id', $user->shop_id);
@@ -69,6 +69,21 @@ class SaleInvoiceController extends Controller
                     $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']);
                 });
             }
+        }
+
+        // Customer type filter
+        if ($request->customer_category === 'WALK_IN') {
+            $query->whereNull('customer_id');
+        } elseif ($request->customer_category) {
+            $query->whereHas('customer', fn($q) => $q->where('category', $request->customer_category));
+        }
+
+        // Financer-based sales filter (for Finance Tracker)
+        if ($request->has_financer) {
+            $query->whereNotNull('financer_id');
+        }
+        if ($request->finance_payment_status) {
+            $query->where('finance_payment_status', $request->finance_payment_status);
         }
 
         if ($request->search) {
@@ -361,7 +376,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'giftItems.giftProduct', 'shop', 'financer'));
+        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'giftItems.giftProduct', 'shop', 'financer', 'financePlan.payments'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)

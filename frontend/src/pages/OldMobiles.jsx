@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -41,12 +42,7 @@ export default function OldMobiles() {
   }, []);
 
   const handleDelete = async (id) => {
-    const pin = window.prompt("Enter Admin PIN to Delete:");
-    if (pin !== '71727378') {
-      toast.error("Incorrect PIN");
-      return;
-    }
-    if (!window.confirm("Are you sure you want to delete this purchase? Reverting stock & transaction...")) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/old-mobiles/${id}`);
       toast.success("Old mobile purchase deleted successfully");
@@ -56,12 +52,8 @@ export default function OldMobiles() {
     }
   };
 
-  const handleEditClick = (item) => {
-    const pin = window.prompt("Enter Admin PIN to Edit:");
-    if (pin !== '71727378') {
-      toast.error("Incorrect PIN");
-      return;
-    }
+  const handleEditClick = async (item) => {
+    if (!await pinGate.confirm()) return;
     setEditingItem(item);
     setEditForm({
       customer_name: item.customer?.name || item.customer_name || '',

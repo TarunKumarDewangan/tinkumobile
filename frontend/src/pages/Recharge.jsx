@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
+import pinGate from '../utils/pinGate';
 import { Modal, Button } from 'react-bootstrap';
 import Select from 'react-select';
 import api from '../api/axios';
@@ -205,13 +206,7 @@ export default function Recharge() {
     const reqAmount = parseFloat(saleForm.amount || 0);
     
     if (reqAmount > currentBal) {
-      const confirmProceed = window.confirm(
-        `⚠️ Warning: Insufficient balance for ${finalOperator}.\n` +
-        `Available Balance: ₹${currentBal.toLocaleString()}\n` +
-        `Recharge Amount: ₹${reqAmount.toLocaleString()}\n\n` +
-        `Do you want to proceed with this entry anyway?`
-      );
-      if (!confirmProceed) return;
+      if (!await pinGate.confirm()) return;
     }
 
     const payload = {

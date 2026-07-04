@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
@@ -75,7 +76,7 @@ export default function Overheads() {
     };
 
     const deleteTransaction = async (id) => {
-        if (!window.confirm('Delete this record?')) return;
+        if (!await pinGate.confirm()) return;
         try {
             await api.delete(`/transactions/${id}`);
             toast.success('Deleted');

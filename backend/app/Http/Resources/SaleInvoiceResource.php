@@ -51,6 +51,7 @@ class SaleInvoiceResource extends JsonResource
             'down_payment'           => $this->down_payment,
             'finance_amount'         => $this->finance_amount,
             'finance_payment_status' => $this->finance_payment_status,
+            'finance_plan'           => $this->whenLoaded('financePlan'),
             'items'                  => SaleItemResource::collection($this->whenLoaded('items'))->resolve(),
             'gift_items'             => $this->whenLoaded('giftItems'),
         ];

@@ -174,6 +174,7 @@ class RepairController extends Controller
             ]);
         }
 
+        ActivityLog::log('REPAIR_CREATED', $repair, "Repair created: {$repair->device_model} for {$repair->customer_name} (#{$repair->id})");
         return response()->json($repair, 201);
     }
 
@@ -277,6 +278,7 @@ class RepairController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Owners/Admins can delete repairs.'], 403);
         }
 
+        ActivityLog::log('REPAIR_DELETED', $repair, "Repair deleted: {$repair->device_model} for {$repair->customer_name} (#{$repair->id})");
         $repair->delete();
         return response()->json(['message' => 'Repair request deleted']);
     }

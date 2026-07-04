@@ -72,6 +72,159 @@ class StockController extends Controller
         ]);
     }
 
+    /**
+     * Daily Stock Ledger — running balance with purchases, sales, and adjustments per day.
+     */
+    public function dailyLedger(Request $request)
+    {
+        $user   = $request->user();
+        $shopId = $user->hasFullAccess() ? ($request->shop_id ?: null) : $user->shop_id;
+
+        $fromDate = $request->from_date ? Carbon::parse($request->from_date)->startOfDay() : Carbon::now()->subDays(29)->startOfDay();
+        $toDate   = $request->to_date   ? Carbon::parse($request->to_date)->endOfDay()     : Carbon::now()->endOfDay();
+
+        $newCatId = Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->value('id');
+        $oldCatId = Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->value('id');
+        $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
+
+        // ── Opening stock (all movements strictly before fromDate) ──────────
+        $purchasesBefore = PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('purchase_date', '<', $fromDate->toDateString());
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $adjAddBefore    = StockAdjustment::where('type', 'add')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $adjRemoveBefore = StockAdjustment::where('type', 'remove')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $salesBefore = SaleItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('sale_date', '<', $fromDate->toDateString())->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $openingStock = (int)$purchasesBefore + (int)$adjAddBefore - (int)$adjRemoveBefore - (int)$salesBefore;
+
+        // ── Per-day movements ────────────────────────────────────────────────
+        $days     = [];
+        $running  = $openingStock;
+        $current  = $fromDate->copy();
+
+        while ($current->lte($toDate)) {
+            $dateStr = $current->toDateString();
+
+            // Purchases IN
+            $purchases = PurchaseItem::with(['product:id,name,purchase_price', 'invoice:id,invoice_no,supplier_id,purchase_date'])
+                ->whereHas('invoice', function ($q) use ($shopId, $dateStr) {
+                    $q->where('purchase_date', $dateStr);
+                    if ($shopId) $q->where('shop_id', $shopId);
+                })
+                ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+                ->get();
+
+            // Sales OUT
+            $sales = SaleItem::with([
+                    'product:id,name,purchase_price',
+                    'invoice:id,invoice_no,sale_date,customer_id',
+                    'invoice.customer:id,name',
+                ])
+                ->whereHas('invoice', function ($q) use ($shopId, $dateStr) {
+                    $q->where('sale_date', $dateStr)->where('is_cancelled', false);
+                    if ($shopId) $q->where('shop_id', $shopId);
+                })
+                ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+                ->get();
+
+            // Adjustments
+            $adjustments = StockAdjustment::with('product:id,name,purchase_price')
+                ->where('adjustment_date', $dateStr)
+                ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+                ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+                ->get();
+
+            $stockIn  = $purchases->sum('quantity')
+                      + $adjustments->where('type', 'add')->sum('quantity');
+            $stockOut = $sales->sum('quantity')
+                      + $adjustments->where('type', 'remove')->sum('quantity');
+
+            if ($stockIn === 0 && $stockOut === 0) {
+                $current->addDay();
+                continue;
+            }
+
+            $running += $stockIn - $stockOut;
+
+            // Aggregate purchase value from purchase items
+            $purchaseValue = $purchases->sum(fn($i) => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0));
+            $saleRevenue   = $sales->sum(fn($i) => $i->quantity * ($i->unit_price ?? 0));
+            $saleCost      = $sales->sum(fn($i) => $i->quantity * ($i->product?->purchase_price ?? 0));
+
+            $days[] = [
+                'date'           => $dateStr,
+                'opening_stock'  => $running - $stockIn + $stockOut,
+                'stock_in'       => $stockIn,
+                'stock_out'      => $stockOut,
+                'closing_stock'  => $running,
+                'purchase_value' => round($purchaseValue, 2),
+                'sale_revenue'   => round($saleRevenue, 2),
+                'sale_cost'      => round($saleCost, 2),
+                'profit'         => round($saleRevenue - $saleCost, 2),
+                'purchases'      => $purchases->map(fn($i) => [
+                    'product_name'   => $i->product?->name,
+                    'quantity'       => $i->quantity,
+                    'unit_price'     => $i->unit_price ?? $i->product?->purchase_price,
+                    'total_value'    => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0),
+                    'invoice_no'     => $i->invoice?->invoice_no,
+                ])->values(),
+                'sales' => $sales->map(fn($i) => [
+                    'product_name'   => $i->product?->name,
+                    'quantity'       => $i->quantity,
+                    'sale_price'     => $i->unit_price,
+                    'purchase_price' => $i->product?->purchase_price,
+                    'profit'         => $i->quantity * (($i->unit_price ?? 0) - ($i->product?->purchase_price ?? 0)),
+                    'customer_name'  => $i->invoice?->customer?->name ?? 'Walk-in',
+                    'invoice_no'     => $i->invoice?->invoice_no,
+                ])->values(),
+                'adjustments' => $adjustments->map(fn($a) => [
+                    'product_name' => $a->product?->name,
+                    'quantity'     => $a->quantity,
+                    'type'         => $a->type,
+                    'reason'       => $a->reason,
+                ])->values(),
+            ];
+
+            $current->addDay();
+        }
+
+        // Overall summary for the period
+        $totalIn       = array_sum(array_column($days, 'stock_in'));
+        $totalOut      = array_sum(array_column($days, 'stock_out'));
+        $totalRevenue  = array_sum(array_column($days, 'sale_revenue'));
+        $totalCost     = array_sum(array_column($days, 'sale_cost'));
+        $totalProfit   = array_sum(array_column($days, 'profit'));
+        $closingStock  = count($days) ? end($days)['closing_stock'] : $openingStock;
+
+        return response()->json([
+            'opening_stock' => $openingStock,
+            'closing_stock' => $closingStock,
+            'total_in'      => $totalIn,
+            'total_out'     => $totalOut,
+            'total_revenue' => round($totalRevenue, 2),
+            'total_cost'    => round($totalCost, 2),
+            'total_profit'  => round($totalProfit, 2),
+            'days'          => $days,
+        ]);
+    }
+
     public function backup(Request $request)
     {
         $adjQuery = StockAdjustment::query();

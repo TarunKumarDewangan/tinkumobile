@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
@@ -83,7 +84,7 @@ export default function RepairForm() {
     const balance = parseFloat(form.quoted_amount || 0) - parseFloat(form.advance_amount || 0);
     if (balance <= 0) return toast.info('No balance to settle');
     
-    if (!window.confirm(`Settle balance of ₹${balance.toLocaleString()}? This will capture current network time.`)) return;
+    if (!await pinGate.confirm()) return;
     
     setIsSettling(true);
     const istTime = await fetchInternetTime();

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
+import pinGate from '../../utils/pinGate';
 import { Link } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
@@ -119,7 +120,7 @@ export default function EntityManager() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this entity? It will not delete transactions, but the ledger link will be lost.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await axios.delete(`/entities/${id}`);
       toast.success('Deleted');

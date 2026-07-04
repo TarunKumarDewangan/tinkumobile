@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../../utils/pinGate';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../../api/axios';
@@ -54,7 +55,7 @@ export default function StockList({ products, loading, filters, handleFilterChan
   };
 
   const handleDelete = async (id) => {
-      if(!window.confirm('WARNING: Are you sure you want to delete this stock item? This will revert the inventory count and update the purchase invoice totals.')) return;
+      if (!await pinGate.confirm()) return;
       try {
           await api.delete(`/products/stock/${id}`);
           toast.success('Stock item deleted successfully');

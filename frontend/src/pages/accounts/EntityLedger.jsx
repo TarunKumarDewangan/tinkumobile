@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
@@ -12,8 +13,6 @@ const getVoucherBadgeClass = (type) => {
 export default function EntityLedger() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [isPinVerified, setIsPinVerified] = useState(false);
-  const [pinModal, setPinModal] = useState({ show: false, action: null, value: '', error: false, shake: false });
   const [viewTxModal, setViewTxModal] = useState({ show: false, transaction: null });
   const [editTxModal, setEditTxModal] = useState({ 
     show: false, 
@@ -61,118 +60,87 @@ export default function EntityLedger() {
   });
   const [categories, setCategories] = useState(['ENTITY_SETTLEMENT', 'SHOP_EXPENSE', 'PERSONAL', 'LOAN_PAYMENT']);
 
-  const handlePinRequiredAction = (action) => {
-    if (isPinVerified) {
-      action();
+  const handleViewEntry = async (item) => {
+    if (!await pinGate.confirm()) return;
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      try {
+        const { data } = await api.get(`/transactions/${item.voucher_id}`);
+        setViewTxModal({ show: true, transaction: data });
+      } catch (err) {
+        toast.error('Failed to fetch transaction details');
+      }
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      navigate(`/sales/${item.voucher_id}`);
+    } else if (item.voucher_type === 'REPAIR') {
+      navigate(`/repairs/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'PURCHASE') {
+      navigate(`/purchases/${item.voucher_id}`);
     } else {
-      setPinModal({ show: true, action, value: '', error: false, shake: false });
+      toast.info(`View details of ${item.voucher_type} is not supported directly.`);
     }
   };
 
-  const handlePinSubmit = (e) => {
-    e.preventDefault();
-    if (pinModal.value === '71727378') {
-      setIsPinVerified(true);
-      const actionToRun = pinModal.action;
-      setPinModal({ show: false, action: null, value: '', error: false, shake: false });
-      if (actionToRun) actionToRun();
-    } else {
-      setPinModal(prev => ({ ...prev, error: true, shake: true }));
-      toast.error('Invalid security PIN!');
-      setTimeout(() => {
-        setPinModal(prev => ({ ...prev, shake: false }));
-      }, 500);
-    }
-  };
-
-  const handleViewEntry = (item) => {
-    handlePinRequiredAction(async () => {
-      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-        try {
-          const { data } = await api.get(`/transactions/${item.voucher_id}`);
-          setViewTxModal({ show: true, transaction: data });
-        } catch (err) {
-          toast.error('Failed to fetch transaction details');
-        }
-      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-        navigate(`/sales/${item.voucher_id}`);
-      } else if (item.voucher_type === 'REPAIR') {
-        navigate(`/repairs/${item.voucher_id}/edit`);
-      } else if (item.voucher_type === 'PURCHASE') {
-        navigate(`/purchases/${item.voucher_id}`);
-      } else {
-        toast.info(`View details of ${item.voucher_type} is not supported directly.`);
-      }
-    });
-  };
-
-  const handleEditEntry = (item) => {
-    handlePinRequiredAction(async () => {
-      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-        try {
-          const { data } = await api.get(`/transactions/${item.voucher_id}`);
-          setEditTxModal({
-            show: true,
-            transaction: data,
-            loading: false,
-            formData: {
-              amount: data.amount,
-              category: data.category,
-              payment_mode: data.payment_mode,
-              description: data.description || '',
-              transaction_date: data.transaction_date.split('T')[0]
-            }
-          });
-        } catch (err) {
-          toast.error('Failed to fetch transaction details for editing');
-        }
-      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-        navigate(`/sales/${item.voucher_id}/edit`);
-      } else if (item.voucher_type === 'REPAIR') {
-        navigate(`/repairs/${item.voucher_id}/edit`);
-      } else if (item.voucher_type === 'PURCHASE') {
-        navigate(`/purchases/${item.voucher_id}/edit`);
-      } else {
-        toast.info(`Editing of ${item.voucher_type} is not supported directly.`);
-      }
-    });
-  };
-
-  const handleDeleteEntry = (item) => {
-    handlePinRequiredAction(() => {
-      if (!window.confirm(`Are you sure you want to permanently delete this ${item.voucher_type} entry? This action is irreversible.`)) {
-        return;
-      }
-      
-      let deleteUrl = '';
-      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-        deleteUrl = `/transactions/${item.voucher_id}`;
-      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-        deleteUrl = `/sale-invoices/${item.voucher_id}`;
-      } else if (item.voucher_type === 'REPAIR') {
-        deleteUrl = `/repairs/${item.voucher_id}`;
-      } else if (item.voucher_type === 'PURCHASE') {
-        deleteUrl = `/purchase-invoices/${item.voucher_id}`;
-      } else if (item.voucher_type === 'AIRTEL_DROP') {
-        deleteUrl = `/airtel-drops/${item.voucher_id}`;
-      } else if (item.voucher_type === 'AIRTEL_RECOVERY') {
-        deleteUrl = `/airtel-recoveries/${item.voucher_id}`;
-      } else {
-        toast.error(`Deletion of ${item.voucher_type} is not supported.`);
-        return;
-      }
-
-      api.delete(deleteUrl)
-        .then(() => {
-          toast.success(`${item.voucher_type} deleted successfully`);
-          loadLedger(selectedEntityId, selectedEntityName);
-          fetchSummary();
-          if (searchTerm) loadEntities(searchTerm, filterType);
-        })
-        .catch(err => {
-          toast.error(err.response?.data?.message || `Failed to delete ${item.voucher_type}`);
+  const handleEditEntry = async (item) => {
+    if (!await pinGate.confirm()) return;
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      try {
+        const { data } = await api.get(`/transactions/${item.voucher_id}`);
+        setEditTxModal({
+          show: true,
+          transaction: data,
+          loading: false,
+          formData: {
+            amount: data.amount,
+            category: data.category,
+            payment_mode: data.payment_mode,
+            description: data.description || '',
+            transaction_date: data.transaction_date.split('T')[0]
+          }
         });
-    });
+      } catch (err) {
+        toast.error('Failed to fetch transaction details for editing');
+      }
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      navigate(`/sales/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'REPAIR') {
+      navigate(`/repairs/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'PURCHASE') {
+      navigate(`/purchases/${item.voucher_id}/edit`);
+    } else {
+      toast.info(`Editing of ${item.voucher_type} is not supported directly.`);
+    }
+  };
+
+  const handleDeleteEntry = async (item) => {
+    if (!await pinGate.confirm()) return;
+
+    let deleteUrl = '';
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      deleteUrl = `/transactions/${item.voucher_id}`;
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      deleteUrl = `/sale-invoices/${item.voucher_id}`;
+    } else if (item.voucher_type === 'REPAIR') {
+      deleteUrl = `/repairs/${item.voucher_id}`;
+    } else if (item.voucher_type === 'PURCHASE') {
+      deleteUrl = `/purchase-invoices/${item.voucher_id}`;
+    } else if (item.voucher_type === 'AIRTEL_DROP') {
+      deleteUrl = `/airtel-drops/${item.voucher_id}`;
+    } else if (item.voucher_type === 'AIRTEL_RECOVERY') {
+      deleteUrl = `/airtel-recoveries/${item.voucher_id}`;
+    } else {
+      toast.error(`Deletion of ${item.voucher_type} is not supported.`);
+      return;
+    }
+
+    try {
+      await api.delete(deleteUrl);
+      toast.success(`${item.voucher_type} deleted successfully`);
+      loadLedger(selectedEntityId, selectedEntityName);
+      fetchSummary();
+      if (searchTerm) loadEntities(searchTerm, filterType);
+    } catch (err) {
+      toast.error(err.response?.data?.message || `Failed to delete ${item.voucher_type}`);
+    }
   };
 
   const handleUpdateTx = async (e) => {
@@ -854,52 +822,6 @@ export default function EntityLedger() {
         </div>
       )}
 
-      {/* PIN PROMPT MODAL */}
-      {pinModal.show && (
-        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1070 }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-              <div className="modal-header bg-danger text-white border-0 p-4">
-                <div className="d-flex align-items-center">
-                  <div className="bg-white bg-opacity-20 rounded-circle p-2 me-3">
-                    <i className="bi bi-shield-lock-fill h4 mb-0 text-white"></i>
-                  </div>
-                  <div>
-                    <h5 className="modal-title fw-bold mb-0">Security Authorization</h5>
-                    <p className="xx-small text-white-50 mb-0 mt-1">This operation requires authorization PIN</p>
-                  </div>
-                </div>
-                <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPinModal({ show: false, action: null, value: '', error: false, shake: false })}></button>
-              </div>
-              
-              <form onSubmit={handlePinSubmit}>
-                <div className={`modal-body p-4 bg-light text-center ${pinModal.shake ? 'shake-animation' : ''}`}>
-                  <p className="small text-muted mb-3 fw-bold">Enter authorization PIN to proceed:</p>
-                  <div className="mb-3">
-                    <input 
-                      type="password" 
-                      className={`form-control form-control-lg text-center fw-bold text-danger ${pinModal.error ? 'border-danger bg-danger-subtle' : 'border-secondary'} shadow-sm`} 
-                      placeholder="• • • • • • • •" 
-                      maxLength="8"
-                      value={pinModal.value}
-                      onChange={(e) => setPinModal({ ...pinModal, value: e.target.value, error: false })}
-                      autoFocus
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="modal-footer border-0 p-3 bg-white justify-content-end gap-2">
-                  <button type="button" className="btn btn-light fw-bold px-4 rounded-pill" onClick={() => setPinModal({ show: false, action: null, value: '', error: false, shake: false })}>Cancel</button>
-                  <button type="submit" className="btn btn-danger fw-bold px-4 rounded-pill shadow-sm" disabled={pinModal.value.length < 8}>
-                    Verify & Proceed
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* VIEW TRANSACTION MODAL */}
       {viewTxModal.show && viewTxModal.transaction && (

@@ -77,6 +77,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/stock-adjustments/clear-all', [StockAdjustmentController::class, 'clearAllStocks']);
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
+    Route::get('/stocks/daily-ledger', [StockController::class, 'dailyLedger']);
     Route::get('/stocks/backup', [StockController::class, 'backup']);
     Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup']);
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);
@@ -135,6 +136,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+    Route::delete('/activity-logs/clear', [ActivityLogController::class, 'clear']);
+    Route::delete('/activity-logs/{activityLog}', [ActivityLogController::class, 'destroy']);
 
     // Trash Management
     Route::get('/trash', [TrashController::class, 'index']);
@@ -262,6 +265,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
     Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
+    Route::post('settings/verify-pin', [\App\Http\Controllers\Api\SettingsController::class, 'verifyPin']);
+    Route::post('settings/change-pin', [\App\Http\Controllers\Api\SettingsController::class, 'changePin']);
 
     // Tasks
     Route::get('tasks', [\App\Http\Controllers\Api\TaskController::class, 'index'])->middleware('permission:view_tasks');

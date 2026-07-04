@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -62,7 +63,7 @@ export default function OldMobileSales() {
   }, [filters]);
 
   const handleCancel = async (id) => {
-    if (!window.confirm('Cancel this sale? Stock will be restored.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/sale-invoices/${id}/cancel`);
       toast.success('Sale cancelled successfully');
@@ -71,7 +72,7 @@ export default function OldMobileSales() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('PERMANENTLY DELETE this invoice? Stock will be restored.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/sale-invoices/${id}`);
       toast.success('Invoice deleted successfully');

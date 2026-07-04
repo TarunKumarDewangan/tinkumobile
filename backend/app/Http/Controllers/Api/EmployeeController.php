@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Employee;
 use Illuminate\Http\Request;
 
@@ -49,7 +50,7 @@ class EmployeeController extends Controller
         ]);
 
         $employee = Employee::create(array_merge($data, ['shop_id' => $shopId]));
-
+        ActivityLog::log('EMPLOYEE_CREATED', $employee, "Employee added: {$employee->name} ({$employee->designation})");
         return response()->json($employee, 201);
     }
 
@@ -82,7 +83,7 @@ class EmployeeController extends Controller
         ]);
 
         $employee->update($data);
-
+        ActivityLog::log('EMPLOYEE_UPDATED', $employee, "Employee updated: {$employee->name} ({$employee->designation})");
         return response()->json($employee);
     }
 
@@ -93,6 +94,7 @@ class EmployeeController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        ActivityLog::log('EMPLOYEE_DELETED', $employee, "Employee deleted: {$employee->name}");
         $employee->delete();
         return response()->json(['message' => 'Employee deleted successfully']);
     }

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
@@ -47,7 +48,7 @@ export default function TrashManager() {
   };
 
   const handleRestore = async (id) => {
-    if (!window.confirm('Are you sure you want to restore this item?')) return;
+    if (!await pinGate.confirm()) return;
     
     try {
       await axios.post('/trash/restore', { type, id });

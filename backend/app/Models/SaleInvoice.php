@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\RecordsTransactions;
 
@@ -170,5 +171,6 @@ class SaleInvoice extends Model
     public function parentBill(): BelongsTo { return $this->belongsTo(SaleInvoice::class, 'parent_bill_id'); }
     public function childBills(): HasMany { return $this->hasMany(SaleInvoice::class, 'parent_bill_id'); }
     public function financer(): BelongsTo { return $this->belongsTo(\App\Models\Entity::class, 'financer_id'); }
+    public function financePlan(): HasOne { return $this->hasOne(SaleFinancePlan::class); }
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import pinGate from '../../utils/pinGate';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
@@ -192,6 +193,7 @@ export default function Purchases() {
   const executeAction = async () => {
     const { id, type } = confirmModal;
     setConfirmModal({ show: false, id: null, type: '' });
+    if (!await pinGate.confirm()) return;
 
     if (type === 'delete') {
       try {

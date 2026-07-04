@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
+import pinGate from '../utils/pinGate';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -10,6 +11,7 @@ import OpeningStockForm from './stock/components/OpeningStockForm';
 import StockHistory from './stock/components/StockHistory';
 import EditAdjustmentModal from './stock/components/EditAdjustmentModal';
 import ModelWiseStock from './stock/components/ModelWiseStock';
+import DailyStockLedger from './stock/components/DailyStockLedger';
 import DataBackupModal from '../components/DataBackupModal';
 import DuplicateImeiModal from '../components/DuplicateImeiModal';
 import ClearStockModal from './stock/components/ClearStockModal';
@@ -67,7 +69,7 @@ export default function StockEntry() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this adjustment? Inventory will be reverted.')) return;
+    if (!await pinGate.confirm()) return;
     setLoading(true);
     try {
         await api.delete(`/stock-adjustments/${id}`);
@@ -82,7 +84,7 @@ export default function StockEntry() {
   };
 
   const handleBulkDelete = async (ids) => {
-    if (!window.confirm(`Are you sure you want to delete ${ids.length} selected adjustments? Inventory will be reverted.`)) return;
+    if (!await pinGate.confirm()) return;
     setLoading(true);
     try {
         await api.post('/stock-adjustments/bulk-delete', { ids });
@@ -173,6 +175,7 @@ export default function StockEntry() {
         <button className={`pm-tab ${tab==='entry'?'active':''}`} onClick={() => setTab('entry')}>📥 ENTRY BEFORE SYSTEM STARTED</button>
         <button className={`pm-tab ${tab==='history'?'active':''}`} onClick={() => setTab('history')}>🕓 HISTORY</button>
         <button className={`pm-tab ${tab==='model-wise'?'active':''}`} onClick={() => setTab('model-wise')}>📊 MODEL WISE STOCK</button>
+        <button className={`pm-tab ${tab==='daily-ledger'?'active':''}`} onClick={() => setTab('daily-ledger')}>📅 DAILY LEDGER</button>
       </div>
 
       {(tab === 'stocks' || tab === 'model-wise') && (
@@ -219,8 +222,12 @@ export default function StockEntry() {
         />
       )}
 
+      {tab === 'daily-ledger' && (
+        <DailyStockLedger />
+      )}
+
       {tab === 'history' && (
-        <StockHistory 
+        <StockHistory
             history={history}
             histLoading={histLoading}
             setEditingAdj={setEditingAdj}

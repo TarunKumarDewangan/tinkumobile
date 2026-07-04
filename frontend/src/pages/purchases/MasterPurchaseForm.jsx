@@ -142,7 +142,9 @@ export default function MasterPurchaseForm() {
         });
         if (p.rounding_mode === 'manual') setIsManualRound(true);
         if (p.is_gst_manual) setIsManualGst(true);
-        setItems(p.items.map(i => {
+
+        // Map each saved purchase_item to a row object
+        const rawRows = p.items.map(i => {
           const unit_price = parseFloat(i.unit_price) || 0;
           const gst = parseFloat(i.calc_gst_rate ?? 18) || 0;
 
@@ -163,7 +165,8 @@ export default function MasterPurchaseForm() {
           const tDisc = parseFloat(i.trade_disc_pct ?? defaultTradeDisc) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? defaultCashDisc) || 0;
           const pAttrs = i.product?.attributes || {};
-          const applyGst = !!pAttrs.gst_rate;
+          // Respect invoice-level GST toggle: if calculate_gst is off, don't apply GST even if product has a rate
+          const applyGst = !!pAttrs.gst_rate && (p.calculate_gst ?? true);
 
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
@@ -196,12 +199,28 @@ export default function MasterPurchaseForm() {
             location: i.product?.location || '',
             brand_name: pAttrs.brand || '',
             has_brand: !!pAttrs.brand,
-            apply_gst: !!pAttrs.gst_rate,
+            apply_gst: applyGst,
             gst_rate: pAttrs.gst_rate || '',
             warranty: pAttrs.warranty || 'No Warranty',
             description: pAttrs.description || ''
           };
-        }));
+        });
+
+        // Re-group rows that were split into one-per-IMEI on save back into
+        // single rows with multiple IMEIs (same product + specs + price = one row)
+        const grouped = [];
+        const seenKeys = {};
+        rawRows.forEach(row => {
+          const key = `${row.product_id}|${row.ram}|${row.storage}|${row.color}|${row.unit_price}`;
+          if (seenKeys[key] !== undefined) {
+            grouped[seenKeys[key]].imei_list.push(...row.imei_list);
+            grouped[seenKeys[key]].quantity += row.quantity;
+          } else {
+            seenKeys[key] = grouped.length;
+            grouped.push({ ...row, imei_list: [...row.imei_list] });
+          }
+        });
+        setItems(grouped);
       }).finally(() => setLoading(false));
     }
   }, [isOwner, id]);

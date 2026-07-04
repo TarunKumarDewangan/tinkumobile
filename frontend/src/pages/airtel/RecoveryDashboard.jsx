@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
@@ -94,7 +95,7 @@ export default function RecoveryDashboard() {
 
   const handleRecover = async () => {
     if (selected.length === 0) return;
-    if (!window.confirm(`MARK ${selected.length} PAYMENTS AS RECOVERED?`)) return;
+    if (!await pinGate.confirm()) return;
 
     setSubmitting(true);
     try {

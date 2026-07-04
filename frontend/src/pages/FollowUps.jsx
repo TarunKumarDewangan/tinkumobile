@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
@@ -77,7 +78,7 @@ export default function FollowUps() {
   };
 
   const deleteFollowUp = async (id) => {
-    if (!window.confirm('Delete this follow-up?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/follow-ups/${id}`);
       toast.success('Deleted');

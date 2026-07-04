@@ -4,6 +4,7 @@ import { ToastContainer } from 'react-toastify';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import PermissionRoute from './components/PermissionRoute';
+import PinModal from './components/PinModal';
 
 // Pages
 const Login = lazy(() => import('./pages/auth/Login'));
@@ -70,6 +71,7 @@ const TaskDetail = lazy(() => import('./pages/tasks/TaskDetail'));
 const FinanceTracker = lazy(() => import('./pages/finance/FinanceTracker'));
 const FinancerReport = lazy(() => import('./pages/reports/FinancerReport'));
 const RolePermissions = lazy(() => import('./pages/admin/RolePermissions'));
+const SecuritySettings = lazy(() => import('./pages/admin/SecuritySettings'));
 
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
 const CustomerProfile = lazy(() => import('./pages/customer/CustomerProfile'));
@@ -142,6 +144,7 @@ function AppRoutes() {
           <Route path="admin/users" element={<Users />} />
           <Route path="admin/shops" element={<Shops />} />
           <Route path="admin/role-permissions" element={<RolePermissions />} />
+          <Route path="admin/security-settings" element={<SecuritySettings />} />
           <Route path="admin/activity-logs" element={<ActivityLogs />} />
           <Route path="admin/trash" element={<TrashManager />} />
           <Route path="reports" element={<Reports />} />
@@ -193,6 +196,7 @@ export default function App() {
       <BrowserRouter>
         <AppRoutes />
         <ToastContainer position="top-right" autoClose={3000} />
+        <PinModal />
       </BrowserRouter>
     </AuthProvider>
   );

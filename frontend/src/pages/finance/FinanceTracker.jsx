@@ -10,6 +10,9 @@ export default function FinanceTracker() {
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ type: '', status: '', search: '' });
 
+  // Financer-sale marking
+  const [markingReceived, setMarkingReceived] = useState(null); // invoice id
+
   // Payment modal state
   const [payModal, setPayModal]   = useState(null); // plan object
   const [payForm, setPayForm]     = useState({ amount: '', payment_date: today(), payment_mode: 'CASH', emi_number: '', notes: '' });
@@ -29,10 +32,55 @@ export default function FinanceTracker() {
   async function load() {
     setLoading(true);
     try {
-      const { data } = await api.get('/finance-plans', { params: filter });
-      setPlans(data);
+      // Fetch shop-finance plans (Personal EMI + Favor)
+      const planParams = { ...filter };
+      if (filter.type === 'FINANCER') planParams.type = ''; // financer type lives separately
+      const planReq = (filter.type === '' || filter.type !== 'FINANCER')
+        ? api.get('/finance-plans', { params: planParams })
+        : Promise.resolve({ data: [] });
+
+      // Fetch external-financer sales (always, unless filtering by non-financer type)
+      const invParams = { has_financer: 1, per_page: 500 };
+      if (filter.search) invParams.search = filter.search;
+      if (filter.status === 'SETTLED') invParams.finance_payment_status = 'RECEIVED';
+      if (filter.status === 'ACTIVE')  invParams.finance_payment_status = 'PENDING';
+      const invReq = (filter.type === '' || filter.type === 'FINANCER')
+        ? api.get('/sale-invoices', { params: invParams })
+        : Promise.resolve({ data: { data: [] } });
+
+      const [planRes, invRes] = await Promise.all([planReq, invReq]);
+      const invList = Array.isArray(invRes.data) ? invRes.data : (invRes.data?.data ?? []);
+
+      // Normalize financer invoices to look like plan objects
+      const financerRows = invList.map(inv => ({
+        _source: 'FINANCER',
+        id: `F_${inv.id}`,
+        _invoice_id: inv.id,
+        type: 'FINANCER',
+        status: inv.finance_payment_status === 'RECEIVED' ? 'SETTLED' : 'ACTIVE',
+        customer: inv.customer,
+        sale_invoice: inv,
+        principal: parseFloat(inv.finance_amount || 0),
+        total_payable: parseFloat(inv.finance_amount || 0),
+        down_payment: parseFloat(inv.down_payment || 0),
+        total_paid: inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0,
+        financer: inv.financer,
+        payments: [],
+      }));
+
+      setPlans([...(planRes.data ?? []), ...financerRows]);
     } catch { toast.error('Failed to load finance plans'); }
     finally  { setLoading(false); }
+  }
+
+  async function markFinancerReceived(invoiceId) {
+    setMarkingReceived(invoiceId);
+    try {
+      await api.post(`/sale-invoices/${invoiceId}/receive-finance`);
+      toast.success('Finance payment marked as received');
+      load();
+    } catch (e) { toast.error(e.response?.data?.message || 'Failed to update'); }
+    finally { setMarkingReceived(null); }
   }
 
   function today() { return new Date().toISOString().slice(0, 10); }
@@ -43,8 +91,9 @@ export default function FinanceTracker() {
     const overdue  = plans.filter(p => p.status === 'OVERDUE');
     const personal = plans.filter(p => p.type === 'PERSONAL');
     const favor    = plans.filter(p => p.type === 'FAVOR');
+    const financer = plans.filter(p => p.type === 'FINANCER');
     const totalDue = active.reduce((s, p) => s + remaining(p), 0);
-    return { total: plans.length, active: active.length, overdue: overdue.length, personal: personal.length, favor: favor.length, totalDue };
+    return { total: plans.length, active: active.length, overdue: overdue.length, personal: personal.length, favor: favor.length, financer: financer.length, totalDue };
   }, [plans]);
 
   function remaining(plan) {
@@ -117,10 +166,10 @@ export default function FinanceTracker() {
     finally   { setSchedLoading(false); }
   }
 
-  const statusColor = { ACTIVE: '#16a34a', OVERDUE: '#dc2626', SETTLED: '#64748b' };
-  const statusBg    = { ACTIVE: '#f0fdf4', OVERDUE: '#fef2f2', SETTLED: '#f8fafc' };
-  const typeBg      = { PERSONAL: '#eff6ff', FAVOR: '#ecfeff' };
-  const typeColor   = { PERSONAL: '#1d4ed8', FAVOR: '#0891b2' };
+  const statusColor = { ACTIVE: '#16a34a', OVERDUE: '#dc2626', SETTLED: '#64748b', PENDING: '#d97706', RECEIVED: '#16a34a' };
+  const statusBg    = { ACTIVE: '#f0fdf4', OVERDUE: '#fef2f2', SETTLED: '#f8fafc', PENDING: '#fffbeb', RECEIVED: '#f0fdf4' };
+  const typeBg      = { PERSONAL: '#eff6ff', FAVOR: '#ecfeff', FINANCER: '#f5f3ff' };
+  const typeColor   = { PERSONAL: '#1d4ed8', FAVOR: '#0891b2', FINANCER: '#7c3aed' };
 
   return (
     <div className="container-fluid py-3">
@@ -139,6 +188,7 @@ export default function FinanceTracker() {
           { label: 'Overdue',       value: stats.overdue,  color: '#dc2626', bg: '#fef2f2' },
           { label: 'Personal EMI',  value: stats.personal, color: '#1d4ed8', bg: '#eff6ff' },
           { label: 'Favor',         value: stats.favor,    color: '#0891b2', bg: '#ecfeff' },
+          { label: 'Financer',      value: stats.financer, color: '#7c3aed', bg: '#f5f3ff' },
         ].map(s => (
           <div key={s.label} className="col-6 col-md-2">
             <div style={{background: s.bg, border:`1.5px solid ${s.color}22`, borderRadius:10, padding:'10px 14px'}}>
@@ -163,6 +213,7 @@ export default function FinanceTracker() {
               <option value="">ALL TYPES</option>
               <option value="PERSONAL">PERSONAL EMI</option>
               <option value="FAVOR">FAVOR</option>
+              <option value="FINANCER">FINANCER (EXTERNAL)</option>
             </select>
           </div>
           <div className="col-6 col-md-2">
@@ -203,14 +254,18 @@ export default function FinanceTracker() {
                 const inv  = plan.sale_invoice;
                 const product = inv?.items?.[0]?.product;
                 const specs = [inv?.items?.[0]?.ram, inv?.items?.[0]?.storage, inv?.items?.[0]?.color].filter(Boolean).join('/');
+                const isFinancer = plan.type === 'FINANCER';
 
                 return (
                   <tr key={plan.id} style={{borderBottom:'1px solid #e2e8f0', background: plan.status === 'SETTLED' ? '#fafafa' : '#fff'}}>
                     {/* Type */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0'}}>
                       <span style={{background: typeBg[plan.type], color: typeColor[plan.type], fontSize:'.62rem', fontWeight:800, padding:'2px 8px', borderRadius:20, display:'inline-block'}}>
-                        {plan.type === 'PERSONAL' ? '📅 EMI' : '🤝 FAVOR'}
+                        {plan.type === 'PERSONAL' ? '📅 EMI' : plan.type === 'FAVOR' ? '🤝 FAVOR' : '🏦 FINANCER'}
                       </span>
+                      {isFinancer && plan.financer && (
+                        <div style={{fontSize:'.6rem', color:'#7c3aed', fontWeight:700, marginTop:3}}>{plan.financer.name}</div>
+                      )}
                     </td>
 
                     {/* Customer */}
@@ -233,7 +288,7 @@ export default function FinanceTracker() {
                     {/* Plan Details */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0', whiteSpace:'nowrap'}}>
                       <div style={{fontSize:'.65rem', color:'#64748b'}}>
-                        <div>Down: <strong>₹{parseFloat(plan.down_payment).toLocaleString('en-IN')}</strong></div>
+                        <div>Down: <strong>₹{parseFloat(plan.down_payment || 0).toLocaleString('en-IN')}</strong></div>
                         {plan.type === 'PERSONAL' && (
                           <>
                             <div>EMI: <strong style={{color:'#1d4ed8'}}>₹{parseFloat(plan.monthly_emi).toLocaleString('en-IN')}/mo</strong></div>
@@ -249,6 +304,11 @@ export default function FinanceTracker() {
                         {plan.type === 'FAVOR' && (
                           <div style={{color:'#0891b2'}}>Flexible repayment</div>
                         )}
+                        {isFinancer && (
+                          <div style={{color:'#7c3aed'}}>
+                            Finance: <strong>₹{parseFloat(plan.principal).toLocaleString('en-IN')}</strong>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -261,7 +321,7 @@ export default function FinanceTracker() {
                     {/* Paid */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0', textAlign:'right', whiteSpace:'nowrap', color:'#16a34a', fontWeight:700}}>
                       ₹{parseFloat(plan.total_paid || 0).toLocaleString('en-IN')}
-                      <div style={{fontSize:'.6rem', color:'#94a3b8', fontWeight:400}}>{plan.payments?.length || 0} payment(s)</div>
+                      {!isFinancer && <div style={{fontSize:'.6rem', color:'#94a3b8', fontWeight:400}}>{plan.payments?.length || 0} payment(s)</div>}
                     </td>
 
                     {/* Due */}
@@ -272,31 +332,54 @@ export default function FinanceTracker() {
 
                     {/* Status */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0', textAlign:'center'}}>
-                      <span style={{background: statusBg[plan.status], color: statusColor[plan.status], fontSize:'.62rem', fontWeight:800, padding:'3px 10px', borderRadius:20, display:'inline-block', textTransform:'uppercase'}}>
-                        {plan.status}
-                      </span>
+                      {isFinancer ? (
+                        <span style={{
+                          background: statusBg[plan.status === 'SETTLED' ? 'RECEIVED' : 'PENDING'],
+                          color: statusColor[plan.status === 'SETTLED' ? 'RECEIVED' : 'PENDING'],
+                          fontSize:'.62rem', fontWeight:800, padding:'3px 10px', borderRadius:20, display:'inline-block', textTransform:'uppercase'
+                        }}>
+                          {plan.status === 'SETTLED' ? 'RECEIVED' : 'PENDING'}
+                        </span>
+                      ) : (
+                        <span style={{background: statusBg[plan.status], color: statusColor[plan.status], fontSize:'.62rem', fontWeight:800, padding:'3px 10px', borderRadius:20, display:'inline-block', textTransform:'uppercase'}}>
+                          {plan.status}
+                        </span>
+                      )}
                     </td>
 
                     {/* Actions */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0'}}>
                       <div className="d-flex flex-column gap-1" style={{minWidth:100}}>
-                        {plan.status !== 'SETTLED' && (
+                        {isFinancer ? (
+                          plan.status !== 'SETTLED' && (
+                            <button
+                              onClick={() => markFinancerReceived(plan._invoice_id)}
+                              disabled={markingReceived === plan._invoice_id}
+                              style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#7c3aed', color:'#fff', border:'none', borderRadius:6, cursor:'pointer'}}>
+                              {markingReceived === plan._invoice_id ? '...' : '✅ MARK RECEIVED'}
+                            </button>
+                          )
+                        ) : (
                           <>
-                            <button onClick={() => openPayModal(plan)}
-                              style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#1d4ed8', color:'#fff', border:'none', borderRadius:6, cursor:'pointer'}}>
-                              💰 PAY
-                            </button>
-                            <button onClick={() => openSettleModal(plan)}
-                              style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#16a34a', color:'#fff', border:'none', borderRadius:6, cursor:'pointer'}}>
-                              ✅ SETTLE
-                            </button>
+                            {plan.status !== 'SETTLED' && (
+                              <>
+                                <button onClick={() => openPayModal(plan)}
+                                  style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#1d4ed8', color:'#fff', border:'none', borderRadius:6, cursor:'pointer'}}>
+                                  💰 PAY
+                                </button>
+                                <button onClick={() => openSettleModal(plan)}
+                                  style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#16a34a', color:'#fff', border:'none', borderRadius:6, cursor:'pointer'}}>
+                                  ✅ SETTLE
+                                </button>
+                              </>
+                            )}
+                            {plan.type === 'PERSONAL' && (
+                              <button onClick={() => openSchedule(plan)}
+                                style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#f1f5f9', color:'#475569', border:'1px solid #cbd5e1', borderRadius:6, cursor:'pointer'}}>
+                                📅 SCHEDULE
+                              </button>
+                            )}
                           </>
-                        )}
-                        {plan.type === 'PERSONAL' && (
-                          <button onClick={() => openSchedule(plan)}
-                            style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#f1f5f9', color:'#475569', border:'1px solid #cbd5e1', borderRadius:6, cursor:'pointer'}}>
-                            📅 SCHEDULE
-                          </button>
                         )}
                       </div>
                     </td>

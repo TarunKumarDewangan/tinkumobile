@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
@@ -116,7 +117,7 @@ export default function RetailerProfile() {
     };
 
     const handleDeleteRetailer = async () => {
-        if (!window.confirm(`DELETE RETAILER "${retailer.name}"? This will hide all their records.`)) return;
+        if (!await pinGate.confirm()) return;
         try {
             await axios.delete(`/airtel-retailers/${id}`);
             toast.success('Retailer deleted');
@@ -127,7 +128,7 @@ export default function RetailerProfile() {
     };
 
     const handleDeleteRecovery = async (recoveryId) => {
-        if (!window.confirm('DELETE THIS PAYMENT RECORD? This will increase the pending balance.')) return;
+        if (!await pinGate.confirm()) return;
         try {
             await axios.delete(`/airtel-recoveries/${recoveryId}`);
             toast.success('Recovery deleted');

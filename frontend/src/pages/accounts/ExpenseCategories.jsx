@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
@@ -72,7 +73,7 @@ export default function ExpenseCategories() {
     };
 
     const deleteCategory = async (id) => {
-        if (!window.confirm('Delete this category? Transactions in this category will remain but reference will be broken.')) return;
+        if (!await pinGate.confirm()) return;
         try {
             await api.delete(`/expense-categories/${id}`);
             toast.success('Deleted');

@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
+import pinGate from '../../utils/pinGate';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { Link, useNavigate } from 'react-router-dom';
@@ -280,7 +281,7 @@ export default function GroupSummary() {
 
     /* ── Delete (entity only) ── */
     const handleDelete = async (ent) => {
-        if (!window.confirm(`Delete "${ent.name}" from accounts?\n\nThis removes the entity record but KEEPS transaction history.`)) return;
+        if (!await pinGate.confirm()) return;
         setDeleting(ent.id);
         try {
             await api.delete(`/entities/${ent.id}`);
@@ -295,12 +296,7 @@ export default function GroupSummary() {
 
     /* ── Delete with full history ── */
     const handleDeleteWithHistory = async (ent) => {
-        const first = window.confirm(
-            `⚠️ DELETE "${ent.name}" WITH ALL TRANSACTION HISTORY?\n\nThis will permanently erase:\n• The account record\n• ALL ledger transactions for this account\n• Balance history\n\nThis CANNOT be undone. Confirm?`
-        );
-        if (!first) return;
-        const second = window.confirm(`FINAL WARNING: Completely erase "${ent.name}" and every transaction linked to it?`);
-        if (!second) return;
+        if (!await pinGate.confirm()) return;
 
         setDeletingHistory(ent.id);
         try {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 
 class SettingsController extends Controller
@@ -26,6 +27,38 @@ class SettingsController extends Controller
         }
 
         return response()->json(['message' => 'Settings updated successfully']);
+    }
+
+    public function verifyPin(Request $request)
+    {
+        $request->validate(['pin' => 'required|string']);
+        $stored = \App\Models\Setting::where('key', 'action_pin')->value('value');
+        if (!$stored || !\Illuminate\Support\Facades\Hash::check($request->pin, $stored)) {
+            return response()->json(['message' => 'Incorrect PIN'], 403);
+        }
+        return response()->json(['message' => 'ok']);
+    }
+
+    public function changePin(Request $request)
+    {
+        $user = $request->user();
+        if (!($user->is_owner || $user->hasRole('Admin'))) {
+            return response()->json(['message' => 'Only owner or admin can change the PIN'], 403);
+        }
+        $request->validate([
+            'old_pin' => 'required|string',
+            'new_pin' => 'required|string|min:4|max:8',
+        ]);
+        $stored = \App\Models\Setting::where('key', 'action_pin')->value('value');
+        if (!$stored || !\Illuminate\Support\Facades\Hash::check($request->old_pin, $stored)) {
+            return response()->json(['message' => 'Current PIN is incorrect'], 403);
+        }
+        \App\Models\Setting::updateOrCreate(
+            ['key' => 'action_pin'],
+            ['value' => \Illuminate\Support\Facades\Hash::make($request->new_pin)]
+        );
+        ActivityLog::log('PIN_CHANGED', null, "System action PIN changed by {$user->name}");
+        return response()->json(['message' => 'PIN updated successfully']);
     }
 
     public function testWhatsApp()

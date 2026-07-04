@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import { Modal, Button, Tabs, Tab } from 'react-bootstrap';
 import api from '../api/axios';
@@ -98,7 +99,7 @@ export default function Employees() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this employee?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/employees/${id}`);
       toast.success('Employee deleted');
@@ -155,7 +156,7 @@ export default function Employees() {
   };
 
   const handleDeleteHistory = async (id) => {
-      if (!window.confirm('Delete this payment record?')) return;
+      if (!await pinGate.confirm()) return;
       try {
           await api.delete(`/salary-payments/${id}`);
           toast.success('Record deleted');

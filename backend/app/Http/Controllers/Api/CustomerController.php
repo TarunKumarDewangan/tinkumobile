@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 
@@ -42,6 +43,7 @@ class CustomerController extends Controller
                 $customer->events()->create($event);
             }
         }
+        ActivityLog::log('CUSTOMER_CREATED', $customer, "Customer added: {$customer->name} ({$customer->phone})");
         return response()->json($customer->load(['events', 'entity']), 201);
     }
     public function show(Customer $customer) { return response()->json($customer->load(['events', 'entity'])); }
@@ -80,6 +82,7 @@ class CustomerController extends Controller
                 $customer->events()->create($event);
             }
         }
+        ActivityLog::log('CUSTOMER_UPDATED', $customer, "Customer updated: {$customer->name} ({$customer->phone})");
         return response()->json($customer->load(['events', 'entity']));
     }
     public function getHistory(Request $request, Customer $customer) {
@@ -188,5 +191,9 @@ class CustomerController extends Controller
         }
     }
 
-    public function destroy(Customer $customer) { $customer->delete(); return response()->json(['message' => 'Deleted']); }
+    public function destroy(Customer $customer) {
+        ActivityLog::log('CUSTOMER_DELETED', $customer, "Customer deleted: {$customer->name} ({$customer->phone})");
+        $customer->delete();
+        return response()->json(['message' => 'Deleted']);
+    }
 }

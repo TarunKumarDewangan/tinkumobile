@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\Inventory;
 use Illuminate\Http\Request;
@@ -210,7 +211,9 @@ class ProductController extends Controller
             $data['subcategory'] = strtoupper($sub);
         }
 
-        return response()->json(Product::create($data), 201);
+        $product = Product::create($data);
+        ActivityLog::log('PRODUCT_CREATED', $product, "Product added: {$product->name} (SKU: {$product->sku}) ₹{$product->selling_price}");
+        return response()->json($product, 201);
     }
 
     public function show(Request $request, Product $product)
@@ -253,11 +256,13 @@ class ProductController extends Controller
         }
 
         $product->update($data);
+        ActivityLog::log('PRODUCT_UPDATED', $product, "Product updated: {$product->name} (SKU: {$product->sku})");
         return response()->json($product);
     }
 
     public function destroy(Product $product)
     {
+        ActivityLog::log('PRODUCT_DELETED', $product, "Product deleted: {$product->name} (SKU: {$product->sku}) ₹{$product->selling_price}");
         $product->delete();
         return response()->json(['message' => 'Product deleted']);
     }

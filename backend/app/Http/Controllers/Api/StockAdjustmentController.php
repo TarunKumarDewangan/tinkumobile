@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\StockAdjustment;
@@ -81,6 +82,10 @@ class StockAdjustmentController extends Controller
                 Inventory::removeStock($shopId, $validated['product_id'], $validated['quantity']);
             }
 
+            $product = Product::find($validated['product_id']);
+            ActivityLog::log('STOCK_ADJUSTED', $adjustment,
+                "Stock {$validated['type']}: {$validated['quantity']} unit(s) of {$product?->name} — {$validated['reason']}"
+            );
             return response()->json($adjustment->load(['product', 'shop', 'user']), 201);
         });
     }
@@ -514,13 +519,9 @@ class StockAdjustmentController extends Controller
      */
     public function clearAllStocks(Request $request)
     {
-        $request->validate([
-            'pin' => 'required|string'
-        ]);
-
-        if ($request->pin !== '71727378') {
-            return response()->json(['message' => 'Invalid PIN provided. Access denied.'], 403);
-        }
+        ActivityLog::log('CLEAR_ALL_STOCKS', null,
+            '⚠️ DANGER: All new mobile stocks, purchases, and sales permanently cleared by ' . ($request->user()?->name ?? 'Unknown')
+        );
 
         // NOTE: TRUNCATE in MySQL issues an implicit commit and cannot run inside a
         // transactional block. We disable FK checks, run all truncates, then re-enable.

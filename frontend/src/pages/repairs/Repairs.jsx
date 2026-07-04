@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
@@ -68,7 +69,7 @@ export default function Repairs() {
   };
 
   const payShop = async (id) => {
-    if (!window.confirm('Are you sure you want to record payment to this external shop? This will create an OUT transaction in the cashbook.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/repairs/${id}/pay-cost`);
       toast.success('Payment recorded successfully');
@@ -79,7 +80,7 @@ export default function Repairs() {
   };
 
   const deleteRepair = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this repair?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/repairs/${id}`);
       toast.success('Repair deleted');

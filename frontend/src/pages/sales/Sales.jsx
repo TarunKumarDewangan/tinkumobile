@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
@@ -17,7 +18,7 @@ export default function Sales() {
   const [showBackupModal, setShowBackupModal] = useState(false);
 
   const [filters, setFilters] = useState({
-    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false
+    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: ''
   });
   const [sortMode, setSortMode] = useState('date'); // 'date' | 'entry'
 
@@ -47,7 +48,7 @@ export default function Sales() {
   };
 
   const handleCancel = async (id) => {
-    if (!window.confirm('Cancel this sale? Stock will be restored.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/sale-invoices/${id}/cancel`);
       toast.success('Sale cancelled successfully');
@@ -56,7 +57,7 @@ export default function Sales() {
   };
 
   const handleReceiveFinance = async (id) => {
-    if (!window.confirm('Mark this finance payment as RECEIVED?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/sale-invoices/${id}/receive-finance`);
       toast.success('Finance payment marked as received');
@@ -67,7 +68,7 @@ export default function Sales() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('PERMANENTLY DELETE this invoice? Stock will be restored.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/sale-invoices/${id}`);
       toast.success('Invoice deleted');
@@ -76,7 +77,7 @@ export default function Sales() {
   };
 
   const convertToPakka = async (id) => {
-    if (!window.confirm('Convert this Kaccha bill to Pakka?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       const res = await api.post(`/sale-invoices/${id}/convert-to-pakka`);
       toast.success(`Pakka bill created: ${res.data.invoice_no}`);
@@ -144,6 +145,15 @@ export default function Sales() {
                     <option value="pakka">PAKKA</option>
                 </select>
             </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">Customer Type</label>
+                <select className="form-select form-select-sm" value={filters.customer_category} onChange={e => setFilters({...filters, customer_category: e.target.value})}>
+                    <option value="">ALL CUSTOMERS</option>
+                    <option value="REGULAR">REGULAR</option>
+                    <option value="SHOP">SHOP / DEALER</option>
+                    <option value="WALK_IN">WALK-IN (NO ACCOUNT)</option>
+                </select>
+            </div>
             {hasFullAccess() && (
                 <div className="col-12 col-md-2">
                     <label className="small text-muted mb-1 fw-bold">Shop Branch</label>
@@ -158,7 +168,7 @@ export default function Sales() {
                 <input type="text" className="form-control form-control-sm text-uppercase" placeholder="SEARCH..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
             </div>
             <div className="col-12 col-md-2 d-flex align-items-end">
-                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false})}>RESET</button>
+                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: ''})}>RESET</button>
             </div>
         </div>
 
@@ -207,9 +217,19 @@ export default function Sales() {
               ) : sortedInvoices.length === 0 ? (
                 <tr><td colSpan={10} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
               ) : sortedInvoices.map(inv => {
+                const fp = inv.finance_plan; // SaleFinancePlan (Personal EMI / Favor)
                 const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
-                const totalPaid = parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
-                const balance = Math.max(0, parseFloat(inv.grand_total) - totalPaid);
+
+                // For personal/favor finance: paid = down_payment + installments collected so far
+                // For normal/financer sales: paid = total_paid + exchange_paid + finance_received
+                const displayPaid = fp
+                  ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0)
+                  : parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
+
+                // Balance: for personal/favor = remaining principal unpaid; for others = usual calc
+                const balance = fp
+                  ? Math.max(0, parseFloat(fp.principal || 0) - parseFloat(fp.total_paid || 0))
+                  : Math.max(0, parseFloat(inv.grand_total) - displayPaid);
                 const navTo = (path) => navigate(category_group ? `${path}?category_group=${category_group}` : path);
                 return (
                   <tr key={inv.id} className={inv.is_cancelled ? 'opacity-50 text-decoration-line-through' : ''}>
@@ -266,7 +286,14 @@ export default function Sales() {
                     </td>
 
                     {/* 6. Paid */}
-                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>₹{parseFloat(inv.total_paid).toLocaleString('en-IN')}</td>
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
+                      ₹{displayPaid.toLocaleString('en-IN')}
+                      {fp && parseFloat(fp.down_payment || 0) > 0 && parseFloat(fp.total_paid || 0) === 0 && (
+                        <div style={{ fontSize: '.58rem', color: '#94a3b8', fontWeight: 400 }}>
+                          ↓ DOWN PMT
+                        </div>
+                      )}
+                    </td>
 
                     {/* 7. Balance */}
                     <td className="text-end fw-bold" style={{ color: balance > 0 ? '#b91c1c' : '#16a34a', whiteSpace: 'nowrap' }}>
@@ -279,22 +306,46 @@ export default function Sales() {
                         <span className="badge-ordered">CANCELLED</span>
                       ) : (
                         <div className="d-flex flex-column align-items-center gap-1">
-                          {getStatusBadge(inv.payment_status)}
-                          {parseFloat(inv.finance_amount || 0) > 0 && (
-                            inv.finance_payment_status === 'RECEIVED' ? (
-                              <span className="badge-paid" style={{ fontSize: '0.6rem', marginTop: '2px' }}>
-                                EMI PAID: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')})
+                          {/* Personal / Favor Finance badge — replaces generic payment_status */}
+                          {fp ? (
+                            <>
+                              <span style={{
+                                background: fp.type === 'PERSONAL' ? '#eff6ff' : '#ecfeff',
+                                color:      fp.type === 'PERSONAL' ? '#1d4ed8' : '#0891b2',
+                                fontSize: '.6rem', fontWeight: 800,
+                                padding: '2px 7px', borderRadius: 20, display: 'inline-block',
+                              }}>
+                                {fp.type === 'PERSONAL' ? '📅 PERSONAL FINANCE' : '🤝 FAVOR FINANCE'}
                               </span>
-                            ) : (
-                              <span
-                                className="badge-unpaid cursor-pointer"
-                                style={{ fontSize: '0.6rem', marginTop: '2px', cursor: 'pointer' }}
-                                title="Click to mark finance payment as received"
-                                onClick={() => handleReceiveFinance(inv.id)}
-                              >
-                                EMI PEND: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')}) ⏳
+                              <span style={{
+                                background: fp.status === 'SETTLED' ? '#f1f5f9' : fp.status === 'OVERDUE' ? '#fef2f2' : '#f0fdf4',
+                                color:      fp.status === 'SETTLED' ? '#64748b' : fp.status === 'OVERDUE' ? '#dc2626' : '#16a34a',
+                                fontSize: '.58rem', fontWeight: 700,
+                                padding: '1px 6px', borderRadius: 20, display: 'inline-block',
+                              }}>
+                                {fp.status}
                               </span>
-                            )
+                            </>
+                          ) : (
+                            <>
+                              {getStatusBadge(inv.payment_status)}
+                              {parseFloat(inv.finance_amount || 0) > 0 && (
+                                inv.finance_payment_status === 'RECEIVED' ? (
+                                  <span className="badge-paid" style={{ fontSize: '0.6rem', marginTop: '2px' }}>
+                                    EMI PAID: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')})
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="badge-unpaid cursor-pointer"
+                                    style={{ fontSize: '0.6rem', marginTop: '2px', cursor: 'pointer' }}
+                                    title="Click to mark finance payment as received"
+                                    onClick={() => handleReceiveFinance(inv.id)}
+                                  >
+                                    EMI PEND: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')}) ⏳
+                                  </span>
+                                )
+                              )}
+                            </>
                           )}
                         </div>
                       )}
