@@ -361,7 +361,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'giftItems.giftProduct', 'shop'));
+        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'giftItems.giftProduct', 'shop', 'financer'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)
