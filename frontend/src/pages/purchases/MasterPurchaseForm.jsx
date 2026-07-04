@@ -208,21 +208,7 @@ export default function MasterPurchaseForm() {
           };
         });
 
-        // Re-group rows that were split into one-per-IMEI on save back into
-        // single rows with multiple IMEIs (same product + specs + price = one row)
-        const grouped = [];
-        const seenKeys = {};
-        rawRows.forEach(row => {
-          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${row.unit_price}`;
-          if (seenKeys[key] !== undefined) {
-            grouped[seenKeys[key]].imei_list.push(...row.imei_list);
-            grouped[seenKeys[key]].quantity += row.quantity;
-          } else {
-            seenKeys[key] = grouped.length;
-            grouped.push({ ...row, imei_list: [...row.imei_list] });
-          }
-        });
-        setItems(grouped);
+        setItems(rawRows);
       }).finally(() => setLoading(false));
     }
   }, [isOwner, id]);
@@ -732,14 +718,9 @@ export default function MasterPurchaseForm() {
         if (!isImeiCategory(it.category_id)) {
           flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
         } else {
+          // Store all IMEIs as a single comma-separated row so edit loads as one row, not N rows
           const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
-          if (imeiArr.length > 0) {
-            imeiArr.forEach(imei => {
-              flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: imei, quantity: 1 });
-            });
-          } else {
-            flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: '', quantity: rest.quantity || 1 });
-          }
+          flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: imeiArr.join(','), quantity: imeiArr.length || rest.quantity || 1 });
         }
       });
       
