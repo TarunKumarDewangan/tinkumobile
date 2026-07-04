@@ -166,7 +166,7 @@ export default function MasterPurchaseForm() {
           const cDisc = parseFloat(i.cash_disc_pct ?? defaultCashDisc) || 0;
           const pAttrs = i.product?.attributes || {};
           // Use stored apply_gst if available (new records); fall back to derivation for old records
-          const applyGst = (i.apply_gst !== null && i.apply_gst !== undefined)
+          const applyGst = i.apply_gst !== null
             ? !!i.apply_gst
             : (!!pAttrs.gst_rate && (p.calculate_gst ?? true));
 

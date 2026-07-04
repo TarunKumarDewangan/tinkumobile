@@ -155,8 +155,8 @@ class StockAdjustmentController extends Controller
 
                 if (count($imeis) > 0) {
                     foreach ($imeis as $imei) {
-                        // Check if IMEI already exists in the system
-                        $exists = \App\Models\PurchaseItem::where('imei', $imei)->exists();
+                        // Check if IMEI already exists (handles comma-separated storage)
+                        $exists = \App\Models\PurchaseItem::whereRaw('FIND_IN_SET(?, imei)', [$imei])->exists();
                         if ($exists) {
                             $ignoredImeis[] = $imei;
                             continue; // Skip this IMEI and continue with others

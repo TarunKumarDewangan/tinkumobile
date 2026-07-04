@@ -145,7 +145,7 @@ export default function PurchaseForm() {
           const tDisc = parseFloat(i.trade_disc_pct ?? 3.85) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? 2) || 0;
           const pAttrs = i.product?.attributes || {};
-          const applyGst = (i.apply_gst !== null && i.apply_gst !== undefined)
+          const applyGst = i.apply_gst !== null
             ? !!i.apply_gst
             : (!!pAttrs.gst_rate && (p.calculate_gst ?? true));
 

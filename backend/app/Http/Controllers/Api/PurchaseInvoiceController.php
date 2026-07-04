@@ -269,7 +269,7 @@ class PurchaseInvoiceController extends Controller
                     'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
                     'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
                     'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
-                    'apply_gst'           => filter_var($item['apply_gst'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                    'apply_gst'           => isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null,
                 ]);
 
                 // ── Update inventory ONLY if received ──
@@ -514,7 +514,7 @@ class PurchaseInvoiceController extends Controller
                     'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
                     'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
                     'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
-                    'apply_gst'           => filter_var($item['apply_gst'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                    'apply_gst'           => isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null,
                 ]);
             }
 
