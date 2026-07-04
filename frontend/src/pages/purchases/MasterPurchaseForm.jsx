@@ -211,7 +211,7 @@ export default function MasterPurchaseForm() {
         const grouped = [];
         const seenKeys = {};
         rawRows.forEach(row => {
-          const key = `${row.product_id}|${row.ram}|${row.storage}|${row.color}|${row.unit_price}`;
+          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${row.unit_price}`;
           if (seenKeys[key] !== undefined) {
             grouped[seenKeys[key]].imei_list.push(...row.imei_list);
             grouped[seenKeys[key]].quantity += row.quantity;
@@ -383,7 +383,7 @@ export default function MasterPurchaseForm() {
       } else if (field === 'dp_inc_gst') {
         const dp = parseFloat(val) || 0;
         if (dp > 0) {
-          const baseExGst = dp / (1 + (gst / 100));
+          const baseExGst = a[i].apply_gst ? dp / (1 + (gst / 100)) : dp;
           a[i].rate_ex_gst = parseFloat(baseExGst.toFixed(2));
           const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
           const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
@@ -397,7 +397,7 @@ export default function MasterPurchaseForm() {
       } else if (field === 'rate_ex_gst') {
         const baseExGst = parseFloat(val) || 0;
         if (baseExGst > 0) {
-          a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+          a[i].dp_inc_gst = a[i].apply_gst ? parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2)) : baseExGst;
           a[i].selling_price = a[i].dp_inc_gst;
           const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
           const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
@@ -413,20 +413,20 @@ export default function MasterPurchaseForm() {
         const factor = (1 - tDisc/100) * (1 - cDisc/100);
         const baseExGst = factor > 0 ? unit_price / factor : unit_price;
         a[i].rate_ex_gst = parseFloat(baseExGst.toFixed(2));
-        a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+        a[i].dp_inc_gst = a[i].apply_gst ? parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2)) : baseExGst;
         a[i].selling_price = a[i].dp_inc_gst;
       } else {
         const baseExGst = parseFloat(a[i].rate_ex_gst) || 0;
         const dp = parseFloat(a[i].dp_inc_gst) || 0;
 
         if (baseExGst > 0) {
-          a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+          a[i].dp_inc_gst = a[i].apply_gst ? parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2)) : baseExGst;
           a[i].selling_price = a[i].dp_inc_gst;
           const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
           const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
           a[i].unit_price = parseFloat(afterCDisc.toFixed(2));
         } else if (dp > 0) {
-          const calcBase = dp / (1 + (gst / 100));
+          const calcBase = a[i].apply_gst ? dp / (1 + (gst / 100)) : dp;
           a[i].rate_ex_gst = parseFloat(calcBase.toFixed(2));
           a[i].selling_price = dp;
           const afterTDisc = calcBase - (calcBase * tDisc / 100);
@@ -594,6 +594,19 @@ export default function MasterPurchaseForm() {
   const handleOpenBulkEdit = (index) => {
     setEditingItemIndex(index);
     setShowBulkScan(true);
+  };
+
+  const handleGstToggle = (checked) => {
+    setForm(prev => ({ ...prev, calculate_gst: checked }));
+    setItems(prev => prev.map(item => {
+      const gst = parseFloat(item.calc_gst_rate ?? 18) || 0;
+      const baseExGst = parseFloat(item.rate_ex_gst) || 0;
+      const newApplyGst = checked && !!item.gst_rate;
+      const newDpIncGst = baseExGst > 0
+        ? (newApplyGst ? parseFloat((baseExGst * (1 + gst / 100)).toFixed(2)) : baseExGst)
+        : item.dp_inc_gst;
+      return { ...item, apply_gst: newApplyGst, dp_inc_gst: newDpIncGst };
+    }));
   };
 
   const total      = items.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)), 0);
@@ -1495,7 +1508,7 @@ export default function MasterPurchaseForm() {
                           <tr>
                             <td className="lbl" style={{border: '1.5px solid #0f172a', padding: '8px 10px', textAlign: 'left', fontWeight: 800}} colSpan={2}>
                               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                                <input type="checkbox" id="calcGst" checked={form.calculate_gst} onChange={e=>setForm({...form,calculate_gst:e.target.checked})} style={{accentColor:'#0f172a'}}/>
+                                <input type="checkbox" id="calcGst" checked={form.calculate_gst} onChange={e=>handleGstToggle(e.target.checked)} style={{accentColor:'#0f172a'}}/>
                                 <label htmlFor="calcGst" style={{cursor:'pointer',margin:0,fontWeight:700}}>GST Options</label>
                               </div>
                             </td>
