@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PurchaseItem extends Model
 {
     public $timestamps = false;
-    protected $fillable = ['purchase_invoice_id', 'product_id', 'imei', 'ram', 'storage', 'color', 'quantity', 'received_quantity', 'damaged_quantity', 'unit_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'total'];
+    protected $fillable = ['purchase_invoice_id', 'product_id', 'imei', 'ram', 'storage', 'color', 'quantity', 'received_quantity', 'damaged_quantity', 'unit_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'total', 'trade_disc_pct', 'cash_disc_pct', 'calc_gst_rate', 'apply_gst'];
 
     protected static function boot()
     {

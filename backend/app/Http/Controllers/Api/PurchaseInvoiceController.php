@@ -266,6 +266,10 @@ class PurchaseInvoiceController extends Controller
                     'max_selling_price'   => $item['max_selling_price'] ?? null,
                     'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
+                    'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
+                    'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
+                    'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
+                    'apply_gst'           => filter_var($item['apply_gst'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 ]);
 
                 // ── Update inventory ONLY if received ──
@@ -507,6 +511,10 @@ class PurchaseInvoiceController extends Controller
                     'max_selling_price'   => $item['max_selling_price'] ?? null,
                     'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
+                    'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
+                    'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
+                    'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
+                    'apply_gst'           => filter_var($item['apply_gst'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 ]);
             }
 

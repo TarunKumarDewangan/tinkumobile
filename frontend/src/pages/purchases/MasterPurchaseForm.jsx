@@ -165,8 +165,10 @@ export default function MasterPurchaseForm() {
           const tDisc = parseFloat(i.trade_disc_pct ?? defaultTradeDisc) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? defaultCashDisc) || 0;
           const pAttrs = i.product?.attributes || {};
-          // Respect invoice-level GST toggle: if calculate_gst is off, don't apply GST even if product has a rate
-          const applyGst = !!pAttrs.gst_rate && (p.calculate_gst ?? true);
+          // Use stored apply_gst if available (new records); fall back to derivation for old records
+          const applyGst = (i.apply_gst !== null && i.apply_gst !== undefined)
+            ? !!i.apply_gst
+            : (!!pAttrs.gst_rate && (p.calculate_gst ?? true));
 
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
