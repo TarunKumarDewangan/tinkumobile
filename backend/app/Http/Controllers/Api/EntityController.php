@@ -213,8 +213,12 @@ class EntityController extends Controller
         });
     }
 
-    public function destroy(Entity $entity)
+    public function destroy(Request $request, Entity $entity)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         return DB::transaction(function() use ($entity) {
             if ($entity->relation) {
                 $entity->relation->delete();
@@ -228,8 +232,16 @@ class EntityController extends Controller
      * Completely purge an entity AND all its transaction history.
      * Matches transactions by both entity ID and entity name for full coverage.
      */
-    public function destroyWithHistory(Entity $entity)
+    public function destroyWithHistory(Request $request, Entity $entity)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        \App\Models\ActivityLog::log('ENTITY_DELETED_WITH_HISTORY', $entity,
+            "⚠️ Entity \"{$entity->name}\" and all transaction history permanently deleted by {$request->user()->name}"
+        );
+
         return DB::transaction(function () use ($entity) {
             $name = $entity->name;
             $id   = $entity->id;
@@ -309,8 +321,16 @@ class EntityController extends Controller
      * Complete reset and rebuild of the entity system.
      * Use this when balances are corrupt or duplicated.
      */
-    public function hardReset()
+    public function hardReset(Request $request)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        \App\Models\ActivityLog::log('ENTITY_HARD_RESET', null,
+            "⚠️ DANGER: Full entity/ledger system reset performed by {$request->user()->name}"
+        );
+
         // 1. Clear caches and entities
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
         DB::table('entity_balances')->truncate();

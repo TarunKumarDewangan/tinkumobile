@@ -164,10 +164,11 @@ class PurchaseInvoiceController extends Controller
 
             // Record Transaction using Service
             if ($invoice->total_paid > 0) {
+                $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($invoice, [
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
-                    'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}",
+                    'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
                     'entity_name'      => $invoice->supplier?->name,
                 ]);
             }
@@ -393,11 +394,12 @@ class PurchaseInvoiceController extends Controller
 
             // Record updated Transaction using Service if total_paid > 0
             if ($purchaseInvoice->total_paid > 0) {
+                $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($purchaseInvoice, [
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
                     'amount'           => $purchaseInvoice->total_paid,
-                    'description'      => "Initial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+                    'description'      => "Initial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
                     'entity_name'      => $purchaseInvoice->supplier?->name,
                 ]);
             }
@@ -629,11 +631,14 @@ class PurchaseInvoiceController extends Controller
         $purchaseInvoice->updatePaymentStatus();
 
         // Record Transaction using Service
+        $itemNames = $purchaseInvoice->items()->with('product')->get()
+            ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+            ->implode(', ');
         $this->transactionService->recordForModel($purchaseInvoice, [
             'type'             => 'OUT',
             'category'         => 'PURCHASE',
             'amount'           => $data['amount'],
-            'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+            'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
             'entity_name'      => $purchaseInvoice->supplier?->name,
         ]);
 
@@ -833,7 +838,7 @@ class PurchaseInvoiceController extends Controller
             return response()->json(['message' => 'Purchase backup restored successfully']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 
@@ -861,5 +866,27 @@ class PurchaseInvoiceController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * "VIVO Y11 (x2), SAMSUNG A14" style summary of what's actually in the
+     * purchase, for use in ledger/transaction narrations — otherwise a
+     * supplier's Entity Ledger shows a payment with no indication of what it
+     * was for. Takes the raw items array from the request rather than a
+     * loaded relation, since store()/update() record the transaction before
+     * new "quick-add" products in the same request necessarily have an id.
+     */
+    private function itemNamesSummary(array $items): string
+    {
+        $productIds = collect($items)->pluck('product_id')->filter()->unique();
+        $names = $productIds->isNotEmpty()
+            ? Product::whereIn('id', $productIds)->pluck('name', 'id')
+            : collect();
+
+        return collect($items)->map(function ($item) use ($names) {
+            $name = $names[$item['product_id'] ?? null] ?? ($item['new_product_name'] ?? 'Unknown');
+            $qty  = (int) ($item['quantity'] ?? 1);
+            return $qty > 1 ? "{$name} (x{$qty})" : $name;
+        })->implode(', ');
     }
 }

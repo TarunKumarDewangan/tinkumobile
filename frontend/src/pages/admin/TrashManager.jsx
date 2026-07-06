@@ -1,10 +1,12 @@
 ﻿import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import pinGate from '../../utils/pinGate';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function TrashManager() {
+  const navigate = useNavigate();
   const { hasFullAccess } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -70,9 +72,12 @@ export default function TrashManager() {
   return (
     <div className="container-fluid py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2 className="h4 mb-0 text-uppercase fw-bold text-danger">Trash Management</h2>
-            <p className="text-muted small mb-0">Recover soft-deleted records from the system</p>
+        <div className="d-flex align-items-center gap-2">
+          <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate(-1)}>← Back</button>
+          <div>
+              <h2 className="h4 mb-0 text-uppercase fw-bold text-danger">Trash Management</h2>
+              <p className="text-muted small mb-0">Recover soft-deleted records from the system</p>
+          </div>
         </div>
       </div>
 

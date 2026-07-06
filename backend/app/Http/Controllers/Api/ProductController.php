@@ -186,6 +186,11 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if (!$user->can('view_products') && !$user->isOwner()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'category_id'       => 'required|exists:categories,id',
             'brand_id'          => 'nullable|exists:brands,id',
@@ -230,6 +235,11 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
+        $user = $request->user();
+        if (!$user->can('view_products') && !$user->isOwner()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'category_id'       => 'sometimes|exists:categories,id',
             'brand_id'          => 'nullable|exists:brands,id',
@@ -260,8 +270,12 @@ class ProductController extends Controller
         return response()->json($product);
     }
 
-    public function destroy(Product $product)
+    public function destroy(Request $request, Product $product)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         ActivityLog::log('PRODUCT_DELETED', $product, "Product deleted: {$product->name} (SKU: {$product->sku}) ₹{$product->selling_price}");
         $product->delete();
         return response()->json(['message' => 'Product deleted']);
@@ -513,12 +527,12 @@ class ProductController extends Controller
      */
     private function getOldMobileStock($shopId, $request): array
     {
-        $oldMobileCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-        if (!$oldMobileCat) return [];
+        $oldMobileCatId = \App\Models\Category::mobileOldId();
+        if (!$oldMobileCatId) return [];
 
         // Fetch products in MOBILE-OLD category that have inventory stock > 0
         $productQuery = Product::with(['category', 'brand'])
-            ->where('category_id', $oldMobileCat->id)
+            ->where('category_id', $oldMobileCatId)
             ->where('deleted_at', null)
             ->whereHas('inventory', function($q) use ($shopId) {
                 $q->where('stock', '>', 0);
@@ -560,8 +574,8 @@ class ProductController extends Controller
             $q->where('is_cancelled', false);
             if ($shopId) $q->where('shop_id', $shopId);
         })
-        ->whereHas('product', function($q) use ($oldMobileCat) {
-            $q->where('category_id', $oldMobileCat->id);
+        ->whereHas('product', function($q) use ($oldMobileCatId) {
+            $q->where('category_id', $oldMobileCatId);
         })
         ->pluck('product_id')
         ->toArray();

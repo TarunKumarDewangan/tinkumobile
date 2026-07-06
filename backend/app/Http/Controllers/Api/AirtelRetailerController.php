@@ -199,11 +199,7 @@ class AirtelRetailerController extends Controller
                 return response()->json($recovery, 201);
             });
         } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Sync Error: ' . $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ], 500);
+            return $this->errorResponse($e, 'Sync error');
         }
     }
 
@@ -335,7 +331,7 @@ class AirtelRetailerController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints(); // Ensure it's re-enabled on failure
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 

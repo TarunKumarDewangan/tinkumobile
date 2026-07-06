@@ -17,7 +17,16 @@ class SettingsController extends Controller
 
     public function update(Request $request)
     {
+        $user = $request->user();
+        if (!($user->is_owner || $user->hasRole('Admin'))) {
+            return response()->json(['message' => 'Only owner or admin can update settings'], 403);
+        }
+
         $data = $request->all();
+        // action_pin can only be changed via changePin(), which requires verifying
+        // the current PIN first — allowing it here would let this endpoint bypass
+        // that check entirely.
+        unset($data['action_pin']);
 
         foreach ($data as $key => $value) {
             \App\Models\Setting::updateOrCreate(
@@ -25,6 +34,8 @@ class SettingsController extends Controller
                 ['value' => $value]
             );
         }
+
+        ActivityLog::log('SETTINGS_UPDATED', null, "Settings updated by {$user->name}: " . implode(', ', array_keys($data)));
 
         return response()->json(['message' => 'Settings updated successfully']);
     }

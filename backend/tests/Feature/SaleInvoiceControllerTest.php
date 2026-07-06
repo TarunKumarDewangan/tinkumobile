@@ -29,7 +29,7 @@ class SaleInvoiceControllerTest extends TestCase
             'purchase_price' => 800,
             'category_id' => $category->id
         ]);
-        Inventory::create(['shop_id' => $shop->id, 'product_id' => $product->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 1000]);
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $product->id, 'stock' => 10]);
 
         $payload = [
             'sale_date' => now()->toDateString(),
@@ -81,8 +81,8 @@ class SaleInvoiceControllerTest extends TestCase
             'shop_id' => $shop->id, 'name' => 'Old Phone', 'sku' => 'OLD-1', 'selling_price' => 500, 'purchase_price' => 400, 'category_id' => $oldCategory->id
         ]);
         
-        Inventory::create(['shop_id' => $shop->id, 'product_id' => $newProduct->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 1000]);
-        Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 500]);
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $newProduct->id, 'stock' => 10]);
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'stock' => 10]);
 
         // Create new mobile sale
         $payloadNew = [
@@ -139,7 +139,7 @@ class SaleInvoiceControllerTest extends TestCase
             'category_id' => $oldCategory->id
         ]);
         
-        Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'quantity' => 10, 'current_stock' => 10, 'selling_price' => 500]);
+        Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'stock' => 10]);
 
         $payload = [
             'sale_date' => now()->toDateString(),

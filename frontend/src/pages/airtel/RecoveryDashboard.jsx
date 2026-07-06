@@ -143,7 +143,10 @@ export default function RecoveryDashboard() {
   return (
     <div className="container py-3">
       <div className="d-flex justify-content-between align-items-center mb-4 sticky-top bg-light py-2 px-1 rounded shadow-sm">
-        <h2 className="h5 mb-0 text-uppercase fw-bold">Recovery Task</h2>
+        <div className="d-flex align-items-center gap-2">
+          <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate(-1)}>← Back</button>
+          <h2 className="h5 mb-0 text-uppercase fw-bold">Recovery Task</h2>
+        </div>
         <div className="d-flex gap-2">
             {selected.length > 0 && (
             <>

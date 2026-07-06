@@ -14,6 +14,25 @@ function generateIdempotencyKey() {
   });
 }
 
+// Numerically solves for the monthly reducing-balance rate r that makes
+// P*r*(1+r)^n/((1+r)^n-1) == emi. No closed form exists for r, so this
+// bisects — emi is strictly increasing in r for r >= 0, so it converges
+// reliably. Returns the rate annualized as a percentage. This is a live
+// preview only; the backend re-derives the authoritative rate the same way
+// when a total-payable figure is submitted instead of a rate.
+function solveReducingRate(principal, emi, months) {
+  if (!principal || !months || emi <= principal / months) return 0;
+  let lo = 0, hi = 5; // 500%/month upper bound — comfortably above any real input
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const calcEmi = mid === 0
+      ? principal / months
+      : principal * mid * Math.pow(1 + mid, months) / (Math.pow(1 + mid, months) - 1);
+    if (calcEmi < emi) lo = mid; else hi = mid;
+  }
+  return ((lo + hi) / 2) * 12 * 100;
+}
+
 export default function SaleForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -88,8 +107,12 @@ export default function SaleForm() {
   const [useShopFinance, setUseShopFinance] = useState(false);
   const [shopFinanceType, setShopFinanceType] = useState('PERSONAL');
   const [shopFinance, setShopFinance] = useState({
-    down_payment: 0, principal: 0, interest_rate: 0, tenure_months: 12, emi_start_date: '',
+    down_payment: 0, principal: 0, interest_rate: 0, interest_type: 'FLAT',
+    total_payable: 0, tenure_months: 12, emi_start_date: '',
   });
+  // Whether the Interest % field or the Total Payable field is the one the
+  // user is actively driving — the other one auto-fills from it.
+  const [emiInputMode, setEmiInputMode] = useState('RATE'); // 'RATE' | 'TOTAL'
   
   // Internal state to track if round_off is manually overridden
   const [isManualRound, setIsManualRound] = useState(false);
@@ -613,18 +636,44 @@ export default function SaleForm() {
 
   const grandTotal = rawTotal + (parseFloat(form.round_off) || 0);
 
-  // Shop Finance EMI calculator
+  // Shop Finance EMI calculator — supports both input directions (rate ->
+  // total, or total -> implied rate) and both interest models (flat simple
+  // interest vs reducing-balance amortization). This is a live preview only;
+  // the backend recomputes the authoritative figures the same way on submit.
   const shopFinanceCalc = useMemo(() => {
     const p = parseFloat(shopFinance.principal) || 0;
-    const r = parseFloat(shopFinance.interest_rate) || 0;
     const n = parseInt(shopFinance.tenure_months) || 0;
-    if (!p || shopFinanceType !== 'PERSONAL') return { monthlyEmi: 0, totalPayable: p };
-    if (!n) return { monthlyEmi: 0, totalPayable: p };
-    if (!r) return { monthlyEmi: parseFloat((p / n).toFixed(2)), totalPayable: p };
+    const type = shopFinance.interest_type || 'FLAT';
+    const empty = { monthlyEmi: 0, totalPayable: p, impliedRate: 0 };
+
+    if (!p || !n || shopFinanceType !== 'PERSONAL') return empty;
+
+    if (emiInputMode === 'TOTAL') {
+      const targetTotal = parseFloat(shopFinance.total_payable) || 0;
+      if (targetTotal <= p) return { monthlyEmi: parseFloat((p / n).toFixed(2)), totalPayable: p, impliedRate: 0 };
+
+      const emi = parseFloat((targetTotal / n).toFixed(2));
+      const impliedRate = type === 'FLAT'
+        ? ((targetTotal - p) * 12) / (p * n) * 100
+        : solveReducingRate(p, emi, n);
+
+      return { monthlyEmi: emi, totalPayable: parseFloat(targetTotal.toFixed(2)), impliedRate: parseFloat(impliedRate.toFixed(4)) };
+    }
+
+    // RATE mode (default)
+    const r = parseFloat(shopFinance.interest_rate) || 0;
+    if (!r) return { monthlyEmi: parseFloat((p / n).toFixed(2)), totalPayable: p, impliedRate: 0 };
+
+    if (type === 'FLAT') {
+      const interest = p * (r / 100) * (n / 12);
+      const totalPayable = parseFloat((p + interest).toFixed(2));
+      return { monthlyEmi: parseFloat((totalPayable / n).toFixed(2)), totalPayable, impliedRate: r };
+    }
+
     const rate = r / 12 / 100;
     const emi  = p * rate * Math.pow(1 + rate, n) / (Math.pow(1 + rate, n) - 1);
-    return { monthlyEmi: parseFloat(emi.toFixed(2)), totalPayable: parseFloat((emi * n).toFixed(2)) };
-  }, [shopFinance.principal, shopFinance.interest_rate, shopFinance.tenure_months, shopFinanceType]);
+    return { monthlyEmi: parseFloat(emi.toFixed(2)), totalPayable: parseFloat((emi * n).toFixed(2)), impliedRate: r };
+  }, [shopFinance.principal, shopFinance.interest_rate, shopFinance.interest_type, shopFinance.total_payable, shopFinance.tenure_months, shopFinanceType, emiInputMode]);
 
   // Auto-calculate exchange payment split when grand total or credit changes
   useEffect(() => {
@@ -840,7 +889,11 @@ export default function SaleForm() {
               type:           shopFinanceType,
               down_payment:   shopFinance.down_payment,
               principal:      shopFinance.principal,
-              interest_rate:  shopFinanceType === 'PERSONAL' ? (shopFinance.interest_rate || 0) : null,
+              interest_type:  shopFinanceType === 'PERSONAL' ? shopFinance.interest_type : null,
+              // Only send the field the user actually drove — the backend
+              // derives the other one (and the authoritative EMI) from it.
+              interest_rate:  shopFinanceType === 'PERSONAL' && emiInputMode === 'RATE' ? (shopFinance.interest_rate || 0) : null,
+              total_payable:  shopFinanceType === 'PERSONAL' && emiInputMode === 'TOTAL' ? (shopFinance.total_payable || 0) : null,
               tenure_months:  shopFinanceType === 'PERSONAL' ? (shopFinance.tenure_months || null) : null,
               emi_start_date: shopFinanceType === 'PERSONAL' ? (shopFinance.emi_start_date || null) : null,
           };
@@ -1625,16 +1678,57 @@ export default function SaleForm() {
                                 {/* Personal EMI fields */}
                                 {shopFinanceType === 'PERSONAL' && (
                                     <>
+                                        {/* Flat vs Reducing-balance interest toggle */}
+                                        <div className="d-flex gap-1 mb-2">
+                                            {['FLAT', 'REDUCING'].map(t => (
+                                                <button key={t} type="button"
+                                                    onClick={() => setShopFinance(f => ({ ...f, interest_type: t }))}
+                                                    style={{
+                                                        flex: 1, fontSize: '.64rem', fontWeight: 800, padding: '4px 6px',
+                                                        borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer',
+                                                        background: shopFinance.interest_type === t ? '#1d4ed8' : '#f8fafc',
+                                                        color: shopFinance.interest_type === t ? '#fff' : '#64748b',
+                                                    }}>
+                                                    {t === 'FLAT' ? 'FLAT RATE' : 'REDUCING BALANCE'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{fontSize: '.6rem', color: '#94a3b8', marginBottom: 6}}>
+                                            {shopFinance.interest_type === 'FLAT'
+                                                ? 'Flat: interest charged once on the full amount for the whole tenure.'
+                                                : 'Reducing: interest recalculated each month on the outstanding balance.'}
+                                        </div>
+
                                         <div className="row g-1 mb-2">
-                                            <div className="col-4">
+                                            <div className="col-6">
                                                 <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>INTEREST % p.a.</label>
                                                 <input type="number" step="0.1" min="0" className="form-control form-control-sm fw-bold text-end"
-                                                    style={{fontSize:'.78rem', borderColor:'#fcd34d'}}
-                                                    value={shopFinance.interest_rate || ''}
+                                                    style={{fontSize:'.78rem', borderColor: emiInputMode === 'RATE' ? '#fcd34d' : '#e2e8f0', background: emiInputMode === 'RATE' ? '#fff' : '#f8fafc'}}
+                                                    value={emiInputMode === 'RATE' ? (shopFinance.interest_rate || '') : (shopFinanceCalc.impliedRate ? shopFinanceCalc.impliedRate.toFixed(2) : '')}
                                                     onFocus={e => e.target.select()}
-                                                    onChange={e => setShopFinance(f => ({ ...f, interest_rate: parseFloat(e.target.value) || 0 }))} />
+                                                    onChange={e => {
+                                                        setEmiInputMode('RATE');
+                                                        setShopFinance(f => ({ ...f, interest_rate: parseFloat(e.target.value) || 0 }));
+                                                    }} />
                                             </div>
-                                            <div className="col-4">
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TOTAL PAYABLE (₹)</label>
+                                                <input type="number" step="1" min="0" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor: emiInputMode === 'TOTAL' ? '#fcd34d' : '#e2e8f0', background: emiInputMode === 'TOTAL' ? '#fff' : '#f8fafc'}}
+                                                    value={emiInputMode === 'TOTAL' ? (shopFinance.total_payable || '') : (shopFinanceCalc.totalPayable || '')}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => {
+                                                        setEmiInputMode('TOTAL');
+                                                        setShopFinance(f => ({ ...f, total_payable: parseFloat(e.target.value) || 0 }));
+                                                    }} />
+                                            </div>
+                                        </div>
+                                        <div style={{fontSize: '.58rem', color: '#94a3b8', marginBottom: 6}}>
+                                            Fill either field — the other one (and the interest rate this implies) fills in automatically.
+                                        </div>
+
+                                        <div className="row g-1 mb-2">
+                                            <div className="col-6">
                                                 <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TENURE (MONTHS)</label>
                                                 <input type="number" step="1" min="1" max="360" className="form-control form-control-sm fw-bold text-end"
                                                     style={{fontSize:'.78rem', borderColor:'#fcd34d'}}
@@ -1642,7 +1736,7 @@ export default function SaleForm() {
                                                     onFocus={e => e.target.select()}
                                                     onChange={e => setShopFinance(f => ({ ...f, tenure_months: parseInt(e.target.value) || 0 }))} />
                                             </div>
-                                            <div className="col-4">
+                                            <div className="col-6">
                                                 <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>1st EMI DATE</label>
                                                 <input type="date" className="form-control form-control-sm"
                                                     style={{fontSize:'.72rem'}}

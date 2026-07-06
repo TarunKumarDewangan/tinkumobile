@@ -83,8 +83,8 @@ class StockController extends Controller
         $fromDate = $request->from_date ? Carbon::parse($request->from_date)->startOfDay() : Carbon::now()->subDays(29)->startOfDay();
         $toDate   = $request->to_date   ? Carbon::parse($request->to_date)->endOfDay()     : Carbon::now()->endOfDay();
 
-        $newCatId = Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->value('id');
-        $oldCatId = Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->value('id');
+        $newCatId = Category::mobileNewId();
+        $oldCatId = Category::mobileOldId();
         $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
 
         // ── Opening stock (all movements strictly before fromDate) ──────────
@@ -96,6 +96,7 @@ class StockController extends Controller
             ->sum('quantity');
 
         $adjAddBefore    = StockAdjustment::where('type', 'add')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->where('reason', '!=', 'opening_stock') // opening_stock adjustments are already counted via their paired LEGACY_BAL PurchaseItem
             ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
             ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
             ->sum('quantity');
@@ -144,9 +145,10 @@ class StockController extends Controller
                 ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
                 ->get();
 
-            // Adjustments
+            // Adjustments (excludes 'opening_stock' — those are already counted via their paired LEGACY_BAL PurchaseItem, see bulkStore())
             $adjustments = StockAdjustment::with('product:id,name,purchase_price')
                 ->where('adjustment_date', $dateStr)
+                ->where('reason', '!=', 'opening_stock')
                 ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
                 ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
                 ->get();
@@ -344,7 +346,7 @@ class StockController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 }

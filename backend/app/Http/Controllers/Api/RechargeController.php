@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\RechargePurchase;
 use App\Models\RechargeSale;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RechargeController extends Controller
 {
@@ -46,17 +47,22 @@ class RechargeController extends Controller
         }
         $data['shop_id'] = $shopId;
         $data['user_id'] = $user->id;
-        $purchase = RechargePurchase::create($data);
 
-        // Record Transaction
-        $this->transactionService->recordForModel($purchase, [
-            'type'             => 'OUT',
-            'category'         => 'RECHARGE_PURCHASE',
-            'amount'           => $purchase->cost_price,
-            'description'      => "Recharge stock purchased: {$purchase->operator} (Amount: {$purchase->amount})",
-            'transaction_date' => $purchase->purchase_date,
-            'shop_id'          => $purchase->shop_id,
-        ]);
+        $purchase = DB::transaction(function () use ($data) {
+            $purchase = RechargePurchase::create($data);
+
+            // Record Transaction
+            $this->transactionService->recordForModel($purchase, [
+                'type'             => 'OUT',
+                'category'         => 'RECHARGE_PURCHASE',
+                'amount'           => $purchase->cost_price,
+                'description'      => "Recharge stock purchased: {$purchase->operator} (Amount: {$purchase->amount})",
+                'transaction_date' => $purchase->purchase_date,
+                'shop_id'          => $purchase->shop_id,
+            ]);
+
+            return $purchase;
+        });
 
         return response()->json($purchase, 201);
     }
@@ -101,19 +107,24 @@ class RechargeController extends Controller
         }
         $data['shop_id'] = $shopId;
         $data['user_id'] = $user->id;
-        $recharge = RechargeSale::create($data);
 
-        // Record Income Transaction
-        if ($recharge->selling_price > 0) {
-            $this->transactionService->recordForModel($recharge, [
-                'type'             => 'IN',
-                'category'         => 'RECHARGE_SALE',
-                'amount'           => $recharge->selling_price,
-                'description'      => "Recharge sale: {$recharge->operator} for {$recharge->mobile_number}",
-                'transaction_date' => $recharge->sale_date,
-                'shop_id'          => $recharge->shop_id,
-            ]);
-        }
+        $recharge = DB::transaction(function () use ($data) {
+            $recharge = RechargeSale::create($data);
+
+            // Record Income Transaction
+            if ($recharge->selling_price > 0) {
+                $this->transactionService->recordForModel($recharge, [
+                    'type'             => 'IN',
+                    'category'         => 'RECHARGE_SALE',
+                    'amount'           => $recharge->selling_price,
+                    'description'      => "Recharge sale: {$recharge->operator} for {$recharge->mobile_number}",
+                    'transaction_date' => $recharge->sale_date,
+                    'shop_id'          => $recharge->shop_id,
+                ]);
+            }
+
+            return $recharge;
+        });
 
         return response()->json($recharge, 201);
     }

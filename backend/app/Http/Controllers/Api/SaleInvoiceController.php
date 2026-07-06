@@ -22,10 +22,12 @@ use App\Http\Resources\SaleInvoiceResource;
 class SaleInvoiceController extends Controller
 {
     protected $transactionService;
+    protected $invoiceService;
 
-    public function __construct(\App\Services\TransactionService $transactionService)
+    public function __construct(\App\Services\TransactionService $transactionService, \App\Services\InvoiceService $invoiceService)
     {
         $this->transactionService = $transactionService;
+        $this->invoiceService = $invoiceService;
     }
 
     public function index(Request $request)
@@ -152,12 +154,18 @@ class SaleInvoiceController extends Controller
             'shop_finance.principal'      => 'nullable|numeric|min:0.01',
             'shop_finance.down_payment'   => 'nullable|numeric|min:0',
             'shop_finance.interest_rate'  => 'nullable|numeric|min:0',
+            'shop_finance.interest_type'  => 'nullable|in:FLAT,REDUCING',
+            'shop_finance.total_payable'  => 'nullable|numeric|min:0',
             'shop_finance.tenure_months'  => 'nullable|integer|min:1|max:360',
             'shop_finance.emi_start_date' => 'nullable|date',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        if ($priceError = $this->validateItemPriceBounds($data['items'], $user)) {
+            return $priceError;
         }
 
         // Idempotency check — prevent duplicate submissions
@@ -175,8 +183,8 @@ class SaleInvoiceController extends Controller
 
         DB::beginTransaction();
         try {
-            // GST calculation via shared method
-            $gst = $this->calculateGst($data, $data['items']);
+            // GST calculation via shared InvoiceService (inclusive-pricing model)
+            $gst = $this->invoiceService->calculateInclusiveTotals($data, $data['items']);
             extract($gst);
 
             $roundingMode = $data['rounding_mode'] ?? 'auto';
@@ -229,11 +237,12 @@ class SaleInvoiceController extends Controller
             // Record Income Transaction using Service (Only for the cash portion, not exchange credit)
             $cashPaid = (float) ($invoice->total_paid);
             if ($cashPaid > 0) {
+                $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($invoice, [
                     'type'        => 'IN',
                     'category'    => 'SALE_INCOME',
                     'amount'      => $cashPaid,
-                    'description' => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
+                    'description' => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})" . ($itemNames ? " [{$itemNames}]" : ''),
                 ]);
             }
 
@@ -262,9 +271,7 @@ class SaleInvoiceController extends Controller
                 }
             }
 
-            $mobileCatId = Cache::remember('category_mobile_new_id', 3600, function () {
-                return Category::where('slug', 'mobile-new')->value('id');
-            });
+            $mobileCatId = Category::mobileNewId();
 
             foreach ($data['items'] as $item) {
                 $total = $item['quantity'] * $item['unit_price'];
@@ -323,25 +330,48 @@ class SaleInvoiceController extends Controller
 
             // Create Shop Finance Plan if requested
             if (!empty($data['shop_finance']['type']) && !empty($data['shop_finance']['principal'])) {
-                $sf = $data['shop_finance'];
-                [$monthlyEmi, $totalPayable] = \App\Http\Controllers\Api\FinancePlanController::calcEmi(
-                    (float) $sf['principal'],
-                    (float) ($sf['interest_rate'] ?? 0),
-                    (int)   ($sf['tenure_months'] ?? 0)
-                );
+                $sf           = $data['shop_finance'];
+                $interestType = $sf['interest_type'] ?? 'REDUCING';
+                $months       = (int) ($sf['tenure_months'] ?? 0);
+                $principal    = (float) $sf['principal'];
+
+                // "Total payable" is an alternative way to specify the deal
+                // (staff already agreed a fixed repayment figure with the
+                // customer) — derive the effective interest_rate from it
+                // here, authoritatively, rather than trusting the client's
+                // preview calculation.
+                if (empty($sf['interest_rate']) && !empty($sf['total_payable'])) {
+                    [$monthlyEmi, $totalPayable, $impliedRate] = \App\Http\Controllers\Api\FinancePlanController::calcEmiFromTotalPayable(
+                        $principal,
+                        (float) $sf['total_payable'],
+                        $months,
+                        $interestType
+                    );
+                    $interestRate = $impliedRate;
+                } else {
+                    $interestRate = (float) ($sf['interest_rate'] ?? 0);
+                    [$monthlyEmi, $totalPayable] = \App\Http\Controllers\Api\FinancePlanController::calcEmi(
+                        $principal,
+                        $interestRate,
+                        $months,
+                        $interestType
+                    );
+                }
+
                 \App\Models\SaleFinancePlan::create([
                     'sale_invoice_id' => $invoice->id,
                     'customer_id'     => $invoice->customer_id,
                     'type'            => $sf['type'],
                     'down_payment'    => $sf['down_payment'] ?? 0,
-                    'principal'       => $sf['principal'],
-                    'interest_rate'   => $sf['interest_rate'] ?? null,
+                    'principal'       => $principal,
+                    'interest_rate'   => $interestRate ?: null,
+                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
                     'tenure_months'   => $sf['tenure_months'] ?? null,
                     'monthly_emi'     => $sf['type'] === 'PERSONAL' ? $monthlyEmi : null,
                     'emi_start_date'  => $sf['type'] === 'PERSONAL'
                                             ? ($sf['emi_start_date'] ?? now()->addMonth()->startOfMonth()->toDateString())
                                             : null,
-                    'total_payable'   => $sf['type'] === 'PERSONAL' ? $totalPayable : (float) $sf['principal'],
+                    'total_payable'   => $sf['type'] === 'PERSONAL' ? $totalPayable : $principal,
                     'total_paid'      => 0,
                     'status'          => 'ACTIVE',
                     'created_by'      => $user->id,
@@ -366,7 +396,7 @@ class SaleInvoiceController extends Controller
             return response()->json($invoice->load('items.product', 'giftItems.giftProduct', 'customer'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to create sale: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to create sale');
         }
     }
 
@@ -393,11 +423,14 @@ class SaleInvoiceController extends Controller
             $invoice->updatePaymentStatus();
 
             // Record Transaction using Service
+            $itemNames = $invoice->items()->with('product')->get()
+                ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+                ->implode(', ');
             $this->transactionService->recordForModel($invoice, [
                 'type'             => 'IN',
                 'category'         => 'SALE',
                 'amount'           => $data['amount'],
-                'description'      => "Partial payment for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
+                'description'      => "Partial payment for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})" . ($itemNames ? " [{$itemNames}]" : ''),
             ]);
 
             return response()->json([
@@ -455,6 +488,10 @@ class SaleInvoiceController extends Controller
             'finance_payment_status' => 'nullable|in:PENDING,RECEIVED',
         ]);
 
+        if ($priceError = $this->validateItemPriceBounds($data['items'], $user)) {
+            return $priceError;
+        }
+
         DB::beginTransaction();
         try {
             // Restore inventory for old items
@@ -464,8 +501,8 @@ class SaleInvoiceController extends Controller
             $saleInvoice->items()->delete();
             $saleInvoice->giftItems()->delete(); 
 
-            // Recalculate invoice totals using helper
-            $gst = $this->calculateGst($data, $data['items']);
+            // Recalculate invoice totals via shared InvoiceService (inclusive-pricing model)
+            $gst = $this->invoiceService->calculateInclusiveTotals($data, $data['items']);
             extract($gst);
 
             $roundingMode = $data['rounding_mode'] ?? 'auto';
@@ -548,11 +585,12 @@ class SaleInvoiceController extends Controller
             // Record updated cash income transaction if total_paid > 0
             $cashPaid = (float) ($saleInvoice->total_paid);
             if ($cashPaid > 0) {
+                $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($saleInvoice, [
                     'type'        => 'IN',
                     'category'    => 'SALE_INCOME',
                     'amount'      => $cashPaid,
-                    'description' => "Sale income recorded for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})",
+                    'description' => "Sale income recorded for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})" . ($itemNames ? " [{$itemNames}]" : ''),
                 ]);
             }
 
@@ -597,7 +635,7 @@ class SaleInvoiceController extends Controller
             return response()->json($saleInvoice->load('items.product', 'customer'));
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to update sale');
         }
     }
 
@@ -646,7 +684,7 @@ class SaleInvoiceController extends Controller
             return response()->json($pakka->load('items.product'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to convert to pakka bill');
         }
     }
 
@@ -681,7 +719,7 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Sale cancelled and stock restored']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to cancel sale');
         }
     }
 
@@ -715,7 +753,7 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Sale deleted and stock restored']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to delete sale');
         }
     }
 
@@ -771,7 +809,7 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Sale backup restored successfully']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 
@@ -823,7 +861,7 @@ class SaleInvoiceController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to update: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to update finance payment status');
         }
     }
 
@@ -838,10 +876,10 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Cannot convert cancelled sale'], 422);
         }
 
-        $oldMobileCat = Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-        $newMobileCat = Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
+        $oldMobileCatId = Category::mobileOldId();
+        $newMobileCatId = Category::mobileNewId();
 
-        if (!$newMobileCat) {
+        if (!$newMobileCatId) {
             return response()->json(['message' => 'New mobile category not found'], 422);
         }
 
@@ -850,10 +888,10 @@ class SaleInvoiceController extends Controller
             $convertedCount = 0;
             foreach ($saleInvoice->items as $item) {
                 $product = $item->product;
-                if ($product && $oldMobileCat && $product->category_id == $oldMobileCat->id) {
+                if ($product && $oldMobileCatId && $product->category_id == $oldMobileCatId) {
                     // 1. Update product category to MOBILE-NEW and condition to new
                     $product->update([
-                        'category_id' => $newMobileCat->id,
+                        'category_id' => $newMobileCatId,
                         'condition' => 'new'
                     ]);
 
@@ -881,77 +919,85 @@ class SaleInvoiceController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Conversion failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Conversion failed');
         }
     }
 
+    // GST calculation moved to App\Services\InvoiceService::calculateInclusiveTotals()
+    // — see the two call sites above. Kept as one shared implementation instead
+    // of a second copy that could drift from App\Services\InvoiceService::calculateTotals()
+    // (the purchase-side, exclusive-pricing equivalent).
+
     /**
-     * Shared GST calculation — used by both store() and update().
+     * "VIVO Y11 (x2), SAMSUNG A14" style summary of what's actually in the
+     * sale, for use in ledger/transaction narrations — otherwise a customer's
+     * Entity Ledger shows a payment with no indication of what it was for.
+     * Takes the raw items array from the request (product_id/quantity) rather
+     * than a loaded SaleItem relation, since store() records the transaction
+     * before the SaleItem rows exist.
      */
-    private function calculateGst(array $data, array $items): array
+    private function itemNamesSummary(array $items): string
     {
-        $discount         = (float) ($data['discount'] ?? 0);
-        $cashDiscount     = (float) ($data['cash_discount'] ?? 0);
-        $isCashDiscOnBill = (bool) ($data['is_cash_discount_on_bill'] ?? true);
-        $calculateGst     = (bool) ($data['calculate_gst'] ?? true);
-        $inclusiveTotal   = collect($items)->sum(fn($i) => ($i['quantity'] ?? 1) * ($i['unit_price'] ?? 0));
+        $productIds = collect($items)->pluck('product_id')->filter()->unique();
+        if ($productIds->isEmpty()) return '';
 
-        if ($calculateGst) {
-            $cgstRate = (float) ($data['cgst_rate'] ?? 9);
-            $sgstRate = (float) ($data['sgst_rate'] ?? 9);
+        $names = \App\Models\Product::whereIn('id', $productIds)->pluck('name', 'id');
 
-            if (isset($data['is_gst_manual']) && $data['is_gst_manual'] && isset($data['cgst_amount']) && isset($data['sgst_amount'])) {
-                $cgstAmount  = (float) $data['cgst_amount'];
-                $sgstAmount  = (float) $data['sgst_amount'];
-                $totalAmount = $inclusiveTotal - $cgstAmount - $sgstAmount;
-            } else {
-                $taxableInclusiveTotal = collect($items)->sum(function($i) {
-                    $applyGst = !isset($i['apply_gst']) || filter_var($i['apply_gst'], FILTER_VALIDATE_BOOLEAN);
-                    return $applyGst ? (($i['quantity'] ?? 1) * ($i['unit_price'] ?? 0)) : 0;
-                });
+        return collect($items)->map(function ($item) use ($names) {
+            $name = $names[$item['product_id']] ?? 'Unknown';
+            $qty  = (int) ($item['quantity'] ?? 1);
+            return $qty > 1 ? "{$name} (x{$qty})" : $name;
+        })->implode(', ');
+    }
 
-                $totalGstRate  = $cgstRate + $sgstRate;
-                $exclusiveTaxableTotal = $taxableInclusiveTotal / (1 + ($totalGstRate / 100));
-                $totalGstAmount = $taxableInclusiveTotal - $exclusiveTaxableTotal;
+    /**
+     * Reject a sale if any item's unit_price falls outside that product's
+     * configured min/max selling price — otherwise a manipulated request
+     * (e.g. a modified client-side price before submit) is trusted blindly,
+     * letting the invoice under/overstate revenue and GST liability.
+     *
+     * Full-access (owner) users can override, since they're the ones who set
+     * those bounds and may have a legitimate reason to sell outside them
+     * (clearance, negotiated deal, etc.) — this guards against an untrusted
+     * client bypassing the bounds, not against owner discretion.
+     *
+     * A bound of 0 means "not configured" for that product (the common case
+     * in this data set) and is not enforced.
+     *
+     * Returns a 422 JsonResponse to return immediately, or null if all items pass.
+     */
+    private function validateItemPriceBounds(array $items, $user): ?\Illuminate\Http\JsonResponse
+    {
+        if ($user->hasFullAccess()) return null;
 
-                $cgstAmount  = $totalGstRate > 0 ? round($totalGstAmount * ($cgstRate / $totalGstRate), 2) : 0;
-                $sgstAmount  = $totalGstRate > 0 ? round($totalGstAmount * ($sgstRate / $totalGstRate), 2) : 0;
-                $totalAmount = round($inclusiveTotal - $cgstAmount - $sgstAmount, 2);
+        $productIds = collect($items)->pluck('product_id')->filter()->unique();
+        if ($productIds->isEmpty()) return null;
+
+        $products = \App\Models\Product::whereIn('id', $productIds)
+            ->get(['id', 'name', 'min_selling_price', 'max_selling_price'])
+            ->keyBy('id');
+
+        foreach ($items as $item) {
+            $product = $products[$item['product_id']] ?? null;
+            if (!$product) continue;
+
+            $unitPrice = (float) ($item['unit_price'] ?? 0);
+            $min = (float) $product->min_selling_price;
+            $max = (float) $product->max_selling_price;
+
+            if ($max > 0 && $unitPrice > $max) {
+                return response()->json([
+                    'message' => "Price for {$product->name} (₹{$unitPrice}) exceeds the maximum allowed selling price of ₹{$max}.",
+                ], 422);
             }
-        } else {
-            $cgstRate    = 0;
-            $sgstRate    = 0;
-            $cgstAmount  = 0;
-            $sgstAmount  = 0;
-            $totalAmount = $inclusiveTotal;
+            if ($min > 0 && $unitPrice < $min) {
+                return response()->json([
+                    'message' => "Price for {$product->name} (₹{$unitPrice}) is below the minimum allowed selling price of ₹{$min}.",
+                ], 422);
+            }
         }
 
-        $rawGrandTotal = $totalAmount + $cgstAmount + $sgstAmount - $discount;
-        if ($isCashDiscOnBill) {
-            $rawGrandTotal -= $cashDiscount;
-        }
-
-        return [
-            'cgst_rate'       => $cgstRate,
-            'cgstRate'        => $cgstRate,
-            'sgst_rate'       => $sgstRate,
-            'sgstRate'        => $sgstRate,
-            'cgst_amount'     => $cgstAmount,
-            'cgstAmount'      => $cgstAmount,
-            'sgst_amount'     => $sgstAmount,
-            'sgstAmount'      => $sgstAmount,
-            'total_amount'    => $totalAmount,
-            'totalAmount'     => $totalAmount,
-            'raw_grand_total' => $rawGrandTotal,
-            'rawGrandTotal'   => $rawGrandTotal,
-            'discount'        => $discount,
-            'cash_discount'   => $cashDiscount,
-            'cashDiscount'    => $cashDiscount,
-            'is_cash_discount_on_bill' => $isCashDiscOnBill,
-            'isCashDiscOnBill' => $isCashDiscOnBill,
-            'calculate_gst'   => $calculateGst,
-            'calculateGst'    => $calculateGst,
-        ];
+        return null;
     }
 }
 

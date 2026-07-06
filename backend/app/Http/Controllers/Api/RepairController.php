@@ -8,6 +8,7 @@ use App\Models\ActivityLog;
 use App\Traits\RecordsTransactions;
 use App\Traits\SyncsWithCustomer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RepairController extends Controller
 {
@@ -155,24 +156,28 @@ class RepairController extends Controller
             'balance_received_at'       => 'nullable|date',
         ]);
 
-        $customerId = $this->syncCustomer($data, 'REPAIR');
-        $repair = RepairRequest::create(array_merge($data, [
-            'customer_id' => $customerId,
-            'shop_id'    => $shopId,
-            'created_by' => 'staff',
-            'staff_id'   => $user->id,
-        ]));
+        $repair = DB::transaction(function () use ($data, $shopId, $user) {
+            $customerId = $this->syncCustomer($data, 'REPAIR');
+            $repair = RepairRequest::create(array_merge($data, [
+                'customer_id' => $customerId,
+                'shop_id'    => $shopId,
+                'created_by' => 'staff',
+                'staff_id'   => $user->id,
+            ]));
 
-        // Record Advance Payment if any
-        if (isset($data['advance_amount']) && $data['advance_amount'] > 0) {
-            $this->transactionService->recordForModel($repair, [
-                'type' => 'IN',
-                'category' => 'REPAIR_ADVANCE',
-                'amount' => $data['advance_amount'],
-                'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
-                'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
-            ]);
-        }
+            // Record Advance Payment if any
+            if (isset($data['advance_amount']) && $data['advance_amount'] > 0) {
+                $this->transactionService->recordForModel($repair, [
+                    'type' => 'IN',
+                    'category' => 'REPAIR_ADVANCE',
+                    'amount' => $data['advance_amount'],
+                    'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
+                    'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
+                ]);
+            }
+
+            return $repair;
+        });
 
         ActivityLog::log('REPAIR_CREATED', $repair, "Repair created: {$repair->device_model} for {$repair->customer_name} (#{$repair->id})");
         return response()->json($repair, 201);
@@ -405,7 +410,7 @@ class RepairController extends Controller
             return response()->json(['message' => 'Backup restored successfully (Upserted ' . count($data['repairs']) . ' records)']);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\DB::rollBack();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 }

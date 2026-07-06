@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Airtel Recovery',
-        short_name: 'Recovery',
-        description: 'Tinku Mobiles Airtel Payment Recovery System',
+        name: 'Tinku Mobiles',
+        short_name: 'Tinku Mobiles',
+        description: 'Tinku Mobiles inventory, billing, and shop management system',
         theme_color: '#e31d1d',
         background_color: '#ffffff',
         display: 'standalone',

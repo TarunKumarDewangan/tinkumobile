@@ -33,6 +33,7 @@ const OldMobiles = lazy(() => import('./pages/OldMobiles'));
 const OldMobilePurchaseForm = lazy(() => import('./pages/OldMobilePurchaseForm'));
 const OldMobileStocks = lazy(() => import('./pages/OldMobileStocks'));
 const OldMobileSales = lazy(() => import('./pages/OldMobileSales'));
+const OldMobileExchangeReport = lazy(() => import('./pages/reports/OldMobileExchangeReport'));
 const Gifts = lazy(() => import('./pages/Gifts'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Incentives = lazy(() => import('./pages/Incentives'));
@@ -135,6 +136,7 @@ function AppRoutes() {
           <Route path="old-mobiles/sales" element={<OldMobileSales />} />
           <Route path="old-mobiles/sales/new" element={<SaleForm />} />
           <Route path="old-mobiles/sales/:id/edit" element={<SaleForm />} />
+          <Route path="old-mobiles/report" element={<OldMobileExchangeReport />} />
           <Route path="gifts" element={<Gifts />} />
           <Route path="stock-entry" element={<StockEntry />} />
           <Route path="employees" element={<Employees />} />

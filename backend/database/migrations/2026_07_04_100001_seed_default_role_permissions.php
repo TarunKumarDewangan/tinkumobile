@@ -41,6 +41,15 @@ return new class extends Migration
         // manager gets task permissions too
         $managerExtraPerms = ['view_tasks', 'assign_tasks', 'complete_task'];
 
+        // syncPermissions()/givePermissionTo() below require the Permission rows to
+        // already exist — unlike $taskPerms above, $coPerms/$spPerms were never
+        // explicitly created first. In an environment where a prior seeder hadn't
+        // already inserted these (e.g. a fresh migrate with no seed step, as in
+        // the test suite), this threw PermissionDoesNotExist.
+        foreach (array_unique(array_merge($coPerms, $spPerms, $managerExtraPerms)) as $perm) {
+            Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+        }
+
         $this->syncIfExists('computer_operator', $coPerms);
         $this->syncIfExists('sales_person',      $spPerms);
         $this->addIfExists('manager',            $managerExtraPerms);

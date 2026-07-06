@@ -61,6 +61,16 @@ class TransactionController extends Controller
         ]);
     }
 
+    public function show(Request $request, Transaction $transaction)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess() && $transaction->shop_id !== $user->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        return response()->json($transaction->load('user', 'entity'));
+    }
+
     /**
      * Store a manual expense or income.
      */

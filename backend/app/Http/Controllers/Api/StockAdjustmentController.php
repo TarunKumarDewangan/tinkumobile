@@ -468,6 +468,10 @@ class StockAdjustmentController extends Controller
      */
     public function clearDuplicates(Request $request)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         return DB::transaction(function () {
             $duplicates = DB::table('purchase_items')
                 ->select('imei', DB::raw('MIN(id) as keep_id'), DB::raw('COUNT(*) as count'))
@@ -519,6 +523,10 @@ class StockAdjustmentController extends Controller
      */
     public function clearAllStocks(Request $request)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         ActivityLog::log('CLEAR_ALL_STOCKS', null,
             '⚠️ DANGER: All new mobile stocks, purchases, and sales permanently cleared by ' . ($request->user()?->name ?? 'Unknown')
         );

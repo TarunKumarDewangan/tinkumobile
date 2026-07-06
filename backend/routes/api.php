@@ -43,7 +43,7 @@ Route::post('/repair-request', [RepairController::class, 'publicStore'])->middle
 Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile'])->middleware('throttle:30,1');
 
 // Customer Portal
-Route::post('/customer/login', [CustomerController::class, 'portalLogin']);
+Route::post('/customer/login', [CustomerController::class, 'portalLogin'])->middleware('throttle:5,1');
 
 // ── Authenticated Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->group(function () {
@@ -54,11 +54,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/me', [AuthController::class, 'me']);
 
     // Master data (shared / global – no shop filter needed)
-    Route::apiResource('categories', CategoryController::class);
+    Route::apiResource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::apiResource('suppliers', SupplierController::class);
     Route::post('customers/send-offer', [CustomerController::class, 'sendOffer']);
     Route::apiResource('customers', CustomerController::class);
-    Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class);
+    Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class)->only(['index', 'store']);
     Route::apiResource('subcategories', \App\Http\Controllers\Api\SubcategoryController::class)->only(['index', 'store']);
 
     // Products
@@ -94,7 +94,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Employees
     Route::apiResource('employees', EmployeeController::class);
-    Route::apiResource('salary-payments', SalaryPaymentController::class);
+    Route::apiResource('salary-payments', SalaryPaymentController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Purchases
     Route::get('purchase-invoices/backup', [PurchaseInvoiceController::class, 'backup']);
@@ -126,7 +126,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::apiResource('repairs', RepairController::class);
 
     // Follow-ups
-    Route::apiResource('follow-ups', FollowUpController::class);
+    Route::apiResource('follow-ups', FollowUpController::class)->only(['index', 'store', 'update', 'destroy']);
 
     // Users
     Route::get('/users', [UserController::class, 'index']);
@@ -197,6 +197,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         Route::get('/bill-conversion', [ReportController::class, 'billConversion']);
         Route::get('/dashboard', [ReportController::class, 'dashboard']);
         Route::get('/financer', [ReportController::class, 'financerReport']);
+        Route::get('/old-mobile-exchange', [ReportController::class, 'oldMobileExchangeReport']);
     });
 
     // Airtel Recovery System
@@ -243,8 +244,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     });
 
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
-    Route::apiResource('transactions', TransactionController::class);
-    Route::apiResource('expense-categories', ExpenseCategoryController::class);
+    Route::apiResource('transactions', TransactionController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
+    Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'update', 'destroy']);
 
     Route::post('entities/sync-all-balances', function() {
         app(\App\Services\EntityService::class)->syncAll();
@@ -265,8 +266,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
     Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
-    Route::post('settings/verify-pin', [\App\Http\Controllers\Api\SettingsController::class, 'verifyPin']);
-    Route::post('settings/change-pin', [\App\Http\Controllers\Api\SettingsController::class, 'changePin']);
+    Route::post('settings/verify-pin', [\App\Http\Controllers\Api\SettingsController::class, 'verifyPin'])->middleware('throttle:10,1');
+    Route::post('settings/change-pin', [\App\Http\Controllers\Api\SettingsController::class, 'changePin'])->middleware('throttle:5,1');
 
     // Tasks
     Route::get('tasks', [\App\Http\Controllers\Api\TaskController::class, 'index'])->middleware('permission:view_tasks');

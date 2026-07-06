@@ -178,6 +178,10 @@ class AirtelDropController extends Controller
 
     public function import(Request $request)
     {
+        if (!$request->user()->canManage('manage_airtel_recovery')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $validated = $request->validate([
             'drops' => 'required|array',
             'drops.*.msisdn' => 'required|string',
@@ -240,6 +244,10 @@ class AirtelDropController extends Controller
 
     public function importUpi(Request $request)
     {
+        if (!$request->user()->canManage('manage_airtel_recovery')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $validated = $request->validate([
             'payments' => 'required|array',
             'payments.*.msisdn' => 'required|string',
@@ -323,6 +331,10 @@ class AirtelDropController extends Controller
 
     public function markAsRecovered(Request $request)
     {
+        if (!$request->user()->canManage('manage_airtel_recovery')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $validated = $request->validate([
             'recoveries' => 'required|array',
             'recoveries.*.id' => 'required|exists:airtel_drops,id',

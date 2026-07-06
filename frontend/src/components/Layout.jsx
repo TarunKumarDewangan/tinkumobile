@@ -35,6 +35,7 @@ const NAV = [
         { to: '/old-mobiles',        icon: '🛒', label: 'Purchase',   perm: 'view_old_mobile_purchases', end: true },
         { to: '/old-mobiles/stocks', icon: '📦', label: '2nd Stocks', perm: 'view_old_mobile_purchases' },
         { to: '/old-mobiles/sales',  icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+        { to: '/old-mobiles/report', icon: '📊', label: 'Report',     perm: 'view_old_mobile_purchases' },
     ]
   },
   

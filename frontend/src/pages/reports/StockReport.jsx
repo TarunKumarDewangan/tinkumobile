@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 
 export default function StockReport() {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showLow, setShowLow] = useState(false);
@@ -10,8 +12,9 @@ export default function StockReport() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>📦 Stock Levels</h2>
+      <div className="page-header d-flex align-items-center gap-2">
+        <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate('/reports')}>← Back</button>
+        <h2 className="mb-0">📦 Stock Levels</h2>
         <label className="d-flex align-items-center gap-2" style={{ cursor:'pointer' }}>
           <input type="checkbox" checked={showLow} onChange={e => setShowLow(e.target.checked)} />
           <span className="fw-semibold text-danger">Show Low Stock Only</span>

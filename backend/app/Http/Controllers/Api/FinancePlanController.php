@@ -61,17 +61,37 @@ class FinancePlanController extends Controller
             'down_payment'    => 'nullable|numeric|min:0',
             'principal'       => 'required|numeric|min:0.01',
             'interest_rate'   => 'nullable|numeric|min:0',
+            'interest_type'   => 'nullable|in:FLAT,REDUCING',
+            'total_payable'   => 'nullable|numeric|min:0',
             'tenure_months'   => 'nullable|integer|min:1|max:360',
             'emi_start_date'  => 'nullable|date',
         ]);
 
         $invoice = SaleInvoice::findOrFail($data['sale_invoice_id']);
 
-        [$monthlyEmi, $totalPayable] = $this->calcEmi(
-            $data['principal'],
-            $data['interest_rate'] ?? 0,
-            $data['tenure_months'] ?? 0
-        );
+        if (!$request->user()->hasFullAccess() && $invoice->shop_id !== $request->user()->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $interestType = $data['interest_type'] ?? 'REDUCING';
+        $months       = $data['tenure_months'] ?? 0;
+
+        // "Total payable" is an alternative way to specify the deal (staff
+        // already agreed a fixed repayment figure with the customer) — the
+        // effective interest_rate is derived from it here, authoritatively,
+        // rather than trusting whatever rate the client-side preview computed.
+        if (empty($data['interest_rate']) && !empty($data['total_payable'])) {
+            [$monthlyEmi, $totalPayable, $impliedRate] = $this->calcEmiFromTotalPayable(
+                $data['principal'],
+                (float) $data['total_payable'],
+                $months,
+                $interestType
+            );
+            $interestRate = $impliedRate;
+        } else {
+            $interestRate = (float) ($data['interest_rate'] ?? 0);
+            [$monthlyEmi, $totalPayable] = $this->calcEmi($data['principal'], $interestRate, $months, $interestType);
+        }
 
         $plan = SaleFinancePlan::create([
             'sale_invoice_id' => $data['sale_invoice_id'],
@@ -79,7 +99,8 @@ class FinancePlanController extends Controller
             'type'            => $data['type'],
             'down_payment'    => $data['down_payment'] ?? 0,
             'principal'       => $data['principal'],
-            'interest_rate'   => $data['interest_rate'] ?? null,
+            'interest_rate'   => $interestRate ?: null,
+            'interest_type'   => $data['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
             'tenure_months'   => $data['tenure_months'] ?? null,
             'monthly_emi'     => $data['type'] === 'PERSONAL' ? $monthlyEmi : null,
             'emi_start_date'  => $data['type'] === 'PERSONAL' ? ($data['emi_start_date'] ?? now()->addMonth()->startOfMonth()) : null,
@@ -92,8 +113,13 @@ class FinancePlanController extends Controller
         return response()->json($plan->load('saleInvoice', 'customer', 'payments'), 201);
     }
 
-    public function show(SaleFinancePlan $financePlan)
+    public function show(Request $request, SaleFinancePlan $financePlan)
     {
+        $financePlan->loadMissing('saleInvoice');
+        if (!$request->user()->hasFullAccess() && $financePlan->saleInvoice?->shop_id !== $request->user()->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $financePlan->refreshStatus();
         $financePlan->load('saleInvoice.items.product', 'customer', 'payments.createdBy');
 
@@ -105,6 +131,11 @@ class FinancePlanController extends Controller
 
     public function addPayment(Request $request, SaleFinancePlan $financePlan)
     {
+        $financePlan->loadMissing('saleInvoice');
+        if (!$request->user()->hasFullAccess() && $financePlan->saleInvoice?->shop_id !== $request->user()->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'amount'       => 'required|numeric|min:0.01',
             'payment_date' => 'required|date',
@@ -162,6 +193,11 @@ class FinancePlanController extends Controller
 
     public function settle(Request $request, SaleFinancePlan $financePlan)
     {
+        $financePlan->loadMissing('saleInvoice');
+        if (!$request->user()->hasFullAccess() && $financePlan->saleInvoice?->shop_id !== $request->user()->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if ($financePlan->status === 'SETTLED') {
             return response()->json(['message' => 'Already settled'], 422);
         }
@@ -205,10 +241,16 @@ class FinancePlanController extends Controller
     // ── Helper ──────────────────────────────────────────────────────────────
 
     /**
-     * Returns [monthlyEmi, totalPayable].
+     * Returns [monthlyEmi, totalPayable] for a given annual rate.
      * If rate=0 or tenure=0, returns [principal/tenure, principal].
+     *
+     * FLAT: simple interest on the original principal for the full tenure —
+     * common for informal shop financing ("pay back principal + a flat 20%").
+     * REDUCING: standard amortizing loan formula (interest recalculated on
+     * the outstanding balance each month) — this was the only mode before
+     * flat-rate support was added, so it stays the default everywhere.
      */
-    public static function calcEmi(float $principal, float $annualRate, int $months): array
+    public static function calcEmi(float $principal, float $annualRate, int $months, string $interestType = 'REDUCING'): array
     {
         if ($months <= 0) return [0, $principal];
 
@@ -217,10 +259,68 @@ class FinancePlanController extends Controller
             return [$emi, $principal];
         }
 
+        if ($interestType === 'FLAT') {
+            $totalInterest = $principal * ($annualRate / 100) * ($months / 12);
+            $totalPayable  = round($principal + $totalInterest, 2);
+            $emi           = round($totalPayable / $months, 2);
+            return [$emi, $totalPayable];
+        }
+
         $r   = $annualRate / 12 / 100;
         $emi = $principal * $r * pow(1 + $r, $months) / (pow(1 + $r, $months) - 1);
         $emi = round($emi, 2);
 
         return [$emi, round($emi * $months, 2)];
+    }
+
+    /**
+     * Reverse of calcEmi(): given a target total payable instead of a rate,
+     * returns [monthlyEmi, totalPayable, impliedAnnualRate]. Lets staff who
+     * already agreed a fixed repayment total with the customer (e.g. "pay
+     * back ₹12,000 for a ₹10,000 loan over 3 months") enter that directly
+     * instead of guessing an interest rate that produces it.
+     */
+    public static function calcEmiFromTotalPayable(float $principal, float $totalPayable, int $months, string $interestType = 'REDUCING'): array
+    {
+        if ($months <= 0 || $principal <= 0) return [0, $principal, 0];
+
+        $totalPayable = max($totalPayable, $principal);
+        $emi          = round($totalPayable / $months, 2);
+
+        if ($totalPayable <= $principal) {
+            return [$emi, round($totalPayable, 2), 0];
+        }
+
+        if ($interestType === 'FLAT') {
+            $interest   = $totalPayable - $principal;
+            $annualRate = round(($interest * 12) / ($principal * $months) * 100, 4);
+        } else {
+            $annualRate = round(self::solveReducingRate($principal, $emi, $months), 4);
+        }
+
+        return [$emi, round($totalPayable, 2), $annualRate];
+    }
+
+    /**
+     * Numerically solves for the monthly reducing-balance rate r that makes
+     * P*r*(1+r)^n/((1+r)^n-1) == emi. No closed form exists for r, so this
+     * bisects — emi is strictly increasing in r for r >= 0, so it converges
+     * reliably. Returns the rate annualized as a percentage.
+     */
+    private static function solveReducingRate(float $principal, float $emi, int $months): float
+    {
+        if ($emi <= $principal / $months) return 0.0;
+
+        $lo = 0.0;
+        $hi = 5.0; // 500%/month upper bound — comfortably above any real input
+        for ($i = 0; $i < 100; $i++) {
+            $mid     = ($lo + $hi) / 2;
+            $calcEmi = $mid == 0
+                ? $principal / $months
+                : $principal * $mid * pow(1 + $mid, $months) / (pow(1 + $mid, $months) - 1);
+            if ($calcEmi < $emi) { $lo = $mid; } else { $hi = $mid; }
+        }
+
+        return (($lo + $hi) / 2) * 12 * 100;
     }
 }

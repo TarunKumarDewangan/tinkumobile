@@ -162,6 +162,7 @@ export default function OldMobilePurchaseForm() {
   return (
     <div className="container-fluid px-4 py-4">
       <div className="mb-4">
+        <button type="button" className="btn btn-sm btn-outline-secondary fw-bold mb-2" onClick={() => navigate('/old-mobiles')}>← Back</button>
         <h2 className="text-dark d-flex align-items-center gap-2">
           <span>📲</span> Record Old Mobile Purchase / Exchange
         </h2>

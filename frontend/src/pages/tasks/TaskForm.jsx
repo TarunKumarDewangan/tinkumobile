@@ -52,6 +52,7 @@ export default function TaskForm() {
 
   return (
     <div className="page-container fade-in" style={{ maxWidth: 680, margin: '0 auto' }}>
+      <button type="button" className="btn btn-sm btn-outline-secondary fw-bold mb-2" onClick={() => navigate('/tasks')}>← Back</button>
       <h4 className="fw-bold mb-4">➕ New Task</h4>
 
       <form onSubmit={handleSubmit}>

@@ -103,7 +103,7 @@ class LoanController extends Controller
             return response()->json($loan->load('customer', 'payments'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Failed to create loan');
         }
     }
 

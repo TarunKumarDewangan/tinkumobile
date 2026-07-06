@@ -291,11 +291,16 @@ export default function EntityLedger() {
       {/* Compact Premium Header with Integrated Search */}
       <div className="page-header-glass compact mb-3 p-3 rounded-4 shadow-sm border border-white border-opacity-20 animate-slideDown">
         <div className="row g-3 align-items-center">
+          <div className="col-auto">
+            <button className="btn btn-glass-secondary btn-sm rounded-pill" onClick={() => navigate(-1)} title="Go back">
+              <i className="bi bi-arrow-left me-1"></i> Back
+            </button>
+          </div>
           <div className="col-auto border-end pe-4">
             <h1 className="h4 mb-0 fw-bold tracking-tight">Entity Ledger</h1>
             <p className="xx-small text-muted mb-0 text-uppercase letter-spacing-1">Management Portal</p>
           </div>
-          
+
           <div className="col-md-4">
              <div className="search-box position-relative">
                 <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted x-small"></i>

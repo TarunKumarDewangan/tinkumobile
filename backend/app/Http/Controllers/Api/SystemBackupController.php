@@ -400,10 +400,7 @@ class SystemBackupController extends Controller
             return response()->json(['message' => 'Full system restore completed successfully! All data has been replaced. Please log in again.']);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('[RestoreBackup] Failed: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString(),
-            ]);
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         } finally {
             try { Schema::enableForeignKeyConstraints(); } catch (\Exception $e) {}
             $lock->release();

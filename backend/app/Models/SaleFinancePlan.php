@@ -9,7 +9,7 @@ class SaleFinancePlan extends Model
     protected $fillable = [
         'sale_invoice_id', 'customer_id', 'type',
         'down_payment', 'principal',
-        'interest_rate', 'tenure_months', 'monthly_emi', 'emi_start_date', 'total_payable',
+        'interest_rate', 'interest_type', 'tenure_months', 'monthly_emi', 'emi_start_date', 'total_payable',
         'total_paid', 'status', 'settled_at', 'created_by',
     ];
 

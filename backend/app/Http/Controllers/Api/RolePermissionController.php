@@ -9,8 +9,12 @@ use Spatie\Permission\Models\Permission;
 
 class RolePermissionController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $roles = Role::with('permissions')
             ->where('name', '!=', 'Admin')
             ->get()
@@ -29,6 +33,10 @@ class RolePermissionController extends Controller
 
     public function sync(Request $request, string $roleName)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if (strtolower($roleName) === 'admin') {
             return response()->json(['message' => 'Cannot modify Admin role'], 403);
         }

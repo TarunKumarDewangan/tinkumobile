@@ -91,8 +91,14 @@ export default function Recharge() {
     loadData();
   }, []);
 
+  const hasDistributors = distributors.length > 0;
+
+  // Depends on hasDistributors (a boolean), not the distributors array itself —
+  // the array gets a new reference every time one is added (see
+  // handleQuickEntityAdd below), which previously re-triggered this whole
+  // custom-types fetch as a side effect of adding a single distributor.
   useEffect(() => {
-    if (distributors.length > 0) {
+    if (hasDistributors) {
       api.get('/entities').then(res => {
         const types = (res.data || []).map(e => e.type).filter(Boolean);
         const uniqueCustomTypes = Array.from(new Set(types)).filter(
@@ -101,7 +107,7 @@ export default function Recharge() {
         setCustomTypes(uniqueCustomTypes);
       }).catch(() => {});
     }
-  }, [distributors]);
+  }, [hasDistributors]);
 
   const handleQuickEntityAdd = async (e) => {
     e.preventDefault();

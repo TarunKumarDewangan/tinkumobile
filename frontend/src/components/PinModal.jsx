@@ -78,7 +78,7 @@ export default function PinModal() {
   ));
 
   return (
-    <div style={{
+    <div role="dialog" aria-modal="true" aria-labelledby="pin-modal-title" style={{
       position: 'fixed', inset: 0, zIndex: 9999,
       background: 'rgba(0,0,0,.55)', display: 'flex',
       alignItems: 'center', justifyContent: 'center',
@@ -89,8 +89,8 @@ export default function PinModal() {
         textAlign: 'center',
       }}>
         {/* Header */}
-        <div style={{ fontSize: '2rem', marginBottom: 4 }}>🔐</div>
-        <div style={{ fontWeight: 900, fontSize: '.95rem', textTransform: 'uppercase', letterSpacing: 1, color: '#1e293b' }}>
+        <div aria-hidden="true" style={{ fontSize: '2rem', marginBottom: 4 }}>🔐</div>
+        <div id="pin-modal-title" style={{ fontWeight: 900, fontSize: '.95rem', textTransform: 'uppercase', letterSpacing: 1, color: '#1e293b' }}>
           Enter Action PIN
         </div>
         <div style={{ fontSize: '.7rem', color: '#64748b', marginBottom: 20 }}>
@@ -115,6 +115,9 @@ export default function PinModal() {
         }}>
           {KEYS.map((k, i) => (
             <button key={i} onClick={() => press(k)} disabled={loading || k === ''}
+              aria-label={k === '⌫' ? 'Backspace' : (k === '' ? undefined : `Digit ${k}`)}
+              aria-hidden={k === '' ? 'true' : undefined}
+              tabIndex={k === '' ? -1 : undefined}
               style={{
                 height: 52, fontSize: k === '⌫' ? '1.1rem' : '1.2rem',
                 fontWeight: 700, border: '1.5px solid #e2e8f0',
