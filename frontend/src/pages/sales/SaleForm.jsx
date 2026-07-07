@@ -883,8 +883,10 @@ export default function SaleForm() {
           finalForm.payment_method = form.other_mode;
       }
 
-      // Attach shop finance plan data if enabled (new sale only)
-      if (!id && useShopFinance && shopFinance.principal > 0) {
+      // Attach shop finance plan data if enabled — works for both a new sale
+      // and editing an existing one (the backend creates the plan if the
+      // invoice doesn't have one yet, or updates it in place if it does).
+      if (useShopFinance && shopFinance.principal > 0) {
           finalForm.shop_finance = {
               type:           shopFinanceType,
               down_payment:   shopFinance.down_payment,

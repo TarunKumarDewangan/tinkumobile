@@ -490,10 +490,32 @@ class SaleInvoiceController extends Controller
             'down_payment'           => 'nullable|numeric|min:0',
             'finance_amount'         => 'nullable|numeric|min:0',
             'finance_payment_status' => 'nullable|in:PENDING,RECEIVED',
+            // Shop Finance Plan (Personal EMI or Favor) — was previously only
+            // accepted on create; editing a sale to add/update one silently did nothing.
+            'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR',
+            'shop_finance.principal'      => 'nullable|numeric|min:0.01',
+            'shop_finance.down_payment'   => 'nullable|numeric|min:0',
+            'shop_finance.interest_rate'  => 'nullable|numeric|min:0',
+            'shop_finance.interest_type'  => 'nullable|in:FLAT,REDUCING',
+            'shop_finance.total_payable'  => 'nullable|numeric|min:0',
+            'shop_finance.tenure_months'  => 'nullable|integer|min:1|max:360',
+            'shop_finance.emi_start_date' => 'nullable|date',
         ]);
 
         if ($priceError = $this->validateItemPriceBounds($data['items'], $user)) {
             return $priceError;
+        }
+
+        // A finance plan that already has payments recorded against it can't be
+        // silently re-terraformed (different principal/tenure would desync the
+        // existing payment history) — reject before touching anything else.
+        if (!empty($data['shop_finance']['type']) && !empty($data['shop_finance']['principal'])) {
+            $existingPlan = \App\Models\SaleFinancePlan::where('sale_invoice_id', $saleInvoice->id)->first();
+            if ($existingPlan && (float) $existingPlan->total_paid > 0) {
+                return response()->json([
+                    'message' => 'This sale already has a finance plan with payments recorded against it. Edit the plan directly from Finance > Finance Plans instead of changing it here.',
+                ], 422);
+            }
         }
 
         DB::beginTransaction();
@@ -615,8 +637,63 @@ class SaleInvoiceController extends Controller
                             'description'          => "Finance payment received from {$financer->name} for Invoice #{$saleInvoice->invoice_no}",
                         ]);
                     }
-                    // For PENDING: the SaleInvoice model's getLedgerData() automatically posts 
+                    // For PENDING: the SaleInvoice model's getLedgerData() automatically posts
                     // the FINANCE_PENDING Debit (Dr) to the financer's ledger. No manual code needed!
+                }
+            }
+
+            // Create or update the Shop Finance Plan (Personal EMI / Favor).
+            // A plan with payments already recorded was already rejected above,
+            // before any of this transaction's writes happened.
+            if (!empty($data['shop_finance']['type']) && !empty($data['shop_finance']['principal'])) {
+                $sf           = $data['shop_finance'];
+                $interestType = $sf['interest_type'] ?? 'REDUCING';
+                $months       = (int) ($sf['tenure_months'] ?? 0);
+                $principal    = (float) $sf['principal'];
+
+                if (empty($sf['interest_rate']) && !empty($sf['total_payable'])) {
+                    [$monthlyEmi, $totalPayable, $impliedRate] = \App\Http\Controllers\Api\FinancePlanController::calcEmiFromTotalPayable(
+                        $principal,
+                        (float) $sf['total_payable'],
+                        $months,
+                        $interestType
+                    );
+                    $interestRate = $impliedRate;
+                } else {
+                    $interestRate = (float) ($sf['interest_rate'] ?? 0);
+                    [$monthlyEmi, $totalPayable] = \App\Http\Controllers\Api\FinancePlanController::calcEmi(
+                        $principal,
+                        $interestRate,
+                        $months,
+                        $interestType
+                    );
+                }
+
+                $planData = [
+                    'customer_id'     => $saleInvoice->customer_id,
+                    'type'            => $sf['type'],
+                    'down_payment'    => $sf['down_payment'] ?? 0,
+                    'principal'       => $principal,
+                    'interest_rate'   => $interestRate ?: null,
+                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
+                    'tenure_months'   => $sf['tenure_months'] ?? null,
+                    'monthly_emi'     => $sf['type'] === 'PERSONAL' ? $monthlyEmi : null,
+                    'emi_start_date'  => $sf['type'] === 'PERSONAL'
+                                            ? ($sf['emi_start_date'] ?? now()->addMonth()->startOfMonth()->toDateString())
+                                            : null,
+                    'total_payable'   => $sf['type'] === 'PERSONAL' ? $totalPayable : $principal,
+                ];
+
+                $existingPlan = \App\Models\SaleFinancePlan::where('sale_invoice_id', $saleInvoice->id)->first();
+                if ($existingPlan) {
+                    $existingPlan->update($planData);
+                } else {
+                    \App\Models\SaleFinancePlan::create(array_merge($planData, [
+                        'sale_invoice_id' => $saleInvoice->id,
+                        'total_paid'      => 0,
+                        'status'          => 'ACTIVE',
+                        'created_by'      => $user->id,
+                    ]));
                 }
             }
 
