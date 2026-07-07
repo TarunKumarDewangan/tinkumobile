@@ -127,7 +127,10 @@ class PurchaseInvoiceController extends Controller
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
             'items.*.wholeseller_price' => 'nullable|numeric|min:0',
-            'items.*.imei'       => 'nullable|string|max:255',
+            // purchase_items.imei is a TEXT column, not varchar(255) — a bulk-quantity
+            // row stores every unit's IMEI as one comma-separated string here, which
+            // easily exceeds 255 chars once a row covers more than ~12 phones.
+            'items.*.imei'       => 'nullable|string|max:20000',
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
@@ -334,7 +337,10 @@ class PurchaseInvoiceController extends Controller
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
             'items.*.wholeseller_price' => 'nullable|numeric|min:0',
-            'items.*.imei'       => 'nullable|string|max:255',
+            // purchase_items.imei is a TEXT column, not varchar(255) — a bulk-quantity
+            // row stores every unit's IMEI as one comma-separated string here, which
+            // easily exceeds 255 chars once a row covers more than ~12 phones.
+            'items.*.imei'       => 'nullable|string|max:20000',
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',

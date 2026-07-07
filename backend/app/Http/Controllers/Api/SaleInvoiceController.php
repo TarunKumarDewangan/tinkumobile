@@ -135,7 +135,9 @@ class SaleInvoiceController extends Controller
             'items.*.product_id'  => 'required|exists:products,id',
             'items.*.quantity'    => 'required|integer|min:1',
             'items.*.unit_price'  => 'required|numeric|min:0',
-            'items.*.imei'        => 'nullable|string',
+            // sale_items.imei is varchar(255) — cap validation to match so an
+            // over-long value fails cleanly here instead of erroring at the DB.
+            'items.*.imei'        => 'nullable|string|max:255',
             'items.*.ram'         => 'nullable|string',
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',
@@ -473,7 +475,9 @@ class SaleInvoiceController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.imei'        => 'nullable|string',
+            // sale_items.imei is varchar(255) — cap validation to match so an
+            // over-long value fails cleanly here instead of erroring at the DB.
+            'items.*.imei'        => 'nullable|string|max:255',
             'items.*.ram'         => 'nullable|string',
             'items.*.storage'     => 'nullable|string',
             'items.*.color'       => 'nullable|string',

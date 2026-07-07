@@ -1702,7 +1702,7 @@ export default function SaleForm() {
                                         <div className="row g-1 mb-2">
                                             <div className="col-6">
                                                 <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>INTEREST % p.a.</label>
-                                                <input type="number" step="0.1" min="0" className="form-control form-control-sm fw-bold text-end"
+                                                <input type="number" step="0.01" min="0" className="form-control form-control-sm fw-bold text-end"
                                                     style={{fontSize:'.78rem', borderColor: emiInputMode === 'RATE' ? '#fcd34d' : '#e2e8f0', background: emiInputMode === 'RATE' ? '#fff' : '#f8fafc'}}
                                                     value={emiInputMode === 'RATE' ? (shopFinance.interest_rate || '') : (shopFinanceCalc.impliedRate ? shopFinanceCalc.impliedRate.toFixed(2) : '')}
                                                     onFocus={e => e.target.select()}
