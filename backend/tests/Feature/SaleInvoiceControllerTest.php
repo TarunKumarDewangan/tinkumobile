@@ -91,7 +91,7 @@ class SaleInvoiceControllerTest extends TestCase
             'payment_method' => 'cash',
             'bill_type' => 'kaccha',
             'calculate_gst' => false,
-            'items' => [['product_id' => $newProduct->id, 'quantity' => 1, 'unit_price' => 1000]]
+            'items' => [['product_id' => $newProduct->id, 'quantity' => 1, 'unit_price' => 1000, 'imei' => '123456789012345']]
         ];
         $this->actingAs($user)->postJson('/api/sale-invoices', $payloadNew)->assertStatus(201);
 

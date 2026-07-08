@@ -145,6 +145,21 @@ class ProductController extends Controller
                     $grouped[$key]['current_stock'] += $currentStock;
                     $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
                 }
+
+                // Reconcile leftover no-IMEI sales that never matched a no-IMEI purchase
+                // batch (i.e. the product's stock was purchased with IMEIs tracked, but the
+                // sale was recorded without one). Those units are gone but the loop above has
+                // no way to remove a *specific* IMEI for them, so subtract from the group total
+                // and drop that many IMEIs from the picker list to keep both in sync.
+                foreach ($soldCounts as $key => $leftover) {
+                    if ($leftover <= 0 || !isset($grouped[$key])) continue;
+                    $deduct = min($leftover, $grouped[$key]['current_stock']);
+                    $grouped[$key]['current_stock'] -= $deduct;
+                    if ($deduct > 0 && !empty($grouped[$key]['attributes']['imeis'])) {
+                        $grouped[$key]['attributes']['imeis'] = array_slice($grouped[$key]['attributes']['imeis'], 0, max(0, count($grouped[$key]['attributes']['imeis']) - $deduct));
+                    }
+                }
+                $grouped = array_filter($grouped, fn($g) => $g['current_stock'] > 0 || !empty($g['attributes']['imeis']));
             }
             return response()->json($this->sortStockItems(array_values($grouped)));
         }

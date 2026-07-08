@@ -170,6 +170,10 @@ class SaleInvoiceController extends Controller
             return $priceError;
         }
 
+        if ($imeiError = $this->validateNewMobileImeiRequired($data['items'], $user)) {
+            return $imeiError;
+        }
+
         // Idempotency check — prevent duplicate submissions
         if (!empty($data['idempotency_key'])) {
             $existing = SaleInvoice::where('shop_id', $shopId)
@@ -504,6 +508,10 @@ class SaleInvoiceController extends Controller
 
         if ($priceError = $this->validateItemPriceBounds($data['items'], $user)) {
             return $priceError;
+        }
+
+        if ($imeiError = $this->validateNewMobileImeiRequired($data['items'], $user)) {
+            return $imeiError;
         }
 
         // A finance plan that already has payments recorded against it can't be
@@ -1074,6 +1082,34 @@ class SaleInvoiceController extends Controller
             if ($min > 0 && $unitPrice < $min) {
                 return response()->json([
                     'message' => "Price for {$product->name} (₹{$unitPrice}) is below the minimum allowed selling price of ₹{$min}.",
+                ], 422);
+            }
+        }
+
+        return null;
+    }
+
+    private function validateNewMobileImeiRequired(array $items, $user): ?\Illuminate\Http\JsonResponse
+    {
+        if ($user->hasFullAccess()) return null;
+
+        $productIds = collect($items)->pluck('product_id')->filter()->unique();
+        if ($productIds->isEmpty()) return null;
+
+        $newMobileCatId = Category::mobileNewId();
+        if (!$newMobileCatId) return null;
+
+        $products = \App\Models\Product::whereIn('id', $productIds)
+            ->get(['id', 'name', 'category_id'])
+            ->keyBy('id');
+
+        foreach ($items as $item) {
+            $product = $products[$item['product_id']] ?? null;
+            if (!$product || (string) $product->category_id !== (string) $newMobileCatId) continue;
+
+            if (trim((string) ($item['imei'] ?? '')) === '') {
+                return response()->json([
+                    'message' => "IMEI is required for {$product->name}. Please scan or enter the IMEI of the unit being sold.",
                 ], 422);
             }
         }
