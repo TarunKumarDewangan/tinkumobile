@@ -116,14 +116,26 @@ class ProductController extends Controller
                     $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
                 }
 
+                // group_by_config === 'true' merges every batch of a given product+config into
+                // one summary row (id "group_<hash>") for the Model Wise Stock view — those rows
+                // aren't individually editable/deletable since they can span many purchase
+                // invoices. group_by_config === 'false' (the "All Stocks" list, where Edit/Del
+                // are shown) must instead emit one row per real, actionable unit so those buttons
+                // have a concrete PurchaseItem to act on.
+                $isGrouped = $request->group_by_config !== 'false';
+
                 foreach ($items as $item) {
                     $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
-                    $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
-                    $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
+                    $imeisRaw = $item->imei ? array_map('trim', explode(',', $item->imei)) : [];
+                    $unsoldImeis = [];
+                    foreach ($imeisRaw as $idx => $imeiVal) {
+                        if ($imeiVal === '' || in_array($imeiVal, $soldImeis)) continue;
+                        $unsoldImeis[] = ['imei' => $imeiVal, 'idx' => $idx];
+                    }
                     $availableImeiCount = count($unsoldImeis);
                     $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
                     $nonImeiQty = ($item->imei) ? 0 : $totalQty;
-                    
+
                     if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
                         $diff = min($nonImeiQty, $soldCounts[$key]);
                         $nonImeiQty -= $diff;
@@ -133,33 +145,70 @@ class ProductController extends Controller
                     $currentStock = $availableImeiCount + $nonImeiQty;
                     if ($currentStock <= 0) continue;
 
-                    if (!isset($grouped[$key])) {
-                        $grouped[$key] = [
-                            'id' => 'group_' . md5($key),
-                            'product_id' => $item->product_id,
-                            'name' => $item->product->name,
-                            'attributes' => ['color' => $item->color, 'ram' => $item->ram, 'storage' => $item->storage, 'imeis' => [], 'description' => $item->product->attributes['description'] ?? ''],
-                            'current_stock' => 0, 'selling_price' => $item->selling_price, 'wholeseller_price' => $item->wholeseller_price, 'purchase_price' => $item->unit_price, 'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount, 'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price, 'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price, 'location' => $item->location ?? $item->product->location, 'category' => $item->product->category, 'brand' => $item->product->brand, 'is_grouped' => true
-                        ];
+                    $baseFields = [
+                        'product_id' => $item->product_id,
+                        'name' => $item->product->name,
+                        'selling_price' => $item->selling_price, 'wholeseller_price' => $item->wholeseller_price,
+                        'purchase_price' => $item->unit_price,
+                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
+                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                        'location' => $item->location ?? $item->product->location,
+                        'category' => $item->product->category, 'brand' => $item->product->brand,
+                    ];
+                    $baseAttrs = ['color' => $item->color, 'ram' => $item->ram, 'storage' => $item->storage, 'description' => $item->product->attributes['description'] ?? ''];
+
+                    if ($isGrouped) {
+                        if (!isset($grouped[$key])) {
+                            $grouped[$key] = array_merge($baseFields, [
+                                'id' => 'group_' . md5($key),
+                                'attributes' => array_merge($baseAttrs, ['imeis' => []]),
+                                'current_stock' => 0,
+                                'is_grouped' => true,
+                            ]);
+                        }
+                        $grouped[$key]['current_stock'] += $currentStock;
+                        $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], array_column($unsoldImeis, 'imei'));
+                    } else {
+                        foreach ($unsoldImeis as $u) {
+                            $rowKey = "item_{$item->id}_{$u['idx']}";
+                            $grouped[$rowKey] = array_merge($baseFields, [
+                                'id' => $rowKey,
+                                'attributes' => array_merge($baseAttrs, ['imei' => $u['imei'], 'imeis' => [$u['imei']]]),
+                                'current_stock' => 1,
+                                'is_grouped' => false,
+                            ]);
+                        }
+                        if ($nonImeiQty > 0) {
+                            $rowKey = "item_ni_{$item->id}";
+                            $grouped[$rowKey] = array_merge($baseFields, [
+                                'id' => $rowKey,
+                                'attributes' => array_merge($baseAttrs, ['imeis' => []]),
+                                'current_stock' => $nonImeiQty,
+                                'is_grouped' => false,
+                            ]);
+                        }
                     }
-                    $grouped[$key]['current_stock'] += $currentStock;
-                    $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
                 }
 
                 // Reconcile leftover no-IMEI sales that never matched a no-IMEI purchase
                 // batch (i.e. the product's stock was purchased with IMEIs tracked, but the
                 // sale was recorded without one). Those units are gone but the loop above has
                 // no way to remove a *specific* IMEI for them, so subtract from the group total
-                // and drop that many IMEIs from the picker list to keep both in sync.
-                foreach ($soldCounts as $key => $leftover) {
-                    if ($leftover <= 0 || !isset($grouped[$key])) continue;
-                    $deduct = min($leftover, $grouped[$key]['current_stock']);
-                    $grouped[$key]['current_stock'] -= $deduct;
-                    if ($deduct > 0 && !empty($grouped[$key]['attributes']['imeis'])) {
-                        $grouped[$key]['attributes']['imeis'] = array_slice($grouped[$key]['attributes']['imeis'], 0, max(0, count($grouped[$key]['attributes']['imeis']) - $deduct));
+                // and drop that many IMEIs from the picker list to keep both in sync. Only
+                // applies to the merged (grouped) view — the ungrouped view already reflects
+                // real per-batch data as-is.
+                if ($isGrouped) {
+                    foreach ($soldCounts as $key => $leftover) {
+                        if ($leftover <= 0 || !isset($grouped[$key])) continue;
+                        $deduct = min($leftover, $grouped[$key]['current_stock']);
+                        $grouped[$key]['current_stock'] -= $deduct;
+                        if ($deduct > 0 && !empty($grouped[$key]['attributes']['imeis'])) {
+                            $grouped[$key]['attributes']['imeis'] = array_slice($grouped[$key]['attributes']['imeis'], 0, max(0, count($grouped[$key]['attributes']['imeis']) - $deduct));
+                        }
                     }
+                    $grouped = array_filter($grouped, fn($g) => $g['current_stock'] > 0 || !empty($g['attributes']['imeis']));
                 }
-                $grouped = array_filter($grouped, fn($g) => $g['current_stock'] > 0 || !empty($g['attributes']['imeis']));
             }
             return response()->json($this->sortStockItems(array_values($grouped)));
         }
@@ -389,14 +438,26 @@ class ProductController extends Controller
             $item = \App\Models\PurchaseItem::with('invoice')->findOrFail($itemId);
 
             // Update IMEI
-            if ($request->has('imei') && $imeiIndex !== null && $item->imei) {
-                $imeis = array_map('trim', explode(',', $item->imei));
-                if (isset($imeis[$imeiIndex])) {
-                    $imeis[$imeiIndex] = $request->imei;
-                    $item->imei = implode(', ', $imeis);
+            if ($request->has('imeis') && is_array($request->imeis) && $imeiIndex === null) {
+                // item_ni_<id>: this row IS the entire remaining no-IMEI batch (no sibling
+                // units live outside it), so a full multi-box replace is safe. Used to
+                // backfill IMEIs on old bulk stock that was purchased without them.
+                $item->imei = implode(', ', array_filter(array_map('trim', $request->imeis), fn($v) => $v !== ''));
+            } else {
+                // item_<id>_<idx>: this row is ONE unit inside a possibly multi-unit batch
+                // that may have sibling IMEIs recorded on the same PurchaseItem — only the
+                // single value at $imeiIndex may be touched, never the whole field.
+                $singleImei = ($request->has('imeis') && is_array($request->imeis)) ? ($request->imeis[0] ?? null) : $request->imei;
+
+                if ($singleImei !== null && $imeiIndex !== null && $item->imei) {
+                    $imeis = array_map('trim', explode(',', $item->imei));
+                    if (isset($imeis[$imeiIndex])) {
+                        $imeis[$imeiIndex] = $singleImei;
+                        $item->imei = implode(', ', $imeis);
+                    }
+                } else if ($singleImei !== null && (!$item->imei || $item->quantity == 1)) {
+                    $item->imei = $singleImei;
                 }
-            } else if ($request->has('imei') && (!$item->imei || $item->quantity == 1)) {
-                $item->imei = $request->imei;
             }
 
             // Update other fields

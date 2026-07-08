@@ -26,8 +26,11 @@ export default function StockList({ products, loading, filters, handleFilterChan
 
   const openEdit = (p) => {
       setEditingItem(p);
+      const count = Math.max(1, parseInt(p.current_stock) || 1);
+      const existing = p.attributes?.imeis?.length ? p.attributes.imeis : (p.attributes?.imei ? [p.attributes.imei] : []);
+      const imeis = Array.from({ length: count }, (_, i) => existing[i] || '');
       setEditForm({
-          imei: p.attributes?.imei || '',
+          imeis,
           color: p.attributes?.color || '',
           ram: p.attributes?.ram || '',
           storage: p.attributes?.storage || '',
@@ -293,13 +296,25 @@ export default function StockList({ products, loading, filters, handleFilterChan
           <form onSubmit={submitEdit}>
             <div className="row g-3">
               <div className="col-md-12">
-                <label className="form-label text-uppercase small fw-bold text-muted">IMEI / SN</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  value={editForm.imei} 
-                  onChange={e => setEditForm({...editForm, imei: e.target.value})} 
-                />
+                <label className="form-label text-uppercase small fw-bold text-muted">
+                  IMEI / SN {editForm.imeis?.length > 1 ? `(${editForm.imeis.length} units in this batch)` : ''}
+                </label>
+                <div className="d-flex flex-column gap-2">
+                  {(editForm.imeis || ['']).map((val, idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      className="form-control"
+                      placeholder={editForm.imeis.length > 1 ? `Unit ${idx + 1} IMEI / SN` : ''}
+                      value={val}
+                      onChange={e => {
+                        const next = [...editForm.imeis];
+                        next[idx] = e.target.value;
+                        setEditForm({ ...editForm, imeis: next });
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
               <div className="col-md-4">
                 <label className="form-label text-uppercase small fw-bold text-muted">Color</label>
