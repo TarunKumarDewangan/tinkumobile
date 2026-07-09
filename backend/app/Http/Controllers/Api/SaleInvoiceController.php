@@ -97,6 +97,19 @@ class SaleInvoiceController extends Controller
             });
         }
 
+        if ($request->model) {
+            $m = $request->model;
+            $query->whereHas('items.product', fn($q) => $q->where('name', 'like', "%$m%"));
+        }
+        if ($request->color) {
+            $c = $request->color;
+            $query->whereHas('items', fn($q) => $q->where('color', 'like', "%$c%"));
+        }
+        if ($request->imei) {
+            $i = $request->imei;
+            $query->whereHas('items', fn($q) => $q->where('imei', 'like', "%$i%"));
+        }
+
         return SaleInvoiceResource::collection($query->latest()->paginate($request->per_page ?? 50));
     }
 

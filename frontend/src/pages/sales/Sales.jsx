@@ -18,9 +18,13 @@ export default function Sales() {
   const [showBackupModal, setShowBackupModal] = useState(false);
 
   const [filters, setFilters] = useState({
-    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: ''
+    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: '',
+    model: '', color: '', imei: ''
   });
   const [sortMode, setSortMode] = useState('date'); // 'date' | 'entry'
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
 
   useEffect(() => {
     const q = searchParams.get('search') || '';
@@ -28,18 +32,25 @@ export default function Sales() {
   }, [searchParams]);
 
   useEffect(() => {
+    setPage(1);
+  }, [filters, perPage]);
+
+  useEffect(() => {
     loadInvoices();
     if (hasFullAccess()) {
         api.get('/shops').then(r => setShops(r.data));
     }
-  }, [filters]);
+  }, [filters, page, perPage]);
 
   const loadInvoices = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/sale-invoices', { params: { ...filters, category_group } });
+      const { data } = await api.get('/sale-invoices', {
+        params: { ...filters, category_group, page, per_page: perPage === 'all' ? 1000000 : perPage }
+      });
       // If data.data exists (pagination), use it; otherwise use data
       setInvoices(data.data || data);
+      if (data.meta) setMeta(data.meta);
     } catch (e) {
       toast.error('Failed to load sales');
     } finally {
@@ -167,8 +178,20 @@ export default function Sales() {
                 <label className="small text-muted mb-1 fw-bold">Search Invoice / Customer</label>
                 <input type="text" className="form-control form-control-sm text-uppercase" placeholder="SEARCH..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
             </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">Model</label>
+                <input type="text" className="form-control form-control-sm text-uppercase" placeholder="E.G. VIVO Y11" value={filters.model} onChange={e => setFilters({...filters, model: e.target.value})} />
+            </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">Color</label>
+                <input type="text" className="form-control form-control-sm text-uppercase" placeholder="E.G. BLACK" value={filters.color} onChange={e => setFilters({...filters, color: e.target.value})} />
+            </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">IMEI</label>
+                <input type="text" className="form-control form-control-sm" placeholder="E.G. 3546..." value={filters.imei} onChange={e => setFilters({...filters, imei: e.target.value})} />
+            </div>
             <div className="col-12 col-md-2 d-flex align-items-end">
-                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: ''})}>RESET</button>
+                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: '', model: '', color: '', imei: ''})}>RESET</button>
             </div>
         </div>
 
@@ -190,6 +213,18 @@ export default function Sales() {
           <span className="x-small text-muted ms-1">
             {sortMode === 'entry' ? '— showing most recently added / edited entries first' : '— showing newest sale date first'}
           </span>
+          <div className="ms-auto d-flex align-items-center gap-2">
+            <span className="x-small text-muted fw-bold text-uppercase" style={{ whiteSpace: 'nowrap' }}>Show:</span>
+            <select
+              className="form-select form-select-sm"
+              style={{ width: 'auto', fontSize: '.7rem', fontWeight: 700 }}
+              value={perPage}
+              onChange={e => setPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            >
+              {[25, 50, 100, 200, 500, 1000].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ALL</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -380,6 +415,41 @@ export default function Sales() {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {meta.total > 0 && (
+        <div className="d-flex justify-content-between align-items-center mt-3 px-1 flex-wrap gap-2">
+          <div className="text-muted small text-uppercase fw-bold">
+            Showing <span className="text-dark">{invoices.length}</span> of <span className="text-dark">{meta.total}</span> entries
+            {meta.last_page > 1 && <> — page <span className="text-dark">{meta.current_page}</span> of <span className="text-dark">{meta.last_page}</span></>}
+          </div>
+          {meta.last_page > 1 && (
+            <div className="d-flex align-items-center gap-1">
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === 1} onClick={() => setPage(1)}>First</button>
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Prev</button>
+              {(() => {
+                const pages = [];
+                let start = Math.max(1, page - 2);
+                let end = Math.min(meta.last_page, start + 4);
+                if (end - start + 1 < 5) start = Math.max(1, end - 4);
+                for (let i = start; i <= end; i++) pages.push(i);
+                return pages.map(p => (
+                  <button
+                    key={p}
+                    className={`btn btn-sm rounded-circle d-flex align-items-center justify-content-center fw-bold ${page === p ? 'btn-primary text-white' : 'btn-outline-secondary'}`}
+                    style={{ width: 32, height: 32, fontSize: '.72rem' }}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                ));
+              })()}
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === meta.last_page} onClick={() => setPage(p => Math.min(meta.last_page, p + 1))}>Next</button>
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === meta.last_page} onClick={() => setPage(meta.last_page)}>Last</button>
+            </div>
+          )}
+        </div>
+      )}
 
       <style>{`
           .x-small { font-size: 0.65rem; }
