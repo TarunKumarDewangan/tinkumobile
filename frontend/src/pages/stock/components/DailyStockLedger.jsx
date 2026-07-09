@@ -214,9 +214,11 @@ export default function DailyStockLedger() {
                                               </td>
                                               <td style={{ textTransform: 'none' }}>{s.customer_name}</td>
                                               <td className="text-center fw-bold text-danger">-{s.quantity}</td>
-                                              <td className="text-end text-muted">{fmtRs(s.purchase_price)}</td>
+                                              <td className="text-end text-muted">{parseFloat(s.purchase_price || 0) > 0 ? fmtRs(s.purchase_price) : '—'}</td>
                                               <td className="text-end fw-bold text-success">{fmtRs(s.sale_price)}</td>
-                                              <td className={`text-end fw-bold ${s.profit >= 0 ? 'text-success' : 'text-danger'}`}>{fmtRs(s.profit)}</td>
+                                              <td className={`text-end fw-bold ${s.profit == null ? 'text-muted' : (s.profit >= 0 ? 'text-success' : 'text-danger')}`} title={s.profit == null ? 'Purchase price not recorded for this product' : ''}>
+                                                {s.profit == null ? '—' : fmtRs(s.profit)}
+                                              </td>
                                             </tr>
                                           ))}
                                         </tbody>

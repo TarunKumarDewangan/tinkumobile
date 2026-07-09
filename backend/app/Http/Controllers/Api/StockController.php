@@ -168,7 +168,12 @@ class StockController extends Controller
             // Aggregate purchase value from purchase items
             $purchaseValue = $purchases->sum(fn($i) => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0));
             $saleRevenue   = $sales->sum(fn($i) => $i->quantity * ($i->unit_price ?? 0));
-            $saleCost      = $sales->sum(fn($i) => $i->quantity * ($i->product?->purchase_price ?? 0));
+            // A purchase_price of 0 usually means the cost was never recorded (e.g. a bulk/
+            // legacy opening-stock entry), not that the unit genuinely cost nothing. Treating
+            // that as a real ₹0 cost would make the sale look like 100% profit, so those items
+            // are excluded from cost/profit entirely rather than assumed free.
+            $saleCost      = $sales->sum(fn($i) => ($i->product?->purchase_price ?? 0) > 0 ? $i->quantity * $i->product->purchase_price : 0);
+            $profitableRevenue = $sales->sum(fn($i) => ($i->product?->purchase_price ?? 0) > 0 ? $i->quantity * ($i->unit_price ?? 0) : 0);
 
             $days[] = [
                 'date'           => $dateStr,
@@ -179,7 +184,7 @@ class StockController extends Controller
                 'purchase_value' => round($purchaseValue, 2),
                 'sale_revenue'   => round($saleRevenue, 2),
                 'sale_cost'      => round($saleCost, 2),
-                'profit'         => round($saleRevenue - $saleCost, 2),
+                'profit'         => round($profitableRevenue - $saleCost, 2),
                 'purchases'      => $purchases->map(fn($i) => [
                     'product_name'   => $i->product?->name,
                     'quantity'       => $i->quantity,
@@ -187,15 +192,18 @@ class StockController extends Controller
                     'total_value'    => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0),
                     'invoice_no'     => $i->invoice?->invoice_no,
                 ])->values(),
-                'sales' => $sales->map(fn($i) => [
-                    'product_name'   => $i->product?->name,
-                    'quantity'       => $i->quantity,
-                    'sale_price'     => $i->unit_price,
-                    'purchase_price' => $i->product?->purchase_price,
-                    'profit'         => $i->quantity * (($i->unit_price ?? 0) - ($i->product?->purchase_price ?? 0)),
-                    'customer_name'  => $i->invoice?->customer?->name ?? 'Walk-in',
-                    'invoice_no'     => $i->invoice?->invoice_no,
-                ])->values(),
+                'sales' => $sales->map(function($i) {
+                    $purchasePrice = $i->product?->purchase_price ?? 0;
+                    return [
+                        'product_name'   => $i->product?->name,
+                        'quantity'       => $i->quantity,
+                        'sale_price'     => $i->unit_price,
+                        'purchase_price' => $i->product?->purchase_price,
+                        'profit'         => $purchasePrice > 0 ? $i->quantity * (($i->unit_price ?? 0) - $purchasePrice) : null,
+                        'customer_name'  => $i->invoice?->customer?->name ?? 'Walk-in',
+                        'invoice_no'     => $i->invoice?->invoice_no,
+                    ];
+                })->values(),
                 'adjustments' => $adjustments->map(fn($a) => [
                     'product_name' => $a->product?->name,
                     'quantity'     => $a->quantity,
