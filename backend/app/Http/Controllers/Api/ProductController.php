@@ -198,7 +198,15 @@ class ProductController extends Controller
                 // and drop that many IMEIs from the picker list to keep both in sync. Only
                 // applies to the merged (grouped) view — the ungrouped view already reflects
                 // real per-batch data as-is.
-                if ($isGrouped) {
+                //
+                // $soldCounts is built from ALL sales system-wide (not scoped to the current
+                // model/color/ram/storage/imei/search filters), so it's only a valid correction
+                // against the FULL, unfiltered stock total for a group. Applying it while a
+                // narrow filter is active would deduct unrelated sales from a tiny filtered
+                // result and could zero out a unit that's genuinely still in stock — so skip
+                // it entirely whenever the request is searching for something specific.
+                $hasNarrowFilter = $request->color || $request->ram || $request->storage || $request->imei || $request->model || $request->search;
+                if ($isGrouped && !$hasNarrowFilter) {
                     foreach ($soldCounts as $key => $leftover) {
                         if ($leftover <= 0 || !isset($grouped[$key])) continue;
                         $deduct = min($leftover, $grouped[$key]['current_stock']);
