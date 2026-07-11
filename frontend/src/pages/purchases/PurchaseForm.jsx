@@ -144,10 +144,14 @@ export default function PurchaseForm() {
           const gst = parseFloat(i.calc_gst_rate ?? 18) || 0;
           const tDisc = parseFloat(i.trade_disc_pct ?? 3.85) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? 2) || 0;
-          const pAttrs = i.product?.attributes || {};
+          // apply_gst governs whether THIS line item is included in the invoice's GST-taxable
+          // base (see InvoiceService::calculateTotals()). It must default to the invoice's own
+          // GST setting when not yet explicitly recorded — gating on whether the product record
+          // happens to have a gst_rate attribute was wrong and silently zeroed out GST on any
+          // GST-applicable purchase whose product was never given that attribute.
           const applyGst = i.apply_gst !== null
             ? !!i.apply_gst
-            : (!!pAttrs.gst_rate && (p.calculate_gst ?? true));
+            : (p.calculate_gst ?? true);
 
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
@@ -498,9 +502,13 @@ export default function PurchaseForm() {
   };
 
   const total      = items.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)), 0);
-  
-  let rawCgstAmount = form.calculate_gst ? (total * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
-  let rawSgstAmount = form.calculate_gst ? (total * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+  // Mirrors InvoiceService::calculateTotals() on the backend: an item explicitly marked
+  // apply_gst=false is excluded from the GST-taxable base, so the preview shown here matches
+  // what actually gets saved instead of always taxing the full total.
+  const gstTaxableTotal = items.reduce((s, i) => s + (i.apply_gst !== false ? (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)) : 0), 0);
+
+  let rawCgstAmount = form.calculate_gst ? (gstTaxableTotal * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
+  let rawSgstAmount = form.calculate_gst ? (gstTaxableTotal * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
 
   if (form.gst_rounding_mode === '2pt') {
     rawCgstAmount = parseFloat(rawCgstAmount.toFixed(2));
