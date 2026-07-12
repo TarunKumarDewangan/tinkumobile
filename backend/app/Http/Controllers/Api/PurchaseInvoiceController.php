@@ -699,6 +699,11 @@ class PurchaseInvoiceController extends Controller
                 $tx->delete();
             }
 
+            // PurchaseInvoice uses SoftDeletes — a soft delete never fires the DB's
+            // ON DELETE CASCADE, so purchase_items (which has no soft-delete of its
+            // own) would otherwise be left dangling forever, still referencing their
+            // product via a real foreign key (the same bug already fixed for sales).
+            $purchaseInvoice->items()->delete();
             $purchaseInvoice->delete();
             // Audit log
             ActivityLog::log('PURCHASE_DELETED', $user, "Purchase #{$purchaseInvoice->invoice_no} deleted");

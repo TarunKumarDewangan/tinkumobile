@@ -25,6 +25,7 @@ export default function TrashManager() {
     { value: 'sale_invoice', label: 'Sale Invoices' },
     { value: 'user', label: 'Users' },
     { value: 'transaction', label: 'Cashbook' },
+    { value: 'entity', label: 'Entities' },
   ];
 
   useEffect(() => {
@@ -51,13 +52,29 @@ export default function TrashManager() {
 
   const handleRestore = async (id) => {
     if (!await pinGate.confirm()) return;
-    
+
     try {
       await axios.post('/trash/restore', { type, id });
       toast.success('Item restored successfully');
       fetchDeletedItems();
     } catch (error) {
       toast.error('Failed to restore item');
+    }
+  };
+
+  const handleForceDelete = async (item) => {
+    const label = item.name || item.invoice_no || `ID ${item.id}`;
+    if (!window.confirm(`Permanently erase "${label}"?\n\nThis cannot be undone — it will be completely removed from the database, not just hidden. Only do this for records stuck blocking something (like a reused IMEI or phone number).`)) {
+      return;
+    }
+    if (!await pinGate.confirm()) return;
+
+    try {
+      await axios.post('/trash/force-delete', { type, id: item.id });
+      toast.success('Item permanently erased');
+      fetchDeletedItems();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to permanently erase item');
     }
   };
 
@@ -76,7 +93,7 @@ export default function TrashManager() {
           <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate(-1)}>← Back</button>
           <div>
               <h2 className="h4 mb-0 text-uppercase fw-bold text-danger">Trash Management</h2>
-              <p className="text-muted small mb-0">Recover soft-deleted records from the system</p>
+              <p className="text-muted small mb-0">Recover soft-deleted records, or permanently erase ones stuck blocking something (e.g. a reused IMEI or phone number)</p>
           </div>
         </div>
       </div>
@@ -134,9 +151,18 @@ export default function TrashManager() {
                     ID: {item.id}
                   </td>
                   <td className="text-end pe-4">
-                    <button className="btn btn-sm btn-success text-uppercase fw-bold x-small" onClick={() => handleRestore(item.id)}>
-                      RESTORE
-                    </button>
+                    <div className="d-flex justify-content-end gap-2">
+                      <button className="btn btn-sm btn-success text-uppercase fw-bold x-small" onClick={() => handleRestore(item.id)}>
+                        RESTORE
+                      </button>
+                      <button
+                        className="btn btn-sm btn-outline-danger text-uppercase fw-bold x-small"
+                        title="Permanently remove from the database — use only if this record is stuck blocking something"
+                        onClick={() => handleForceDelete(item)}
+                      >
+                        ERASE PERMANENTLY
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

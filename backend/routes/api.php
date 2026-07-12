@@ -142,6 +142,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Trash Management
     Route::get('/trash', [TrashController::class, 'index']);
     Route::post('/trash/restore', [TrashController::class, 'restore']);
+    Route::post('/trash/force-delete', [TrashController::class, 'forceDelete']);
 
     // Loans
     Route::get('/loans', [LoanController::class, 'index']);
