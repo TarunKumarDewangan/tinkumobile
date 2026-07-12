@@ -832,12 +832,31 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        // A Shop Finance (Personal EMI / Favor) plan with real payments already recorded
+        // shouldn't just vanish along with the sale — that would silently destroy a paper
+        // trail of money actually collected. Block the delete and point at Finance Plans
+        // instead, same as the existing edit-time guard.
+        $financePlan = $saleInvoice->financePlan;
+        if ($financePlan && ((float) $financePlan->total_paid > 0 || $financePlan->payments()->exists())) {
+            return response()->json([
+                'message' => 'This sale has a Shop Finance plan with payments already recorded against it. Settle or remove the finance plan first from Finance > Finance Plans before deleting this sale.',
+            ], 422);
+        }
+
         DB::beginTransaction();
         try {
             if (!$saleInvoice->is_cancelled) {
                 foreach ($saleInvoice->items as $item) {
                     Inventory::addStock($saleInvoice->shop_id, $item->product_id, $item->quantity);
                 }
+            }
+            // Deleting the invoice is a real SQL DELETE for financePlan's sake, but
+            // SaleInvoice itself uses SoftDeletes — a soft delete never fires the DB's
+            // ON DELETE CASCADE, so an orphaned finance plan would otherwise be left
+            // behind, still showing up in the Finance Tracker forever.
+            if ($financePlan) {
+                $financePlan->payments()->delete();
+                $financePlan->delete();
             }
             $saleInvoice->delete();
 
