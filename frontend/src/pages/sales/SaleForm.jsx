@@ -132,6 +132,7 @@ export default function SaleForm() {
     name: '',
     type: 'CUSTOMER',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -313,6 +314,24 @@ export default function SaleForm() {
       });
       if (data.finance_amount > 0) {
         setUseFinance(true);
+      }
+      if (data.finance_plan) {
+        const fp = data.finance_plan;
+        setUseShopFinance(true);
+        setShopFinanceType(fp.type || 'PERSONAL');
+        setShopFinance({
+          down_payment: fp.down_payment || 0,
+          principal: fp.principal || 0,
+          interest_rate: fp.interest_rate || 0,
+          interest_type: fp.interest_type || 'FLAT',
+          total_payable: fp.total_payable || 0,
+          tenure_months: fp.tenure_months || 12,
+          // emi_start_date comes back as a full ISO timestamp (the model casts it
+          // to a Carbon 'date', but JSON serialization still includes the time
+          // portion) — a plain <input type="date"> needs exactly YYYY-MM-DD or it
+          // silently renders blank.
+          emi_start_date: fp.emi_start_date ? fp.emi_start_date.slice(0, 10) : '',
+        });
       }
       if (data.rounding_mode === 'manual') setIsManualRound(true);
       if (data.is_gst_manual) setIsManualGst(true);
@@ -798,7 +817,7 @@ export default function SaleForm() {
           phone: data.phone || '',
           email: data.email || '',
           gst_no: data.gst_number || '',
-          address: data.description || '',
+          address: data.address || '',
           category: data.type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR',
           voucher_code: data.voucher_code || '',
           events: data.events || []
@@ -814,6 +833,7 @@ export default function SaleForm() {
         name: '',
         type: 'CUSTOMER',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -1931,17 +1951,27 @@ export default function SaleForm() {
               )}
               <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newEntity.phone}
                   onChange={e => setNewEntity({...newEntity, phone: e.target.value})}
                 />
               </div>
               <div className="col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newEntity.address}
+                  onChange={e => setNewEntity({...newEntity, address: e.target.value})}
+                />
+              </div>
+              <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control text-uppercase"
                   placeholder="Optional"
                   value={newEntity.gst_number}

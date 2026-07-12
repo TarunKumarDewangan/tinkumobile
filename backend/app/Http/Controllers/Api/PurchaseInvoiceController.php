@@ -116,6 +116,8 @@ class PurchaseInvoiceController extends Controller
             'cgst_amount'        => 'nullable|numeric',
             'sgst_amount'        => 'nullable|numeric',
             'is_gst_manual'      => 'nullable|boolean',
+            'payment_method'     => 'nullable|string|max:50',
+            'gst_rounding_mode'  => 'nullable|in:exact,2pt,down,up',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
@@ -164,6 +166,8 @@ class PurchaseInvoiceController extends Controller
                 'received_at'   => $data['status'] === 'received' ? ($data['received_at'] ?? now()) : null,
                 'total_paid'    => $data['total_paid'] ?? 0,
                 'notes'         => $data['notes'] ?? null,
+                'payment_method'    => $data['payment_method'] ?? 'CASH',
+                'gst_rounding_mode' => $data['gst_rounding_mode'] ?? '2pt',
             ]));
 
             $invoice->updatePaymentStatus();
@@ -329,6 +333,8 @@ class PurchaseInvoiceController extends Controller
             'cgst_amount'        => 'nullable|numeric',
             'sgst_amount'        => 'nullable|numeric',
             'is_gst_manual'      => 'nullable|boolean',
+            'payment_method'     => 'nullable|string|max:50',
+            'gst_rounding_mode'  => 'nullable|in:exact,2pt,down,up',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
@@ -392,6 +398,8 @@ class PurchaseInvoiceController extends Controller
                 'received_at'   => $data['status'] === 'received' ? ($data['received_at'] ?? $purchaseInvoice->received_at ?? now()) : null,
                 'total_paid'    => $data['total_paid'] ?? $purchaseInvoice->total_paid,
                 'notes'         => $data['notes'] ?? null,
+                'payment_method'    => $data['payment_method'] ?? $purchaseInvoice->payment_method,
+                'gst_rounding_mode' => $data['gst_rounding_mode'] ?? $purchaseInvoice->gst_rounding_mode,
             ]));
             $purchaseInvoice->updatePaymentStatus();
 
