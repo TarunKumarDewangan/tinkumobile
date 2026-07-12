@@ -451,7 +451,21 @@ class AirtelRetailerController extends Controller
 
         $retailer = Retailer::findOrFail($id);
         $name = $retailer->name;
-        $retailer->delete();
+
+        // A soft delete leaves retailers.msisdn permanently blocked from reuse. If this
+        // retailer genuinely has no drop/recovery history, hard-delete it outright so its
+        // MSISDN can be reused later. airtel_drops/airtel_recoveries cascade on delete, so
+        // we must never hard-delete a retailer that has real history behind it — fall back
+        // to the normal, safe soft delete in that case.
+        $hasHistory = AirtelDrop::where('retailer_id', $retailer->id)->exists()
+            || AirtelRecovery::where('retailer_id', $retailer->id)->exists();
+
+        if (!$hasHistory) {
+            $retailer->forceDelete();
+        } else {
+            $retailer->delete();
+        }
+
         ActivityLog::log('DELETE_RETAILER', null, 'Deleted retailer: ' . $name);
         return response()->json(null, 204);
     }

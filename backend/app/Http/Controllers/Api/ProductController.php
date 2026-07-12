@@ -349,6 +349,26 @@ class ProductController extends Controller
         }
 
         ActivityLog::log('PRODUCT_DELETED', $product, "Product deleted: {$product->name} (SKU: {$product->sku}) ₹{$product->selling_price}");
+
+        // A soft delete leaves products.sku/imei permanently blocked from reuse (MySQL's
+        // UNIQUE index doesn't exempt soft-deleted rows). If this product genuinely has
+        // no purchase/sale history at all, hard-delete it outright so its SKU/IMEI can be
+        // reused later — otherwise fall back to the normal, safe soft delete that
+        // preserves history for products with real invoices behind them. purchase_items
+        // and sale_items have no cascade/null-on-delete on product_id, so a product still
+        // referenced there will simply fail to hard-delete and we fall through safely.
+        $hasHistory = \App\Models\PurchaseItem::where('product_id', $product->id)->exists()
+            || \App\Models\SaleItem::where('product_id', $product->id)->exists();
+
+        if (!$hasHistory) {
+            try {
+                $product->forceDelete();
+                return response()->json(['message' => 'Product deleted']);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // fall through to the normal soft delete below
+            }
+        }
+
         $product->delete();
         return response()->json(['message' => 'Product deleted']);
     }

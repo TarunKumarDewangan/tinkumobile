@@ -222,8 +222,36 @@ class EntityController extends Controller
         }
 
         return DB::transaction(function() use ($entity) {
-            if ($entity->relation) {
-                $entity->relation->delete();
+            $relation = $entity->relation;
+
+            // entities.name is unique, so a soft delete here permanently blocks that name
+            // from ever being reused. Customer/Supplier hard deletes are already guarded
+            // by real (non-cascading) FK constraints on sale/purchase invoices, so try a
+            // genuine hard delete first and only fall back to the safe soft delete if the
+            // relation still has real history. Shops are never force-deleted here — many
+            // tables (products, retailers, employees, tasks...) cascade on shop_id.
+            if (!$relation || !($relation instanceof \App\Models\Shop)) {
+                try {
+                    if ($relation) {
+                        $relation->forceDelete();
+                    }
+                    $entity->forceDelete();
+                    return response()->json(['message' => 'Entity deleted']);
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Still referenced somewhere real — fall through to soft delete. Must
+                    // re-fetch a fresh instance: forceDelete() only resets its internal
+                    // "forceDeleting" flag on success, so a failed attempt leaves it stuck
+                    // true on $relation, which would silently turn the fallback ->delete()
+                    // below into another real hard delete that fails the same way.
+                    if ($relation) {
+                        $relation = $relation->fresh();
+                    }
+                    $entity = $entity->fresh();
+                }
+            }
+
+            if ($relation) {
+                $relation->delete();
             }
             $entity->delete();
             return response()->json(['message' => 'Entity deleted']);
@@ -257,16 +285,43 @@ class EntityController extends Controller
             // 2. Remove cached balance row
             DB::table('entity_balances')->where('entity_id', $id)->delete();
 
-            // Delete the related morph model if it exists
-            if ($entity->relation) {
-                $entity->relation->delete();
+            // 3. Delete the related morph model and the entity itself. This method
+            // promises a *permanent* purge, so actually hard-delete both (not just soft
+            // delete) — Customer/Supplier hard deletes are safely guarded by real FK
+            // constraints on sale/purchase invoices. Shops are never force-deleted: many
+            // tables cascade on shop_id, so a Shop relation still just gets soft-deleted.
+            // Both must land in the SAME state (both erased or both merely soft-deleted)
+            // — otherwise the entity could vanish while its customer/supplier record is
+            // left behind soft-deleted with a now-dangling relation, or vice versa.
+            $relation = $entity->relation;
+            $fullyErased = false;
+
+            if (!$relation || !($relation instanceof \App\Models\Shop)) {
+                try {
+                    if ($relation) {
+                        $relation->forceDelete();
+                    }
+                    $entity->forceDelete();
+                    $fullyErased = true;
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Still referenced somewhere real — fall through to soft delete below.
+                    // forceDelete() only clears its internal "forceDeleting" flag on
+                    // success, so re-fetch fresh instances or the fallback ->delete() would
+                    // silently attempt another real hard delete and fail the same way.
+                }
             }
 
-            // 3. Delete the entity itself
-            $entity->delete();
+            if (!$fullyErased) {
+                if ($relation) {
+                    $relation->fresh()?->delete();
+                }
+                $entity->fresh()->delete();
+            }
 
             return response()->json([
-                'message' => "\"$name\" and all its transaction history have been permanently deleted."
+                'message' => $fullyErased
+                    ? "\"$name\" and all its transaction history have been permanently deleted."
+                    : "\"$name\"'s transaction history was permanently deleted, but the record itself is still referenced elsewhere — it was moved to Trash instead of being fully erased."
             ]);
         });
     }
