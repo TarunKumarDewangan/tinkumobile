@@ -170,6 +170,7 @@ export default function OldMobileSales() {
                   <th className="py-3 text-muted text-end">Grand Total</th>
                   <th className="py-3 text-muted text-end text-success">Paid (Cash/UPI)</th>
                   <th className="py-3 text-muted text-end text-info">Credit Applied</th>
+                  <th className="py-3 text-muted text-end">Balance</th>
                   <th className="py-3 text-muted text-center">Status</th>
                   <th className="py-3 px-4 text-muted text-end">Actions</th>
                 </tr>
@@ -178,6 +179,7 @@ export default function OldMobileSales() {
                 {oldMobileInvoices.map(inv => {
                   const appliedCredit = parseFloat(inv.exchange_paid || 0);
                   const cashPaid = parseFloat(inv.total_paid || 0) - appliedCredit;
+                  const balance = Math.max(0, parseFloat(inv.grand_total || 0) - parseFloat(inv.total_paid || 0));
                   return (
                     <tr key={inv.id} className={`border-bottom-dark ${inv.is_cancelled ? 'opacity-50 text-decoration-line-through' : ''}`}>
                       <td className="py-3 px-4">
@@ -210,6 +212,9 @@ export default function OldMobileSales() {
                       <td className="py-3 text-end fw-bold text-info">
                         {appliedCredit > 0 ? `₹${appliedCredit.toLocaleString('en-IN')}` : '—'}
                       </td>
+                      <td className={`py-3 text-end fw-bold ${balance > 0 ? 'text-danger' : 'text-muted'}`}>
+                        {balance > 0 ? `₹${balance.toLocaleString('en-IN')}` : '—'}
+                      </td>
                       <td className="py-3 text-center">
                         {inv.is_cancelled ? (
                           <span className="badge bg-secondary">CANCELLED</span>
@@ -234,7 +239,7 @@ export default function OldMobileSales() {
                 })}
                 {oldMobileInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-5 text-muted">
+                    <td colSpan={10} className="text-center py-5 text-muted">
                       <div className="fs-1 mb-2">🧾</div>
                       No used mobile sales invoices found.
                     </td>
