@@ -852,12 +852,18 @@ class SaleInvoiceController extends Controller
             }
             // Deleting the invoice is a real SQL DELETE for financePlan's sake, but
             // SaleInvoice itself uses SoftDeletes — a soft delete never fires the DB's
-            // ON DELETE CASCADE, so an orphaned finance plan would otherwise be left
-            // behind, still showing up in the Finance Tracker forever.
+            // ON DELETE CASCADE, so an orphaned finance plan (and sale_items/gift_items,
+            // which have no soft-delete of their own) would otherwise be left behind
+            // forever — still referencing their product via a real foreign key, which
+            // can later block that product from being deleted elsewhere (e.g. an old
+            // mobile's auto-created product can never be hard-deleted while a stale
+            // sale_item row still points at it).
             if ($financePlan) {
                 $financePlan->payments()->delete();
                 $financePlan->delete();
             }
+            $saleInvoice->giftItems()->delete();
+            $saleInvoice->items()->delete();
             $saleInvoice->delete();
 
             // Delete associated transactions in a loop so Eloquent events fire

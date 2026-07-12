@@ -295,10 +295,14 @@ class OldMobileController extends Controller
             $tx->delete();
         }
 
-        // Revert stock and delete associated product
+        // Revert stock and delete associated product. This must be a hard delete, not
+        // Product's default soft delete — products.imei has a UNIQUE index, and MySQL
+        // doesn't exempt soft-deleted rows from it, so a soft-deleted product's IMEI
+        // would permanently block re-purchasing that same physical phone later (the
+        // guard above already confirmed it was never sold, so nothing references it).
         if ($oldMobilePurchase->product_id) {
             \App\Models\Inventory::removeStock($oldMobilePurchase->shop_id, $oldMobilePurchase->product_id, 1);
-            \App\Models\Product::where('id', $oldMobilePurchase->product_id)->delete();
+            \App\Models\Product::withTrashed()->where('id', $oldMobilePurchase->product_id)->forceDelete();
         }
 
         ActivityLog::log('OLD_MOBILE_DELETED', $oldMobilePurchase,
