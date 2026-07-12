@@ -86,6 +86,7 @@ export default function PurchaseForm() {
     name: '',
     type: '',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -235,6 +236,7 @@ export default function PurchaseForm() {
         name: '',
         type: '',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -1295,11 +1297,21 @@ export default function PurchaseForm() {
               )}
               <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newSupplier.phone}
                   onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})}
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newSupplier.address}
+                  onChange={e => setNewSupplier({...newSupplier, address: e.target.value})}
                 />
               </div>
               <div className="col-md-6">

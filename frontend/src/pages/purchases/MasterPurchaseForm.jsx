@@ -88,6 +88,7 @@ export default function MasterPurchaseForm() {
     name: '',
     type: '',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -263,6 +264,7 @@ export default function MasterPurchaseForm() {
         name: '',
         type: '',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -1795,8 +1797,8 @@ export default function MasterPurchaseForm() {
                 <input type="text" className="pf-inp" placeholder="15-digit GSTIN" value={newSupplier.gst_number} onChange={e=>setNewSupplier({...newSupplier,gst_number:e.target.value.toUpperCase()})}/>
               </div>
               <div className="col-12">
-                <span className="pf-lbl">Distributor Address / Description</span>
-                <textarea className="pf-inp" rows="2" style={{resize:'none'}} placeholder="Physical address, terms, email..." value={newSupplier.description} onChange={e=>setNewSupplier({...newSupplier,description:e.target.value.toUpperCase()})}/>
+                <span className="pf-lbl">Distributor Address</span>
+                <textarea className="pf-inp" rows="2" style={{resize:'none'}} placeholder="Physical address, terms, email..." value={newSupplier.address} onChange={e=>setNewSupplier({...newSupplier,address:e.target.value.toUpperCase()})}/>
               </div>
               <div className="col-6">
                 <span className="pf-lbl">Opening Balance (₹)</span>

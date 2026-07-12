@@ -16,6 +16,7 @@ export default function EntityManager() {
     name: '',
     type: '',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -90,6 +91,7 @@ export default function EntityManager() {
           name: data.name,
           type: data.type,
           phone: data.phone || '',
+          address: data.address || '',
           email: data.email || '',
           gst_number: data.gst_number || '',
           opening_balance: data.opening_balance || 0,
@@ -107,6 +109,7 @@ export default function EntityManager() {
         name: '',
         type: '',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -287,16 +290,26 @@ export default function EntityManager() {
                     )}
                     <div className="col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         className="form-control"
                         value={formData.phone}
                         onChange={e => setFormData({...formData, phone: e.target.value})}
                       />
                     </div>
                     <div className="col-md-6">
+                      <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Address"
+                        value={formData.address}
+                        onChange={e => setFormData({...formData, address: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                      <input 
+                      <input
                         type="text" 
                         className="form-control"
                         placeholder="Optional"

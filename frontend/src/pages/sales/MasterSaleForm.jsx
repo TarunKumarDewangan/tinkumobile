@@ -111,6 +111,7 @@ export default function MasterSaleForm() {
     name: '',
     type: 'CUSTOMER',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -703,7 +704,7 @@ export default function MasterSaleForm() {
           phone: data.phone || '',
           email: data.email || '',
           gst_no: data.gst_number || '',
-          address: data.description || '',
+          address: data.address || '',
           category: data.type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR',
           voucher_code: data.voucher_code || '',
           events: data.events || []
@@ -719,6 +720,7 @@ export default function MasterSaleForm() {
         name: '',
         type: 'CUSTOMER',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -1624,17 +1626,27 @@ export default function MasterSaleForm() {
               )}
               <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newEntity.phone}
                   onChange={e => setNewEntity({...newEntity, phone: e.target.value})}
                 />
               </div>
               <div className="col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newEntity.address}
+                  onChange={e => setNewEntity({...newEntity, address: e.target.value})}
+                />
+              </div>
+              <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control text-uppercase"
                   placeholder="Optional"
                   value={newEntity.gst_number}

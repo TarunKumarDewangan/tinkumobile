@@ -43,6 +43,7 @@ export default function Recharge() {
     name: '',
     type: 'DISTRIBUTOR',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -123,6 +124,7 @@ export default function Recharge() {
         name: '',
         type: 'DISTRIBUTOR',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -752,17 +754,27 @@ export default function Recharge() {
               )}
               <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newEntity.phone}
                   onChange={e => setNewEntity({...newEntity, phone: e.target.value})}
                 />
               </div>
               <div className="col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newEntity.address}
+                  onChange={e => setNewEntity({...newEntity, address: e.target.value})}
+                />
+              </div>
+              <div className="col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control text-uppercase"
                   placeholder="Optional"
                   value={newEntity.gst_number}
