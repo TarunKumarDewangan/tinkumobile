@@ -69,6 +69,7 @@ const NAV = [
         { to: '/admin/role-permissions',  icon: '🔑', label: 'Role Permissions',  perm: 'manage_users' },
         { to: '/admin/security-settings', icon: '🔐', label: 'Security / PIN',   perm: 'manage_users' },
         { to: '/admin/activity-logs',     icon: '📋', label: 'Activity Logs',    perm: 'manage_users' },
+        { to: '/admin/trash',             icon: '🗑️', label: 'Trash Manager',    perm: 'manage_users' },
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
         { to: '/send-offers', icon: '✉️', label: 'Send Offers', perm: 'manage_offers' },
