@@ -63,6 +63,7 @@ class EntityController extends Controller
             'name' => 'required|string|unique:entities,name',
             'type' => 'required|string',
             'phone' => 'nullable|string',
+            'address' => 'nullable|string|max:255',
             'email' => 'nullable|string',
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
@@ -89,7 +90,7 @@ class EntityController extends Controller
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
                     'email' => $data['email'],
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'category' => 'REGULAR',
                     'gst_no' => $data['gst_number'] ?? null,
                     'voucher_code' => $data['voucher_code'] ?? null
@@ -99,7 +100,7 @@ class EntityController extends Controller
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
                     'email' => $data['email'],
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'category' => 'SHOP',
                     'gst_no' => $data['gst_number'] ?? null,
                     'voucher_code' => $data['voucher_code'] ?? null
@@ -108,14 +109,14 @@ class EntityController extends Controller
                 $model = \App\Models\Supplier::create([
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'gst_no' => $data['gst_number'],
                 ]);
             } elseif ($data['type'] === 'SHOP') {
                 $model = \App\Models\Shop::create([
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'email' => $data['email'],
                     'gstin' => $data['gst_number'],
                 ]);
@@ -151,6 +152,7 @@ class EntityController extends Controller
             'name' => 'required|string|unique:entities,name,' . $entity->id,
             'type' => 'required|string',
             'phone' => 'nullable|string',
+            'address' => 'nullable|string|max:255',
             'email' => 'nullable|string',
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
@@ -183,7 +185,7 @@ class EntityController extends Controller
                 if ($relation instanceof \App\Models\Customer) {
                     $relationData['category'] = in_array($data['type'], ['SHOP_CUSTOMER']) ? 'SHOP' : 'REGULAR';
                     $relationData['email'] = $entity->email;
-                    $relationData['address'] = $entity->description;
+                    $relationData['address'] = $entity->address;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relationData['voucher_code'] = $data['voucher_code'] ?? null;
 
@@ -198,11 +200,11 @@ class EntityController extends Controller
                         }
                     }
                 } elseif ($relation instanceof \App\Models\Supplier) {
-                    $relationData['address'] = $entity->description;
+                    $relationData['address'] = $entity->address;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relation->fill($relationData)->saveQuietly();
                 } elseif ($relation instanceof \App\Models\Shop) {
-                    $relationData['address'] = $entity->description;
+                    $relationData['address'] = $entity->address;
                     $relationData['email'] = $entity->email;
                     $relationData['gstin'] = $entity->gst_number;
                     $relation->fill($relationData)->saveQuietly();
