@@ -8,7 +8,8 @@ export default function WhatsAppConfig() {
         WAPP_API_KEY: '',
         OWNER_MOBILE: '',
         TELEGRAM_BOT_TOKEN: '',
-        TELEGRAM_CHAT_ID: ''
+        TELEGRAM_CHAT_ID: '',
+        TELEGRAM_CHANNEL_ID: ''
     });
     const [loading, setLoading] = useState(false);
     const [testLoading, setTestLoading] = useState(false);
@@ -29,7 +30,8 @@ export default function WhatsAppConfig() {
                 WAPP_API_KEY: data.WAPP_API_KEY || '',
                 OWNER_MOBILE: data.OWNER_MOBILE || '',
                 TELEGRAM_BOT_TOKEN: data.TELEGRAM_BOT_TOKEN || '',
-                TELEGRAM_CHAT_ID: data.TELEGRAM_CHAT_ID || ''
+                TELEGRAM_CHAT_ID: data.TELEGRAM_CHAT_ID || '',
+                TELEGRAM_CHANNEL_ID: data.TELEGRAM_CHANNEL_ID || ''
             });
         } catch (error) {
             toast.error('Failed to load settings');
@@ -77,7 +79,8 @@ export default function WhatsAppConfig() {
         try {
             await api.post('/settings', {
                 TELEGRAM_BOT_TOKEN: settings.TELEGRAM_BOT_TOKEN,
-                TELEGRAM_CHAT_ID: settings.TELEGRAM_CHAT_ID
+                TELEGRAM_CHAT_ID: settings.TELEGRAM_CHAT_ID,
+                TELEGRAM_CHANNEL_ID: settings.TELEGRAM_CHANNEL_ID
             });
             toast.success('Telegram configuration saved successfully!');
         } catch (error) {
@@ -88,8 +91,8 @@ export default function WhatsAppConfig() {
     };
 
     const handleSendTelegramTest = async () => {
-        if (!settings.TELEGRAM_BOT_TOKEN || !settings.TELEGRAM_CHAT_ID) {
-            toast.warning('Please enter Bot Token and Chat ID first');
+        if (!settings.TELEGRAM_BOT_TOKEN || (!settings.TELEGRAM_CHAT_ID && !settings.TELEGRAM_CHANNEL_ID)) {
+            toast.warning('Please enter Bot Token and at least a Chat ID or Channel ID first');
             return;
         }
         setTelegramTestLoading(true);
@@ -211,17 +214,28 @@ export default function WhatsAppConfig() {
                                     <div className="form-text">From @BotFather when you created your bot.</div>
                                 </div>
 
-                                <div className="mb-4">
-                                    <label className="form-label fw-bold small text-uppercase">Chat ID</label>
+                                <div className="mb-3">
+                                    <label className="form-label fw-bold small text-uppercase">Chat ID (Personal)</label>
                                     <input
                                         type="text"
                                         className="form-control font-monospace"
                                         placeholder="e.g. 7570378032"
                                         value={settings.TELEGRAM_CHAT_ID}
                                         onChange={e => setSettings({...settings, TELEGRAM_CHAT_ID: e.target.value})}
-                                        required
                                     />
                                     <div className="form-text">Message your bot once, then use its getUpdates API to find this.</div>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="form-label fw-bold small text-uppercase">Channel ID <span className="text-muted fw-normal">(optional — broadcast to a channel too)</span></label>
+                                    <input
+                                        type="text"
+                                        className="form-control font-monospace"
+                                        placeholder="e.g. @tinkumobile_updates or -1001234567890"
+                                        value={settings.TELEGRAM_CHANNEL_ID}
+                                        onChange={e => setSettings({...settings, TELEGRAM_CHANNEL_ID: e.target.value})}
+                                    />
+                                    <div className="form-text">Add the bot as an Administrator of the channel first, with "Post Messages" permission.</div>
                                 </div>
 
                                 <div className="d-grid gap-2">
