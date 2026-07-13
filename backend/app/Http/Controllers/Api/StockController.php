@@ -73,6 +73,110 @@ class StockController extends Controller
     }
 
     /**
+     * Closing stock breakdown as of a given date (inclusive) — company/model/config/color/IMEI,
+     * grouped the same way as the Model Wise Stock view. Uses the exact same quantity math as
+     * dailyLedger()'s running closing_stock total (just <= date, per-product, instead of a
+     * single aggregate) so the grand total here always matches the ledger's Closing badge.
+     */
+    public function closingStockDetail(Request $request)
+    {
+        $user   = $request->user();
+        $shopId = $user->hasFullAccess() ? ($request->shop_id ?: null) : $user->shop_id;
+        $date   = Carbon::parse($request->date ?? now())->toDateString();
+
+        $newCatId = Category::mobileNewId();
+        $oldCatId = Category::mobileOldId();
+        $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
+
+        $purchasesIn = PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('purchase_date', '<=', $date);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $adjAdd = StockAdjustment::where('type', 'add')->where('adjustment_date', '<=', $date)
+            ->where('reason', '!=', 'opening_stock')
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $adjRemove = StockAdjustment::where('type', 'remove')->where('adjustment_date', '<=', $date)
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $salesOut = SaleItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('sale_date', '<=', $date)->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $productIds = collect()
+            ->merge($purchasesIn->keys())->merge($adjAdd->keys())
+            ->merge($adjRemove->keys())->merge($salesOut->keys())
+            ->unique()->values();
+
+        $products = Product::with('brand:id,name', 'category:id,name')->whereIn('id', $productIds)->get()->keyBy('id');
+
+        // Group the same way ModelWiseStock.jsx does client-side: brand + model + ram + storage + color.
+        $groups = [];
+        $grandTotal = 0;
+
+        foreach ($productIds as $pid) {
+            $product = $products[$pid] ?? null;
+            if (!$product) continue;
+
+            $stock = ($purchasesIn[$pid] ?? 0) + ($adjAdd[$pid] ?? 0) - ($adjRemove[$pid] ?? 0) - ($salesOut[$pid] ?? 0);
+
+            // Old Mobile purchases add stock straight via Inventory::addStock(), bypassing
+            // PurchaseItem/StockAdjustment entirely, so a handful of products can compute
+            // negative here even though they're not really "out of stock". Still fold that
+            // negative delta into the grand total (so it always matches dailyLedger()'s own
+            // running closing_stock exactly) — just don't render a confusing negative row.
+            $grandTotal += $stock;
+            if ($stock <= 0) continue;
+
+            $brand = $product->brand?->name ?: ($product->attributes['brand'] ?? '');
+            $brand = trim($brand) ?: strtoupper(explode(' ', $product->name)[0] ?? 'OTHER');
+            $brand = strtoupper($brand);
+
+            $ram     = $product->attributes['ram'] ?? '';
+            $storage = $product->attributes['storage'] ?? '';
+            $color   = strtoupper(trim($product->attributes['color'] ?? ''));
+            $imei    = $product->attributes['imei'] ?? $product->imei ?? null;
+
+            $key = strtoupper($product->name) . '|' . $ram . '|' . $storage . '|' . $color;
+
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'company'  => $brand,
+                    'model'    => strtoupper($product->name),
+                    'ram'      => $ram,
+                    'storage'  => $storage,
+                    'color'    => $color,
+                    'category' => $product->category?->name,
+                    'imeis'    => [],
+                    'pcs'      => 0,
+                ];
+            }
+
+            $groups[$key]['pcs'] += $stock;
+            if ($imei) $groups[$key]['imeis'][] = $imei;
+        }
+
+        $rows = array_values($groups);
+        usort($rows, fn($a, $b) => $a['company'] <=> $b['company'] ?: $a['model'] <=> $b['model']);
+
+        return response()->json([
+            'date'  => $date,
+            'rows'  => $rows,
+            'total' => $grandTotal,
+        ]);
+    }
+
+    /**
      * Daily Stock Ledger — running balance with purchases, sales, and adjustments per day.
      */
     public function dailyLedger(Request $request)

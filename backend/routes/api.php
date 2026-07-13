@@ -82,6 +82,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
     Route::get('/stocks/daily-ledger', [StockController::class, 'dailyLedger']);
+    Route::get('/stocks/closing-stock-detail', [StockController::class, 'closingStockDetail']);
     Route::get('/stocks/backup', [StockController::class, 'backup']);
     Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup']);
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);

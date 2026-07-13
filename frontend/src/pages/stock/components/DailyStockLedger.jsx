@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Modal } from 'react-bootstrap';
 import axios from '../../../api/axios';
 import { toast } from 'react-toastify';
 
@@ -15,6 +16,18 @@ export default function DailyStockLedger() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState({});
+  const [closingModal, setClosingModal] = useState({ show: false, date: null, loading: false, rows: [], total: 0 });
+
+  const openClosingDetail = async (date) => {
+    setClosingModal({ show: true, date, loading: true, rows: [], total: 0 });
+    try {
+      const { data: res } = await axios.get('/stocks/closing-stock-detail', { params: { date } });
+      setClosingModal({ show: true, date, loading: false, rows: res.rows || [], total: res.total || 0 });
+    } catch {
+      toast.error('Failed to load closing stock detail');
+      setClosingModal(c => ({ ...c, loading: false }));
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,16 +101,24 @@ export default function DailyStockLedger() {
               { label: 'Sale Revenue', value: fmtRs(data.total_revenue), icon: '💰', color: '#10b981' },
               { label: 'Sale Cost', value: fmtRs(data.total_cost), icon: '🏷️', color: '#ef4444' },
               { label: 'Gross Profit', value: fmtRs(data.total_profit), icon: '📈', color: data.total_profit >= 0 ? '#22c55e' : '#ef4444' },
-            ].map(t => (
+            ].map(t => {
+              const isClosing = t.label === 'Closing Stock';
+              return (
               <div key={t.label} className="col-6 col-md-3 col-xl-auto" style={{ flex: 1 }}>
-                <div className="card border-0 shadow-sm h-100" style={{ borderLeft: `4px solid ${t.color}` }}>
+                <div
+                  className="card border-0 shadow-sm h-100"
+                  style={{ borderLeft: `4px solid ${t.color}`, cursor: isClosing ? 'pointer' : 'default' }}
+                  onClick={isClosing ? () => openClosingDetail(toDate) : undefined}
+                  title={isClosing ? 'Click to view full breakdown' : undefined}
+                >
                   <div className="card-body py-2 px-3">
                     <div className="x-small text-muted fw-bold">{t.icon} {t.label}</div>
                     <div className="fw-black mt-1" style={{ fontSize: '1.15rem', color: t.color }}>{t.value}</div>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* ── Day Table ── */}
@@ -144,7 +165,14 @@ export default function DailyStockLedger() {
                           <td className="text-center fw-bold text-success">{day.stock_in > 0 ? '+' + day.stock_in : '—'}</td>
                           <td className="text-center fw-bold text-danger">{day.stock_out > 0 ? '-' + day.stock_out : '—'}</td>
                           <td className="text-center">
-                            <span className="badge bg-primary fw-bold" style={{ fontSize: '.82rem' }}>{fmt(day.closing_stock)}</span>
+                            <span
+                              className="badge bg-primary fw-bold"
+                              style={{ fontSize: '.82rem', cursor: 'pointer' }}
+                              title="Click to view full breakdown"
+                              onClick={(e) => { e.stopPropagation(); openClosingDetail(day.date); }}
+                            >
+                              {fmt(day.closing_stock)}
+                            </span>
                           </td>
                           <td className="text-end fw-bold text-dark">{day.purchase_value > 0 ? fmtRs(day.purchase_value) : '—'}</td>
                           <td className="text-end fw-bold text-success">{day.sale_revenue > 0 ? fmtRs(day.sale_revenue) : '—'}</td>
@@ -283,6 +311,61 @@ export default function DailyStockLedger() {
           )}
         </>
       )}
+
+      {/* ── Closing Stock Detail Modal ── */}
+      <Modal show={closingModal.show} onHide={() => setClosingModal(c => ({ ...c, show: false }))} centered size="lg">
+        <Modal.Header closeButton style={{ background: '#1e293b', borderBottom: 'none' }}>
+          <Modal.Title style={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }}>
+            🏪 Closing Stock — as of {closingModal.date ? fmtDate(closingModal.date) : ''}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ padding: 0 }}>
+          {closingModal.loading ? (
+            <div className="text-center py-5"><div className="spinner-border text-primary" /></div>
+          ) : closingModal.rows.length === 0 ? (
+            <div className="text-center py-5 text-muted fw-bold">📭 No stock on hand as of this date</div>
+          ) : (
+            <div className="table-responsive" style={{ maxHeight: '60vh' }}>
+              <table className="table table-sm table-hover align-middle mb-0" style={{ fontSize: '.8rem' }}>
+                <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
+                  <tr>
+                    <th className="ps-3">Company</th>
+                    <th>Model</th>
+                    <th>Configuration</th>
+                    <th>Color</th>
+                    <th>IMEI</th>
+                    <th className="text-center pe-3">PCS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {closingModal.rows.map((r, i) => (
+                    <tr key={i}>
+                      <td className="ps-3 fw-bold">{r.company}</td>
+                      <td className="fw-bold">{r.model}</td>
+                      <td>{[r.ram, r.storage].filter(Boolean).join(' / ') || '—'}</td>
+                      <td>{r.color || '—'}</td>
+                      <td className="font-monospace" style={{ fontSize: '.72rem' }}>
+                        {r.imeis && r.imeis.length > 0 ? r.imeis.join(', ') : '—'}
+                      </td>
+                      <td className="text-center pe-3">
+                        <span className="badge bg-success">{r.pcs}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="fw-black bg-dark text-white">
+                    <td colSpan={5} className="ps-3 py-2">TOTAL</td>
+                    <td className="text-center pe-3">
+                      <span className="badge bg-primary" style={{ fontSize: '.85rem' }}>{closingModal.total}</span>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </Modal.Body>
+      </Modal>
     </div>
   );
 }
