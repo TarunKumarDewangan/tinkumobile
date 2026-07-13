@@ -110,6 +110,14 @@ class FinancePlanController extends Controller
             'created_by'      => $request->user()->id,
         ]);
 
+        $this->notifyOwner(
+            "💳 *Finance Plan Created*\nType: " . ucfirst(strtolower($plan->type)) .
+            "\nCustomer: " . ($plan->customer->name ?? 'Unknown') .
+            "\nPrincipal: ₹" . number_format($plan->principal, 2) .
+            "\nSale Invoice: #{$invoice->invoice_no}" .
+            "\nBy: {$request->user()->name}"
+        );
+
         return response()->json($plan->load('saleInvoice', 'customer', 'payments'), 201);
     }
 

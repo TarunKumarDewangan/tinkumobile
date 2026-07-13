@@ -53,6 +53,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
+    // Universal search
+    Route::get('/search', [\App\Http\Controllers\Api\SearchController::class, 'index']);
+
     // Master data (shared / global – no shop filter needed)
     Route::apiResource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::apiResource('suppliers', SupplierController::class);
@@ -64,6 +67,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Products
     Route::delete('/products/stock/{id}', [ProductController::class, 'deleteStock']);
     Route::put('/products/stock/{id}', [ProductController::class, 'updateStock']);
+    Route::get('/products/sticker-list', [ProductController::class, 'stickerList']);
     Route::apiResource('products', ProductController::class);
 
     // Stock Adjustments (opening stock, corrections, backdated purchases)
@@ -267,6 +271,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
     Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
+    Route::post('settings/test-telegram', [\App\Http\Controllers\Api\SettingsController::class, 'testTelegram']);
     Route::post('settings/verify-pin', [\App\Http\Controllers\Api\SettingsController::class, 'verifyPin'])->middleware('throttle:10,1');
     Route::post('settings/change-pin', [\App\Http\Controllers\Api\SettingsController::class, 'changePin'])->middleware('throttle:5,1');
 

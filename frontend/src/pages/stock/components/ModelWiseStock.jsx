@@ -28,17 +28,25 @@ export default function ModelWiseStock({ products, loading, filters }) {
     const stock = parseInt(p.current_stock || 0);
 
     // Apply Quick Search Filter
-    const searchMatch = !quickSearch || 
-      brand.includes(quickSearch.toUpperCase()) || 
+    const searchMatch = !quickSearch ||
+      brand.includes(quickSearch.toUpperCase()) ||
       modelWithConfig.toUpperCase().includes(quickSearch.toUpperCase());
 
     if (!searchMatch) return acc;
 
     if (!acc[brand]) acc[brand] = { total: 0, models: {} };
-    if (!acc[brand].models[modelWithConfig]) acc[brand].models[modelWithConfig] = 0;
-    
-    acc[brand].models[modelWithConfig] += stock;
+    if (!acc[brand].models[modelWithConfig]) acc[brand].models[modelWithConfig] = { stock: 0, colors: new Set(), imeis: new Set() };
+
+    const group = acc[brand].models[modelWithConfig];
+    group.stock += stock;
     acc[brand].total += stock;
+
+    const color = (p.attributes?.color || '').trim();
+    if (color) group.colors.add(color.toUpperCase());
+
+    const rawImeis = p.attributes?.imeis || (p.attributes?.imei || p.imei ? [p.attributes?.imei || p.imei] : []);
+    rawImeis.filter(Boolean).forEach(imei => group.imeis.add(imei));
+
     return acc;
   }, {});
 
@@ -122,27 +130,39 @@ export default function ModelWiseStock({ products, loading, filters }) {
                       </span>
                     </td>
                   </tr>
-                  {showModels && Object.keys(groupedData[brand].models).sort().map(modelConfig => (
+                  {showModels && Object.keys(groupedData[brand].models).sort().map(modelConfig => {
+                    const group = groupedData[brand].models[modelConfig];
+                    const colors = Array.from(group.colors);
+                    const imeis = Array.from(group.imeis);
+                    return (
                     <tr key={brand + modelConfig}>
                       <td className="ps-5"></td>
                       <td>
                         <div style={{ fontWeight: '700', color: '#334155', fontSize: '.78rem' }}>
                           📱 {modelConfig}
                         </div>
+                        {(colors.length > 0 || imeis.length > 0) && (
+                          <div style={{ marginTop: 3, fontSize: '.68rem', color: '#64748b' }}>
+                            {colors.length > 0 && <span>🎨 {colors.join(', ')}</span>}
+                            {colors.length > 0 && imeis.length > 0 && <span> · </span>}
+                            {imeis.length > 0 && <span className="font-monospace">🆔 {imeis.join(', ')}</span>}
+                          </div>
+                        )}
                       </td>
                       <td className="text-center">
-                        <span className="pm-badge" style={{ 
-                          background: groupedData[brand].models[modelConfig] > 0 ? '#f0fdf4' : '#fee2e2', 
-                          color: groupedData[brand].models[modelConfig] > 0 ? '#166534' : '#991b1b', 
-                          border: `1px solid ${groupedData[brand].models[modelConfig] > 0 ? '#bbf7d0' : '#fecaca'}`,
+                        <span className="pm-badge" style={{
+                          background: group.stock > 0 ? '#f0fdf4' : '#fee2e2',
+                          color: group.stock > 0 ? '#166534' : '#991b1b',
+                          border: `1px solid ${group.stock > 0 ? '#bbf7d0' : '#fecaca'}`,
                           minWidth: '60px',
                           fontSize: '.7rem'
                         }}>
-                          {groupedData[brand].models[modelConfig]} PCS
+                          {group.stock} PCS
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </React.Fragment>
               ))}
               </>

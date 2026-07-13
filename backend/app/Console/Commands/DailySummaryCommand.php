@@ -7,6 +7,7 @@ use App\Models\SaleInvoice;
 use App\Models\PurchaseInvoice;
 use App\Models\AirtelRecovery;
 use App\Models\RepairRequest;
+use App\Models\Inventory;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -17,14 +18,14 @@ class DailySummaryCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'report:daily-summary';
+    protected $signature = 'report:daily-summary {--slot=night : afternoon or night, controls only the message header}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Send daily summary report to the owner via WhatsApp at 9 PM';
+    protected $description = 'Send daily summary report to the owner via WhatsApp and Telegram at 5 PM and 9 PM';
 
     /**
      * Execute the console command.
@@ -33,20 +34,22 @@ class DailySummaryCommand extends Command
     {
         $today = Carbon::today();
         $dateStr = $today->format('d M Y');
+        $slot = $this->option('slot');
+        $header = $slot === 'afternoon' ? "🕔 *Afternoon Update ({$dateStr})*" : "🌙 *Night Closing Summary ({$dateStr})*";
 
         // Core counts
         $saleCount = SaleInvoice::whereDate('sale_date', $today)->count();
         $repairCount = RepairRequest::whereDate('submitted_date', $today)->count();
         $recoveryCount = AirtelRecovery::whereDate('recovered_at', $today)->count();
         $recoveryAmount = AirtelRecovery::whereDate('recovered_at', $today)->sum('amount');
-        
+
         // Financial Breakdown from Transactions
         // IN (Collections)
         $cashIn = \App\Models\Transaction::whereDate('transaction_date', $today)
             ->where('type', 'IN')
             ->where('payment_mode', 'CASH')
             ->sum('amount');
-            
+
         $bankIn = \App\Models\Transaction::whereDate('transaction_date', $today)
             ->where('type', 'IN')
             ->where('payment_mode', '!=', 'CASH')
@@ -57,7 +60,7 @@ class DailySummaryCommand extends Command
             ->where('type', 'OUT')
             ->where('payment_mode', 'CASH')
             ->sum('amount');
-            
+
         $bankOut = \App\Models\Transaction::whereDate('transaction_date', $today)
             ->where('type', 'OUT')
             ->where('payment_mode', '!=', 'CASH')
@@ -66,13 +69,17 @@ class DailySummaryCommand extends Command
         $totalIn = $cashIn + $bankIn;
         $totalOut = $cashOut + $bankOut;
 
-        $msg = "📊 *Daily Business Summary ({$dateStr})*\n";
+        // Stock summary
+        $lowStockCount = Inventory::where('stock', '<=', 5)->where('stock', '>', 0)->count();
+        $outOfStockCount = Inventory::where('stock', '<=', 0)->count();
+
+        $msg = "{$header}\n";
         $msg .= "---------------------------\n";
         $msg .= "📝 *Activity Counts:*\n";
         $msg .= "• Sales Invoices: {$saleCount}\n";
         $msg .= "• Repairs Booked: {$repairCount}\n";
         $msg .= "• Airtel Recoveries: {$recoveryCount} (Total: ₹" . number_format($recoveryAmount, 2) . ")\n\n";
-        
+
         $msg .= "💰 *Collections (IN):*\n";
         $msg .= "• Cash: ₹" . number_format($cashIn, 2) . "\n";
         $msg .= "• Bank/UPI: ₹" . number_format($bankIn, 2) . "\n";
@@ -83,17 +90,34 @@ class DailySummaryCommand extends Command
         $msg .= "• Bank/UPI: ₹" . number_format($bankOut, 2) . "\n";
         $msg .= "• *Total OUT: ₹" . number_format($totalOut, 2) . "*\n";
         $msg .= "---------------------------\n";
+        $msg .= "📦 *Stock Alerts:*\n";
+        $msg .= "• Low Stock (≤5): {$lowStockCount}\n";
+        $msg .= "• Out of Stock: {$outOfStockCount}\n";
+        $msg .= "---------------------------\n";
         $msg .= "✨ *Closing Status:*\n";
         $msg .= "• Net Day Cash: ₹" . number_format($cashIn - $cashOut, 2) . "\n";
         $msg .= "---------------------------\n";
         $msg .= "_Tinku Mobiles Management System_";
 
+        $whatsappOk = false;
+        $telegramOk = false;
+
         try {
-            app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
-            $this->info('Detailed daily summary sent successfully.');
+            $whatsappOk = app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
         } catch (\Exception $e) {
             Log::error('Failed to send Daily Summary WhatsApp', ['error' => $e->getMessage()]);
-            $this->error('Failed to send daily summary.');
+        }
+
+        try {
+            $telegramOk = app(\App\Services\TelegramService::class)->sendToOwner($msg);
+        } catch (\Exception $e) {
+            Log::error('Failed to send Daily Summary Telegram', ['error' => $e->getMessage()]);
+        }
+
+        if ($whatsappOk || $telegramOk) {
+            $this->info('Daily summary sent successfully (WhatsApp: ' . ($whatsappOk ? 'yes' : 'no') . ', Telegram: ' . ($telegramOk ? 'yes' : 'no') . ').');
+        } else {
+            $this->error('Failed to send daily summary via any channel.');
         }
     }
 }

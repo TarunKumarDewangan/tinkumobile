@@ -288,15 +288,18 @@ class PurchaseInvoiceController extends Controller
                     Inventory::addStock($shopId, $productId, $item['quantity']);
                 }
             }
-            // Send WhatsApp Notification
-            try {
-                $amount = number_format($invoice->grand_total, 2);
-                $supplierName = $invoice->supplier->name ?? 'Unknown Supplier';
-                $msg = "📦 *New Purchase*\nInvoice: #{$invoice->invoice_no}\nAmount: ₹{$amount}\nSupplier: {$supplierName}";
-                app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
-            } catch (\Exception $waEx) {
-                \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Purchase', ['error' => $waEx->getMessage()]);
-            }
+            // Send Purchase Notification (WhatsApp + Telegram)
+            $supplierName = $invoice->supplier->name ?? 'Unknown Supplier';
+            $itemsSummary = $this->itemNamesSummary($data['items']);
+            $msg = "📦 *New Purchase*\n";
+            $msg .= "Invoice: #{$invoice->invoice_no}\n";
+            $msg .= "Supplier: {$supplierName}\n";
+            if ($itemsSummary) $msg .= "Items: {$itemsSummary}\n";
+            $msg .= "Amount: ₹" . number_format($invoice->grand_total, 2) . "\n";
+            $msg .= "Paid: ₹" . number_format($invoice->total_paid, 2) . "\n";
+            $msg .= "Status: " . strtoupper($invoice->status) . "\n";
+            $msg .= "By: {$user->name}";
+            $this->notifyOwner($msg);
 
             // Audit log
             ActivityLog::log('PURCHASE_CREATED', $user, "Purchase #{$invoice->invoice_no} created");
@@ -707,6 +710,12 @@ class PurchaseInvoiceController extends Controller
             $purchaseInvoice->delete();
             // Audit log
             ActivityLog::log('PURCHASE_DELETED', $user, "Purchase #{$purchaseInvoice->invoice_no} deleted");
+
+            $this->notifyOwner(
+                "🗑️ *Purchase Deleted*\nInvoice: #{$purchaseInvoice->invoice_no}\nSupplier: " . ($purchaseInvoice->supplier->name ?? 'Unknown') .
+                "\nAmount: ₹" . number_format($purchaseInvoice->grand_total, 2) . "\nBy: {$user->name}"
+            );
+
             return response()->json(['message' => 'Purchase order deleted.']);
         });
     }

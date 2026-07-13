@@ -170,6 +170,7 @@ export default function DailyStockLedger() {
                                             <th>PRODUCT</th>
                                             <th className="text-center">QTY</th>
                                             <th className="text-end">PURCHASE PRICE</th>
+                                            <th className="text-end">MOP</th>
                                             <th className="text-end">TOTAL VALUE</th>
                                           </tr>
                                         </thead>
@@ -182,6 +183,7 @@ export default function DailyStockLedger() {
                                               </td>
                                               <td className="text-center fw-bold text-success">+{p.quantity}</td>
                                               <td className="text-end">{fmtRs(p.unit_price)}</td>
+                                              <td className="text-end text-primary fw-bold">{parseFloat(p.mop || 0) > 0 ? fmtRs(p.mop) : '—'}</td>
                                               <td className="text-end fw-bold">{fmtRs(p.total_value)}</td>
                                             </tr>
                                           ))}

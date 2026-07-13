@@ -57,7 +57,7 @@ class OldMobileController extends Controller
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
 
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $user) {
             $purchase = OldMobilePurchase::create($data);
 
             // 1. Automatically create a Product for inventory reselling
@@ -113,6 +113,14 @@ class OldMobileController extends Controller
             ActivityLog::log('OLD_MOBILE_PURCHASED', $purchase,
                 "Old mobile purchased: {$purchase->model_name} from " . ($purchase->customer?->name ?? $purchase->customer_name) . " ₹{$purchase->purchase_price}"
             );
+
+            $this->notifyOwner(
+                "📱 *2nd Hand Purchase*\nModel: {$purchase->model_name}" . ($purchase->imei ? "\nIMEI: {$purchase->imei}" : '') .
+                "\nFrom: " . ($purchase->customer?->name ?? $purchase->customer_name) .
+                "\nAmount: ₹" . number_format($purchase->purchase_price, 2) .
+                "\nBy: {$user->name}"
+            );
+
             return response()->json($purchase, 201);
         });
     }
@@ -309,6 +317,11 @@ class OldMobileController extends Controller
             "Old mobile deleted: {$oldMobilePurchase->model_name} (₹{$oldMobilePurchase->purchase_price})"
         );
         $oldMobilePurchase->delete();
+
+        $this->notifyOwner(
+            "🗑️ *2nd Hand Purchase Deleted*\nModel: {$oldMobilePurchase->model_name}" .
+            "\nAmount: ₹" . number_format($oldMobilePurchase->purchase_price, 2) . "\nBy: {$user->name}"
+        );
 
         return response()->json(['message' => 'Old mobile purchase deleted successfully.']);
     }

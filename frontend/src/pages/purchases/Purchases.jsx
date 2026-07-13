@@ -587,6 +587,20 @@ export default function Purchases() {
                   </tr>
                 ))}
               </tbody>
+              {!loadingStocks && availableStock.length > 0 && (
+                <tfoot>
+                  <tr style={{background:'#f1f5f9',borderTop:'2px solid #cbd5e1'}}>
+                    <td colSpan={3} style={{fontWeight:800,color:'#1e293b',textTransform:'uppercase',fontSize:'.72rem'}}>Total</td>
+                    <td style={{textAlign:'center',fontWeight:800,color:'#1e293b'}}>
+                      {availableStock.reduce((sum,p) => sum + (parseInt(p.current_stock)||0), 0)} pcs
+                    </td>
+                    <td style={{textAlign:'right',fontWeight:800,color:'#1e293b'}}>
+                      ₹{availableStock.reduce((sum,p) => sum + ((parseInt(p.current_stock)||0) * (parseFloat(p.selling_price)||0)), 0).toLocaleString('en-IN')}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -635,6 +649,19 @@ export default function Purchases() {
                   </tr>
                 ))}
               </tbody>
+              {!loadingStocks && pendingStock.length > 0 && (
+                <tfoot>
+                  <tr style={{background:'#f1f5f9',borderTop:'2px solid #cbd5e1'}}>
+                    <td colSpan={2} style={{fontWeight:800,color:'#1e293b',textTransform:'uppercase',fontSize:'.72rem'}}>Total</td>
+                    <td style={{textAlign:'center'}}>
+                      <span style={{background:'#e2e8f0',color:'#1e293b',border:'1px solid #94a3b8',fontWeight:800,fontSize:'.75rem',padding:'3px 12px',borderRadius:4}}>
+                        {pendingStock.reduce((sum,item) => sum + (parseInt(item.quantity)||0), 0)}
+                      </span>
+                    </td>
+                    <td colSpan={3}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

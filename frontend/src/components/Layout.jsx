@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
+import GlobalSearch from './GlobalSearch';
 
 const NAV = [
   { section: 'Main' },
@@ -49,8 +50,18 @@ const NAV = [
     ]
   },
 
-  { 
-    section: 'Services', 
+  {
+    section: 'Stickers',
+    dropdown: true,
+    children: [
+        { to: '/stickers/generate', icon: '🏷️', label: 'Generate Stickers', perm: 'view_products' },
+        { to: '/stickers/crud',     icon: '🛠️', label: 'CRUD',              perm: 'create_products' },
+        { to: '/stickers/print',    icon: '🖨️', label: 'Sticker Print',     perm: 'view_products' },
+    ]
+  },
+
+  {
+    section: 'Services',
     dropdown: true,
     children: [
         { to: '/recharge',    icon: '⚡', label: 'Recharge',   perm: 'view_recharge_sales' },
@@ -115,7 +126,7 @@ const NAV = [
     section: 'Settings', 
     dropdown: true,
     children: [
-        { to: '/admin/whatsapp-config', icon: '⚙️', label: 'WhatsApp Config', perm: 'manage_users' },
+        { to: '/admin/whatsapp-config', icon: '⚙️', label: 'WhatsApp / Telegram', perm: 'manage_users' },
     ]
   },
 
@@ -133,7 +144,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Tasks': false, 'Settings': false });
+  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Stickers': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Tasks': false, 'Settings': false });
   
   const getNavLinkClass = (to, end) => {
     try {
@@ -333,6 +344,7 @@ export default function Layout() {
             <span className="topbar-brand">Tinku<span>Mobiles</span></span>
             {shopName && <span className="text-muted d-none d-sm-inline" style={{ fontSize:'0.78rem' }}>— {shopName}</span>}
           </div>
+          <GlobalSearch />
           <div className="topbar-right">
             <span className="badge rounded-pill" style={{ background:isAdmin()? '#fef3c7':  'var(--primary)', color: isAdmin()? '#92400e' : '#fff', fontSize:'0.7rem' }}>{roleName}</span>
             <span className="text-muted d-none d-md-inline" style={{ fontSize:'0.8rem' }}>{user?.email}</span>

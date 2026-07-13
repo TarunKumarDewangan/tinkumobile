@@ -402,15 +402,29 @@ class SaleInvoiceController extends Controller
             // Audit log
             ActivityLog::log('SALE_CREATED', $user, "Sale #{$invoice->invoice_no} created — Total: ₹{$grandTotal}");
 
-            // Send WhatsApp Notification
-            try {
-                $customerName = $invoice->customer_name ?? 'Walk-in';
-                $amount = number_format($grandTotal, 2);
-                $msg = "🛍️ *New Sale!*\nInvoice: #{$invoiceNo}\nAmount: ₹{$amount}\nCustomer: {$customerName}";
-                app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
-            } catch (\Exception $waEx) {
-                \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Sale', ['error' => $waEx->getMessage()]);
+            // Send Sale Notification (WhatsApp + Telegram)
+            $customerName = $invoice->customer_name ?? 'Walk-in';
+            $itemsSummary = $this->itemNamesSummary($data['items']);
+            $paid = (float) $invoice->total_paid;
+            $balance = max(0, $grandTotal - $paid);
+            $shopName = \App\Models\Shop::find($shopId)?->name;
+
+            $msg = "🛍️ *New Sale!*\n";
+            $msg .= "Invoice: #{$invoiceNo}\n";
+            if ($shopName) $msg .= "Shop: {$shopName}\n";
+            $msg .= "Customer: {$customerName}\n";
+            if ($itemsSummary) $msg .= "Items: {$itemsSummary}\n";
+            $msg .= "Amount: ₹" . number_format($grandTotal, 2) . "\n";
+            $msg .= "Paid: ₹" . number_format($paid, 2) . "\n";
+            if ($balance > 0.01) $msg .= "Balance Due: ₹" . number_format($balance, 2) . "\n";
+            $msg .= "Payment Mode: " . strtoupper($invoice->payment_method ?? 'CASH') . "\n";
+            $msg .= "Bill Type: " . strtoupper($invoice->bill_type) . "\n";
+            if (!empty($data['shop_finance']['type']) && !empty($data['shop_finance']['principal'])) {
+                $msg .= "Shop Finance: " . ucfirst(strtolower($data['shop_finance']['type'])) . " — ₹" . number_format($data['shop_finance']['principal'], 2) . "\n";
             }
+            $msg .= "By: {$user->name}";
+
+            $this->notifyOwner($msg);
 
             return response()->json($invoice->load('items.product', 'giftItems.giftProduct', 'customer'), 201);
         } catch (\Exception $e) {
@@ -877,6 +891,12 @@ class SaleInvoiceController extends Controller
             DB::commit();
             // Audit log
             ActivityLog::log('SALE_DELETED', $user, "Sale #{$saleInvoice->invoice_no} deleted");
+
+            $this->notifyOwner(
+                "🗑️ *Sale Deleted*\nInvoice: #{$saleInvoice->invoice_no}\nCustomer: " . ($saleInvoice->customer_name ?? 'Walk-in') .
+                "\nAmount: ₹" . number_format($saleInvoice->grand_total, 2) . "\nBy: {$user->name}"
+            );
+
             return response()->json(['message' => 'Sale deleted and stock restored']);
         } catch (\Exception $e) {
             DB::rollBack();

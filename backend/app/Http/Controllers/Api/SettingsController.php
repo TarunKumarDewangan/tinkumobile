@@ -75,7 +75,18 @@ class SettingsController extends Controller
     public function testWhatsApp()
     {
         $res = app(\App\Services\WhatsAppService::class)->sendToOwner("🧪 *WhatsApp Test Message*\nYour Tinku Mobiles configuration is working perfectly!\n\n_System Date: " . now()->format('d M Y H:i') . "_");
-        
+
+        if ($res) {
+            return response()->json(['message' => 'Test message sent successfully']);
+        }
+
+        return response()->json(['message' => 'Failed to send test message. Check logs.'], 500);
+    }
+
+    public function testTelegram()
+    {
+        $res = app(\App\Services\TelegramService::class)->sendToOwner("🧪 *Telegram Test Message*\nYour Tinku Mobiles configuration is working perfectly!\n\n_System Date: " . now()->format('d M Y H:i') . "_");
+
         if ($res) {
             return response()->json(['message' => 'Test message sent successfully']);
         }

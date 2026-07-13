@@ -28,4 +28,24 @@ abstract class Controller
 
         return response()->json(['message' => $message], $status);
     }
+
+    /**
+     * Send a message to the owner over every configured channel (WhatsApp + Telegram).
+     * Failures are logged, never thrown — a notification going out is never allowed
+     * to fail the actual business operation that triggered it.
+     */
+    protected function notifyOwner(string $message): void
+    {
+        try {
+            app(\App\Services\WhatsAppService::class)->sendToOwner($message);
+        } catch (Throwable $e) {
+            Log::error('WhatsApp owner notification failed', ['error' => $e->getMessage()]);
+        }
+
+        try {
+            app(\App\Services\TelegramService::class)->sendToOwner($message);
+        } catch (Throwable $e) {
+            Log::error('Telegram owner notification failed', ['error' => $e->getMessage()]);
+        }
+    }
 }

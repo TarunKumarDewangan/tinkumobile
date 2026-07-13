@@ -124,7 +124,7 @@ class StockController extends Controller
             $dateStr = $current->toDateString();
 
             // Purchases IN
-            $purchases = PurchaseItem::with(['product:id,name,purchase_price', 'invoice:id,invoice_no,supplier_id,purchase_date'])
+            $purchases = PurchaseItem::with(['product:id,name,purchase_price,selling_price', 'invoice:id,invoice_no,supplier_id,purchase_date'])
                 ->whereHas('invoice', function ($q) use ($shopId, $dateStr) {
                     $q->where('purchase_date', $dateStr);
                     if ($shopId) $q->where('shop_id', $shopId);
@@ -190,6 +190,7 @@ class StockController extends Controller
                     'quantity'       => $i->quantity,
                     'unit_price'     => $i->unit_price ?? $i->product?->purchase_price,
                     'total_value'    => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0),
+                    'mop'            => $i->selling_price ?? $i->product?->selling_price,
                     'invoice_no'     => $i->invoice?->invoice_no,
                 ])->values(),
                 'sales' => $sales->map(function($i) {
