@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
 import axios from '../../../api/axios';
 import { toast } from 'react-toastify';
 
@@ -8,6 +8,7 @@ const fmtRs = (n) => '₹' + parseFloat(n || 0).toLocaleString('en-IN', { minimu
 const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
 export default function DailyStockLedger() {
+  const navigate = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
   const thirtyAgo = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
 
@@ -16,18 +17,8 @@ export default function DailyStockLedger() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState({});
-  const [closingModal, setClosingModal] = useState({ show: false, date: null, loading: false, rows: [], total: 0 });
 
-  const openClosingDetail = async (date) => {
-    setClosingModal({ show: true, date, loading: true, rows: [], total: 0 });
-    try {
-      const { data: res } = await axios.get('/stocks/closing-stock-detail', { params: { date } });
-      setClosingModal({ show: true, date, loading: false, rows: res.rows || [], total: res.total || 0 });
-    } catch {
-      toast.error('Failed to load closing stock detail');
-      setClosingModal(c => ({ ...c, loading: false }));
-    }
-  };
+  const openClosingDetail = (date) => navigate(`/stock-entry/closing-stock?date=${date}`);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -311,61 +302,6 @@ export default function DailyStockLedger() {
           )}
         </>
       )}
-
-      {/* ── Closing Stock Detail Modal ── */}
-      <Modal show={closingModal.show} onHide={() => setClosingModal(c => ({ ...c, show: false }))} centered size="lg">
-        <Modal.Header closeButton style={{ background: '#1e293b', borderBottom: 'none' }}>
-          <Modal.Title style={{ color: '#fff', fontWeight: 700, fontSize: '1rem' }}>
-            🏪 Closing Stock — as of {closingModal.date ? fmtDate(closingModal.date) : ''}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body style={{ padding: 0 }}>
-          {closingModal.loading ? (
-            <div className="text-center py-5"><div className="spinner-border text-primary" /></div>
-          ) : closingModal.rows.length === 0 ? (
-            <div className="text-center py-5 text-muted fw-bold">📭 No stock on hand as of this date</div>
-          ) : (
-            <div className="table-responsive" style={{ maxHeight: '60vh' }}>
-              <table className="table table-sm table-hover align-middle mb-0" style={{ fontSize: '.8rem' }}>
-                <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
-                  <tr>
-                    <th className="ps-3">Company</th>
-                    <th>Model</th>
-                    <th>Configuration</th>
-                    <th>Color</th>
-                    <th>IMEI</th>
-                    <th className="text-center pe-3">PCS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {closingModal.rows.map((r, i) => (
-                    <tr key={i}>
-                      <td className="ps-3 fw-bold">{r.company}</td>
-                      <td className="fw-bold">{r.model}</td>
-                      <td>{[r.ram, r.storage].filter(Boolean).join(' / ') || '—'}</td>
-                      <td>{r.color || '—'}</td>
-                      <td className="font-monospace" style={{ fontSize: '.72rem' }}>
-                        {r.imeis && r.imeis.length > 0 ? r.imeis.join(', ') : '—'}
-                      </td>
-                      <td className="text-center pe-3">
-                        <span className="badge bg-success">{r.pcs}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="fw-black bg-dark text-white">
-                    <td colSpan={5} className="ps-3 py-2">TOTAL</td>
-                    <td className="text-center pe-3">
-                      <span className="badge bg-primary" style={{ fontSize: '.85rem' }}>{closingModal.total}</span>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </Modal.Body>
-      </Modal>
     </div>
   );
 }
