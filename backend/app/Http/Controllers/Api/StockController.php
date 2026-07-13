@@ -113,6 +113,39 @@ class StockController extends Controller
             ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
             ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
 
+        // Real per-unit IMEIs live on purchase_items.imei (a comma-separated batch list),
+        // not on the product row itself — pull the raw (non-aggregated) rows so we can
+        // reconcile which specific IMEIs are still on hand as of this date.
+        $purchasedImeisByProduct = [];
+        PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('purchase_date', '<=', $date);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->whereNotNull('imei')->where('imei', '!=', '')
+            ->get(['product_id', 'imei'])
+            ->each(function ($item) use (&$purchasedImeisByProduct) {
+                foreach (explode(',', $item->imei) as $im) {
+                    $im = trim($im);
+                    if ($im === '') continue;
+                    $purchasedImeisByProduct[$item->product_id][] = $im;
+                }
+            });
+
+        $soldImeiCounts = [];
+        SaleItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('sale_date', '<=', $date)->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->whereNotNull('imei')->where('imei', '!=', '')
+            ->get(['imei'])
+            ->each(function ($item) use (&$soldImeiCounts) {
+                $im = trim($item->imei);
+                if ($im === '') return;
+                $soldImeiCounts[$im] = ($soldImeiCounts[$im] ?? 0) + 1;
+            });
+
         $productIds = collect()
             ->merge($purchasesIn->keys())->merge($adjAdd->keys())
             ->merge($adjRemove->keys())->merge($salesOut->keys())
@@ -145,7 +178,28 @@ class StockController extends Controller
             $ram     = $product->attributes['ram'] ?? '';
             $storage = $product->attributes['storage'] ?? '';
             $color   = strtoupper(trim($product->attributes['color'] ?? ''));
-            $imei    = $product->attributes['imei'] ?? $product->imei ?? null;
+
+            // Reconcile this product's purchased IMEIs against what's already sold by this
+            // date, so only genuinely-remaining units show up.
+            $remainingImeis = [];
+            foreach (($purchasedImeisByProduct[$pid] ?? []) as $im) {
+                if (($soldImeiCounts[$im] ?? 0) > 0) {
+                    $soldImeiCounts[$im]--;
+                    continue;
+                }
+                $remainingImeis[] = $im;
+            }
+            // Old Mobile purchases never create a purchase_items row at all (they add stock
+            // straight via Inventory::addStock()), so their single IMEI only ever lives on
+            // the product's own attributes — check that separately.
+            $singleImei = $product->attributes['imei'] ?? $product->imei ?? null;
+            if ($singleImei && !in_array($singleImei, $remainingImeis)) {
+                if (($soldImeiCounts[$singleImei] ?? 0) > 0) {
+                    $soldImeiCounts[$singleImei]--;
+                } else {
+                    $remainingImeis[] = $singleImei;
+                }
+            }
 
             $key = strtoupper($product->name) . '|' . $ram . '|' . $storage . '|' . $color;
 
@@ -163,8 +217,17 @@ class StockController extends Controller
             }
 
             $groups[$key]['pcs'] += $stock;
-            if ($imei) $groups[$key]['imeis'][] = $imei;
+            $groups[$key]['imeis'] = array_merge($groups[$key]['imeis'], $remainingImeis);
         }
+
+        // Defensive cap: a product occasionally carries both a legacy single attributes.imei
+        // AND its own real purchase-batch IMEIs (messy historical data), which can add up to
+        // more tracked IMEIs than the group's actual computed stock — never show more IMEIs
+        // than pcs, that would just be confusing.
+        foreach ($groups as &$g) {
+            $g['imeis'] = array_slice(array_unique($g['imeis']), 0, $g['pcs']);
+        }
+        unset($g);
 
         $rows = array_values($groups);
         usort($rows, fn($a, $b) => $a['company'] <=> $b['company'] ?: $a['model'] <=> $b['model']);
