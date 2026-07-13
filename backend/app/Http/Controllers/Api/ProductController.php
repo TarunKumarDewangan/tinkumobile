@@ -166,7 +166,13 @@ class ProductController extends Controller
                         $unsoldImeis[] = ['imei' => $imeiVal, 'idx' => $idx];
                     }
                     $availableImeiCount = count($unsoldImeis);
-                    $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
+                    // This whole query is already scoped to status === 'received' invoices
+                    // (see the whereHas above), so received_quantity was always deliberately
+                    // set by then — either at creation, or explicitly via markReceived(),
+                    // which can legitimately be 0 for an item that was fully rejected/damaged.
+                    // Falling back to the original ordered quantity here would silently treat
+                    // that as fully received, showing ordered-but-not-actually-received stock.
+                    $totalQty = $item->received_quantity;
                     $nonImeiQty = ($item->imei) ? 0 : $totalQty;
 
                     if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
