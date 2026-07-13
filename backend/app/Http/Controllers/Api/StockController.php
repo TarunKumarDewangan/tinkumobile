@@ -84,9 +84,10 @@ class StockController extends Controller
         $shopId = $user->hasFullAccess() ? ($request->shop_id ?: null) : $user->shop_id;
         $date   = Carbon::parse($request->date ?? now())->toDateString();
 
+        // New Mobile stock only — 2nd Hand purchases/sales have their own dedicated
+        // section (Old/2nd Mobile) and shouldn't be mixed into this ledger.
         $newCatId = Category::mobileNewId();
-        $oldCatId = Category::mobileOldId();
-        $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
+        $catIds   = array_values(array_filter([$newCatId]));
 
         $purchasesIn = PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $date) {
                 $q->where('purchase_date', '<=', $date);
@@ -250,9 +251,10 @@ class StockController extends Controller
         $fromDate = $request->from_date ? Carbon::parse($request->from_date)->startOfDay() : Carbon::now()->subDays(29)->startOfDay();
         $toDate   = $request->to_date   ? Carbon::parse($request->to_date)->endOfDay()     : Carbon::now()->endOfDay();
 
+        // New Mobile stock only — 2nd Hand purchases/sales have their own dedicated
+        // section (Old/2nd Mobile) and shouldn't be mixed into this ledger.
         $newCatId = Category::mobileNewId();
-        $oldCatId = Category::mobileOldId();
-        $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
+        $catIds   = array_values(array_filter([$newCatId]));
 
         // ── Opening stock (all movements strictly before fromDate) ──────────
         $purchasesBefore = PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
