@@ -9,6 +9,8 @@ export default function FinanceTracker() {
   const [plans, setPlans]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ type: '', status: '', search: '' });
+  const [dueFrom, setDueFrom]     = useState('');
+  const [dueTo, setDueTo]         = useState('');
 
   // Financer-sale marking
   const [markingReceived, setMarkingReceived] = useState(null); // invoice id
@@ -95,6 +97,21 @@ export default function FinanceTracker() {
     const totalDue = active.reduce((s, p) => s + remaining(p), 0);
     return { total: plans.length, active: active.length, overdue: overdue.length, personal: personal.length, favor: favor.length, financer: financer.length, totalDue };
   }, [plans]);
+
+  // ── Due-date-range filter — "how many EMIs fall due between these dates" ────
+  const visiblePlans = useMemo(() => {
+    if (!dueFrom && !dueTo) return plans;
+    const from = dueFrom ? new Date(dueFrom) : null;
+    const to   = dueTo ? new Date(dueTo) : null;
+    return plans.filter(p => {
+      const next = nextEmiBadge(p);
+      if (!next) return false; // FAVOR/FINANCER/settled plans have no next due date
+      const due = next.dueDate;
+      if (from && due < from) return false;
+      if (to && due > to) return false;
+      return true;
+    });
+  }, [plans, dueFrom, dueTo]);
 
   function remaining(plan) {
     const payable = plan.type === 'PERSONAL' ? parseFloat(plan.total_payable) : parseFloat(plan.principal);
@@ -225,11 +242,24 @@ export default function FinanceTracker() {
               <option value="SETTLED">SETTLED</option>
             </select>
           </div>
-          <div className="col-12 col-md-2">
+          <div className="col-6 col-md-2">
+            <label className="small text-muted fw-bold mb-1">Due Date From</label>
+            <input type="date" className="form-control form-control-sm" value={dueFrom} onChange={e => setDueFrom(e.target.value)} />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="small text-muted fw-bold mb-1">Due Date To</label>
+            <input type="date" className="form-control form-control-sm" value={dueTo} onChange={e => setDueTo(e.target.value)} />
+          </div>
+          <div className="col-12 col-md-1">
             <button className="btn btn-sm btn-outline-secondary fw-bold w-100"
-              onClick={() => setFilter({ type: '', status: '', search: '' })}>RESET</button>
+              onClick={() => { setFilter({ type: '', status: '', search: '' }); setDueFrom(''); setDueTo(''); }}>RESET</button>
           </div>
         </div>
+        {(dueFrom || dueTo) && (
+          <div className="mt-2 text-uppercase" style={{ fontSize: '.72rem', fontWeight: 700, color: '#1d4ed8' }}>
+            🔔 {visiblePlans.length} EMI{visiblePlans.length === 1 ? '' : 's'} due {dueFrom && dueTo ? `between ${formatDate(dueFrom)} and ${formatDate(dueTo)}` : dueFrom ? `from ${formatDate(dueFrom)}` : `up to ${formatDate(dueTo)}`}
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -246,9 +276,11 @@ export default function FinanceTracker() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={9} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : plans.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-5 text-muted fw-bold text-uppercase">No Finance Plans Found</td></tr>
-              ) : plans.map(plan => {
+              ) : visiblePlans.length === 0 ? (
+                <tr><td colSpan={9} className="text-center py-5 text-muted fw-bold text-uppercase">
+                  {(dueFrom || dueTo) ? 'No EMIs due in this date range' : 'No Finance Plans Found'}
+                </td></tr>
+              ) : visiblePlans.map(plan => {
                 const rem  = remaining(plan);
                 const next = nextEmiBadge(plan);
                 const inv  = plan.sale_invoice;

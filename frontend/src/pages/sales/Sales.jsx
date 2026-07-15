@@ -239,7 +239,9 @@ export default function Sales() {
                 <th>Products & Description</th>
                 <th className="text-end">Grand Total</th>
                 <th className="text-end" style={{color:'#475569'}}>Discount</th>
+                <th className="text-end" style={{color:'#0891b2'}}>Exchange Credit</th>
                 <th className="text-end">Paid</th>
+                <th className="text-end">Total Paid</th>
                 <th className="text-end">Balance</th>
                 <th className="text-center">Status</th>
                 <th>Invoice #</th>
@@ -248,9 +250,9 @@ export default function Sales() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+                <tr><td colSpan={12} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
               ) : sortedInvoices.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
+                <tr><td colSpan={12} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
               ) : sortedInvoices.map(inv => {
                 const fp = inv.finance_plan; // SaleFinancePlan (Personal EMI / Favor)
                 const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
@@ -320,7 +322,19 @@ export default function Sales() {
                         : '—'}
                     </td>
 
-                    {/* 6. Paid */}
+                    {/* 5b. Exchange Credit — old phone traded in as part payment */}
+                    <td className="text-end fw-bold" style={{ color: '#0891b2', whiteSpace: 'nowrap' }}>
+                      {parseFloat(inv.exchange_paid || 0) > 0
+                        ? `₹${parseFloat(inv.exchange_paid).toLocaleString('en-IN')}`
+                        : '—'}
+                    </td>
+
+                    {/* 6a. Paid — actual cash/card handed over, NOT including exchange credit or finance */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
+                      ₹{(fp ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0) : parseFloat(inv.total_paid || 0)).toLocaleString('en-IN')}
+                    </td>
+
+                    {/* 6b. Total Paid — cash + exchange credit + finance received (equals Grand Total when fully settled) */}
                     <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
                       ₹{displayPaid.toLocaleString('en-IN')}
                       {fp && parseFloat(fp.down_payment || 0) > 0 && parseFloat(fp.total_paid || 0) === 0 && (

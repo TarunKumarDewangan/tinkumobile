@@ -182,10 +182,19 @@ class EntityController extends Controller
                     'phone' => $entity->phone ?? '',
                 ];
                 
+                // suppliers.address and shops.address are NOT NULL at the DB level (unlike
+                // entities.address, which is nullable). Entities created before the address
+                // field existed on this table never got backfilled, so entity->address can
+                // still be empty even when the linked Supplier/Shop already has a real one.
+                // Never let a blank entity address overwrite (and crash on, for Supplier/Shop)
+                // an existing real address — only push it down when something was actually
+                // entered.
+                $addressToSync = $entity->address ?: $relation->address;
+
                 if ($relation instanceof \App\Models\Customer) {
                     $relationData['category'] = in_array($data['type'], ['SHOP_CUSTOMER']) ? 'SHOP' : 'REGULAR';
                     $relationData['email'] = $entity->email;
-                    $relationData['address'] = $entity->address;
+                    $relationData['address'] = $addressToSync;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relationData['voucher_code'] = $data['voucher_code'] ?? null;
 
@@ -200,11 +209,11 @@ class EntityController extends Controller
                         }
                     }
                 } elseif ($relation instanceof \App\Models\Supplier) {
-                    $relationData['address'] = $entity->address;
+                    $relationData['address'] = $addressToSync;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relation->fill($relationData)->saveQuietly();
                 } elseif ($relation instanceof \App\Models\Shop) {
-                    $relationData['address'] = $entity->address;
+                    $relationData['address'] = $addressToSync;
                     $relationData['email'] = $entity->email;
                     $relationData['gstin'] = $entity->gst_number;
                     $relation->fill($relationData)->saveQuietly();

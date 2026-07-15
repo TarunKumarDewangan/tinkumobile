@@ -8,7 +8,8 @@ import GlobalSearch from './GlobalSearch';
 const NAV = [
   { section: 'Main' },
   { to: '/', icon: '📊', label: 'Dashboard', perm: 'view_dashboard', end: true },
-  
+  { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_sales' },
+
   { 
     section: 'Master Entries', 
     dropdown: true,

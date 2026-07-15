@@ -9,6 +9,7 @@ import PinModal from './components/PinModal';
 // Pages
 const Login = lazy(() => import('./pages/auth/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const PendingBalance = lazy(() => import('./pages/PendingBalance'));
 const Products = lazy(() => import('./pages/products/Products'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
 const GenerateStickers = lazy(() => import('./pages/stickers/GenerateStickers'));
@@ -109,6 +110,7 @@ function AppRoutes() {
         {/* Protected */}
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
+          <Route path="pending-balance" element={<PendingBalance />} />
           <Route path="products" element={<Products />} />
           <Route path="products/new" element={<ProductForm />} />
           <Route path="products/:id/edit" element={<ProductForm />} />

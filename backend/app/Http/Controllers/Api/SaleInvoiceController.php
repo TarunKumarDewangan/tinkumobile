@@ -33,7 +33,7 @@ class SaleInvoiceController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = SaleInvoice::with('customer', 'user', 'items.product', 'financer', 'financePlan');
+        $query = SaleInvoice::with('customer', 'user', 'items.product.brand', 'items.product.category', 'financer', 'financePlan', 'shop');
 
         if (! $user->hasFullAccess()) {
             $query->where('shop_id', $user->shop_id);
@@ -86,6 +86,16 @@ class SaleInvoiceController extends Controller
         }
         if ($request->finance_payment_status) {
             $query->where('finance_payment_status', $request->finance_payment_status);
+        }
+
+        // Pending Balance page — only New Mobile + Old/2nd Mobile sales with money
+        // still outstanding, never cancelled ones.
+        if ($request->has_balance) {
+            $query->whereIn('payment_status', ['unpaid', 'partial'])
+                ->where('is_cancelled', false)
+                ->whereHas('items.product.category', function ($q) {
+                    $q->whereIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old']);
+                });
         }
 
         if ($request->search) {
@@ -194,7 +204,7 @@ class SaleInvoiceController extends Controller
                 ->where('created_at', '>=', now()->subMinutes(5))
                 ->first();
             if ($existing) {
-                return response()->json($existing->load('items.product', 'giftItems.giftProduct', 'customer'), 200);
+                return response()->json($existing->load('items.product.brand', 'giftItems.giftProduct', 'customer'), 200);
             }
         }
 
@@ -405,9 +415,19 @@ class SaleInvoiceController extends Controller
             // Send Sale Notification (WhatsApp + Telegram)
             $customerName = $invoice->customer_name ?? 'Walk-in';
             $itemsSummary = $this->itemNamesSummary($data['items']);
-            $paid = (float) $invoice->total_paid;
-            $balance = max(0, $grandTotal - $paid);
+            $cashPaid = (float) $invoice->total_paid;
             $shopName = \App\Models\Shop::find($shopId)?->name;
+
+            // External finance (Bajaj/HDB/etc.) money is tracked separately from
+            // total_paid — only count it as "collected" toward the balance when it's
+            // actually been received, not just pending, otherwise the balance due looks
+            // wrong (e.g. shows the full unfinanced amount even though a finance company
+            // already covered most of it).
+            $financeAmt = (float) $invoice->finance_amount;
+            $financer = $invoice->financer_id ? \App\Models\Entity::find($invoice->financer_id) : null;
+            $financeReceived = ($financer && $invoice->finance_payment_status === 'RECEIVED') ? $financeAmt : 0;
+            $totalCollected = $cashPaid + $financeReceived;
+            $balance = max(0, $grandTotal - $totalCollected);
 
             $msg = "🛍️ *New Sale!*\n";
             $msg .= "Invoice: #{$invoiceNo}\n";
@@ -415,7 +435,10 @@ class SaleInvoiceController extends Controller
             $msg .= "Customer: {$customerName}\n";
             if ($itemsSummary) $msg .= "Items: {$itemsSummary}\n";
             $msg .= "Amount: ₹" . number_format($grandTotal, 2) . "\n";
-            $msg .= "Paid: ₹" . number_format($paid, 2) . "\n";
+            $msg .= "Cash/Card Paid: ₹" . number_format($cashPaid, 2) . "\n";
+            if ($financer) {
+                $msg .= "Finance ({$financer->name}): ₹" . number_format($financeAmt, 2) . " — " . ($invoice->finance_payment_status === 'RECEIVED' ? 'Received' : 'Pending') . "\n";
+            }
             if ($balance > 0.01) $msg .= "Balance Due: ₹" . number_format($balance, 2) . "\n";
             $msg .= "Payment Mode: " . strtoupper($invoice->payment_method ?? 'CASH') . "\n";
             $msg .= "Bill Type: " . strtoupper($invoice->bill_type) . "\n";
@@ -426,7 +449,7 @@ class SaleInvoiceController extends Controller
 
             $this->notifyOwner($msg);
 
-            return response()->json($invoice->load('items.product', 'giftItems.giftProduct', 'customer'), 201);
+            return response()->json($invoice->load('items.product.brand', 'giftItems.giftProduct', 'customer'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->errorResponse($e, 'Failed to create sale');
@@ -439,7 +462,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'giftItems.giftProduct', 'shop', 'financer', 'financePlan.payments'));
+        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'items.product.brand', 'giftItems.giftProduct', 'shop', 'financer', 'financePlan.payments'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)
@@ -748,7 +771,7 @@ class SaleInvoiceController extends Controller
                 if ($oldF) app(\App\Services\EntityService::class)->syncBalance($oldF);
             }
 
-            return response()->json($saleInvoice->load('items.product', 'customer'));
+            return response()->json($saleInvoice->load('items.product.brand', 'customer'));
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->errorResponse($e, 'Failed to update sale');
@@ -797,7 +820,7 @@ class SaleInvoiceController extends Controller
             // Audit log
             ActivityLog::log('SALE_CONVERTED_PAKKA', $user, "Kaccha bill #{$saleInvoice->invoice_no} converted to pakka #{$pakka->invoice_no}");
 
-            return response()->json($pakka->load('items.product'), 201);
+            return response()->json($pakka->load('items.product.brand'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->errorResponse($e, 'Failed to convert to pakka bill');
@@ -1004,7 +1027,7 @@ class SaleInvoiceController extends Controller
 
             return response()->json([
                 'message' => 'Finance payment marked as RECEIVED successfully.',
-                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product', 'shop'))
+                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.brand', 'shop'))
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1062,7 +1085,7 @@ class SaleInvoiceController extends Controller
 
             return response()->json([
                 'message' => "Successfully converted {$convertedCount} devices in the invoice to new mobile sales.",
-                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'shop'))
+                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'items.product.brand', 'shop'))
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
