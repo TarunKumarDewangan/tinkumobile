@@ -128,6 +128,7 @@ const NAV = [
     dropdown: true,
     children: [
         { to: '/admin/whatsapp-config', icon: '⚙️', label: 'WhatsApp / Telegram', perm: 'manage_users' },
+        { to: '/admin/notifications',   icon: '📨', label: 'Send Reports Now',    perm: 'manage_users' },
     ]
   },
 

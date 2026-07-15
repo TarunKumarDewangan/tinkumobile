@@ -71,6 +71,7 @@ const GroupSummary = lazy(() => import('./pages/accounts/GroupSummary'));
 const GroupDetails = lazy(() => import('./pages/accounts/GroupDetails'));
 const TradeGroupSummary = lazy(() => import('./pages/accounts/TradeGroupSummary'));
 const WhatsAppConfig = lazy(() => import('./pages/admin/WhatsAppConfig'));
+const ManualNotifications = lazy(() => import('./pages/admin/ManualNotifications'));
 const Tasks = lazy(() => import('./pages/tasks/Tasks'));
 const TaskForm = lazy(() => import('./pages/tasks/TaskForm'));
 const TaskDetail = lazy(() => import('./pages/tasks/TaskDetail'));
@@ -181,6 +182,7 @@ function AppRoutes() {
           <Route path="accounts/group-details" element={<GroupDetails />} />
           <Route path="accounts/trade-summary" element={<TradeGroupSummary />} />
           <Route path="admin/whatsapp-config" element={<WhatsAppConfig />} />
+          <Route path="admin/notifications" element={<ManualNotifications />} />
 
           {/* Finance Tracker */}
           <Route path="finance-tracker" element={<FinanceTracker />} />
