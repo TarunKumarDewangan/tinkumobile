@@ -8,10 +8,21 @@ import GlobalSearch from './GlobalSearch';
 const NAV = [
   { section: 'Main' },
   { to: '/', icon: '📊', label: 'Dashboard', perm: 'view_dashboard', end: true },
-  { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_sales' },
 
-  { 
-    section: 'Master Entries', 
+  {
+    section: 'Accounts',
+    dropdown: true,
+    children: [
+        { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_sales' },
+        { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
+        { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
+        { to: '/accounts/trade-summary', icon: '⚖️', label: 'Sales & Purchase A/C', perm: 'view_reports' },
+        { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
+    ]
+  },
+
+  {
+    section: 'Master Entries',
     dropdown: true,
     children: [
         { to: '/purchases?category_group=master', icon: '🛒', label: 'Master Purchase', perm: 'view_purchases' },
@@ -94,18 +105,8 @@ const NAV = [
   },
 
 
-  { 
-    section: 'Accounts', 
-    dropdown: true,
-    children: [
-        { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
-        { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
-        { to: '/accounts/trade-summary', icon: '⚖️', label: 'Sales & Purchase A/C', perm: 'view_reports' },
-        { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
-    ]
-  },
-  { 
-    section: 'Airtel Recovery', 
+  {
+    section: 'Airtel Recovery',
     dropdown: true,
     children: [
         { to: '/airtel/quick-recovery', icon: '⚡', label: 'Quick Recovery', perm: 'view_airtel_recovery' },

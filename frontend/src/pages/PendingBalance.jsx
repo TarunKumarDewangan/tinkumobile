@@ -2,19 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
-import { formatDate } from '../utils/formatters';
-
-const getStatusBadge = (status) => {
-  switch (status) {
-    case 'partial': return <span className="badge-partial">PARTIAL</span>;
-    case 'unpaid': return <span className="badge-unpaid">UNPAID</span>;
-    default: return null;
-  }
-};
 
 export default function PendingBalance() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
+  const [entityIdByName, setEntityIdByName] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -25,19 +17,24 @@ export default function PendingBalance() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/sale-invoices', { params: { has_balance: 1, per_page: 1000 } });
-      setInvoices(data.data || data);
+      const [invRes, entRes] = await Promise.all([
+        api.get('/sale-invoices', { params: { has_balance: 1, per_page: 1000 } }),
+        // Customer->Entity linkage isn't reliable via the sale invoice's own
+        // customer relation (a separate, unrelated model-morph mismatch), so
+        // resolve each customer's entity id by name from the entities list
+        // directly instead.
+        api.get('/entities'),
+      ]);
+      setInvoices(invRes.data.data || invRes.data);
+      const map = {};
+      (entRes.data || []).forEach(e => { map[(e.name || '').toUpperCase()] = e.id; });
+      setEntityIdByName(map);
     } catch (e) {
       toast.error('Failed to load pending balances');
     } finally {
       setLoading(false);
     }
   };
-
-  const isOldMobile = (inv) => (inv.items || []).some(item => {
-    const slug = (item.product?.category?.slug || item.product?.category?.name || '').toLowerCase();
-    return slug.includes('mobile-old') || slug.includes('old');
-  });
 
   const rows = invoices.map(inv => {
     const fp = inv.finance_plan;
@@ -51,27 +48,47 @@ export default function PendingBalance() {
       ? Math.max(0, parseFloat(fp.principal || 0) - parseFloat(fp.total_paid || 0))
       : Math.max(0, parseFloat(inv.grand_total) - displayPaid);
 
-    return { ...inv, displayPaid, balance, category: isOldMobile(inv) ? '2ND HAND' : 'NEW MOBILE' };
+    return { ...inv, balance };
   }).filter(r => r.balance > 0.01);
 
-  const s = search.trim().toUpperCase();
-  const filtered = s
-    ? rows.filter(r =>
-        (r.customer?.name || '').toUpperCase().includes(s) ||
-        (r.customer?.phone || '').includes(s) ||
-        (r.invoice_no || '').toUpperCase().includes(s)
-      )
-    : rows;
+  // One row per customer/entity — their total outstanding across all invoices.
+  const byCustomer = new Map();
+  rows.forEach(r => {
+    const name = r.customer?.name || 'UNKNOWN';
+    const key = name.toUpperCase();
+    if (!byCustomer.has(key)) {
+      byCustomer.set(key, {
+        name,
+        phone: r.customer?.phone || '',
+        entityId: entityIdByName[key] || null,
+        balance: 0,
+      });
+    }
+    byCustomer.get(key).balance += r.balance;
+  });
 
-  const totalGrand = filtered.reduce((sum, r) => sum + parseFloat(r.grand_total || 0), 0);
-  const totalPaid = filtered.reduce((sum, r) => sum + r.displayPaid, 0);
-  const totalBalance = filtered.reduce((sum, r) => sum + r.balance, 0);
+  let customers = Array.from(byCustomer.values()).sort((a, b) => b.balance - a.balance);
+
+  const s = search.trim().toUpperCase();
+  if (s) {
+    customers = customers.filter(c => c.name.toUpperCase().includes(s) || c.phone.includes(s));
+  }
+
+  const totalBalance = customers.reduce((sum, c) => sum + c.balance, 0);
+
+  const goToAccount = (c) => {
+    if (c.entityId) {
+      navigate(`/accounts/entity-ledger?id=${c.entityId}&name=${encodeURIComponent(c.name)}`);
+    } else {
+      navigate(`/accounts/entity-ledger?name=${encodeURIComponent(c.name)}`);
+    }
+  };
 
   return (
     <div className="container-fluid py-3">
       <div className="page-header mb-3">
         <h2 className="mb-0 fw-bold text-uppercase">💰 Pending Balance</h2>
-        <p className="text-muted small mb-0 text-uppercase">All unpaid / partially paid sales — New Mobile &amp; 2nd Hand Mobile combined</p>
+        <p className="text-muted small mb-0 text-uppercase">Customers with unpaid / partially paid sales — New Mobile &amp; 2nd Hand Mobile combined</p>
       </div>
 
       <div className="card shadow-sm border-0 mb-3">
@@ -79,7 +96,7 @@ export default function PendingBalance() {
           <input
             className="form-control"
             style={{ maxWidth: 320 }}
-            placeholder="Search customer, phone, or invoice #..."
+            placeholder="Search customer or phone..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -91,70 +108,39 @@ export default function PendingBalance() {
           <table className="table table-bordered table-hover align-middle mb-0">
             <thead className="table-dark text-uppercase">
               <tr>
-                <th>Date</th>
-                <th>Customer</th>
-                <th>Category</th>
-                <th>Products</th>
-                <th className="text-end">Grand Total</th>
-                <th className="text-end">Paid</th>
+                <th style={{ width: 60 }}>S.No</th>
+                <th>Entity Name</th>
                 <th className="text-end">Balance</th>
-                <th className="text-center">Status</th>
-                <th>Invoice #</th>
-                <th className="text-center">Actions</th>
+                <th className="text-center" style={{ width: 120 }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-5 text-muted fw-bold">🎉 No pending balances found</td></tr>
-              ) : filtered.map(inv => (
-                <tr key={inv.id}>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <div className="fw-bold">{formatDate(inv.sale_date)}</div>
-                    <div className="x-small text-muted">{inv.shop?.name}</div>
-                  </td>
+                <tr><td colSpan={4} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+              ) : customers.length === 0 ? (
+                <tr><td colSpan={4} className="text-center py-5 text-muted fw-bold">🎉 No pending balances found</td></tr>
+              ) : customers.map((c, idx) => (
+                <tr key={c.name}>
+                  <td className="fw-bold text-muted">{idx + 1}</td>
                   <td>
-                    <span className="fw-bold text-decoration-underline cursor-pointer" style={{ color: '#1e293b' }} onClick={() => navigate(`/sales/${inv.id}`)}>
-                      {inv.customer?.name}
+                    <span className="fw-bold text-decoration-underline cursor-pointer" style={{ color: '#1e293b' }} onClick={() => goToAccount(c)}>
+                      {c.name}
                     </span>
-                    <div className="x-small text-muted">📞 {inv.customer?.phone}</div>
+                    {c.phone && <div className="x-small text-muted">📞 {c.phone}</div>}
                   </td>
-                  <td>
-                    <span className="badge" style={{ background: inv.category === 'NEW MOBILE' ? '#e0e7ff' : '#fef3c7', color: inv.category === 'NEW MOBILE' ? '#4338ca' : '#92400e', fontSize: '.65rem' }}>
-                      {inv.category}
-                    </span>
-                  </td>
-                  <td>
-                    {inv.items?.map((item, idx) => {
-                      const brandStr = item.product?.brand?.name || item.product?.attributes?.brand || '';
-                      const fullName = `${brandStr ? brandStr + ' ' : ''}${item.product?.name || 'UNKNOWN'}`.toUpperCase();
-                      return <div key={idx} className="x-small fw-bold">{fullName}</div>;
-                    })}
-                  </td>
-                  <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>₹{parseFloat(inv.grand_total).toLocaleString('en-IN')}</td>
-                  <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>₹{inv.displayPaid.toLocaleString('en-IN')}</td>
-                  <td className="text-end fw-bold text-danger" style={{ whiteSpace: 'nowrap' }}>₹{inv.balance.toLocaleString('en-IN')}</td>
-                  <td className="text-center">{getStatusBadge(inv.payment_status)}</td>
-                  <td>
-                    <span className="text-decoration-underline cursor-pointer" style={{ fontSize: '.78rem' }} onClick={() => navigate(`/sales/${inv.id}`)}>
-                      {inv.invoice_no}
-                    </span>
-                  </td>
+                  <td className="text-end fw-bold text-danger" style={{ whiteSpace: 'nowrap' }}>₹{c.balance.toLocaleString('en-IN')}</td>
                   <td className="text-center">
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => navigate(`/sales/${inv.id}`)}>VIEW</button>
+                    <button className="btn btn-sm btn-outline-primary" onClick={() => goToAccount(c)}>VIEW</button>
                   </td>
                 </tr>
               ))}
             </tbody>
-            {!loading && filtered.length > 0 && (
+            {!loading && customers.length > 0 && (
               <tfoot>
                 <tr className="fw-bold bg-dark text-white">
-                  <td colSpan={4} className="text-uppercase">Total ({filtered.length} invoices)</td>
-                  <td className="text-end">₹{totalGrand.toLocaleString('en-IN')}</td>
-                  <td className="text-end">₹{totalPaid.toLocaleString('en-IN')}</td>
+                  <td colSpan={2} className="text-uppercase">Total ({customers.length} customers)</td>
                   <td className="text-end">₹{totalBalance.toLocaleString('en-IN')}</td>
-                  <td colSpan={3}></td>
+                  <td></td>
                 </tr>
               </tfoot>
             )}

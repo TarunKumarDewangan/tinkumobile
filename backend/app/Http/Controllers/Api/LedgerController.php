@@ -34,6 +34,33 @@ class LedgerController extends Controller
             'credit' => $ledgers->sum('credit'),
         ];
 
+        // Attach each row's own voucher payment status (how much has actually
+        // been paid on that specific invoice as of now, and what's still
+        // outstanding) — only meaningful for SALE/PURCHASE voucher rows,
+        // which are the only ones with a "grand total" to measure against.
+        $saleIds = $ledgers->where('voucher_type', 'SALE')->pluck('voucher_id')->unique()->filter();
+        $purchaseIds = $ledgers->where('voucher_type', 'PURCHASE')->pluck('voucher_id')->unique()->filter();
+
+        $sales = \App\Models\SaleInvoice::whereIn('id', $saleIds)->get()->keyBy('id');
+        $purchases = \App\Models\PurchaseInvoice::whereIn('id', $purchaseIds)->get()->keyBy('id');
+
+        foreach ($ledgers as $ledger) {
+            $paymentReceived = null;
+            $balance = null;
+
+            if ($ledger->voucher_type === 'SALE' && ($sale = $sales[$ledger->voucher_id] ?? null)) {
+                $financeReceived = $sale->finance_payment_status === 'RECEIVED' ? (float) $sale->finance_amount : 0;
+                $paymentReceived = (float) $sale->total_paid + (float) $sale->exchange_paid + $financeReceived;
+                $balance = max(0, (float) $sale->grand_total - $paymentReceived);
+            } elseif ($ledger->voucher_type === 'PURCHASE' && ($purchase = $purchases[$ledger->voucher_id] ?? null)) {
+                $paymentReceived = (float) $purchase->total_paid;
+                $balance = max(0, (float) $purchase->grand_total - $paymentReceived);
+            }
+
+            $ledger->payment_received = $paymentReceived;
+            $ledger->voucher_balance = $balance;
+        }
+
         return response()->json([
             'entries' => $ledgers,
             'totals' => $totals

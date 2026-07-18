@@ -284,6 +284,55 @@ class StockController extends Controller
 
         $openingStock = (int)$purchasesBefore + (int)$adjAddBefore - (int)$adjRemoveBefore - (int)$salesBefore;
 
+        // Per-product running quantity, so each day's closing MOP (market/selling
+        // price) value of stock-on-hand can be computed incrementally instead of
+        // re-deriving the full stock composition from scratch on every single day.
+        $productQty = [];
+        $addQty = function ($productId, $qty) use (&$productQty) {
+            if (!$productId) return;
+            $productQty[$productId] = ($productQty[$productId] ?? 0) + $qty;
+        };
+
+        PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('purchase_date', '<', $fromDate->toDateString());
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, (int) $r->qty));
+
+        StockAdjustment::where('type', 'add')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->where('reason', '!=', 'opening_stock')
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, (int) $r->qty));
+
+        StockAdjustment::where('type', 'remove')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, -(int) $r->qty));
+
+        SaleItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('sale_date', '<', $fromDate->toDateString())->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, -(int) $r->qty));
+
+        $sellingPrices = Product::pluck('selling_price', 'id');
+        $closingMopValue = function () use (&$productQty, $sellingPrices) {
+            $total = 0;
+            foreach ($productQty as $pid => $qty) {
+                if ($qty > 0) $total += $qty * (float) ($sellingPrices[$pid] ?? 0);
+            }
+            return $total;
+        };
+
+        $openingMopValue = $closingMopValue();
+
         // ── Per-day movements ────────────────────────────────────────────────
         $days     = [];
         $running  = $openingStock;
@@ -334,6 +383,10 @@ class StockController extends Controller
 
             $running += $stockIn - $stockOut;
 
+            foreach ($purchases as $item) $addQty($item->product_id, $item->quantity);
+            foreach ($sales as $item) $addQty($item->product_id, -$item->quantity);
+            foreach ($adjustments as $adj) $addQty($adj->product_id, $adj->type === 'add' ? $adj->quantity : -$adj->quantity);
+
             // Aggregate purchase value from purchase items
             $purchaseValue = $purchases->sum(fn($i) => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0));
             $saleRevenue   = $sales->sum(fn($i) => $i->quantity * ($i->unit_price ?? 0));
@@ -350,6 +403,7 @@ class StockController extends Controller
                 'stock_in'       => $stockIn,
                 'stock_out'      => $stockOut,
                 'closing_stock'  => $running,
+                'closing_mop_value' => round($closingMopValue(), 2),
                 'purchase_value' => round($purchaseValue, 2),
                 'sale_revenue'   => round($saleRevenue, 2),
                 'sale_cost'      => round($saleCost, 2),
@@ -392,10 +446,12 @@ class StockController extends Controller
         $totalCost     = array_sum(array_column($days, 'sale_cost'));
         $totalProfit   = array_sum(array_column($days, 'profit'));
         $closingStock  = count($days) ? end($days)['closing_stock'] : $openingStock;
+        $closingMop    = count($days) ? end($days)['closing_mop_value'] : round($openingMopValue, 2);
 
         return response()->json([
             'opening_stock' => $openingStock,
             'closing_stock' => $closingStock,
+            'closing_mop_value' => $closingMop,
             'total_in'      => $totalIn,
             'total_out'     => $totalOut,
             'total_revenue' => round($totalRevenue, 2),

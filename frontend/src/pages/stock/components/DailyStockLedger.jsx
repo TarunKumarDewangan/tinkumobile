@@ -129,6 +129,7 @@ export default function DailyStockLedger() {
                       <th className="text-center" style={{ width: '80px' }}>IN ⬇️</th>
                       <th className="text-center" style={{ width: '80px' }}>OUT ⬆️</th>
                       <th className="text-center" style={{ width: '100px' }}>CLOSING</th>
+                      <th className="text-end" style={{ width: '130px' }}>MOP</th>
                       <th className="text-end" style={{ width: '130px' }}>PURCHASE VALUE</th>
                       <th className="text-end" style={{ width: '120px' }}>SALE REVENUE</th>
                       <th className="text-end pe-3" style={{ width: '110px' }}>PROFIT</th>
@@ -165,6 +166,9 @@ export default function DailyStockLedger() {
                               {fmt(day.closing_stock)}
                             </span>
                           </td>
+                          <td className="text-end fw-bold" style={{ color: '#7c3aed' }} title="Market/selling price value of the entire closing stock as of this day">
+                            {day.closing_mop_value > 0 ? fmtRs(day.closing_mop_value) : '—'}
+                          </td>
                           <td className="text-end fw-bold text-dark">{day.purchase_value > 0 ? fmtRs(day.purchase_value) : '—'}</td>
                           <td className="text-end fw-bold text-success">{day.sale_revenue > 0 ? fmtRs(day.sale_revenue) : '—'}</td>
                           <td className={`text-end pe-3 fw-bold ${day.profit >= 0 ? 'text-success' : 'text-danger'}`}>
@@ -175,7 +179,7 @@ export default function DailyStockLedger() {
                         {/* ── Expanded detail ── */}
                         {expanded[day.date] && (
                           <tr key={day.date + '-detail'}>
-                            <td colSpan="9" className="p-0">
+                            <td colSpan="10" className="p-0">
                               <div className="p-3 bg-light border-top border-bottom" style={{ fontSize: '.76rem' }}>
                                 <div className="row g-3">
 
@@ -291,6 +295,7 @@ export default function DailyStockLedger() {
                       <td className="text-center text-success">+{fmt(data.total_in)}</td>
                       <td className="text-center text-danger">-{fmt(data.total_out)}</td>
                       <td className="text-center"><span className="badge bg-primary">{fmt(data.closing_stock)}</span></td>
+                      <td className="text-end" style={{ color: '#c4b5fd' }}>{data.closing_mop_value > 0 ? fmtRs(data.closing_mop_value) : '—'}</td>
                       <td className="text-end">—</td>
                       <td className="text-end text-success">{fmtRs(data.total_revenue)}</td>
                       <td className={`text-end pe-3 ${data.total_profit >= 0 ? 'text-success' : 'text-danger'}`}>{fmtRs(data.total_profit)}</td>
