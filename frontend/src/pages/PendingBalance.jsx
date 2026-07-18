@@ -6,7 +6,7 @@ import api from '../api/axios';
 export default function PendingBalance() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
-  const [entityIdByName, setEntityIdByName] = useState({});
+  const [entityByName, setEntityByName] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -18,17 +18,18 @@ export default function PendingBalance() {
     setLoading(true);
     try {
       const [invRes, entRes] = await Promise.all([
+        // Only used to find WHICH customers have an open sale — the balance
+        // shown is their real net account balance (below), not a raw sum of
+        // invoice balances. Summing invoice balances alone ignores any other
+        // credit against the same account (e.g. stock bought back from that
+        // same customer), which understates what they've actually settled.
         api.get('/sale-invoices', { params: { has_balance: 1, per_page: 1000 } }),
-        // Customer->Entity linkage isn't reliable via the sale invoice's own
-        // customer relation (a separate, unrelated model-morph mismatch), so
-        // resolve each customer's entity id by name from the entities list
-        // directly instead.
-        api.get('/entities'),
+        api.get('/ledgers/entity-balances'),
       ]);
       setInvoices(invRes.data.data || invRes.data);
       const map = {};
-      (entRes.data || []).forEach(e => { map[(e.name || '').toUpperCase()] = e.id; });
-      setEntityIdByName(map);
+      (entRes.data || []).forEach(e => { map[(e.name || '').toUpperCase()] = e; });
+      setEntityByName(map);
     } catch (e) {
       toast.error('Failed to load pending balances');
     } finally {
@@ -36,38 +37,35 @@ export default function PendingBalance() {
     }
   };
 
-  const rows = invoices.map(inv => {
+  // Which customers currently have at least one unpaid/partial sale invoice —
+  // used only to decide who belongs on this page, not to compute the amount.
+  const namesWithOpenSale = new Set();
+  const phoneByName = {};
+  invoices.forEach(inv => {
     const fp = inv.finance_plan;
     const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
-
     const displayPaid = fp
       ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0)
       : parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
-
     const balance = fp
       ? Math.max(0, parseFloat(fp.principal || 0) - parseFloat(fp.total_paid || 0))
       : Math.max(0, parseFloat(inv.grand_total) - displayPaid);
-
-    return { ...inv, balance };
-  }).filter(r => r.balance > 0.01);
-
-  // One row per customer/entity — their total outstanding across all invoices.
-  const byCustomer = new Map();
-  rows.forEach(r => {
-    const name = r.customer?.name || 'UNKNOWN';
-    const key = name.toUpperCase();
-    if (!byCustomer.has(key)) {
-      byCustomer.set(key, {
-        name,
-        phone: r.customer?.phone || '',
-        entityId: entityIdByName[key] || null,
-        balance: 0,
-      });
+    if (balance > 0.01) {
+      const name = inv.customer?.name || 'UNKNOWN';
+      namesWithOpenSale.add(name.toUpperCase());
+      phoneByName[name.toUpperCase()] = inv.customer?.phone || '';
     }
-    byCustomer.get(key).balance += r.balance;
   });
 
-  let customers = Array.from(byCustomer.values()).sort((a, b) => b.balance - a.balance);
+  let customers = Array.from(namesWithOpenSale).map(key => {
+    const entity = entityByName[key];
+    return {
+      name: entity?.name || key,
+      phone: phoneByName[key] || entity?.phone || '',
+      entityId: entity?.id || null,
+      balance: parseFloat(entity?.net_balance ?? 0),
+    };
+  }).filter(c => c.balance > 0.01).sort((a, b) => b.balance - a.balance);
 
   const s = search.trim().toUpperCase();
   if (s) {
