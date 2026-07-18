@@ -85,10 +85,11 @@ export default function GroupDetails() {
   const filteredData = useMemo(() => {
     let result = data;
     if (type === 'CUSTOMER' || type === 'SHOP_CUSTOMER') {
-      result = data.filter(e => {
-        const custBal = (e.sales_balance || 0) + (e.works_balance || 0);
-        return Math.abs(custBal) >= 0.01;
-      });
+      // Use the backend's real net_balance (sales + purchases + repairs +
+      // works, matching the Entity Ledger exactly) — not just sales+works,
+      // which silently dropped any purchase activity recorded against a
+      // customer/shop-customer (e.g. buying stock back from a dealer).
+      result = data.filter(e => Math.abs(parseFloat(e.net_balance || 0)) >= 0.01);
     }
 
     if (!searchTerm) return result;
@@ -121,10 +122,7 @@ export default function GroupDetails() {
       }, { debit: 0, credit: 0 });
     } else {
       return filteredData.reduce((acc, e) => {
-        const isCustomer = type === 'CUSTOMER' || type === 'SHOP_CUSTOMER';
-        const bal = isCustomer 
-          ? (parseFloat(e.sales_balance || 0) + parseFloat(e.works_balance || 0))
-          : parseFloat(e.net_balance || 0);
+        const bal = parseFloat(e.net_balance || 0);
 
         if (bal > 0) acc.debit += bal;
         else if (bal < 0) acc.credit += Math.abs(bal);
@@ -396,10 +394,7 @@ export default function GroupDetails() {
                   const salesBal = parseFloat(e.sales_balance || 0);
                   const repairsBal = parseFloat(e.repairs_balance || 0);
                   const worksBal = parseFloat(e.works_balance || 0);
-                  const isCustomer = type === 'CUSTOMER' || type === 'SHOP_CUSTOMER';
-                  const bal = isCustomer 
-                    ? (salesBal + worksBal)
-                    : parseFloat(e.net_balance || 0);
+                  const bal = parseFloat(e.net_balance || 0);
                   return (
                     <tr key={e.id} className="tally-row">
                       <td className="ps-3">
