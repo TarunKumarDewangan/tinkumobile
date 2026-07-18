@@ -87,6 +87,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup']);
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);
 
+    // Stock Transfers (between shops)
+    Route::get('/stock-transfers/shops', [\App\Http\Controllers\Api\StockTransferController::class, 'shopsList']);
+    Route::get('/stock-transfers/products-at', [\App\Http\Controllers\Api\StockTransferController::class, 'productsAt']);
+    Route::get('/stock-transfers/stock-at', [\App\Http\Controllers\Api\StockTransferController::class, 'stockAt']);
+    Route::get('/stock-transfers', [\App\Http\Controllers\Api\StockTransferController::class, 'index']);
+    Route::post('/stock-transfers', [\App\Http\Controllers\Api\StockTransferController::class, 'store']);
+    Route::post('/stock-transfers/{stockTransfer}/receive', [\App\Http\Controllers\Api\StockTransferController::class, 'receive']);
+    Route::post('/stock-transfers/{stockTransfer}/cancel', [\App\Http\Controllers\Api\StockTransferController::class, 'cancel']);
+
     // Shops – owner only
     Route::apiResource('shops', ShopController::class);
 

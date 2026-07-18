@@ -94,9 +94,13 @@ class ProductController extends Controller
 
             if ($request->category_group !== 'old_mobile') {
                 $query = \App\Models\PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
-                    ->whereHas('invoice', function($q) use ($shopId, $request) {
+                    // "Currently at" shop — not the invoice's (buying) shop, since Stock
+                    // Transfer can move a unit to a different shop than the one that paid
+                    // for it. The purchase invoice itself (price, supplier, GST, date
+                    // filters below) always stays tied to whichever shop actually bought it.
+                    ->when($shopId, fn($q) => $q->where('current_shop_id', $shopId))
+                    ->whereHas('invoice', function($q) use ($request) {
                         $q->where('status', 'received');
-                        if ($shopId) $q->where('shop_id', $shopId);
                         if ($request->supplier_id) $q->where('supplier_id', $request->supplier_id);
                         if ($request->from) $q->where('purchase_date', '>=', $request->from);
                         if ($request->to) $q->where('purchase_date', '<=', $request->to);

@@ -531,6 +531,15 @@ class EntityLedgerController extends Controller
 
     /**
      * Record a manual settlement for an entity.
+     *
+     * A settlement only ever touched the entity's aggregate ledger balance —
+     * it never updated any specific Sale/Purchase invoice's own total_paid,
+     * so a customer with several open invoices would keep showing as
+     * unpaid/partial on Pending Balance and the Sales list even after being
+     * settled here. Auto-apply the settled amount FIFO (oldest invoice
+     * first) against the entity's own open invoices so those pages catch up
+     * too — without creating a second Transaction, since the settlement
+     * Transaction above already accounts for this money in the ledger.
      */
     public function recordSettlement(Request $request)
     {
@@ -549,22 +558,92 @@ class EntityLedgerController extends Controller
 
         $shopId = $user->hasFullAccess() ? ($request->shop_id ?? $user->shop_id ?? \App\Models\Shop::first()->id ?? 1) : $user->shop_id;
 
-        $transaction = $this->transactionService->recordSettlement([
-            'shop_id' => $shopId,
-            'user_id' => $user->id,
-            'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
-            'type' => $data['type'],
-            'amount' => $data['amount'],
-            'payment_mode' => $data['payment_mode'],
-            'category' => $data['category'],
-            'description' => $data['description'] ?? "Manual settlement for {$data['entity_name']}",
-            'entity_name' => $data['entity_name'],
-            'accounting_entity_id' => $entity ? $entity->id : null,
-        ]);
+        return DB::transaction(function () use ($data, $user, $entity, $shopId) {
+            $transaction = $this->transactionService->recordSettlement([
+                'shop_id' => $shopId,
+                'user_id' => $user->id,
+                'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
+                'type' => $data['type'],
+                'amount' => $data['amount'],
+                'payment_mode' => $data['payment_mode'],
+                'category' => $data['category'],
+                'description' => $data['description'] ?? "Manual settlement for {$data['entity_name']}",
+                'entity_name' => $data['entity_name'],
+                'accounting_entity_id' => $entity ? $entity->id : null,
+            ]);
 
-        return response()->json([
-            'message' => 'Settlement recorded successfully',
-            'transaction' => $transaction
-        ], 201);
+            $appliedTo = $this->applySettlementToInvoices($entity, $data['entity_name'], $data['type'], (float) $data['amount']);
+
+            return response()->json([
+                'message' => 'Settlement recorded successfully',
+                'transaction' => $transaction,
+                'applied_to_invoices' => $appliedTo,
+            ], 201);
+        });
+    }
+
+    /**
+     * FIFO-apply a settled amount onto the entity's own open invoices
+     * (Sales for a Customer-type entity when money came IN, Purchases for a
+     * Supplier-type entity when money went OUT). Matches by relation first,
+     * falling back to name — same pattern used throughout EntityService.
+     */
+    private function applySettlementToInvoices(?\App\Models\Entity $entity, string $entityName, string $type, float $remaining): array
+    {
+        $applied = [];
+        if ($remaining <= 0) return $applied;
+
+        if ($type === 'IN') {
+            $customerIds = \App\Models\Customer::where('name', $entityName)->pluck('id');
+            if ($entity && $entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+                $customerIds->push($entity->relation_id);
+            }
+            if ($customerIds->isEmpty()) return $applied;
+
+            $invoices = \App\Models\SaleInvoice::whereIn('customer_id', $customerIds->unique())
+                ->where('is_cancelled', false)
+                ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->orderBy('sale_date')->orderBy('id')
+                ->lockForUpdate()->get();
+
+            foreach ($invoices as $invoice) {
+                if ($remaining <= 0) break;
+                $alreadyCovered = (float) $invoice->total_paid + (float) $invoice->exchange_paid
+                    + ($invoice->finance_payment_status === 'RECEIVED' ? (float) $invoice->finance_amount : 0);
+                $outstanding = max(0, (float) $invoice->grand_total - $alreadyCovered);
+                if ($outstanding <= 0) continue;
+
+                $apply = min($outstanding, $remaining);
+                $invoice->total_paid += $apply;
+                $invoice->updatePaymentStatus();
+                $remaining -= $apply;
+                $applied[] = ['invoice_no' => $invoice->invoice_no, 'type' => 'sale', 'amount' => $apply];
+            }
+        } elseif ($type === 'OUT') {
+            $supplierIds = \App\Models\Supplier::where('name', $entityName)->pluck('id');
+            if ($entity && $entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
+                $supplierIds->push($entity->relation_id);
+            }
+            if ($supplierIds->isEmpty()) return $applied;
+
+            $invoices = \App\Models\PurchaseInvoice::whereIn('supplier_id', $supplierIds->unique())
+                ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->orderBy('purchase_date')->orderBy('id')
+                ->lockForUpdate()->get();
+
+            foreach ($invoices as $invoice) {
+                if ($remaining <= 0) break;
+                $outstanding = max(0, (float) $invoice->grand_total - (float) $invoice->total_paid);
+                if ($outstanding <= 0) continue;
+
+                $apply = min($outstanding, $remaining);
+                $invoice->total_paid += $apply;
+                $invoice->updatePaymentStatus();
+                $remaining -= $apply;
+                $applied[] = ['invoice_no' => $invoice->invoice_no, 'type' => 'purchase', 'amount' => $apply];
+            }
+        }
+
+        return $applied;
     }
 }

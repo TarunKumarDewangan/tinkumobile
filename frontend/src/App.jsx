@@ -55,6 +55,7 @@ const ProfitReport = lazy(() => import('./pages/reports/ProfitReport'));
 const StockReport = lazy(() => import('./pages/reports/StockReport'));
 const LoanReport = lazy(() => import('./pages/reports/LoanReport'));
 const StockEntry = lazy(() => import('./pages/StockEntry'));
+const StockTransfers = lazy(() => import('./pages/stock/StockTransfers'));
 const ClosingStockDetail = lazy(() => import('./pages/stock/ClosingStockDetail'));
 const AirtelRetailers = lazy(() => import('./pages/airtel/AirtelRetailers'));
 const AirtelDrops = lazy(() => import('./pages/airtel/AirtelDrops'));
@@ -150,6 +151,7 @@ function AppRoutes() {
           <Route path="gifts" element={<Gifts />} />
           <Route path="stock-entry" element={<StockEntry />} />
           <Route path="stock-entry/closing-stock" element={<ClosingStockDetail />} />
+          <Route path="stock-transfers" element={<StockTransfers />} />
           <Route path="employees" element={<Employees />} />
           <Route path="incentives" element={<Incentives />} />
           <Route path="offers" element={<CompanyOffers />} />

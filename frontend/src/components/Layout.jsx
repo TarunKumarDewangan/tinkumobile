@@ -23,10 +23,11 @@ const NAV = [
     section: 'New Mobile',
     dropdown: true,
     children: [
-        { to: '/purchases',       icon: '🛒', label: 'Purchases',  perm: 'view_purchases' },
-        { to: '/stock-entry',     icon: '📦', label: 'Stocks',     perm: 'create_purchases' },
-        { to: '/sales',           icon: '🧾', label: 'Sales',      perm: 'view_sales' },
-        { to: '/finance-tracker', icon: '💳', label: 'Finance',    perm: 'view_sales' },
+        { to: '/purchases',        icon: '🛒', label: 'Purchases',      perm: 'view_purchases' },
+        { to: '/stock-entry',      icon: '📦', label: 'Stocks',         perm: 'create_purchases' },
+        { to: '/stock-transfers',  icon: '🚚', label: 'Stock Transfer', perm: 'create_purchases' },
+        { to: '/sales',            icon: '🧾', label: 'Sales',          perm: 'view_sales' },
+        { to: '/finance-tracker',  icon: '💳', label: 'Finance',        perm: 'view_sales' },
     ]
   },
   

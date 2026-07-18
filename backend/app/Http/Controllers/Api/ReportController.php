@@ -378,7 +378,15 @@ class ReportController extends Controller
 
         $shopId = $this->shopFilter($request);
 
-        $salesQuery = SaleItem::select('sale_items.product_id', 'products.name as product_name', 'products.selling_price as mop_price', 'sale_invoices.sale_date', DB::raw('SUM(sale_items.quantity) as total_qty'))
+        // MOP (the actual ₹ a set sold for) must come from the real sale line
+        // (sale_items.total) — the product's own products.selling_price is a
+        // single, mutable master-data field that's the same for every sale
+        // regardless of what it actually sold for, so using it here flattened
+        // every real, differently-priced/discounted sale to one static number.
+        $salesQuery = SaleItem::select('sale_items.product_id', 'products.name as product_name', 'sale_invoices.sale_date',
+                DB::raw('SUM(sale_items.quantity) as total_qty'),
+                DB::raw('SUM(sale_items.total) as day_amount')
+            )
             ->join('sale_invoices', 'sale_items.sale_invoice_id', '=', 'sale_invoices.id')
             ->join('products', 'sale_items.product_id', '=', 'products.id')
             ->whereIn('products.category_id', $catIds)
@@ -396,7 +404,7 @@ class ReportController extends Controller
             $salesQuery->where('products.name', 'like', $searchTerm);
         }
 
-        $salesData = $salesQuery->groupBy('sale_items.product_id', 'products.name', 'products.selling_price', 'sale_invoices.sale_date')
+        $salesData = $salesQuery->groupBy('sale_items.product_id', 'products.name', 'sale_invoices.sale_date')
             ->get();
 
         $products = [];
@@ -404,23 +412,24 @@ class ReportController extends Controller
         $grandMopTotal = 0;
         foreach ($salesData as $row) {
             $pid = $row->product_id;
-            $mopPrice = (float) ($row->mop_price ?? 0);
+            $amount = (float) ($row->day_amount ?? 0);
             if (!isset($products[$pid])) {
                 $products[$pid] = [
                     'product_id' => $pid,
                     'product_name' => $row->product_name,
-                    'mop_price' => $mopPrice,
                     'sales' => [],
+                    'mop_sales' => [],
                     'total_sold' => 0,
                     'total_mop' => 0
                 ];
             }
             $qty = (int) $row->total_qty;
             $products[$pid]['sales'][$row->sale_date] = $qty;
+            $products[$pid]['mop_sales'][$row->sale_date] = $amount;
             $products[$pid]['total_sold'] += $qty;
-            $products[$pid]['total_mop'] += ($qty * $mopPrice);
+            $products[$pid]['total_mop'] += $amount;
             $grandTotal += $qty;
-            $grandMopTotal += ($qty * $mopPrice);
+            $grandMopTotal += $amount;
         }
 
         usort($products, fn($a, $b) => strcasecmp($a['product_name'], $b['product_name']));

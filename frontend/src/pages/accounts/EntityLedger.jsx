@@ -246,11 +246,17 @@ export default function EntityLedger() {
       if (settleData.payment_mode === 'OTHER' && settleData.other_mode) {
         finalData.payment_mode = settleData.other_mode;
       }
-      await api.post('/entities/settle', {
+      const { data } = await api.post('/entities/settle', {
         ...finalData,
         entity_name: selectedEntityName
       });
-      toast.success('Settlement recorded');
+      const applied = data.applied_to_invoices || [];
+      if (applied.length > 0) {
+        const summary = applied.map(a => `#${a.invoice_no} (+₹${Number(a.amount).toLocaleString('en-IN')})`).join(', ');
+        toast.success(`Settlement recorded — applied to: ${summary}`);
+      } else {
+        toast.success('Settlement recorded');
+      }
       setShowSettleModal(false);
       setSettleData({ ...settleData, amount: '', description: '', transaction_date: new Date().toISOString().split('T')[0] });
       loadLedger(selectedEntityId, selectedEntityName);
