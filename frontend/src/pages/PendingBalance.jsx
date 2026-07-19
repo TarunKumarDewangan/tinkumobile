@@ -14,6 +14,7 @@ const CATEGORIES = [
 export default function PendingBalance() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
+  const [entities, setEntities] = useState([]);
   const [entityByName, setEntityByName] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -26,11 +27,17 @@ export default function PendingBalance() {
   const load = async () => {
     setLoading(true);
     try {
+      // Sale invoices are only needed for Personal Finance / Company Finance
+      // below (those relationships only exist on the invoice, not on any
+      // entity). Customer/Shop Customer now come straight from the entity
+      // balances themselves, so ANY kind of pending debt shows up here —
+      // repairs, loans, opening balances, not just an open sale invoice.
       const [invRes, entRes] = await Promise.all([
         api.get('/sale-invoices', { params: { has_balance: 1, per_page: 1000 } }),
         api.get('/ledgers/entity-balances'),
       ]);
       setInvoices(invRes.data.data || invRes.data);
+      setEntities(entRes.data || []);
       const map = {};
       (entRes.data || []).forEach(e => { map[(e.name || '').toUpperCase()] = e; });
       setEntityByName(map);
@@ -56,28 +63,20 @@ export default function PendingBalance() {
   // own definition of "balance" — these are genuinely different relationships,
   // not just a filter on one shared number. ──────────────────────────────────
 
-  // 1 & 2: Customer / Shop Customer — their real net account balance (same
-  // figure as the Entity Ledger), for anyone with at least one open sale.
-  const namesWithOpenSale = new Map(); // upper name -> { phone, category }
-  invoices.forEach(inv => {
-    if (invoiceBalance(inv) > 0.01) {
-      const name = inv.customer?.name || 'UNKNOWN';
-      namesWithOpenSale.set(name.toUpperCase(), {
-        phone: inv.customer?.phone || '',
-        isShop: inv.customer?.category === 'SHOP',
-      });
-    }
-  });
-  const customerRows = Array.from(namesWithOpenSale.entries()).map(([key, info]) => {
-    const entity = entityByName[key];
-    return {
-      category: info.isShop ? 'SHOP_CUSTOMER' : 'CUSTOMER',
-      name: entity?.name || key,
-      phone: info.phone || entity?.phone || '',
-      entityId: entity?.id || null,
-      balance: parseFloat(entity?.net_balance ?? 0),
-    };
-  }).filter(r => r.balance > 0.01);
+  // 1 & 2: Customer / Shop Customer — ANY entity of that type with a
+  // pending net balance, regardless of what created it (sale invoice,
+  // repair, loan, opening balance, etc.) — not gated by having an open
+  // sale invoice, so nothing with a real pending amount gets left out.
+  const customerRows = entities
+    .filter(e => e.type === 'CUSTOMER' || e.type === 'SHOP_CUSTOMER')
+    .map(e => ({
+      category: e.type,
+      name: e.name,
+      phone: e.phone || '',
+      entityId: e.id,
+      balance: parseFloat(e.net_balance ?? 0),
+    }))
+    .filter(r => r.balance > 0.01);
 
   // 3: Personal Finance (Shop Finance/EMI) — the customer's own EMI plan
   // balance, separate from their regular invoice balance above.
