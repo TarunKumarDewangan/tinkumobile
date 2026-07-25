@@ -405,6 +405,21 @@ class SaleInvoiceController extends Controller
                     'status'          => 'ACTIVE',
                     'created_by'      => $user->id,
                 ]);
+
+                // A Shop Finance down payment is real cash received, exactly like
+                // the total_paid branch above — but it lives on the finance plan,
+                // not on the invoice, so it was never reaching the Ledger. Without
+                // this, the customer's Entity Ledger/net balance kept counting the
+                // full grand_total as owed even after the down payment was taken.
+                $downPayment = (float) ($sf['down_payment'] ?? 0);
+                if ($downPayment > 0) {
+                    $this->transactionService->recordForModel($invoice, [
+                        'type'        => 'IN',
+                        'category'    => 'SHOP_FINANCE_DOWN_PAYMENT',
+                        'amount'      => $downPayment,
+                        'description' => "Shop Finance down payment for Invoice #{$invoice->invoice_no}",
+                    ]);
+                }
             }
 
             DB::commit();
@@ -657,6 +672,16 @@ class SaleInvoiceController extends Controller
                 $tx->delete();
             }
 
+            // Delete old shop-finance down-payment transactions individually so
+            // Eloquent delete events fire — re-posted below with current data.
+            $oldDownPaymentTransactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                ->where('entity_id', $saleInvoice->id)
+                ->where('category', 'SHOP_FINANCE_DOWN_PAYMENT')
+                ->get();
+            foreach ($oldDownPaymentTransactions as $tx) {
+                $tx->delete();
+            }
+
             // Delete old cash income transactions individually so events fire
             $oldCashTransactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
                 ->where('entity_id', $saleInvoice->id)
@@ -752,6 +777,17 @@ class SaleInvoiceController extends Controller
                         'status'          => 'ACTIVE',
                         'created_by'      => $user->id,
                     ]));
+                }
+
+                // Re-post the down payment with current data (old one was deleted above).
+                $downPayment = (float) ($sf['down_payment'] ?? 0);
+                if ($downPayment > 0) {
+                    $this->transactionService->recordForModel($saleInvoice, [
+                        'type'        => 'IN',
+                        'category'    => 'SHOP_FINANCE_DOWN_PAYMENT',
+                        'amount'      => $downPayment,
+                        'description' => "Shop Finance down payment for Invoice #{$saleInvoice->invoice_no}",
+                    ]);
                 }
             }
 

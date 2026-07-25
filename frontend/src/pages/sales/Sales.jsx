@@ -263,9 +263,11 @@ export default function Sales() {
                   ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0)
                   : parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
 
-                // Balance: for personal/favor = remaining principal unpaid; for others = usual calc
+                // Balance: for personal/favor = remaining total payable (principal + interest,
+                // matching what Finance Tracker shows as Due) minus EMIs paid so far; for
+                // Favor plans total_payable === principal, so this covers both cleanly.
                 const balance = fp
-                  ? Math.max(0, parseFloat(fp.principal || 0) - parseFloat(fp.total_paid || 0))
+                  ? Math.max(0, parseFloat(fp.total_payable || fp.principal || 0) - parseFloat(fp.total_paid || 0))
                   : Math.max(0, parseFloat(inv.grand_total) - displayPaid);
                 const navTo = (path) => navigate(category_group ? `${path}?category_group=${category_group}` : path);
                 return (

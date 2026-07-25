@@ -54,8 +54,11 @@ export default function PendingBalance() {
     const displayPaid = fp
       ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0)
       : parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
+    // total_payable (principal + interest for Personal plans; equals principal
+    // for Favor plans) matches what Finance Tracker shows as Due — using just
+    // principal here understated the real amount owed by the interest portion.
     return fp
-      ? Math.max(0, parseFloat(fp.principal || 0) - parseFloat(fp.total_paid || 0))
+      ? Math.max(0, parseFloat(fp.total_payable || fp.principal || 0) - parseFloat(fp.total_paid || 0))
       : Math.max(0, parseFloat(inv.grand_total) - displayPaid);
   };
 
