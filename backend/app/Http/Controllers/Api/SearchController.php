@@ -56,7 +56,7 @@ class SearchController extends Controller
         // Entities (accounting)
         Entity::where(fn($qr) => $qr->where('name', 'like', $like)->orWhere('phone', 'like', $like))
             ->limit(self::LIMIT)->get()->each(function ($e) use (&$results) {
-                $results[] = ['type' => 'Entity', 'icon' => '🏦', 'title' => $e->name, 'subtitle' => $e->type, 'link' => '/accounts/entity-manager'];
+                $results[] = ['type' => 'Entity', 'icon' => '🏦', 'title' => $e->name, 'subtitle' => $e->type, 'link' => '/accounts/entity-ledger?id=' . $e->id . '&name=' . urlencode($e->name)];
             });
 
         // Products

@@ -17,8 +17,10 @@ export default function Sales() {
   const category_group = searchParams.get('category_group') || 'new_mobile';
   const [showBackupModal, setShowBackupModal] = useState(false);
 
+  const today = new Date().toISOString().slice(0, 10);
+
   const [filters, setFilters] = useState({
-    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: '',
+    from: today, to: today, bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: '',
     model: '', color: '', imei: ''
   });
   const [sortMode, setSortMode] = useState('date'); // 'date' | 'entry'
@@ -191,7 +193,7 @@ export default function Sales() {
                 <input type="text" className="form-control form-control-sm" placeholder="E.G. 3546..." value={filters.imei} onChange={e => setFilters({...filters, imei: e.target.value})} />
             </div>
             <div className="col-12 col-md-2 d-flex align-items-end">
-                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: '', model: '', color: '', imei: ''})}>RESET</button>
+                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from: today, to: today, bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: '', model: '', color: '', imei: ''})}>RESET</button>
             </div>
         </div>
 

@@ -125,6 +125,135 @@ class OldMobileController extends Controller
         });
     }
 
+    /**
+     * Record several devices bought from the SAME customer in one visit.
+     * Each device still becomes its own OldMobilePurchase row with its own
+     * Product/Inventory/Transaction entry — identical to store() per item —
+     * so every existing report, exchange-credit calc, and resale flow keeps
+     * working unchanged. Only the customer-facing form and notification
+     * are batched into one.
+     */
+    public function bulkStore(Request $request)
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'customer_id'    => 'nullable|exists:customers,id',
+            'customer_name'  => 'nullable|string|max:150',
+            'customer_phone' => 'nullable|string|max:20',
+            'customer_address' => 'nullable|string|max:255',
+            'purchase_date'  => 'required|date',
+            'is_exchange'    => 'nullable|boolean',
+            'items'          => 'required|array|min:1',
+            'items.*.model_name'     => 'required|string|max:150',
+            'items.*.imei'           => 'nullable|string|max:20',
+            'items.*.purchase_price' => 'required|numeric|min:0',
+            'items.*.selling_price'  => 'nullable|numeric|min:0',
+            'items.*.ram'            => 'nullable|string|max:50',
+            'items.*.storage'        => 'nullable|string|max:50',
+            'items.*.color'          => 'nullable|string|max:100',
+            'items.*.condition_note' => 'nullable|string',
+        ]);
+
+        if (!$data['customer_id'] && !$data['customer_phone']) {
+            return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        $customerId = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE (BULK)');
+        $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
+        $isExchange = (bool) ($data['is_exchange'] ?? false);
+        $categoryId = \App\Models\Category::mobileOldId();
+
+        // Only tag a batch_id when there's actually more than one device —
+        // a single-device bulk submission is indistinguishable from the
+        // original single-purchase flow, so leave it ungrouped like those.
+        $batchId = count($data['items']) > 1 ? (string) \Illuminate\Support\Str::uuid() : null;
+
+        return DB::transaction(function () use ($data, $user, $customerId, $shopId, $isExchange, $categoryId, $batchId) {
+            $created = [];
+            $totalAmount = 0;
+
+            foreach ($data['items'] as $item) {
+                $purchase = OldMobilePurchase::create([
+                    'customer_id'    => $customerId,
+                    'shop_id'        => $shopId,
+                    'user_id'        => $user->id,
+                    'batch_id'       => $batchId,
+                    'model_name'     => $item['model_name'],
+                    'imei'           => $this->sanitizeImei($item['imei'] ?? null),
+                    'purchase_price' => $item['purchase_price'],
+                    'selling_price'  => $item['selling_price'] ?? 0,
+                    'is_exchange'    => $isExchange,
+                    'ram'            => $item['ram'] ?? null,
+                    'storage'        => $item['storage'] ?? null,
+                    'color'          => $item['color'] ?? null,
+                    'condition_note' => $item['condition_note'] ?? null,
+                    'purchase_date'  => $data['purchase_date'],
+                ]);
+
+                $product = \App\Models\Product::create([
+                    'category_id'    => $categoryId,
+                    'name'           => $purchase->model_name,
+                    'sku'            => \App\Models\Product::generateSku($purchase->model_name),
+                    'imei'           => $purchase->imei,
+                    'purchase_price' => $purchase->purchase_price,
+                    'selling_price'  => $purchase->selling_price ?? 0,
+                    'attributes'     => [
+                        'ram'     => $purchase->ram,
+                        'storage' => $purchase->storage,
+                        'color'   => $purchase->color,
+                    ]
+                ]);
+
+                $purchase->update(['product_id' => $product->id]);
+                \App\Models\Inventory::addStock($shopId, $product->id, 1);
+                $purchase->load('customer');
+
+                if ($purchase->purchase_price > 0) {
+                    if ($isExchange) {
+                        $this->transactionService->recordForModel($purchase, [
+                            'type'             => 'IN',
+                            'category'         => 'OLD_MOBILE_EXCHANGE',
+                            'amount'           => $purchase->purchase_price,
+                            'payment_mode'     => 'EXCHANGE',
+                            'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                            'transaction_date' => $purchase->purchase_date,
+                            'shop_id'          => $shopId,
+                        ]);
+                    } else {
+                        $this->transactionService->recordForModel($purchase, [
+                            'type'             => 'OUT',
+                            'category'         => 'OLD_MOBILE_PURCHASE',
+                            'amount'           => $purchase->purchase_price,
+                            'payment_mode'     => 'CASH',
+                            'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                            'transaction_date' => $purchase->purchase_date,
+                            'shop_id'          => $shopId,
+                        ]);
+                    }
+                }
+
+                $totalAmount += (float) $purchase->purchase_price;
+                $created[] = $purchase;
+            }
+
+            $customerName = $created[0]->customer->name ?? ($data['customer_name'] ?? 'Customer');
+            $modelList = collect($created)->map(fn ($p) => $p->model_name . ($p->imei ? " (IMEI: {$p->imei})" : ''))->implode("\n• ");
+
+            ActivityLog::log('OLD_MOBILE_PURCHASED_BULK', $created[0],
+                count($created) . " old mobiles purchased from {$customerName}: ₹" . number_format($totalAmount, 2)
+            );
+
+            $this->notifyOwner(
+                "📱 *2nd Hand Purchase (" . count($created) . " devices)*\n• {$modelList}" .
+                "\nFrom: {$customerName}" .
+                "\nTotal: ₹" . number_format($totalAmount, 2) .
+                "\nBy: {$user->name}"
+            );
+
+            return response()->json($created, 201);
+        });
+    }
+
     public function show(Request $request, OldMobilePurchase $oldMobilePurchase)
     {
         $user = $request->user();

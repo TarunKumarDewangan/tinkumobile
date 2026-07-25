@@ -178,6 +178,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Old Mobiles
     Route::get('/old-mobiles', [OldMobileController::class, 'index']);
     Route::post('/old-mobiles', [OldMobileController::class, 'store']);
+    Route::post('/old-mobiles/bulk', [OldMobileController::class, 'bulkStore']);
     Route::get('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'show']);
     Route::put('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'update']);
     Route::delete('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'destroy']);

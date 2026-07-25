@@ -5,6 +5,7 @@ import { Modal, Button } from 'react-bootstrap';
 import debounce from 'lodash/debounce';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import OldMobilePurchaseModal from '../../components/OldMobilePurchaseModal';
 
 // Simple UUID v4 generator for idempotency
 function generateIdempotencyKey() {
@@ -96,6 +97,7 @@ export default function SaleForm() {
   
   // Exchange credit state
   const [customerCredit, setCustomerCredit] = useState(0);
+  const [showOldMobileModal, setShowOldMobileModal] = useState(false);
   
   // External Finance / EMI (Bajaj, HDB, etc.)
   const [useFinance, setUseFinance] = useState(false);
@@ -737,28 +739,28 @@ export default function SaleForm() {
     c.phone.includes(customerSearch)
   );
 
+  const refreshCustomerCredit = (customerId) => {
+    if (!customerId) {
+      setCustomerCredit(0);
+      return;
+    }
+    const params = new URLSearchParams({ customer_id: customerId });
+    if (id) params.set('exclude_sale_invoice_id', id);
+    api.get(`/entities/customer-ledger?${params}`)
+      .then(res => {
+        const bal = parseFloat(res.data.entity?.net_balance || 0);
+        setCustomerCredit(bal < 0 ? Math.abs(bal) : 0);
+      })
+      .catch(() => setCustomerCredit(0));
+  };
+
   const handleSelectCustomer = (c) => {
     setForm({ ...form, customer_id: c.id });
     setCustomerSearch(c.name);
     setCustomerInputText(c.name);
     setSelectedCustomer(c);
     setPriceMode(c.category === 'SHOP' ? 'WHOLESALE' : 'RETAIL');
-    if (c.id) {
-      const params = new URLSearchParams({ customer_id: c.id });
-      if (id) params.set('exclude_sale_invoice_id', id);
-      api.get(`/entities/customer-ledger?${params}`)
-        .then(res => {
-          const bal = parseFloat(res.data.entity?.net_balance || 0);
-          if (bal < 0) {
-            setCustomerCredit(Math.abs(bal));
-          } else {
-            setCustomerCredit(0);
-          }
-        })
-        .catch(() => setCustomerCredit(0));
-    } else {
-      setCustomerCredit(0);
-    }
+    refreshCustomerCredit(c.id);
   };
 
   const handlePaymentMethodChange = (method) => {
@@ -1060,6 +1062,18 @@ export default function SaleForm() {
                                 </div>
                             )}
                         </div>
+
+                        {form.customer_id && (
+                            <div className="col-12">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-success btn-sm fw-bold w-100 py-2"
+                                    onClick={() => setShowOldMobileModal(true)}
+                                >
+                                    📲 RECORD OLD PHONE PURCHASE / EXCHANGE FROM THIS CUSTOMER
+                                </button>
+                            </div>
+                        )}
 
                         {/* Price Mode Toggle Block */}
                         <div className="col-12 mt-3 pt-3 border-top">
@@ -2186,6 +2200,16 @@ export default function SaleForm() {
               </Modal.Footer>
           </form>
       </Modal>
+
+      <OldMobilePurchaseModal
+          show={showOldMobileModal}
+          onHide={() => setShowOldMobileModal(false)}
+          shopId={form.shop_id}
+          customerId={form.customer_id}
+          customerName={selectedCustomer?.name}
+          purchaseDate={form.sale_date}
+          onSaved={() => refreshCustomerCredit(form.customer_id)}
+      />
 
       <style>{`
           .x-small { font-size: 0.7rem; }

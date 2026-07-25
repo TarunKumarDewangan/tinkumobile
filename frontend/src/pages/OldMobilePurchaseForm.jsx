@@ -10,24 +10,30 @@ export default function OldMobilePurchaseForm() {
   const { user, isOwner, hasFullAccess } = useAuth();
   const navigate = useNavigate();
 
-  // Form State
+  const emptyDevice = () => ({
+    model_name: '', imei: '', ram: '', storage: '', color: '',
+    purchase_price: '', selling_price: '', condition_note: '',
+  });
+
+  // Form State — shop/customer/date/payout-mode are shared across every
+  // device in this visit; each device gets its own row in `devices`.
   const [form, setForm] = useState({
     shop_id: '',
     customer_id: '',
     customer_name: '',
     customer_phone: '',
     customer_address: '',
-    model_name: '',
-    imei: '',
-    ram: '',
-    storage: '',
-    color: '',
-    purchase_price: '',
-    selling_price: '',
     is_exchange: true,
-    condition_note: '',
     purchase_date: new Date().toISOString().split('T')[0],
   });
+  const [devices, setDevices] = useState([emptyDevice()]);
+
+  const updateDevice = (idx, field, val) => {
+    setDevices(prev => prev.map((d, i) => i === idx ? { ...d, [field]: val } : d));
+  };
+  const addDevice = () => setDevices(prev => [...prev, emptyDevice()]);
+  const removeDevice = (idx) => setDevices(prev => prev.filter((_, i) => i !== idx));
+  const totalPurchasePrice = devices.reduce((sum, d) => sum + (parseFloat(d.purchase_price) || 0), 0);
 
   // Masters
   const [shops, setShops] = useState([]);
@@ -141,16 +147,24 @@ export default function OldMobilePurchaseForm() {
       toast.error('Please select an existing customer or enter new customer details');
       return;
     }
+    const invalidDevice = devices.findIndex(d => !d.model_name.trim() || d.purchase_price === '' || parseFloat(d.purchase_price) < 0);
+    if (invalidDevice !== -1) {
+      toast.error(`Device ${invalidDevice + 1}: Model Name and Purchase Price are required`);
+      return;
+    }
 
     setSaving(true);
     try {
-      await api.post('/old-mobiles', {
+      await api.post('/old-mobiles/bulk', {
         ...form,
-        purchase_price: parseFloat(form.purchase_price),
-        selling_price: form.selling_price ? parseFloat(form.selling_price) : 0,
-        is_exchange: form.is_exchange ? 1 : 0
+        is_exchange: form.is_exchange ? 1 : 0,
+        items: devices.map(d => ({
+          ...d,
+          purchase_price: parseFloat(d.purchase_price),
+          selling_price: d.selling_price ? parseFloat(d.selling_price) : 0,
+        })),
       });
-      toast.success('Old mobile purchase recorded successfully!');
+      toast.success(devices.length > 1 ? `${devices.length} old mobile purchases recorded successfully!` : 'Old mobile purchase recorded successfully!');
       navigate('/old-mobiles');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Error recording old mobile purchase');
@@ -313,142 +327,161 @@ export default function OldMobilePurchaseForm() {
           </div>
         </div>
 
-        {/* Right Side: Specifications & Value */}
+        {/* Right Side: Devices (one or more) */}
         <div className="col-lg-6">
-          <div className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4 mb-4">
-            <h4 className="text-dark mb-4 border-bottom border-secondary-subtle pb-2">📱 Mobile Specifications</h4>
-
-            <div className="row g-3">
-              <div className="col-12">
-                <label className="form-label text-muted small fw-bold">MODEL NAME <span className="text-danger">*</span></label>
-                <input 
-                  type="text" 
-                  className="form-control bg-white text-dark border-secondary-subtle text-uppercase fw-semibold"
-                  placeholder="e.g. IPHONE 13 PRO MAX"
-                  required
-                  value={form.model_name}
-                  onChange={e => setForm({...form, model_name: e.target.value})}
-                />
+          {devices.map((d, idx) => (
+            <div key={idx} className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4 mb-4">
+              <div className="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary-subtle pb-2">
+                <h4 className="text-dark mb-0">📱 Device {idx + 1}{devices.length > 1 ? ` of ${devices.length}` : ''}</h4>
+                {devices.length > 1 && (
+                  <button type="button" className="btn btn-sm btn-outline-danger fw-bold" onClick={() => removeDevice(idx)}>
+                    ✕ Remove
+                  </button>
+                )}
               </div>
 
-              <div className="col-md-6">
-                <label className="form-label text-muted small fw-bold">IMEI / SERIAL NO.</label>
-                <input 
-                  type="text" 
-                  className="form-control bg-white text-dark border-secondary-subtle fw-semibold text-uppercase"
-                  placeholder="15-digit IMEI"
-                  value={form.imei}
-                  onChange={e => setForm({...form, imei: e.target.value})}
-                />
-              </div>
+              <div className="row g-3">
+                <div className="col-12">
+                  <label className="form-label text-muted small fw-bold">MODEL NAME <span className="text-danger">*</span></label>
+                  <input
+                    type="text"
+                    className="form-control bg-white text-dark border-secondary-subtle text-uppercase fw-semibold"
+                    placeholder="e.g. IPHONE 13 PRO MAX"
+                    required
+                    value={d.model_name}
+                    onChange={e => updateDevice(idx, 'model_name', e.target.value)}
+                  />
+                </div>
 
-              <div className="col-md-6">
-                <label className="form-label text-muted small fw-bold">COLOR</label>
-                <input 
-                  type="text" 
-                  className="form-control bg-white text-dark border-secondary-subtle text-uppercase fw-semibold"
-                  placeholder="e.g. ALPINE GREEN"
-                  value={form.color}
-                  onChange={e => setForm({...form, color: e.target.value})}
-                />
-              </div>
+                <div className="col-md-6">
+                  <label className="form-label text-muted small fw-bold">IMEI / SERIAL NO.</label>
+                  <input
+                    type="text"
+                    className="form-control bg-white text-dark border-secondary-subtle fw-semibold text-uppercase"
+                    placeholder="15-digit IMEI"
+                    value={d.imei}
+                    onChange={e => updateDevice(idx, 'imei', e.target.value)}
+                  />
+                </div>
 
-              <div className="col-md-6">
-                <label className="form-label text-muted small fw-bold">RAM CAPACITY</label>
-                <input 
-                  type="text" 
-                  className="form-control bg-white text-dark border-secondary-subtle text-uppercase"
-                  placeholder="e.g. 8 GB"
-                  value={form.ram}
-                  onChange={e => setForm({...form, ram: e.target.value})}
-                />
-              </div>
+                <div className="col-md-6">
+                  <label className="form-label text-muted small fw-bold">COLOR</label>
+                  <input
+                    type="text"
+                    className="form-control bg-white text-dark border-secondary-subtle text-uppercase fw-semibold"
+                    placeholder="e.g. ALPINE GREEN"
+                    value={d.color}
+                    onChange={e => updateDevice(idx, 'color', e.target.value)}
+                  />
+                </div>
 
-              <div className="col-md-6">
-                <label className="form-label text-muted small fw-bold">STORAGE SIZE</label>
-                <input 
-                  type="text" 
-                  className="form-control bg-white text-dark border-secondary-subtle text-uppercase"
-                  placeholder="e.g. 128 GB"
-                  value={form.storage}
-                  onChange={e => setForm({...form, storage: e.target.value})}
-                />
-              </div>
+                <div className="col-md-6">
+                  <label className="form-label text-muted small fw-bold">RAM CAPACITY</label>
+                  <input
+                    type="text"
+                    className="form-control bg-white text-dark border-secondary-subtle text-uppercase"
+                    placeholder="e.g. 8 GB"
+                    value={d.ram}
+                    onChange={e => updateDevice(idx, 'ram', e.target.value)}
+                  />
+                </div>
 
-              <div className="col-12">
-                <label className="form-label text-muted small fw-bold">CONDITION / DEFECT NOTES</label>
-                <textarea 
-                  rows="2"
-                  className="form-control bg-white text-dark border-secondary-subtle"
-                  placeholder="Describe condition, scratches, defects, or box/charger presence..."
-                  value={form.condition_note}
-                  onChange={e => setForm({...form, condition_note: e.target.value})}
-                />
+                <div className="col-md-6">
+                  <label className="form-label text-muted small fw-bold">STORAGE SIZE</label>
+                  <input
+                    type="text"
+                    className="form-control bg-white text-dark border-secondary-subtle text-uppercase"
+                    placeholder="e.g. 128 GB"
+                    value={d.storage}
+                    onChange={e => updateDevice(idx, 'storage', e.target.value)}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label text-muted small fw-bold">CONDITION / DEFECT NOTES</label>
+                  <textarea
+                    rows="2"
+                    className="form-control bg-white text-dark border-secondary-subtle"
+                    placeholder="Describe condition, scratches, defects, or box/charger presence..."
+                    value={d.condition_note}
+                    onChange={e => updateDevice(idx, 'condition_note', e.target.value)}
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-muted small fw-bold">PURCHASE PRICE (PAYOUT/CREDIT) <span className="text-danger">*</span></label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-white border-secondary-subtle text-success fw-bold">₹</span>
+                    <input
+                      type="number"
+                      className="form-control bg-white text-dark border-secondary-subtle fw-bold text-success"
+                      placeholder="0.00"
+                      required
+                      min="0"
+                      value={d.purchase_price}
+                      onChange={e => updateDevice(idx, 'purchase_price', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label text-muted small fw-bold">TARGET SELLING PRICE</label>
+                  <div className="input-group">
+                    <span className="input-group-text bg-white border-secondary-subtle text-warning fw-bold">₹</span>
+                    <input
+                      type="number"
+                      className="form-control bg-white text-dark border-secondary-subtle fw-bold text-warning"
+                      placeholder="0.00"
+                      min="0"
+                      value={d.selling_price}
+                      onChange={e => updateDevice(idx, 'selling_price', e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ))}
+
+          <button
+            type="button"
+            className="btn btn-outline-primary fw-bold w-100 mb-4 py-2 rounded-pill"
+            onClick={addDevice}
+          >
+            ➕ Add Another Device
+          </button>
 
           <div className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4">
-            <h4 className="text-dark mb-4 border-bottom border-secondary-subtle pb-2">💰 Device Valuation</h4>
-
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label text-muted small fw-bold">PURCHASE PRICE (PAYOUT/CREDIT) <span className="text-danger">*</span></label>
-                <div className="input-group">
-                  <span className="input-group-text bg-white border-secondary-subtle text-success fw-bold">₹</span>
-                  <input 
-                    type="number" 
-                    className="form-control bg-white text-dark border-secondary-subtle fw-bold text-success"
-                    placeholder="0.00"
-                    required
-                    min="0"
-                    value={form.purchase_price}
-                    onChange={e => setForm({...form, purchase_price: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="col-md-6">
-                <label className="form-label text-muted small fw-bold">TARGET SELLING PRICE</label>
-                <div className="input-group">
-                  <span className="input-group-text bg-white border-secondary-subtle text-warning fw-bold">₹</span>
-                  <input 
-                    type="number" 
-                    className="form-control bg-white text-dark border-secondary-subtle fw-bold text-warning"
-                    placeholder="0.00"
-                    min="0"
-                    value={form.selling_price}
-                    onChange={e => setForm({...form, selling_price: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="col-12 mt-4 pt-3 border-top border-secondary-subtle d-flex justify-content-end gap-3">
-                <button 
-                  type="button" 
-                  onClick={() => navigate('/old-mobiles')}
-                  className="btn btn-outline-secondary px-4 py-2 rounded-pill hover-scale"
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn btn-success px-5 py-2 rounded-pill fw-bold hover-scale d-flex align-items-center gap-2 shadow"
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm" role="status" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <span>💾</span> Save Purchase Record
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <span className="text-muted small fw-bold text-uppercase">
+                {devices.length} device{devices.length > 1 ? 's' : ''} — Total Payout
+              </span>
+              <span className="fs-4 fw-bold text-success">₹{totalPurchasePrice.toLocaleString('en-IN')}</span>
+            </div>
+            <div className="d-flex justify-content-end gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/old-mobiles')}
+                className="btn btn-outline-secondary px-4 py-2 rounded-pill hover-scale"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-success px-5 py-2 rounded-pill fw-bold hover-scale d-flex align-items-center gap-2 shadow"
+                disabled={saving}
+              >
+                {saving ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm" role="status" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <span>💾</span> Save Purchase Record{devices.length > 1 ? 's' : ''}
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

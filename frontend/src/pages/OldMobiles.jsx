@@ -41,6 +41,21 @@ export default function OldMobiles() {
     loadList();
   }, []);
 
+  // Devices bought from the same customer in one visit (the bulk purchase
+  // form) all share a batch_id — group them here purely for display so the
+  // list shows one combined entry, while each row underneath still stays
+  // its own record for individual view/edit/delete.
+  const groups = [];
+  const batchIndex = new Map();
+  list.forEach(m => {
+    if (m.batch_id && batchIndex.has(m.batch_id)) {
+      groups[batchIndex.get(m.batch_id)].push(m);
+    } else {
+      if (m.batch_id) batchIndex.set(m.batch_id, groups.length);
+      groups.push([m]);
+    }
+  });
+
   const handleDelete = async (id) => {
     if (!await pinGate.confirm()) return;
     try {
@@ -125,60 +140,74 @@ export default function OldMobiles() {
                 </tr>
               </thead>
               <tbody>
-                {list.map(m => (
-                  <tr key={m.id}>
-                    <td className="py-3 px-4 text-muted">{formatDate(m.purchase_date)}</td>
-                    <td className="py-3">
-                      <div className="fw-bold text-dark">{m.customer?.name}</div>
-                      <small className="text-muted">{m.customer?.phone}</small>
-                    </td>
-                    <td className="py-3">
-                      <span className="fw-semibold text-dark">{m.model_name}</span>
-                    </td>
-                    <td className="py-3">
-                      {m.imei ? (
-                        <code className="text-primary">
-                          <Link to={`/old-mobiles/sales/new?category=mobile-old&imei=${m.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{m.imei}</Link>
-                        </code>
-                      ) : '—'}
-                    </td>
-                    <td className="py-3 fw-bold text-success">
-                      ₹{parseFloat(m.purchase_price).toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-3">
-                      {m.is_exchange ? (
-                        <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">
-                          🔄 Exchange
-                        </span>
-                      ) : (
-                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
-                          💵 Cash Payout
-                        </span>
+                {groups.map(group => {
+                  const groupTotal = group.reduce((sum, m) => sum + parseFloat(m.purchase_price || 0), 0);
+                  return group.map((m, idx) => (
+                    <tr key={m.id} className={group.length > 1 ? 'border-top border-2 border-info-subtle' : ''} style={idx > 0 ? { borderTop: 'none' } : undefined}>
+                      {idx === 0 && (
+                        <>
+                          <td className="py-3 px-4 text-muted" rowSpan={group.length}>{formatDate(m.purchase_date)}</td>
+                          <td className="py-3" rowSpan={group.length}>
+                            <div className="fw-bold text-dark">{m.customer?.name}</div>
+                            <small className="text-muted">{m.customer?.phone}</small>
+                            {group.length > 1 && (
+                              <div className="mt-1">
+                                <span className="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1">
+                                  {group.length} devices • Total ₹{groupTotal.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                        </>
                       )}
-                    </td>
-                    <td className="py-3">
-                      <div className="d-flex gap-1 flex-wrap mb-1">
-                        {m.ram && <span className="badge bg-secondary rounded-pill text-xs">{m.ram} RAM</span>}
-                        {m.storage && <span className="badge bg-secondary rounded-pill text-xs">{m.storage} ROM</span>}
-                        {m.color && <span className="badge bg-dark rounded-pill text-xs">{m.color}</span>}
-                      </div>
-                      <small className="text-muted text-truncate d-inline-block" style={{maxWidth: '150px'}} title={m.condition_note}>
-                        {m.condition_note || 'No notes'}
-                      </small>
-                    </td>
-                    <td className="py-3 fw-bold text-warning">
-                      {parseFloat(m.selling_price) > 0 ? `₹${parseFloat(m.selling_price).toLocaleString('en-IN')}` : '—'}
-                    </td>
-                    <td className="py-3 text-muted">{m.user?.name}</td>
-                    <td className="py-3 px-4 text-end">
-                      <div className="d-flex justify-content-end gap-3">
-                        <button onClick={() => setViewingItem(m)} className="btn btn-sm btn-link text-primary text-decoration-none fw-bold p-0">View</button>
-                        <button onClick={() => handleEditClick(m)} className="btn btn-sm btn-link text-secondary text-decoration-none fw-bold p-0">Edit</button>
-                        <button onClick={() => handleDelete(m.id)} className="btn btn-sm btn-link text-danger text-decoration-none fw-bold p-0">Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="py-3">
+                        <span className="fw-semibold text-dark">{m.model_name}</span>
+                      </td>
+                      <td className="py-3">
+                        {m.imei ? (
+                          <code className="text-primary">
+                            <Link to={`/old-mobiles/sales/new?category=mobile-old&imei=${m.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{m.imei}</Link>
+                          </code>
+                        ) : '—'}
+                      </td>
+                      <td className="py-3 fw-bold text-success">
+                        ₹{parseFloat(m.purchase_price).toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3">
+                        {m.is_exchange ? (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">
+                            🔄 Exchange
+                          </span>
+                        ) : (
+                          <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
+                            💵 Cash Payout
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        <div className="d-flex gap-1 flex-wrap mb-1">
+                          {m.ram && <span className="badge bg-secondary rounded-pill text-xs">{m.ram} RAM</span>}
+                          {m.storage && <span className="badge bg-secondary rounded-pill text-xs">{m.storage} ROM</span>}
+                          {m.color && <span className="badge bg-dark rounded-pill text-xs">{m.color}</span>}
+                        </div>
+                        <small className="text-muted text-truncate d-inline-block" style={{maxWidth: '150px'}} title={m.condition_note}>
+                          {m.condition_note || 'No notes'}
+                        </small>
+                      </td>
+                      <td className="py-3 fw-bold text-warning">
+                        {parseFloat(m.selling_price) > 0 ? `₹${parseFloat(m.selling_price).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="py-3 text-muted">{m.user?.name}</td>
+                      <td className="py-3 px-4 text-end">
+                        <div className="d-flex justify-content-end gap-3">
+                          <button onClick={() => setViewingItem(m)} className="btn btn-sm btn-link text-primary text-decoration-none fw-bold p-0">View</button>
+                          <button onClick={() => handleEditClick(m)} className="btn btn-sm btn-link text-secondary text-decoration-none fw-bold p-0">Edit</button>
+                          <button onClick={() => handleDelete(m.id)} className="btn btn-sm btn-link text-danger text-decoration-none fw-bold p-0">Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ));
+                })}
                 {list.length === 0 && (
                   <tr>
                     <td colSpan={10} className="text-center py-5 text-muted">

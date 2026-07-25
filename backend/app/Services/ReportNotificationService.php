@@ -3,11 +3,12 @@
 namespace App\Services;
 
 use App\Models\SaleInvoice;
-use App\Models\AirtelRecovery;
+use App\Models\SaleItem;
 use App\Models\RepairRequest;
 use App\Models\Inventory;
 use App\Models\SaleFinancePlan;
 use App\Models\Transaction;
+use App\Models\Category;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -54,54 +55,135 @@ class ReportNotificationService
 
         $saleCount = SaleInvoice::whereDate('sale_date', $today)->count();
         $repairCount = RepairRequest::whereDate('submitted_date', $today)->count();
-        $recoveryCount = AirtelRecovery::whereDate('recovered_at', $today)->count();
-        $recoveryAmount = AirtelRecovery::whereDate('recovered_at', $today)->sum('amount');
+
+        // EXCHANGE (old-mobile trade-in credit) and FINANCE (EMI/financer receivable)
+        // are accounting adjustments, not real cash/bank movement — they must not be
+        // counted as "collections" or the owner would think money hit the bank that didn't.
+        $nonCashModes = ['EXCHANGE', 'FINANCE'];
 
         $cashIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'CASH')->sum('amount');
-        $bankIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', '!=', 'CASH')->sum('amount');
+        $bankIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
+        $exchangeIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'EXCHANGE')->sum('amount');
+        $financeIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'FINANCE')->sum('amount');
         $cashOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->where('payment_mode', 'CASH')->sum('amount');
-        $bankOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->where('payment_mode', '!=', 'CASH')->sum('amount');
+        $bankOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
 
         $totalIn = $cashIn + $bankIn;
         $totalOut = $cashOut + $bankOut;
 
-        $totalStockAvailable = Inventory::where('stock', '>', 0)->sum('stock');
+        $newMobileCatId = Category::mobileNewId();
+        $oldMobileCatId = Category::mobileOldId();
+        $mobileCatIds = array_values(array_filter([$newMobileCatId, $oldMobileCatId]));
+
+        // Mobiles sold today, with the buyer's name/phone — the owner wants to see
+        // WHO bought WHAT, not just a count.
+        $soldMobiles = SaleItem::with(['product.brand', 'invoice.customer'])
+            ->whereHas('invoice', fn($q) => $q->whereDate('sale_date', $today)->where('is_cancelled', false))
+            ->whereHas('product', fn($q) => $q->whereIn('category_id', $mobileCatIds))
+            ->get();
+
+        // Repairs booked today, with the device/problem and the customer's name/phone.
+        $todaysRepairs = RepairRequest::whereDate('submitted_date', $today)->get();
+
+        $newMobileStock = Inventory::whereHas('product', fn($q) => $q->where('category_id', $newMobileCatId))->where('stock', '>', 0)->sum('stock');
+        $oldMobileStock = Inventory::whereHas('product', fn($q) => $q->where('category_id', $oldMobileCatId))->where('stock', '>', 0)->sum('stock');
+        $otherStock     = Inventory::whereHas('product', fn($q) => $q->whereNotIn('category_id', $mobileCatIds))->where('stock', '>', 0)->sum('stock');
+        $totalStockAvailable = $newMobileStock + $oldMobileStock + $otherStock;
+
         $lowStockCount = Inventory::where('stock', '<=', 5)->where('stock', '>', 0)->count();
-        $outOfStockItems = Inventory::with('product.brand')->where('stock', '<=', 0)->whereHas('product')->get();
-        $outOfStockCount = $outOfStockItems->count();
 
-        $msg = "{$header}\n";
-        $msg .= "---------------------------\n";
-        $msg .= "📝 *Activity Counts:*\n";
-        $msg .= "• Sales Invoices: {$saleCount}\n";
-        $msg .= "• Repairs Booked: {$repairCount}\n";
-        $msg .= "• Airtel Recoveries: {$recoveryCount} (Total: ₹" . number_format($recoveryAmount, 2) . ")\n\n";
+        $newMobileOutOfStock = Inventory::with('product.brand')->where('stock', '<=', 0)->whereHas('product', fn($q) => $q->where('category_id', $newMobileCatId))->get();
+        $oldMobileOutOfStock = Inventory::with('product.brand')->where('stock', '<=', 0)->whereHas('product', fn($q) => $q->where('category_id', $oldMobileCatId))->get();
+        $otherOutOfStockCount = Inventory::where('stock', '<=', 0)->whereHas('product', fn($q) => $q->whereNotIn('category_id', $mobileCatIds))->count();
 
-        $msg .= "💰 *Collections (IN):*\n";
-        $msg .= "• Cash: ₹" . number_format($cashIn, 2) . "\n";
-        $msg .= "• Bank/UPI: ₹" . number_format($bankIn, 2) . "\n";
-        $msg .= "• *Total IN: ₹" . number_format($totalIn, 2) . "*\n\n";
+        $rule = str_repeat('━', 22);
+        $title = $slot === 'afternoon' ? '🕔 *AFTERNOON UPDATE*' : '🌙 *NIGHT CLOSING SUMMARY*';
 
-        $msg .= "💸 *Payments (OUT):*\n";
-        $msg .= "• Cash: ₹" . number_format($cashOut, 2) . "\n";
-        $msg .= "• Bank/UPI: ₹" . number_format($bankOut, 2) . "\n";
-        $msg .= "• *Total OUT: ₹" . number_format($totalOut, 2) . "*\n";
-        $msg .= "---------------------------\n";
-        $msg .= "📦 *Stock Alerts:*\n";
-        $msg .= "• Total Stock Available: " . number_format($totalStockAvailable) . " units\n";
-        $msg .= "• Low Stock (≤5): {$lowStockCount}\n";
-        $msg .= "• Out of Stock: {$outOfStockCount}\n";
-        if ($outOfStockCount > 0) {
-            $msg .= "\n⛔ *OUT OF STOCK ITEMS:*\n";
-            $msg .= $this->buildOutOfStockTable($outOfStockItems);
+        $msg  = "{$title}\n";
+        $msg .= "📅 {$dateStr}\n";
+        $msg .= "{$rule}\n\n";
+
+        // ── Sales & Repairs ──
+        $msg .= "🛍️ *SALES* · {$saleCount} invoice" . ($saleCount === 1 ? '' : 's') . "\n";
+        if ($soldMobiles->isEmpty()) {
+            $msg .= "   _No mobiles sold today_\n";
+        } else {
+            foreach ($soldMobiles as $item) {
+                $customer = $item->invoice->customer;
+                $name = $customer->name ?? $item->invoice->customer_name ?? 'Walk-in';
+                $phone = $customer->phone ?? $item->invoice->customer_phone ?? '—';
+                $product = $item->product;
+                $brand = $product?->brand?->name ?: ($product?->attributes['brand'] ?? '');
+                $model = trim("{$brand} " . ($product?->name ?? 'Unknown'));
+                $msg .= "   • {$model} — {$name} ({$phone})\n";
+            }
         }
-        $msg .= "---------------------------\n";
-        $msg .= "✨ *Closing Status:*\n";
-        $msg .= "• Net Day Cash: ₹" . number_format($cashIn - $cashOut, 2) . "\n";
-        $msg .= "---------------------------\n";
+        $msg .= "\n";
+
+        $msg .= "🔧 *REPAIRS* · {$repairCount} booked\n";
+        if ($todaysRepairs->isEmpty()) {
+            $msg .= "   _No repairs booked today_\n";
+        } else {
+            foreach ($todaysRepairs as $r) {
+                $problem = is_array($r->issue_description) ? implode(', ', $r->issue_description) : $r->issue_description;
+                $msg .= "   • {$r->device_model} ({$problem}) — {$r->customer_name} ({$r->customer_phone})\n";
+            }
+        }
+        $msg .= "\n{$rule}\n\n";
+
+        // ── Money ──
+        $msg .= "💰 *MONEY IN*\n";
+        $msg .= $this->buildLedgerBlock(['Cash' => $cashIn, 'Bank/UPI' => $bankIn], 'TOTAL', $totalIn);
+        if ($exchangeIn > 0 || $financeIn > 0) {
+            $msg .= "ℹ️ _Not counted above (no real cash movement):_\n";
+            if ($exchangeIn > 0) $msg .= "   _• Old Mobile Exchange Credit: ₹" . number_format($exchangeIn, 2) . "_\n";
+            if ($financeIn > 0) $msg .= "   _• Finance/EMI Receivable: ₹" . number_format($financeIn, 2) . "_\n";
+        }
+        $msg .= "\n💸 *MONEY OUT*\n";
+        $msg .= $this->buildLedgerBlock(['Cash' => $cashOut, 'Bank/UPI' => $bankOut], 'TOTAL', $totalOut);
+        $msg .= "\n🧮 *Net Day Cash: ₹" . number_format($cashIn - $cashOut, 2) . "*\n";
+        $msg .= "\n{$rule}\n\n";
+
+        // ── Stock ──
+        $msg .= "📦 *STOCK*\n";
+        $msg .= $this->buildLedgerBlock([
+            'New Mobile' => $newMobileStock,
+            '2nd Hand'   => $oldMobileStock,
+            'Other'      => $otherStock,
+        ], 'AVAILABLE', $totalStockAvailable, false);
+        $msg .= "⚠️ Low Stock (≤5): {$lowStockCount}\n";
+        $msg .= "⛔ Out of Stock: New {$newMobileOutOfStock->count()} · 2nd Hand {$oldMobileOutOfStock->count()} · Other {$otherOutOfStockCount}\n";
+
+        if ($newMobileOutOfStock->count() > 0) {
+            $msg .= "\n⛔ *NEW MOBILE — OUT OF STOCK*\n";
+            $msg .= $this->buildOutOfStockTable($newMobileOutOfStock, 20);
+        }
+        if ($oldMobileOutOfStock->count() > 0) {
+            $msg .= "\n⛔ *2ND HAND — OUT OF STOCK*\n";
+            $msg .= $this->buildOutOfStockTable($oldMobileOutOfStock, 20);
+        }
+
+        $msg .= "\n{$rule}\n";
         $msg .= "_Tinku Mobiles Management System_";
 
         return $msg;
+    }
+
+    /**
+     * Renders a small aligned label/value block inside a monospace code block —
+     * a divider line, then a bold total row. Set $currency=false for plain unit
+     * counts (e.g. stock), true (default) to prefix values with ₹.
+     */
+    private function buildLedgerBlock(array $rows, string $totalLabel, float $total, bool $currency = true): string
+    {
+        $fmt = fn($v) => $currency ? '₹' . number_format($v, 2) : number_format($v);
+        $lines = [];
+        foreach ($rows as $label => $value) {
+            $lines[] = sprintf('%-12s %12s', $label, $fmt($value));
+        }
+        $lines[] = str_repeat('─', 25);
+        $lines[] = sprintf('%-12s %12s', $totalLabel, $fmt($total));
+        return "```\n" . implode("\n", $lines) . "\n```\n";
     }
 
     public function buildEmiDueReminderMessage(): string
