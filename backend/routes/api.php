@@ -39,6 +39,8 @@ use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/login/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:5,1');
+Route::post('/login/resend-otp', [AuthController::class, 'resendOtp'])->middleware('throttle:3,1');
 Route::post('/repair-request', [RepairController::class, 'publicStore'])->middleware('throttle:10,1'); // Customer submits repair
 Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile'])->middleware('throttle:30,1');
 

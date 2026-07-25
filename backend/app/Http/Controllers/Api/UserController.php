@@ -114,7 +114,13 @@ class UserController extends Controller
             'joining_date'  => 'nullable|date',
             'aadhaar_no'    => 'nullable|string|max:20',
             'status'        => 'nullable|string|in:active,inactive',
+            'require_login_otp' => 'sometimes|boolean',
         ]);
+
+        // Only owner/full-access admins can toggle another user's OTP requirement.
+        if (isset($data['require_login_otp']) && ! $authUser->hasFullAccess()) {
+            unset($data['require_login_otp']);
+        }
 
         if (isset($data['password'])) {
             $data['password'] = Hash::make($data['password']);

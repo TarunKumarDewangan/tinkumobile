@@ -167,6 +167,11 @@ class ProductController extends Controller
                     $unsoldImeis = [];
                     foreach ($imeisRaw as $idx => $imeiVal) {
                         if ($imeiVal === '' || in_array($imeiVal, $soldImeis)) continue;
+                        // The query above matches this whole PurchaseItem batch if ANY of its
+                        // comma-joined IMEIs contains the search term — without this check every
+                        // sibling device in the batch would be returned too, so picking data[0]
+                        // (e.g. the New Sale IMEI pre-fill) could silently grab the wrong device.
+                        if ($request->imei && stripos($imeiVal, $request->imei) === false) continue;
                         $unsoldImeis[] = ['imei' => $imeiVal, 'idx' => $idx];
                     }
                     $availableImeiCount = count($unsoldImeis);

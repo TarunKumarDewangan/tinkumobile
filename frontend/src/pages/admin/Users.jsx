@@ -154,6 +154,16 @@ export default function Users() {
     load();
   };
 
+  const toggleLoginOtp = async (u) => {
+    try {
+      await api.put(`/users/${u.id}`, { require_login_otp: !u.require_login_otp });
+      toast.success(u.require_login_otp ? 'Login OTP disabled' : 'Login OTP enabled — code will be sent to Telegram on their next login');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Error updating OTP setting');
+    }
+  };
+
   const roleColors = { 
     owner: 'badge-owner',
     Executive: 'badge-admin',
@@ -294,6 +304,7 @@ export default function Users() {
                   <th>Salary</th>
                   <th>Joined</th>
                   <th>Status</th>
+                  <th>Login OTP</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -329,6 +340,18 @@ export default function Users() {
                       </span>
                     </td>
                     <td>
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          checked={!!u.require_login_otp}
+                          onChange={() => toggleLoginOtp(u)}
+                          title="Require a Telegram OTP for this user to log in"
+                        />
+                      </div>
+                    </td>
+                    <td>
                       <div className="d-flex gap-1 justify-content-end">
                         <button className="btn btn-xs btn-success fw-bold" onClick={() => handleOpenPayment(u)}>PAY</button>
                         <button className="btn btn-xs btn-info text-white fw-bold" onClick={() => handleViewHistory(u)}>HISTORY</button>
@@ -340,7 +363,7 @@ export default function Users() {
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-5 text-muted">
+                    <td colSpan={8} className="text-center py-5 text-muted">
                       No staff members found. Add your first employee above!
                     </td>
                   </tr>
