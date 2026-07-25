@@ -420,6 +420,32 @@ class SaleInvoiceController extends Controller
                         'description' => "Shop Finance down payment for Invoice #{$invoice->invoice_no}",
                     ]);
                 }
+
+                // Personal (EMI) plans repay principal + interest — the invoice's
+                // own SALE debit only ever reflected the goods' sale price, so the
+                // interest portion (what the customer will actually pay on top of
+                // that) was invisible to the Ledger. Post it as its own debit so
+                // the customer's ledger balance matches total_payable exactly, the
+                // same figure Finance Tracker/Personal Finance already show.
+                if ($sf['type'] === 'PERSONAL') {
+                    $interestPortion = max(0, $totalPayable - $principal);
+                    if ($interestPortion > 0) {
+                        $entity = $this->resolveCustomerEntity($invoice);
+                        if ($entity) {
+                            app(\App\Services\AccountingService::class)->post(
+                                $entity->id,
+                                $invoice->sale_date,
+                                'SHOP_FINANCE_INTEREST',
+                                $invoice->id,
+                                "Shop Finance interest for Invoice #{$invoice->invoice_no}",
+                                $interestPortion,
+                                0,
+                                $invoice->shop_id,
+                                $user->id
+                            );
+                        }
+                    }
+                }
             }
 
             DB::commit();
@@ -789,6 +815,28 @@ class SaleInvoiceController extends Controller
                         'description' => "Shop Finance down payment for Invoice #{$saleInvoice->invoice_no}",
                     ]);
                 }
+
+                // Re-post the interest portion too (AccountingService::post() updates
+                // the existing SHOP_FINANCE_INTEREST row in place by voucher key, or
+                // clears it out to 0/0 — which post() treats as "nothing to post" —
+                // if this edit changed the plan to Favor/no-interest).
+                if ($sf['type'] === 'PERSONAL') {
+                    $interestPortion = max(0, $totalPayable - $principal);
+                    $entity = $this->resolveCustomerEntity($saleInvoice);
+                    if ($entity && $interestPortion > 0) {
+                        app(\App\Services\AccountingService::class)->post(
+                            $entity->id,
+                            $saleInvoice->sale_date,
+                            'SHOP_FINANCE_INTEREST',
+                            $saleInvoice->id,
+                            "Shop Finance interest for Invoice #{$saleInvoice->invoice_no}",
+                            $interestPortion,
+                            0,
+                            $saleInvoice->shop_id,
+                            $user->id
+                        );
+                    }
+                }
             }
 
             $saleInvoice->updatePaymentStatus();
@@ -1142,6 +1190,23 @@ class SaleInvoiceController extends Controller
      * than a loaded SaleItem relation, since store() records the transaction
      * before the SaleItem rows exist.
      */
+    /**
+     * Resolves the customer entity for a sale invoice the same way
+     * SaleInvoice::getLedgerData() does — accounting_entity_id first,
+     * falling back to a name lookup — so manual Ledger posts (e.g. the
+     * Shop Finance interest debit) land on the exact same entity row.
+     */
+    private function resolveCustomerEntity(\App\Models\SaleInvoice $invoice): ?\App\Models\Entity
+    {
+        if ($invoice->accounting_entity_id) {
+            $entity = \App\Models\Entity::find($invoice->accounting_entity_id);
+            if ($entity) return $entity;
+        }
+        $customer = $invoice->customer;
+        if (!$customer) return null;
+        return \App\Models\Entity::where('name', $customer->name)->first();
+    }
+
     private function itemNamesSummary(array $items): string
     {
         $productIds = collect($items)->pluck('product_id')->filter()->unique();
