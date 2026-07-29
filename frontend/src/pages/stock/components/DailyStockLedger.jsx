@@ -89,6 +89,7 @@ export default function DailyStockLedger() {
               { label: 'Stock IN (Purchases)', value: '+' + fmt(data.total_in), icon: '⬇️', color: '#22c55e' },
               { label: 'Stock OUT (Sales)', value: '-' + fmt(data.total_out), icon: '⬆️', color: '#f59e0b' },
               { label: 'Closing Stock', value: fmt(data.closing_stock), icon: '🏪', color: '#0ea5e9' },
+              { label: 'MOP Total', value: fmtRs(data.closing_mop_value), icon: '🏷️', color: '#7c3aed' },
               { label: 'Sale Revenue', value: fmtRs(data.total_revenue), icon: '💰', color: '#10b981' },
               { label: 'Sale Cost', value: fmtRs(data.total_cost), icon: '🏷️', color: '#ef4444' },
               { label: 'Gross Profit', value: fmtRs(data.total_profit), icon: '📈', color: data.total_profit >= 0 ? '#22c55e' : '#ef4444' },
@@ -289,12 +290,12 @@ export default function DailyStockLedger() {
 
                   {/* Totals footer */}
                   <tfoot>
-                    <tr className="fw-black bg-dark text-white">
-                      <td colSpan="2" className="ps-3 py-2">PERIOD TOTAL</td>
+                    <tr className="fw-black bg-dark text-white" style={{ fontSize: '1rem' }}>
+                      <td colSpan="2" className="ps-3 py-3">PERIOD TOTAL</td>
                       <td className="text-center">{fmt(data.opening_stock)}</td>
                       <td className="text-center text-success">+{fmt(data.total_in)}</td>
                       <td className="text-center text-danger">-{fmt(data.total_out)}</td>
-                      <td className="text-center"><span className="badge bg-primary">{fmt(data.closing_stock)}</span></td>
+                      <td className="text-center"><span className="badge bg-primary" style={{ fontSize: '.95rem' }}>{fmt(data.closing_stock)}</span></td>
                       <td className="text-end" style={{ color: '#c4b5fd' }}>{data.closing_mop_value > 0 ? fmtRs(data.closing_mop_value) : '—'}</td>
                       <td className="text-end">—</td>
                       <td className="text-end text-success">{fmtRs(data.total_revenue)}</td>

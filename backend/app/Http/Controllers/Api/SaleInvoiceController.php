@@ -1149,6 +1149,22 @@ class SaleInvoiceController extends Controller
                         'condition' => 'new'
                     ]);
 
+                    // 1b. This unit's original purchase lives in OldMobilePurchase, not
+                    // PurchaseItem — the table the New Mobile stock reports (Model Wise
+                    // Stock, Daily Ledger) actually read. Without this, the Daily Ledger
+                    // (which now counts this sale as a New Mobile sale, since it filters
+                    // by the product's CURRENT category) has no matching New Mobile
+                    // purchase to offset it, and shows impossible negative stock.
+                    \App\Models\StockAdjustment::create([
+                        'shop_id'         => $saleInvoice->shop_id,
+                        'product_id'      => $product->id,
+                        'user_id'         => $user->id,
+                        'type'            => 'add',
+                        'quantity'        => $item->quantity,
+                        'reason'          => 'converted_from_old_mobile',
+                        'adjustment_date' => $saleInvoice->sale_date,
+                    ]);
+
                     // 2. Check and record Employee Incentive
                     $hasIncentive = EmployeeIncentive::where('sale_item_id', $item->id)->exists();
                     if (!$hasIncentive) {

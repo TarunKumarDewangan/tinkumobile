@@ -44,11 +44,25 @@ trait SyncsWithMasterEntity
             $exists = Entity::where('name', $targetName)->first();
             
             if ($exists) {
+                $isCrossCustomerSupplier = in_array(get_class($this), [\App\Models\Customer::class, \App\Models\Supplier::class])
+                    && in_array($exists->relation_type, [\App\Models\Customer::class, \App\Models\Supplier::class])
+                    && $exists->relation_type !== get_class($this);
+
                 if (!$exists->relation_id) {
                     // Claim this ghost entity (e.g. created by name in Repairs)
                     $entity = $exists;
                     $entity->relation_type = get_class($this);
                     $entity->relation_id   = $this->id;
+                } elseif ($isCrossCustomerSupplier) {
+                    // Same real person is both a Customer/Shop Customer AND a Supplier
+                    // (e.g. buying stock back from someone you also sell to). Entity
+                    // only supports one relation_type/relation_id link, so rather than
+                    // spawn a second, differently-named entity — which would split
+                    // their ledger into two disconnected balances — leave this record
+                    // without its own dedicated entity. Its Transactions/Ledger posts
+                    // still use entity_name, which resolves back to this exact shared
+                    // entity via Entity::firstOrCreate(['name' => ...]) elsewhere.
+                    return;
                 } else {
                     // Name taken by another record. Find a new unique name.
                     $targetName = $this->generateUniqueEntityName($this->name, $type);
