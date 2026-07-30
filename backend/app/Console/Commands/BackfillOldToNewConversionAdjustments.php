@@ -58,8 +58,7 @@ class BackfillOldToNewConversionAdjustments extends Command
             foreach ($saleItems as $item) {
                 $exists = StockAdjustment::where('product_id', $product->id)
                     ->where('reason', 'converted_from_old_mobile')
-                    ->where('adjustment_date', $item->invoice->sale_date)
-                    ->where('quantity', $item->quantity)
+                    ->where('notes', 'like', "sale_item:{$item->id}%")
                     ->exists();
 
                 if ($exists) {
@@ -78,7 +77,10 @@ class BackfillOldToNewConversionAdjustments extends Command
                         'quantity'        => $item->quantity,
                         'reason'          => 'converted_from_old_mobile',
                         'adjustment_date' => $item->invoice->sale_date,
-                        'notes'           => 'Backfilled: old->new mobile sale conversion predates the stock-adjustment fix',
+                        // Same "sale_item:{id}" reference convertToNewSale() uses, so
+                        // convertToOldSale() (the reverse action) can find and remove
+                        // exactly this adjustment if the sale is later reverted.
+                        'notes'           => "sale_item:{$item->id} (backfilled)",
                     ]);
                 }
                 $posted++;

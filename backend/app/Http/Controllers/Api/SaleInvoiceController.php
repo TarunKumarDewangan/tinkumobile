@@ -1163,6 +1163,11 @@ class SaleInvoiceController extends Controller
                         'quantity'        => $item->quantity,
                         'reason'          => 'converted_from_old_mobile',
                         'adjustment_date' => $saleInvoice->sale_date,
+                        // Traceable back to this exact sale item so convertToOldSale()
+                        // (the reverse action) can find and remove precisely this
+                        // adjustment, not just any adjustment that happens to match
+                        // on product/date/quantity.
+                        'notes'           => "sale_item:{$item->id}",
                     ]);
 
                     // 2. Check and record Employee Incentive
@@ -1185,6 +1190,65 @@ class SaleInvoiceController extends Controller
 
             return response()->json([
                 'message' => "Successfully converted {$convertedCount} devices in the invoice to new mobile sales.",
+                'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'items.product.brand', 'shop'))
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return $this->errorResponse($e, 'Conversion failed');
+        }
+    }
+
+    /**
+     * Reverse of convertToNewSale() — lets staff undo an accidental (or simply
+     * wrong) conversion back to a 2nd Hand sale. Mirrors it exactly: flips the
+     * product category back, removes the incentive granted for the conversion,
+     * and removes the compensating stock adjustment so New Mobile stock math
+     * goes back to exactly how it was before the conversion.
+     */
+    public function convertToOldSale(Request $request, SaleInvoice $saleInvoice)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($saleInvoice->is_cancelled) {
+            return response()->json(['message' => 'Cannot convert cancelled sale'], 422);
+        }
+
+        $oldMobileCatId = Category::mobileOldId();
+        $newMobileCatId = Category::mobileNewId();
+
+        if (!$oldMobileCatId) {
+            return response()->json(['message' => 'Old mobile category not found'], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $convertedCount = 0;
+            foreach ($saleInvoice->items as $item) {
+                $product = $item->product;
+                if ($product && $newMobileCatId && $product->category_id == $newMobileCatId) {
+                    $product->update([
+                        'category_id' => $oldMobileCatId,
+                        'condition' => 'used',
+                    ]);
+
+                    EmployeeIncentive::where('sale_item_id', $item->id)->delete();
+
+                    \App\Models\StockAdjustment::where('product_id', $product->id)
+                        ->where('reason', 'converted_from_old_mobile')
+                        ->where('notes', 'like', "sale_item:{$item->id}%")
+                        ->delete();
+
+                    $convertedCount++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => "Successfully converted {$convertedCount} devices in the invoice back to 2nd hand sale.",
                 'invoice' => new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'items.product.brand', 'shop'))
             ]);
         } catch (\Exception $e) {

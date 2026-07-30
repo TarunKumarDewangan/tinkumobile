@@ -143,7 +143,7 @@ export default function EntityManager() {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="h4 mb-0 text-uppercase fw-bold text-primary">Master Entity Manager</h2>
-          <p className="text-muted small mb-0">Manage opening balances and contact info for all parties</p>
+          <p className="text-muted small mb-0">Manage opening balances and contact info for all parties <span style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + E</span></p>
         </div>
         <div className="d-flex gap-2">
           <div className="input-group" style={{ width: '300px' }}>

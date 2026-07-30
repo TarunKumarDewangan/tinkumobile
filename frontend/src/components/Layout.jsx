@@ -225,12 +225,20 @@ export default function Layout() {
       }
   };
   
-  // Shortcut: Alt + S for Stocks
+  // Shortcuts: Alt + S (Stocks), Alt + N (New Sale), Alt + E (Entity Manager)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.altKey && e.key.toLowerCase() === 's') {
+      if (!e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
         e.preventDefault();
         navigate('/stock-entry');
+      } else if (key === 'n') {
+        e.preventDefault();
+        navigate('/sales/new?category_group=new_mobile');
+      } else if (key === 'e') {
+        e.preventDefault();
+        navigate('/accounts/entity-manager');
       }
     };
     window.addEventListener('keydown', handleKeyDown);

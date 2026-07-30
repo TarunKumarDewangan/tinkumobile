@@ -91,6 +91,17 @@ export default function SaleDetails() {
       }
   };
 
+  const handleConvertToOldSale = async () => {
+      if (!await pinGate.confirm()) return;
+      try {
+          const res = await api.post(`/sale-invoices/${id}/convert-to-old-sale`);
+          toast.success(res.data.message || 'Converted back to 2nd hand sale successfully!');
+          loadInvoice();
+      } catch (e) {
+          toast.error(e.response?.data?.message || 'Failed to convert sale');
+      }
+  };
+
   const handlePrint = () => { window.print(); };
 
   if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
@@ -111,6 +122,9 @@ export default function SaleDetails() {
   const isOldMobileSale = invoice?.items?.some(
       item => item.product?.category?.slug === 'mobile-old' || item.product?.category?.slug === 'MOBILE-OLD'
   );
+  const isNewMobileSale = invoice?.items?.some(
+      item => item.product?.category?.slug === 'mobile-new' || item.product?.category?.slug === 'MOBILE-NEW'
+  );
 
   return (
     <div className="container-fluid py-2 sale-details-page">
@@ -123,6 +137,11 @@ export default function SaleDetails() {
             {isOldMobileSale && !invoice.is_cancelled && (
                 <button onClick={handleConvertToNewSale} className="btn btn-warning btn-sm fw-bold shadow-sm text-uppercase text-dark border-2">
                     🔄 Convert to New Sale
+                </button>
+            )}
+            {isNewMobileSale && !invoice.is_cancelled && (
+                <button onClick={handleConvertToOldSale} className="btn btn-outline-secondary btn-sm fw-bold shadow-sm text-uppercase border-2">
+                    🔄 Convert to 2nd Hand Sale
                 </button>
             )}
             <button onClick={() => setViewMode(viewMode === 'v1' ? 'v2' : 'v1')} className={`btn btn-sm fw-bold border-2 text-uppercase ${viewMode === 'v1' ? 'btn-outline-primary' : 'btn-primary'}`}>

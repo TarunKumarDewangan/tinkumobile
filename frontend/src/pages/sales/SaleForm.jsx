@@ -998,7 +998,7 @@ export default function SaleForm() {
                 : (isOldMobileSale ? (id ? '✍️ EDIT 2ND HAND SALE' : '➕ 2ND HAND SALE ENTRY') : (id ? '✍️ EDIT SALE' : '➕ NEW SALE ENTRY'))
               }
            </h2>
-           <p className="text-muted small mb-0">RECORD PRODUCT SALES, CONFIGURATIONS AND GST</p>
+           <p className="text-muted small mb-0">RECORD PRODUCT SALES, CONFIGURATIONS AND GST <span className="text-muted" style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + N</span></p>
         </div>
         <button onClick={() => navigate(category_group === 'other' ? '/sales?category_group=other' : (isOldMobileSale ? '/old-mobiles/sales' : '/sales'))} className="btn btn-outline-secondary btn-sm text-uppercase fw-bold">← Back to List</button>
       </div>
