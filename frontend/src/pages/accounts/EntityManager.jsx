@@ -43,7 +43,7 @@ export default function EntityManager() {
       // Extract custom types from loaded entities
       const types = data.map(e => e.type).filter(Boolean);
       const uniqueCustomTypes = Array.from(new Set(types)).filter(
-        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
       );
       setCustomTypes(uniqueCustomTypes);
     } catch (error) {
@@ -134,7 +134,7 @@ export default function EntityManager() {
   };
 
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(formData.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(formData.type);
   const isCustomType = customTypes.includes(formData.type);
   const showCustomInput = formData.type === 'OTHER' || (!isDefaultType && !isCustomType && formData.type !== '');
 
@@ -250,7 +250,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, name: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Category *</label>
                       <select 
                         className="form-select fw-semibold"
@@ -268,6 +268,9 @@ export default function EntityManager() {
                         <option value="SHOP">SHOP</option>
                         <option value="SUPPLIER">SUPPLIER</option>
                         <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                        <option value="BANK">BANK</option>
+                        <option value="CARD">CARD</option>
+                        <option value="UPI">UPI</option>
                         {customTypes.map(t => (
                           <option key={t} value={t}>{t}</option>
                         ))}
@@ -288,7 +291,7 @@ export default function EntityManager() {
                         />
                       </div>
                     )}
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
                       <input
                         type="text"
@@ -297,7 +300,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, phone: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
                       <input
                         type="text"
@@ -307,7 +310,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, address: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
                       <input
                         type="text" 
@@ -317,7 +320,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, gst_number: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Opening Balance</label>
                       <input 
                         type="number" 
@@ -326,7 +329,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, opening_balance: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
                       <select 
                         className="form-select"
@@ -340,7 +343,7 @@ export default function EntityManager() {
 
                     {['CUSTOMER', 'SHOP_CUSTOMER'].includes(formData.type) && (
                       <>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                           <label className="form-label fw-bold small text-muted text-uppercase">Email</label>
                           <input 
                             type="email" 
@@ -350,7 +353,7 @@ export default function EntityManager() {
                             onChange={e => setFormData({...formData, email: e.target.value})}
                           />
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                           <label className="form-label fw-bold small text-muted text-uppercase">Voucher Code</label>
                           <input 
                             type="text" 
@@ -383,7 +386,7 @@ export default function EntityManager() {
                               <div key={idx} className="col-12 p-3 bg-light rounded border mb-2">
                                 <div className="row g-2 align-items-center">
                                   
-                                  <div className="col-md-4">
+                                  <div className="col-12 col-md-4">
                                     <select 
                                       className="form-select form-select-sm fw-semibold" 
                                       value={ev.type} 
@@ -401,7 +404,7 @@ export default function EntityManager() {
                                   </div>
 
                                   {ev.type === 'other' && (
-                                    <div className="col-md-3">
+                                    <div className="col-12 col-md-3">
                                       <input 
                                         className="form-control form-control-sm fw-semibold" 
                                         placeholder="Event Name" 
@@ -428,7 +431,7 @@ export default function EntityManager() {
                                     />
                                   </div>
 
-                                  <div className="col-md-1 text-end">
+                                  <div className="col-12 col-md-1 text-end">
                                     <button 
                                       type="button" 
                                       className="btn btn-sm btn-link text-danger p-0 border-0 bg-transparent" 

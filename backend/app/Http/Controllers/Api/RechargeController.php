@@ -34,10 +34,12 @@ class RechargeController extends Controller
         $data = $request->validate([
             'supplier_id'   => 'required|exists:suppliers,id',
             'operator'      => 'required|string|max:50',
-            'amount'        => 'required|numeric|min:0',
-            'cost_price'    => 'required|numeric|min:0',
+            'amount'        => 'nullable|numeric|min:0',
+            'cost_price'    => 'nullable|numeric|min:0',
             'purchase_date' => 'required|date',
         ]);
+        $data['amount'] = $data['amount'] ?? 0;
+        $data['cost_price'] = $data['cost_price'] ?? 0;
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         if (in_array($shopId, [null, '', 0, 'null', 'undefined'], true)) {
             $shopId = null;

@@ -109,7 +109,7 @@ export default function WhatsAppConfig() {
     return (
         <div className="container-fluid py-4">
             <div className="row justify-content-center">
-                <div className="col-md-8 col-lg-6">
+                <div className="col-12 col-md-8 col-lg-6">
                     <div className="card shadow-sm border-0">
                         <div className="card-header bg-primary text-white py-3">
                             <h5 className="card-title mb-0">

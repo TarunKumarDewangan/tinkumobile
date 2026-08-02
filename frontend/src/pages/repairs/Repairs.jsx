@@ -9,8 +9,21 @@ import RepairBackupModal from './RepairBackupModal';
 
 const STATUS_COLORS = { pending:'warning', assigned:'info', in_progress:'primary', completed:'success', delivered:'secondary' };
 
+// issue_description comes back either as a real array or as a JSON-encoded
+// string (legacy rows) — normalize both into a plain comma-joined string.
+const parseIssues = (val) => {
+  if (Array.isArray(val)) return val.join(', ');
+  if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed.join(', ') : String(parsed);
+    } catch (e) { /* fall through */ }
+  }
+  return val || '';
+};
+
 export default function Repairs() {
-  const { hasFullAccess } = useAuth();
+  const { hasFullAccess, user } = useAuth();
   const navigate = useNavigate();
   const [repairs, setRepairs] = useState([]);
   const [page, setPage] = useState(1);
@@ -34,6 +47,8 @@ export default function Repairs() {
   });
 
   const [externalShops, setExternalShops] = useState([]);
+  const [staffList, setStaffList] = useState([]);
+  const [viewMode, setViewMode] = useState('sheet'); // 'table' | 'sheet'
 
   const load = () => {
     setLoading(true);
@@ -56,16 +71,27 @@ export default function Repairs() {
   // Load external shop names for the dropdown filter
   useEffect(() => {
     api.get('/repairs/external-shops').then(r => setExternalShops(r.data)).catch(() => {});
+    api.get('/users').then(r => setStaffList(r.data)).catch(() => {});
   }, []);
 
   const updateStatus = async (id, status) => {
     if (status === 'delivered') {
        return navigate(`/repairs/${id}/edit`);
     }
-    
+
     await api.put(`/repairs/${id}`, { status });
     toast.success('Status updated');
     load();
+  };
+
+  const updateStaff = async (id, staffId) => {
+    try {
+      await api.put(`/repairs/${id}`, { staff_id: staffId || null });
+      toast.success('Staff updated');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Error updating staff');
+    }
   };
 
   const payShop = async (id) => {
@@ -192,7 +218,11 @@ export default function Repairs() {
             </select>
 
             <div className="ms-auto d-flex gap-2">
-                <button className="btn btn-outline-secondary btn-sm" 
+                <div className="btn-group btn-group-sm shadow-sm">
+                  <button className={`btn ${viewMode === 'table' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setViewMode('table')}>📊 Table View</button>
+                  <button className={`btn ${viewMode === 'sheet' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setViewMode('sheet')}>📋 Sheet View</button>
+                </div>
+                <button className="btn btn-outline-secondary btn-sm"
                   onClick={() => setFilters({ status:'', search:'', submitted_from:'', submitted_to:'', delivery_from:'', delivery_to:'', delivered_from:'', delivered_to:'', payment_from:'', payment_to:'', is_forwarded:'', cost_payment_status:'', forwarded_to:'' })}>
                   Reset
                 </button>
@@ -205,7 +235,7 @@ export default function Repairs() {
 
         {/* Date Filters Row - Vertical Layout */}
         <div className="row g-3 px-3 py-3 bg-light rounded-4 shadow-sm border border-white mx-0 mt-1">
-            <div className="col-md-3 border-end">
+            <div className="col-12 col-md-3 border-end">
                 <div className="text-muted x-small fw-bold mb-2 text-uppercase letter-spacing-1">📅 Submitted Date</div>
                 <div className="d-flex flex-column gap-2">
                     <div className="d-flex align-items-center gap-2">
@@ -221,7 +251,7 @@ export default function Repairs() {
                 </div>
             </div>
             
-            <div className="col-md-3 border-end">
+            <div className="col-12 col-md-3 border-end">
                 <div className="text-muted x-small fw-bold mb-2 text-uppercase letter-spacing-1">🕒 Est. Delivery</div>
                 <div className="d-flex flex-column gap-2">
                     <div className="d-flex align-items-center gap-2">
@@ -237,7 +267,7 @@ export default function Repairs() {
                 </div>
             </div>
 
-            <div className="col-md-3 border-end">
+            <div className="col-12 col-md-3 border-end">
                 <div className="text-success x-small fw-bold mb-2 text-uppercase letter-spacing-1">✅ Actual Delivery</div>
                 <div className="d-flex flex-column gap-2">
                     <div className="d-flex align-items-center gap-2">
@@ -253,7 +283,7 @@ export default function Repairs() {
                 </div>
             </div>
 
-            <div className="col-md-3">
+            <div className="col-12 col-md-3">
                 <div className="text-primary x-small fw-bold mb-2 text-uppercase letter-spacing-1">💰 Payment Date</div>
                 <div className="d-flex flex-column gap-2">
                     <div className="d-flex align-items-center gap-2">
@@ -277,6 +307,77 @@ export default function Repairs() {
           <div className="text-center py-5">
             <div className="spinner-border text-primary" />
             <div className="mt-2 text-muted small">Loading repairs...</div>
+          </div>
+        ) : viewMode === 'sheet' ? (
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0 custom-tally-table">
+              <thead className="bg-light-subtle shadow-none">
+                <tr className="border-bottom text-uppercase text-muted" style={{ fontSize: '0.65rem' }}>
+                  <th className="ps-3" style={{width:40}}>#</th>
+                  <th>Timestamp</th>
+                  <th>Customer Name</th>
+                  <th>Address</th>
+                  <th>Mobile Number</th>
+                  <th>Model Number</th>
+                  <th>Problem Kya Hai</th>
+                  <th className="text-end">Kitna Kharcha Ayega</th>
+                  <th>Koun Repairer Karega</th>
+                  <th>Staff Name</th>
+                  <th style={{width:130}}>Status</th>
+                  <th className="text-end pe-3" style={{width:70}}>Edit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {repairs.map((r, idx) => (
+                  <tr key={r.id}>
+                    <td className="ps-3 text-muted small">{idx + 1}</td>
+                    <td className="small">{formatDate(r.submitted_date) || '-'}</td>
+                    <td className="fw-bold small">{r.customer_name}</td>
+                    <td className="small text-muted">{r.customer_address || '-'}</td>
+                    <td className="small">{r.customer_phone}</td>
+                    <td className="small fw-semibold">{r.device_model}</td>
+                    <td className="small text-muted">{parseIssues(r.issue_description)}</td>
+                    <td className="text-end small fw-bold">₹{parseFloat(r.quoted_amount || 0).toLocaleString()}</td>
+                    <td className="small">
+                      {r.is_forwarded && r.forwarded_to ? (
+                        <span className="fw-bold text-primary text-uppercase">{r.forwarded_to}</span>
+                      ) : (
+                        <span className="text-muted italic opacity-50">Local Repair</span>
+                      )}
+                    </td>
+                    <td style={{width:150}}>
+                      {hasFullAccess() ? (
+                        <select className="form-select form-select-sm" style={{fontSize:'0.72rem'}}
+                          value={r.staff?.id || ''} onChange={e => updateStaff(r.id, e.target.value)}>
+                          <option value="">— Unassigned —</option>
+                          {staffList.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="small fw-semibold">{r.staff?.name || user?.name || '-'}</span>
+                      )}
+                    </td>
+                    <td>
+                      <select className="form-select form-select-sm fw-bold border-2"
+                        style={{ fontSize: '0.7rem' }}
+                        value={r.status} onChange={e => updateStatus(r.id, e.target.value)}>
+                        <option value="pending">PENDING</option>
+                        <option value="assigned">ASSIGNED</option>
+                        <option value="in_progress">IN PROGRESS</option>
+                        <option value="completed">COMPLETED</option>
+                        <option value="delivered">DELIVERED</option>
+                      </select>
+                    </td>
+                    <td className="text-end pe-3">
+                      <Link to={`/repairs/${r.id}/edit`} className="btn btn-outline-primary btn-xs border-0" title="Edit">
+                        ✏️
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="table-responsive">

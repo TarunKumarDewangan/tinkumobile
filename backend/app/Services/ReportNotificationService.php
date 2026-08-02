@@ -7,6 +7,7 @@ use App\Models\SaleItem;
 use App\Models\RepairRequest;
 use App\Models\Inventory;
 use App\Models\SaleFinancePlan;
+use App\Models\FinancePayment;
 use App\Models\Transaction;
 use App\Models\Category;
 use Carbon\Carbon;
@@ -20,6 +21,14 @@ use Illuminate\Support\Facades\Log;
  */
 class ReportNotificationService
 {
+    /**
+     * Toggle for the per-model "OUT OF STOCK" tables in the daily summary —
+     * turned off per owner request (kept noisy for a long out-of-stock list),
+     * but the rendering code (buildOutOfStockTable) is left intact below in
+     * case it's wanted again later. Flip to true to restore it.
+     */
+    private const SHOW_OUT_OF_STOCK_TABLES = false;
+
     /**
      * Send a message to every configured owner channel. Never throws — failures are
      * logged and reflected in the returned flags instead.
@@ -85,6 +94,46 @@ class ReportNotificationService
         // Repairs booked today, with the device/problem and the customer's name/phone.
         $todaysRepairs = RepairRequest::whereDate('submitted_date', $today)->get();
 
+        // Personal Finance (in-house Shop Finance — Personal EMI/Favor): down payments
+        // from plans created today, plus any EMI installment collected today for ANY
+        // plan (old or new) — both are real money that came in through this channel today.
+        $personalFinanceEntries = [];
+
+        $personalPlansToday = SaleFinancePlan::with(['saleInvoice.items.product.brand', 'saleInvoice.customer'])
+            ->whereHas('saleInvoice', fn($q) => $q->whereDate('sale_date', $today)->where('is_cancelled', false))
+            ->where('down_payment', '>', 0)
+            ->get();
+        foreach ($personalPlansToday as $plan) {
+            if (!$plan->saleInvoice) continue;
+            $personalFinanceEntries[] = $this->financeEntryLine($plan->saleInvoice, $plan->down_payment, 'Down Payment');
+        }
+
+        $installmentsToday = FinancePayment::with(['plan.saleInvoice.items.product.brand', 'plan.saleInvoice.customer'])
+            ->whereDate('payment_date', $today)
+            ->get();
+        foreach ($installmentsToday as $payment) {
+            if (!$payment->plan?->saleInvoice) continue;
+            $personalFinanceEntries[] = $this->financeEntryLine($payment->plan->saleInvoice, $payment->amount, 'EMI Payment');
+        }
+
+        $personalFinanceDone = $personalPlansToday->sum('down_payment') + $installmentsToday->sum('amount');
+
+        // Company Finance (external financer — Bajaj/HDB/etc): money received today
+        // from today's sales financed through them.
+        $companyFinanceEntries = [];
+        $companyFinanceToday = SaleInvoice::with(['items.product.brand', 'customer', 'financer'])
+            ->whereDate('sale_date', $today)
+            ->where('is_cancelled', false)
+            ->where('finance_payment_status', 'RECEIVED')
+            ->where('finance_amount', '>', 0)
+            ->get();
+        foreach ($companyFinanceToday as $invoice) {
+            $financerName = $invoice->financer?->name ?? 'Financer';
+            $companyFinanceEntries[] = $this->financeEntryLine($invoice, $invoice->finance_amount, $financerName);
+        }
+
+        $companyFinanceDone = $companyFinanceToday->sum('finance_amount');
+
         $newMobileStock = Inventory::whereHas('product', fn($q) => $q->where('category_id', $newMobileCatId))->where('stock', '>', 0)->sum('stock');
         $oldMobileStock = Inventory::whereHas('product', fn($q) => $q->where('category_id', $oldMobileCatId))->where('stock', '>', 0)->sum('stock');
         $otherStock     = Inventory::whereHas('product', fn($q) => $q->whereNotIn('category_id', $mobileCatIds))->where('stock', '>', 0)->sum('stock');
@@ -104,7 +153,8 @@ class ReportNotificationService
         $msg .= "{$rule}\n\n";
 
         // ── Sales & Repairs ──
-        $msg .= "🛍️ *SALES* · {$saleCount} invoice" . ($saleCount === 1 ? '' : 's') . "\n";
+        $totalSetsSold = $soldMobiles->sum('quantity');
+        $msg .= "🛍️ *SALES* · {$saleCount} invoice" . ($saleCount === 1 ? '' : 's') . " · {$totalSetsSold} set" . ($totalSetsSold === 1 ? '' : 's') . " sold\n";
         if ($soldMobiles->isEmpty()) {
             $msg .= "   _No mobiles sold today_\n";
         } else {
@@ -144,6 +194,27 @@ class ReportNotificationService
         $msg .= "\n🧮 *Net Day Cash: ₹" . number_format($cashIn - $cashOut, 2) . "*\n";
         $msg .= "\n{$rule}\n\n";
 
+        // ── Finance ──
+        $msg .= "💳 *FINANCE*\n";
+        $msg .= "*Personal Finance* · " . count($personalFinanceEntries) . " done\n";
+        if (empty($personalFinanceEntries)) {
+            $msg .= "   _None today_\n";
+        } else {
+            foreach ($personalFinanceEntries as $line) $msg .= "   • {$line}\n";
+        }
+        $msg .= "\n*Company Finance* · " . count($companyFinanceEntries) . " done\n";
+        if (empty($companyFinanceEntries)) {
+            $msg .= "   _None today_\n";
+        } else {
+            foreach ($companyFinanceEntries as $line) $msg .= "   • {$line}\n";
+        }
+        $msg .= "\n";
+        $msg .= $this->buildLedgerBlock([
+            'Personal' => $personalFinanceDone,
+            'Company'  => $companyFinanceDone,
+        ], 'TOTAL', $personalFinanceDone + $companyFinanceDone);
+        $msg .= "\n{$rule}\n\n";
+
         // ── Stock ──
         $msg .= "📦 *STOCK*\n";
         $msg .= $this->buildLedgerBlock([
@@ -154,19 +225,41 @@ class ReportNotificationService
         $msg .= "⚠️ Low Stock (≤5): {$lowStockCount}\n";
         $msg .= "⛔ Out of Stock: New {$newMobileOutOfStock->count()} · 2nd Hand {$oldMobileOutOfStock->count()} · Other {$otherOutOfStockCount}\n";
 
-        if ($newMobileOutOfStock->count() > 0) {
-            $msg .= "\n⛔ *NEW MOBILE — OUT OF STOCK*\n";
-            $msg .= $this->buildOutOfStockTable($newMobileOutOfStock, 20);
-        }
-        if ($oldMobileOutOfStock->count() > 0) {
-            $msg .= "\n⛔ *2ND HAND — OUT OF STOCK*\n";
-            $msg .= $this->buildOutOfStockTable($oldMobileOutOfStock, 20);
+        if (self::SHOW_OUT_OF_STOCK_TABLES) {
+            if ($newMobileOutOfStock->count() > 0) {
+                $msg .= "\n⛔ *NEW MOBILE — OUT OF STOCK*\n";
+                $msg .= $this->buildOutOfStockTable($newMobileOutOfStock, 20);
+            }
+            if ($oldMobileOutOfStock->count() > 0) {
+                $msg .= "\n⛔ *2ND HAND — OUT OF STOCK*\n";
+                $msg .= $this->buildOutOfStockTable($oldMobileOutOfStock, 20);
+            }
         }
 
         $msg .= "\n{$rule}\n";
         $msg .= "_Tinku Mobiles Management System_";
 
         return $msg;
+    }
+
+    /**
+     * "Model — CustomerName (Phone) — ₹Amount (label)" style line for a Finance
+     * entry — matches the "who bought what" format already used for the sold-
+     * mobiles list, so the owner can see at a glance which set/customer a
+     * finance payment belongs to, not just a bare total.
+     */
+    private function financeEntryLine(\App\Models\SaleInvoice $invoice, float $amount, string $label): string
+    {
+        $customer = $invoice->customer;
+        $name = $customer->name ?? $invoice->customer_name ?? 'Walk-in';
+        $phone = $customer->phone ?? $invoice->customer_phone ?? '—';
+        $model = $invoice->items->map(function ($item) {
+            $product = $item->product;
+            $brand = $product?->brand?->name ?: ($product?->attributes['brand'] ?? '');
+            return trim("{$brand} " . ($product?->name ?? 'Unknown'));
+        })->implode(', ');
+
+        return "{$model} — {$name} ({$phone}) — ₹" . number_format($amount, 2) . " ({$label})";
     }
 
     /**

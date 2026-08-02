@@ -195,25 +195,25 @@ export default function Users() {
           <form onSubmit={handleSubmit}>
             <div className="row g-3">
               {/* Basic Info */}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Full Name *</label>
                 <input className="form-control" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Email *</label>
                 <input type="email" className="form-control" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">{editId ? 'New Password (optional)' : 'Password *'}</label>
                 <input type="password" className="form-control" required={!editId} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Phone</label>
                 <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
               </div>
 
               {/* Assignment */}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Shop / Branch *</label>
                 <select className="form-select" required value={form.shop_id} onChange={e => setForm({ ...form, shop_id: e.target.value })}>
                   <option value="">— Select Shop —</option>
@@ -236,16 +236,16 @@ export default function Users() {
                 </select>
               </div>
               {form.role === 'other' && (
-                <div className="col-md-2">
+                <div className="col-12 col-md-2">
                   <label className="form-label fw-semibold">Type Role *</label>
                   <input className="form-control" required placeholder="Enter role" value={form.customRole} onChange={e => setForm({ ...form, customRole: e.target.value })} />
                 </div>
               )}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Designation</label>
                 <input className="form-control" placeholder="e.g. Senior Technician" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Status</label>
                 <select className="form-select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
                   <option value="active">🟢 Active</option>
@@ -254,22 +254,22 @@ export default function Users() {
               </div>
 
               {/* Salary & Personal */}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Base Salary (Monthly)</label>
                 <div className="input-group">
                   <span className="input-group-text">₹</span>
                   <input type="number" className="form-control" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })} />
                 </div>
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Joining Date</label>
                 <input type="date" className="form-control" value={form.joining_date} onChange={e => setForm({ ...form, joining_date: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Aadhaar / ID No.</label>
                 <input className="form-control" value={form.aadhaar_no} onChange={e => setForm({ ...form, aadhaar_no: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Address</label>
                 <input className="form-control" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
               </div>

@@ -118,6 +118,12 @@ export default function RepairForm() {
         finalForm.balance_payment_mode = form.other_balance_mode;
       }
 
+      // Forwarding is now an always-visible, optional section rather than a
+      // toggle — derive is_forwarded from whether a shop name was actually
+      // entered, so filters/settlement logic (which depend on this flag)
+      // keep working exactly as before.
+      finalForm.is_forwarded = !!(form.forwarded_to && form.forwarded_to.trim());
+
       if (id) {
         await api.put(`/repairs/${id}`, finalForm);
         toast.success('Repair updated successfully');
@@ -156,7 +162,7 @@ export default function RepairForm() {
   return (
     <div className="container-fluid py-2">
       <div className="page-header mb-2 py-1">
-        <h4 className="mb-0">{id ? '✏️ Edit Repair' : '➕ New Repair'}</h4>
+        <h4 className="mb-0">{id ? '✏️ Edit Repair' : '➕ New Repair'} <span className="text-muted" style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + R</span></h4>
         <button onClick={() => navigate('/repairs')} className="btn btn-outline-secondary btn-sm px-3">← Back</button>
       </div>
       
@@ -164,9 +170,9 @@ export default function RepairForm() {
         <form onSubmit={handleSubmit}>
           <div className="row g-2">
             {/* Customer & Specs Info */}
-            <div className="col-md-8 border-end pe-3">
+            <div className="col-12 col-md-8 border-end pe-3">
               <div className="row g-2">
-                <div className="col-md-6 text-uppercase position-relative">
+                <div className="col-12 col-md-6 text-uppercase position-relative">
                   <label className="x-small fw-bold text-muted mb-0">Customer Name *</label>
                   <input 
                     className="form-control form-control-sm border-2 fw-bold text-uppercase" 
@@ -196,27 +202,27 @@ export default function RepairForm() {
                       </div>
                   )}
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Phone *</label>
                   <input className="form-control form-control-sm border-2 fw-bold" required {...f('customer_phone')} />
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Email</label>
                   <input className="form-control form-control-sm" type="email" {...f('customer_email')} />
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Submitted Date</label>
                   <input type="date" className="form-control form-control-sm" {...f('submitted_date')} />
                 </div>
-                <div className="col-md-12">
+                <div className="col-12 col-md-12">
                   <label className="x-small fw-bold text-muted mb-0">Customer Address</label>
                   <input className="form-control form-control-sm" placeholder="Address Details" {...f('customer_address')} />
                 </div>
-                <div className="col-md-8">
+                <div className="col-12 col-md-8">
                   <label className="x-small fw-bold text-muted mb-0">Device Model *</label>
                   <input className="form-control form-control-sm border-2 text-primary fw-bold" required placeholder="Device Model" {...f('device_model')} />
                 </div>
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                   <label className="x-small fw-bold text-muted mb-0">Est. Delivery</label>
                   <input type="date" className="form-control form-control-sm border-info" {...f('estimated_delivery_date')} />
                 </div>
@@ -245,49 +251,45 @@ export default function RepairForm() {
                 </div>
               </div>
 
-              {/* Forwarding Section (Collapsible Logic) */}
+              {/* Forwarding Section — always visible; leaving Shop Name blank
+                  simply means this repair stays in-house (not forwarded). */}
               <div className="mt-3 pt-2 border-top">
-                <div className="form-check form-switch mb-1">
-                  <input className="form-check-input" type="checkbox" id="isForwarded" {...f('is_forwarded')} checked={form.is_forwarded} />
-                  <label className="form-check-label x-small fw-bold text-primary" htmlFor="isForwarded">Forward to External Shop?</label>
-                </div>
-                {form.is_forwarded && (
-                  <div className="row g-2 p-2 bg-light rounded border border-warning shadow-sm">
-                    <div className="col-6 position-relative">
-                      <input className="form-control form-control-sm x-small" placeholder="Shop Name" {...f('forwarded_to')} onFocus={() => setShowShopList(true)} onBlur={() => setTimeout(() => setShowShopList(false), 200)} />
-                      {showShopList && externalShops.length > 0 && (
-                        <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 150, zIndex: 1000, left: 0 }}>
-                           {externalShops.filter(s => 
-                              s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase()) || 
-                              (s.forwarded_phone && s.forwarded_phone.includes(form.forwarded_to))
-                           ).map((shop, i) => (
-                             <div key={i} className="p-2 x-small cursor-pointer border-bottom hover-bg-light d-flex justify-content-between align-items-center" onMouseDown={() => selectShop(shop)}>
-                               <div className="fw-bold text-uppercase">{shop.forwarded_to}</div>
-                               <div className="text-muted small">{shop.forwarded_phone}</div>
-                             </div>
-                           ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="col-6">
-                      <input className="form-control form-control-sm x-small" placeholder="Phone" {...f('forwarded_phone')} />
-                    </div>
-                    <div className="col-6">
-                      <input type="date" className="form-control form-control-sm x-small" {...f('external_expected_delivery')} />
-                    </div>
-                    <div className="col-6">
-                      <div className="input-group input-group-sm">
-                        <span className="input-group-text bg-white x-small">₹</span>
-                        <input type="number" step="0.01" className="form-control x-small fw-bold text-danger" placeholder="Cost" {...f('service_center_cost')} />
+                <label className="x-small fw-bold text-primary mb-1 d-block">Forward to External Shop (Optional)</label>
+                <div className="row g-2 p-2 bg-light rounded border border-warning shadow-sm">
+                  <div className="col-6 position-relative">
+                    <input className="form-control form-control-sm x-small" placeholder="Shop Name" {...f('forwarded_to')} onFocus={() => setShowShopList(true)} onBlur={() => setTimeout(() => setShowShopList(false), 200)} />
+                    {showShopList && externalShops.length > 0 && (
+                      <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 150, zIndex: 1000, left: 0 }}>
+                         {externalShops.filter(s =>
+                            s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase()) ||
+                            (s.forwarded_phone && s.forwarded_phone.includes(form.forwarded_to))
+                         ).map((shop, i) => (
+                           <div key={i} className="p-2 x-small cursor-pointer border-bottom hover-bg-light d-flex justify-content-between align-items-center" onMouseDown={() => selectShop(shop)}>
+                             <div className="fw-bold text-uppercase">{shop.forwarded_to}</div>
+                             <div className="text-muted small">{shop.forwarded_phone}</div>
+                           </div>
+                         ))}
                       </div>
+                    )}
+                  </div>
+                  <div className="col-6">
+                    <input className="form-control form-control-sm x-small" placeholder="Phone" {...f('forwarded_phone')} />
+                  </div>
+                  <div className="col-6">
+                    <input type="date" className="form-control form-control-sm x-small" {...f('external_expected_delivery')} />
+                  </div>
+                  <div className="col-6">
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text bg-white x-small">₹</span>
+                      <input type="number" step="0.01" className="form-control x-small fw-bold text-danger" placeholder="Cost" {...f('service_center_cost')} />
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
             {/* Financial Tracking & Settlement */}
-            <div className="col-md-4 ps-3 bg-light-subtle rounded py-2 d-flex flex-column">
+            <div className="col-12 col-md-4 ps-3 bg-light-subtle rounded py-2 d-flex flex-column">
               <h6 className="x-small fw-bold text-uppercase text-muted mb-2 pb-1 border-bottom">💰 Financials</h6>
               
               <div className="row g-2 mb-2">

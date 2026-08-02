@@ -45,7 +45,7 @@ export default function LoanForm() {
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
               </select>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Principal ₹ *</label>
               <input type="number" className="form-control" required min="1" 
                   value={form.principal === 0 || form.principal === '' ? '' : form.principal} 
@@ -53,7 +53,7 @@ export default function LoanForm() {
                   onChange={e => setForm({ ...form, principal: e.target.value })} 
               />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Interest Rate % / month *</label>
               <input type="number" className="form-control" step="0.01" required 
                   value={form.interest_rate === 0 || form.interest_rate === '' ? '' : form.interest_rate} 
@@ -61,7 +61,7 @@ export default function LoanForm() {
                   onChange={e => setForm({ ...form, interest_rate: e.target.value })} 
               />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Total Months *</label>
               <input type="number" className="form-control" min="1" required 
                   value={form.total_months === 0 || form.total_months === '' ? '' : form.total_months} 
@@ -69,14 +69,14 @@ export default function LoanForm() {
                   onChange={e => setForm({ ...form, total_months: e.target.value })} 
               />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Interest Type</label>
               <select className="form-select" {...f('interest_type')}>
                 <option value="simple">Simple Interest</option>
                 <option value="compound">Compound Interest</option>
               </select>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Start Date</label>
               <input type="date" className="form-control" {...f('start_date')} />
             </div>

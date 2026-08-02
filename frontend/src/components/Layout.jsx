@@ -225,7 +225,8 @@ export default function Layout() {
       }
   };
   
-  // Shortcuts: Alt + S (Stocks), Alt + N (New Sale), Alt + E (Entity Manager)
+  // Shortcuts: Alt + S (Stocks), Alt + N (New Sale), Alt + E (Entity Manager),
+  // Alt + P (New Purchase), Alt + R (New Repair)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!e.altKey) return;
@@ -239,6 +240,12 @@ export default function Layout() {
       } else if (key === 'e') {
         e.preventDefault();
         navigate('/accounts/entity-manager');
+      } else if (key === 'p') {
+        e.preventDefault();
+        navigate('/purchases/new?category_group=new_mobile');
+      } else if (key === 'r') {
+        e.preventDefault();
+        navigate('/repairs/new');
       }
     };
     window.addEventListener('keydown', handleKeyDown);

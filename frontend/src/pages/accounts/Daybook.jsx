@@ -85,13 +85,13 @@ export default function Daybook() {
         </div>
 
         <div className="row g-3 mb-4">
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
                 <div className="card border border-secondary border-opacity-25 bg-white p-3 shadow-none rounded-2">
                     <div className="small text-uppercase fw-bold text-muted opacity-75 mb-1">Total Debit (Sales/Receivable/Paid Out)</div>
                     <div className="h4 mb-0 fw-bold text-dark">₹{filteredDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                 </div>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
                 <div className="card border border-secondary border-opacity-25 bg-white p-3 shadow-none rounded-2">
                     <div className="small text-uppercase fw-bold text-muted opacity-75 mb-1">Total Credit (Purchases/Payable/Received In)</div>
                     <div className="h4 mb-0 fw-bold text-dark">₹{filteredCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>

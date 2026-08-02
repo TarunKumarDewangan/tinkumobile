@@ -352,7 +352,7 @@ export default function AirtelDrops() {
       <div className="card shadow-sm border-0 mb-4 bg-light">
           <div className="card-body py-3">
               <div className="row g-2 align-items-end">
-                  <div className="col-md-3">
+                  <div className="col-12 col-md-3">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Search Retailer Name / MSISDN</label>
                       <input 
                         type="text" 
@@ -362,7 +362,7 @@ export default function AirtelDrops() {
                         onChange={e => setRetailerName(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Min Amount</label>
                       <input 
                         type="number" 
@@ -372,7 +372,7 @@ export default function AirtelDrops() {
                         onChange={e => setMinAmount(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Max Amount</label>
                       <input 
                         type="number" 
@@ -382,7 +382,7 @@ export default function AirtelDrops() {
                         onChange={e => setMaxAmount(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Payment Mode</label>
                       <select className="form-select form-select-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
                           <option value="">ALL MODES</option>
@@ -393,13 +393,13 @@ export default function AirtelDrops() {
                           <option value="OTHER">OTHER</option>
                       </select>
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <div className="form-check form-switch mt-2">
                           <input className="form-check-input" type="checkbox" id="followUpSwitch" checked={followUpOnly} onChange={e => setFollowUpOnly(e.target.checked)} />
                           <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="followUpSwitch">Follow-up Only</label>
                       </div>
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <div className="form-check form-switch mt-2">
                           <input className="form-check-input" type="checkbox" id="overpaidSwitch" checked={overpaidOnly} onChange={e => setOverpaidOnly(e.target.checked)} />
                           <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="overpaidSwitch">Overpaid Only</label>
@@ -418,7 +418,7 @@ export default function AirtelDrops() {
                   </div>
               </div>
               <div className="row mt-2 g-2">
-                  <div className="col-md-12">
+                  <div className="col-12 col-md-12">
                       <div className="btn-group w-100 shadow-sm text-uppercase fw-bold">
                           <button className={`btn btn-sm ${status === 'all' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setStatus('all')}>All Accounts</button>
                           <button className={`btn btn-sm ${status === 'pending_only' ? 'btn-warning text-dark' : 'btn-outline-warning'}`} onClick={() => setStatus('pending_only')}>Pending</button>

@@ -53,16 +53,16 @@ export default function CustomerProfile() {
 
         {/* Customer Info Card */}
         <div className="row g-3 mb-4">
-          <div className="col-md-12">
+          <div className="col-12 col-md-12">
             <div className="card border-0 shadow-sm rounded-4 h-100">
               <div className="card-body p-4">
                 <h6 className="fw-bold text-muted text-uppercase x-small mb-3">Address & Contact</h6>
                 <div className="row">
-                  <div className="col-md-6 mb-3 mb-md-0">
+                  <div className="col-12 col-md-6 mb-3 mb-md-0">
                     <div className="small text-muted mb-1">EMAIL</div>
                     <div className="fw-bold">{customer.email || 'N/A'}</div>
                   </div>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <div className="small text-muted mb-1">ADDRESS</div>
                     <div className="fw-bold text-uppercase">{customer.address || 'N/A'}</div>
                   </div>

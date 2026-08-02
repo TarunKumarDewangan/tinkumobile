@@ -149,7 +149,7 @@ export default function Overheads() {
                                                 <label className="btn btn-outline-success" htmlFor="typeIn">Income (IN)</label>
                                             </div>
                                         </div>
-                                        <div className="col-md-6">
+                                        <div className="col-12 col-md-6">
                                             <label className="form-label small fw-bold">Amount</label>
                                             <div className="input-group">
                                                 <span className="input-group-text">₹</span>
@@ -157,7 +157,7 @@ export default function Overheads() {
                                                     value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
                                             </div>
                                         </div>
-                                        <div className="col-md-6">
+                                        <div className="col-12 col-md-6">
                                             <label className="form-label small fw-bold">Date</label>
                                             <input type="date" className="form-control" required
                                                 value={form.transaction_date} onChange={e => setForm({...form, transaction_date: e.target.value})} />

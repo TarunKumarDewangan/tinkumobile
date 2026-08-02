@@ -101,7 +101,7 @@ export default function TrashManager() {
       <div className="card shadow-sm border-0 mb-4 bg-light">
         <div className="card-body">
           <div className="row g-3">
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label x-small text-uppercase fw-bold text-muted">Select Category to Recover</label>
               <div className="d-flex flex-wrap gap-2">
                 {modelTypes.map(m => (

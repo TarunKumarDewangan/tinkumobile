@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\LoanController;
 use App\Http\Controllers\Api\LoanPayment;
 use App\Http\Controllers\Api\RechargeController;
 use App\Http\Controllers\Api\SimCardController;
+use App\Http\Controllers\Api\SimStockController;
 use App\Http\Controllers\Api\OldMobileController;
 use App\Http\Controllers\Api\GiftController;
 use App\Http\Controllers\Api\FollowUpController;
@@ -178,6 +179,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/sim-cards', [SimCardController::class, 'index']);
     Route::post('/sim-cards', [SimCardController::class, 'purchase']);
     Route::post('/sim-cards/{simCard}/sell', [SimCardController::class, 'sell']);
+
+    // SIM Stock (simple bulk count ledger, distinct from per-serial SimCard above)
+    Route::get('/sim-stock/summary', [SimStockController::class, 'summary']);
+    Route::get('/sim-stock', [SimStockController::class, 'index']);
+    Route::post('/sim-stock', [SimStockController::class, 'store']);
+    Route::post('/sim-stock/sell', [SimStockController::class, 'sell']);
 
     // Old Mobiles
     Route::get('/old-mobiles', [OldMobileController::class, 'index']);

@@ -74,7 +74,7 @@ export default function Cashbook() {
 
             {/* Summary Cards */}
             <div className="row g-3 mb-4">
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                     <div className="card border-0 shadow-sm bg-success text-white">
                         <div className="card-body">
                             <div className="text-white-50 small mb-1">Total Cash In</div>
@@ -82,7 +82,7 @@ export default function Cashbook() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                     <div className="card border-0 shadow-sm bg-danger text-white">
                         <div className="card-body">
                             <div className="text-white-50 small mb-1">Total Cash Out</div>
@@ -90,7 +90,7 @@ export default function Cashbook() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                     <div className="card border-0 shadow-sm bg-primary text-white">
                         <div className="card-body">
                             <div className="text-white-50 small mb-1">Net Balance</div>
@@ -104,17 +104,17 @@ export default function Cashbook() {
             <div className="card border-0 shadow-sm mb-4">
                 <div className="card-body">
                     <div className="row g-3">
-                        <div className="col-md-2">
+                        <div className="col-12 col-md-2">
                             <label className="form-label small fw-bold">From</label>
                             <input type="date" className="form-control" 
                                 value={filters.from} onChange={e => setFilters({...filters, from: e.target.value})} />
                         </div>
-                        <div className="col-md-2">
+                        <div className="col-12 col-md-2">
                             <label className="form-label small fw-bold">To</label>
                             <input type="date" className="form-control" 
                                 value={filters.to} onChange={e => setFilters({...filters, to: e.target.value})} />
                         </div>
-                        <div className="col-md-2">
+                        <div className="col-12 col-md-2">
                             <label className="form-label small fw-bold">Type</label>
                             <select className="form-select" value={filters.type} onChange={e => setFilters({...filters, type: e.target.value})}>
                                 <option value="">All</option>
@@ -122,7 +122,7 @@ export default function Cashbook() {
                                 <option value="OUT">Expense (OUT)</option>
                             </select>
                         </div>
-                        <div className="col-md-2">
+                        <div className="col-12 col-md-2">
                             <label className="form-label small fw-bold">Category</label>
                             <select className="form-select" value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
                                 <option value="">All</option>
@@ -130,7 +130,7 @@ export default function Cashbook() {
                             </select>
                         </div>
                         {hasFullAccess() && (
-                            <div className="col-md-2">
+                            <div className="col-12 col-md-2">
                                 <label className="form-label small fw-bold">Shop</label>
                                 <select className="form-select" value={filters.shop_id} onChange={e => setFilters({...filters, shop_id: e.target.value})}>
                                     <option value="">All Shops</option>
@@ -138,7 +138,7 @@ export default function Cashbook() {
                                 </select>
                             </div>
                         )}
-                        <div className="col-md-2 d-flex align-items-end">
+                        <div className="col-12 col-md-2 d-flex align-items-end">
                             <button className="btn btn-secondary w-100" onClick={() => setFilters({
                                 from: new Date().toISOString().split('T')[0],
                                 to: new Date().toISOString().split('T')[0],

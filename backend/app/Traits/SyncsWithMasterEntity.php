@@ -103,7 +103,21 @@ trait SyncsWithMasterEntity
             'balance_type' => $this->balance_type ?? request('balance_type') ?? $entity->balance_type ?? 'RECEIVABLE',
         ]);
 
-        $entity->save();
+        try {
+            $entity->save();
+        } catch (\Illuminate\Database\QueryException $e) {
+            // This is a best-effort mirror into the Entity Manager/Ledger system —
+            // it must never be allowed to crash the actual save of the real model
+            // (a user changing their password, a customer being edited, etc.) just
+            // because two records ended up sharing a name. Log it and move on;
+            // the primary record itself has already saved successfully by this point.
+            \Illuminate\Support\Facades\Log::warning('syncToMasterEntity failed to save entity, skipping', [
+                'model' => get_class($this),
+                'model_id' => $this->id,
+                'name' => $entity->name,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function generateUniqueEntityName($baseName, $type, $excludeId = null)

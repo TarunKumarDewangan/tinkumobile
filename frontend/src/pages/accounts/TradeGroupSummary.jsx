@@ -306,7 +306,7 @@ export default function TradeGroupSummary() {
             <div className="card shadow-sm border-0 mb-4 no-print">
                 <div className="card-body p-3">
                     <div className="row g-3">
-                        <div className="col-md-7">
+                        <div className="col-12 col-md-7">
                             <input
                                 type="text"
                                 className="form-control form-control-sm"
@@ -315,7 +315,7 @@ export default function TradeGroupSummary() {
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <div className="col-md-5 d-flex align-items-center justify-content-end gap-3">
+                        <div className="col-12 col-md-5 d-flex align-items-center justify-content-end gap-3">
                             <div className="form-check form-switch mb-0">
                                 <input className="form-check-input" type="checkbox" role="switch" id="showZeroBalancesSwitch" style={{ cursor: 'pointer' }}
                                     checked={!hideZeroBalances} onChange={e => setHideZeroBalances(!e.target.checked)} />

@@ -89,7 +89,7 @@ export default function Dashboard() {
 
       {/* ── Task Widgets ── */}
       <div className="row g-4 mb-4">
-        <div className="col-md-6">
+        <div className="col-12 col-md-6">
           <div className="glass-card p-4 h-100 border-0 bg-white">
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">✅ My Pending Tasks</h5>
@@ -118,7 +118,7 @@ export default function Dashboard() {
           </div>
         </div>
         {(can('assign_tasks') || hasFullAccess()) && (
-          <div className="col-md-6">
+          <div className="col-12 col-md-6">
             <div className="glass-card p-4 h-100 border-0 bg-white">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">👥 Team Tasks</h5>
@@ -155,9 +155,9 @@ export default function Dashboard() {
       </div>
 
       <div className="row g-4">
-        <div className="col-md-8">
+        <div className="col-12 col-md-8">
             <div className="row g-4">
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                     <div className="glass-card p-4 h-100 border-0 bg-white">
                         <div className="d-flex justify-content-between align-items-center mb-4">
                             <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">📅 Follow-ups</h5>
@@ -167,7 +167,7 @@ export default function Dashboard() {
                         <Link to="/follow-ups" className="btn btn-primary btn-sm rounded-pill px-4">View All</Link>
                     </div>
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                     <div className="glass-card p-4 h-100 border-0 bg-white">
                         <div className="d-flex justify-content-between align-items-center mb-4">
                             <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">⚠️ Overdue</h5>
@@ -180,7 +180,7 @@ export default function Dashboard() {
             </div>
         </div>
         
-        <div className="col-md-4">
+        <div className="col-12 col-md-4">
           <div className="glass-card p-4 h-100 border-0 bg-white shadow-sm">
             <div className="fw-bold mb-4 small text-muted text-uppercase letter-spacing-1">⚡ Quick Actions</div>
             <div className="d-grid gap-3">

@@ -307,7 +307,7 @@ export default function EntityLedger() {
             <p className="xx-small text-muted mb-0 text-uppercase letter-spacing-1">Management Portal</p>
           </div>
 
-          <div className="col-md-4">
+          <div className="col-12 col-md-4">
              <div className="search-box position-relative">
                 <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted x-small"></i>
                 <input 
@@ -331,7 +331,7 @@ export default function EntityLedger() {
 
       <div className="row g-3 flex-grow-1 overflow-hidden">
         {/* Modern Sidebar / Master View */}
-        <div className="col-lg-2 col-md-3 d-flex flex-column overflow-hidden h-100 animate-slideRight">
+        <div className="col-12 col-lg-2 col-md-3 d-flex flex-column overflow-hidden h-100 animate-slideRight">
           <div className="glass-card flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0">
             <div className="flex-grow-1 overflow-auto entity-list p-2">
               {loading ? (
@@ -379,7 +379,7 @@ export default function EntityLedger() {
         </div>
 
         {/* Detailed Ledger Area */}
-        <div className="col-lg-10 col-md-9 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
+        <div className="col-12 col-lg-10 col-md-9 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
           {selectedEntityId ? (
             <div className="glass-card-main flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0 animate-fadeIn">
               {/* Detail Header */}
@@ -669,7 +669,7 @@ export default function EntityLedger() {
                       </div>
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">AMOUNT (₹) <span className="text-danger">*</span></label>
                       <input 
                         type="number" 
@@ -683,7 +683,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
                       <select 
                         className="form-select x-small"
@@ -711,7 +711,7 @@ export default function EntityLedger() {
                       </div>
                     )}
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">SETTLEMENT DATE</label>
                       <input 
                         type="date" 
@@ -722,7 +722,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">CATEGORY</label>
                       <select 
                         className="form-select x-small text-uppercase"
@@ -910,7 +910,7 @@ export default function EntityLedger() {
               <form onSubmit={handleUpdateTx}>
                 <div className="modal-body p-4 bg-light">
                   <div className="row g-3">
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">AMOUNT (₹) <span className="text-danger">*</span></label>
                       <input 
                         type="number" 
@@ -926,7 +926,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
                       <select 
                         className="form-select form-select-sm x-small"
@@ -944,7 +944,7 @@ export default function EntityLedger() {
                       </select>
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">TRANSACTION DATE</label>
                       <input 
                         type="date" 
@@ -958,7 +958,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">CATEGORY</label>
                       <select 
                         className="form-select form-select-sm x-small text-uppercase"

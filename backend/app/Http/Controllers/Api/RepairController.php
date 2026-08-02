@@ -180,6 +180,16 @@ class RepairController extends Controller
         });
 
         ActivityLog::log('REPAIR_CREATED', $repair, "Repair created: {$repair->device_model} for {$repair->customer_name} (#{$repair->id})");
+
+        $this->notifyOwner(
+            "🔧 *New Repair Entry #{$repair->id}*\n" .
+            "Device: {$repair->device_model}\n" .
+            "Customer: {$repair->customer_name} ({$repair->customer_phone})\n" .
+            "Problem: " . (is_array($repair->issue_description) ? implode(', ', $repair->issue_description) : $repair->issue_description) . "\n" .
+            "Quoted: ₹" . number_format($repair->quoted_amount, 2) . "\n" .
+            "By: {$user->name}"
+        );
+
         return response()->json($repair, 201);
     }
 
@@ -193,6 +203,7 @@ class RepairController extends Controller
         $data = $request->validate([
             'status'                    => 'in:pending,assigned,in_progress,completed,delivered',
             'assigned_to'               => 'nullable|exists:users,id',
+            'staff_id'                  => 'nullable|exists:users,id',
             'estimated_delivery_date'   => 'nullable|date',
             'actual_delivery_date'      => 'nullable|date',
             'customer_name'             => 'sometimes|string',
@@ -263,9 +274,17 @@ class RepairController extends Controller
         // Audit log — log status changes
         if ($repair->wasChanged('status')) {
             ActivityLog::log('REPAIR_STATUS_CHANGED', $user, "Repair #{$repair->id} status updated to {$repair->status}");
+
+            $this->notifyOwner(
+                "🔧 *Repair #{$repair->id} Status Updated*\n" .
+                "Device: {$repair->device_model}\n" .
+                "Customer: {$repair->customer_name}\n" .
+                "New Status: " . strtoupper($repair->status) . "\n" .
+                "By: {$user->name}"
+            );
         }
 
-        return response()->json($repair->fresh()->load('assignedTo'));
+        return response()->json($repair->fresh()->load('assignedTo', 'staff'));
     }
 
     public function show(Request $request, RepairRequest $repair)

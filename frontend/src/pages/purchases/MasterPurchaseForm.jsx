@@ -245,7 +245,7 @@ export default function MasterPurchaseForm() {
 
     const types = (entRes.data || []).map(e => e.type).filter(Boolean);
     const uniqueCustomTypes = Array.from(new Set(types)).filter(
-      t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+      t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
     );
     setCustomTypes(uniqueCustomTypes);
   };
@@ -1128,7 +1128,7 @@ export default function MasterPurchaseForm() {
     .pf-field-group:focus-within{border-color:#c7d2fe;background:#fff}
   `;
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(newSupplier.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(newSupplier.type);
   const isCustomType = customTypes.includes(newSupplier.type);
   const showCustomInput = newSupplier.type === 'OTHER' || (!isDefaultType && !isCustomType && newSupplier.type !== '');
 
@@ -1778,6 +1778,9 @@ export default function MasterPurchaseForm() {
                   <option value="SUPPLIER">DISTRIBUTOR / SUPPLIER</option>
                   <option value="DISTRIBUTOR">MARKETING DISTRIBUTOR</option>
                   <option value="SHOP_CUSTOMER">SHOP CUSTOMER / SUNDRY CREDITOR</option>
+                  <option value="BANK">BANK</option>
+                  <option value="CARD">CARD</option>
+                  <option value="UPI">UPI</option>
                   {customTypes.map(t => <option key={t} value={t}>{t}</option>)}
                   <option value="OTHER">+ ADD OTHER / CUSTOM TYPE...</option>
                 </select>

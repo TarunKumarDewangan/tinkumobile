@@ -304,50 +304,50 @@ export default function OldMobiles() {
       <Modal show={!!editingItem} onClose={() => setEditingItem(null)} title="Edit Old Mobile Purchase">
         <form onSubmit={handleEditSubmit}>
           <div className="row g-3">
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Customer Name</label>
               <input type="text" className="form-control text-uppercase" required value={editForm.customer_name} onChange={e => setEditForm({ ...editForm, customer_name: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Customer Phone</label>
               <input type="text" className="form-control" required value={editForm.customer_phone} onChange={e => setEditForm({ ...editForm, customer_phone: e.target.value })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Model Name</label>
               <input type="text" className="form-control text-uppercase" required value={editForm.model_name} onChange={e => setEditForm({ ...editForm, model_name: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">IMEI / Serial</label>
               <input type="text" className="form-control" value={editForm.imei} onChange={e => setEditForm({ ...editForm, imei: e.target.value })} />
             </div>
-            <div className="col-md-4">
+            <div className="col-12 col-md-4">
               <label className="form-label small fw-bold text-muted">RAM</label>
               <input type="text" className="form-control text-uppercase" placeholder="e.g. 8GB" value={editForm.ram} onChange={e => setEditForm({ ...editForm, ram: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-4">
+            <div className="col-12 col-md-4">
               <label className="form-label small fw-bold text-muted">Storage</label>
               <input type="text" className="form-control text-uppercase" placeholder="e.g. 128GB" value={editForm.storage} onChange={e => setEditForm({ ...editForm, storage: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-4">
+            <div className="col-12 col-md-4">
               <label className="form-label small fw-bold text-muted">Color</label>
               <input type="text" className="form-control text-uppercase" placeholder="e.g. BLACK" value={editForm.color} onChange={e => setEditForm({ ...editForm, color: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Purchase Date</label>
               <input type="date" className="form-control" required value={editForm.purchase_date} onChange={e => setEditForm({ ...editForm, purchase_date: e.target.value })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Payout Type</label>
               <select className="form-select text-uppercase" value={editForm.is_exchange} onChange={e => setEditForm({ ...editForm, is_exchange: e.target.value === 'true' })}>
                 <option value="true">Exchange (Trade-in Credit)</option>
                 <option value="false">Cash Payout</option>
               </select>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Purchase Value (₹)</label>
               <input type="number" step="0.01" className="form-control fw-bold text-success" required value={editForm.purchase_price} onChange={e => setEditForm({ ...editForm, purchase_price: e.target.value })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Target Reselling Price (₹)</label>
               <input type="number" step="0.01" className="form-control fw-bold text-warning" value={editForm.selling_price} onChange={e => setEditForm({ ...editForm, selling_price: e.target.value })} />
             </div>

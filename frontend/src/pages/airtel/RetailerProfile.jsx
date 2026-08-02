@@ -242,7 +242,7 @@ export default function RetailerProfile() {
             </div>
 
             <div className="row g-3 mb-4">
-                <div className="col-md-3">
+                <div className="col-12 col-md-3">
                     <div className="card border-0 shadow-sm bg-white h-100 border-start border-4 border-primary">
                         <div className="card-body">
                             <div className="x-small text-uppercase text-muted mb-1 fw-bold">Opening Balance</div>
@@ -250,7 +250,7 @@ export default function RetailerProfile() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-3">
+                <div className="col-12 col-md-3">
                     <div className="card border-0 shadow-sm bg-white h-100">
                         <div className="card-body">
                             <div className="x-small text-uppercase text-muted mb-1 fw-bold">Total Dropped</div>
@@ -258,7 +258,7 @@ export default function RetailerProfile() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-3">
+                <div className="col-12 col-md-3">
                     <div className="card border-0 shadow-sm bg-success text-white h-100">
                         <div className="card-body">
                             <div className="x-small text-uppercase opacity-75 mb-1 fw-bold">Total Recovered</div>
@@ -266,7 +266,7 @@ export default function RetailerProfile() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-3">
+                <div className="col-12 col-md-3">
                     <div className="card border-0 shadow-sm bg-danger text-white h-100">
                         <div className="card-body">
                             <div className="x-small text-uppercase opacity-75 mb-1 fw-bold">Remaining Debt</div>
@@ -282,7 +282,7 @@ export default function RetailerProfile() {
                 </div>
                 <div className="card-body pt-0">
                     <div className="row">
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <table className="table table-sm table-borderless mb-0">
                                 <tbody>
                                     <tr>
@@ -545,24 +545,24 @@ export default function RetailerProfile() {
             <Modal show={showEdit} onClose={() => setShowEdit(false)} title="EDIT RETAILER DETAILS">
                 <form onSubmit={handleUpdateRetailer}>
                     <div className="row g-3 mb-4">
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">Retailer Name</label>
                             <input type="text" className="form-control text-uppercase" value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} required />
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">MSISDN (Airtel Number)</label>
                             <input type="text" className="form-control" value={editData.msisdn} onChange={e => setEditData({...editData, msisdn: e.target.value})} required />
                         </div>
-                        <div className="col-md-12">
+                        <div className="col-12 col-md-12">
                             <label className="form-label x-small text-uppercase fw-bold">Shop Address (Optional)</label>
                             <textarea className="form-control text-uppercase" rows="2" value={editData.address} onChange={e => setEditData({...editData, address: e.target.value})} />
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold text-danger">Opening balance</label>
                             <input type="number" step="0.01" className="form-control fw-bold border-danger" value={editData.balance} onChange={e => setEditData({...editData, balance: e.target.value})} required />
                             <div className="form-text x-small text-danger fw-bold">!! Use this to adjust the initial debt !!</div>
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">Shop ID</label>
                             <input type="number" className="form-control" value={editData.shop_id} onChange={e => setEditData({...editData, shop_id: e.target.value})} required />
                         </div>
@@ -601,7 +601,7 @@ export default function RetailerProfile() {
                             />
                             <div className="form-text x-small">Tip: rename to avoid confusion with Airtel retailer name</div>
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">Phone</label>
                             <input
                                 type="text"
@@ -610,7 +610,7 @@ export default function RetailerProfile() {
                                 onChange={e => setMainAccountForm({...mainAccountForm, phone: e.target.value})}
                             />
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">Account Type</label>
                             <select
                                 className="form-select fw-semibold"
@@ -623,7 +623,7 @@ export default function RetailerProfile() {
                                 <option value="OTHER">OTHER</option>
                             </select>
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">Opening Balance</label>
                             <div className="input-group">
                                 <span className="input-group-text">₹</span>
@@ -636,7 +636,7 @@ export default function RetailerProfile() {
                                 />
                             </div>
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                             <label className="form-label x-small text-uppercase fw-bold">Balance Type</label>
                             <select
                                 className="form-select"

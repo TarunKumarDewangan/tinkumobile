@@ -148,7 +148,7 @@ export default function StockTransfers() {
         <div className="card-body">
           <form onSubmit={handleSubmit}>
             <div className="row g-3">
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label small fw-bold text-uppercase">From Shop</label>
                 {hasFullAccess() ? (
                   <select className="form-select" value={fromShopId} onChange={e => setFromShopId(e.target.value)} required>
@@ -159,23 +159,23 @@ export default function StockTransfers() {
                   <input className="form-control" disabled value={shops.find(s => s.id == fromShopId)?.name || 'Your Shop'} />
                 )}
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label small fw-bold text-uppercase">To Shop</label>
                 <select className="form-select" value={toShopId} onChange={e => setToShopId(e.target.value)} required>
                   <option value="">Select...</option>
                   {shops.filter(s => s.id != fromShopId).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label small fw-bold text-uppercase">Transfer Date</label>
                 <input type="date" className="form-control" value={transferDate} onChange={e => setTransferDate(e.target.value)} required />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label small fw-bold text-uppercase">Notes</label>
                 <input className="form-control" value={notes} onChange={e => setNotes(e.target.value)} />
               </div>
 
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label small fw-bold text-uppercase">Product (in stock at From Shop)</label>
                 <select className="form-select" value={productId} onChange={e => setProductId(e.target.value)} required disabled={!fromShopId}>
                   <option value="">{fromShopId ? 'Select product...' : 'Select From Shop first'}</option>
@@ -183,7 +183,7 @@ export default function StockTransfers() {
                 </select>
               </div>
               {groups.length > 1 && (
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label small fw-bold text-uppercase">Configuration</label>
                   <select className="form-select" value={groupIdx} onChange={e => { setGroupIdx(Number(e.target.value)); setSelectedImeis([]); setBulkQty(1); }}>
                     {groups.map((g, idx) => <option key={idx} value={idx}>{configLabel(g)} — Available: {g.available_qty}</option>)}

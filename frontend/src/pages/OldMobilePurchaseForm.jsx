@@ -185,13 +185,13 @@ export default function OldMobilePurchaseForm() {
 
       <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="row g-4">
         {/* Left Side: General Info & Customer */}
-        <div className="col-lg-6">
+        <div className="col-12 col-lg-6">
           <div className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4 mb-4">
             <h4 className="text-dark mb-4 border-bottom border-secondary-subtle pb-2">🏢 Shop & Payout Mode</h4>
 
             <div className="row g-3">
               {hasFullAccess() && (
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">SELECT SHOP/BRANCH <span className="text-danger">*</span></label>
                   <select 
                     className="form-select bg-white text-dark border-secondary-subtle fw-semibold" 
@@ -205,7 +205,7 @@ export default function OldMobilePurchaseForm() {
                 </div>
               )}
 
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label text-muted small fw-bold">PURCHASE DATE <span className="text-danger">*</span></label>
                 <input 
                   type="date" 
@@ -286,7 +286,7 @@ export default function OldMobilePurchaseForm() {
 
               <div className="col-12 text-center text-muted my-2 small">— OR REGISTER NEW CUSTOMER —</div>
 
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label text-muted small fw-bold">CUSTOMER NAME <span className="text-danger">*</span></label>
                 <input 
                   type="text" 
@@ -299,7 +299,7 @@ export default function OldMobilePurchaseForm() {
                 />
               </div>
 
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label text-muted small fw-bold">PHONE NUMBER <span className="text-danger">*</span></label>
                 <input 
                   type="text" 
@@ -328,7 +328,7 @@ export default function OldMobilePurchaseForm() {
         </div>
 
         {/* Right Side: Devices (one or more) */}
-        <div className="col-lg-6">
+        <div className="col-12 col-lg-6">
           {devices.map((d, idx) => (
             <div key={idx} className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4 mb-4">
               <div className="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary-subtle pb-2">
@@ -353,7 +353,7 @@ export default function OldMobilePurchaseForm() {
                   />
                 </div>
 
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">IMEI / SERIAL NO.</label>
                   <input
                     type="text"
@@ -364,7 +364,7 @@ export default function OldMobilePurchaseForm() {
                   />
                 </div>
 
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">COLOR</label>
                   <input
                     type="text"
@@ -375,7 +375,7 @@ export default function OldMobilePurchaseForm() {
                   />
                 </div>
 
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">RAM CAPACITY</label>
                   <input
                     type="text"
@@ -386,7 +386,7 @@ export default function OldMobilePurchaseForm() {
                   />
                 </div>
 
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">STORAGE SIZE</label>
                   <input
                     type="text"
@@ -408,7 +408,7 @@ export default function OldMobilePurchaseForm() {
                   />
                 </div>
 
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">PURCHASE PRICE (PAYOUT/CREDIT) <span className="text-danger">*</span></label>
                   <div className="input-group">
                     <span className="input-group-text bg-white border-secondary-subtle text-success fw-bold">₹</span>
@@ -424,7 +424,7 @@ export default function OldMobilePurchaseForm() {
                   </div>
                 </div>
 
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">TARGET SELLING PRICE</label>
                   <div className="input-group">
                     <span className="input-group-text bg-white border-secondary-subtle text-warning fw-bold">₹</span>
@@ -495,41 +495,41 @@ export default function OldMobilePurchaseForm() {
           <form onSubmit={handleAddCustomer}>
               <Modal.Body className="p-4">
                   <div className="row g-3">
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Full Name <span className="text-danger">*</span></label>
                           <input type="text" className="form-control" required value={newCust.name} onChange={e => setNewCust({...newCust, name: e.target.value.toUpperCase()})} />
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Customer Type <span className="text-danger">*</span></label>
                           <select className="form-select" value={newCust.category} onChange={e => setNewCust({...newCust, category: e.target.value})}>
                               <option value="REGULAR">NORMAL CUSTOMER</option>
                               <option value="SHOP">SHOP CUSTOMER</option>
                           </select>
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Phone Number <span className="text-danger">*</span></label>
                           <input type="text" className="form-control" required value={newCust.phone} onChange={e => setNewCust({...newCust, phone: e.target.value})} />
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">GST Number</label>
                           <input type="text" className="form-control" placeholder="e.g. 22AAAAA0000A1Z5" value={newCust.gst_no || ''} onChange={e => setNewCust({...newCust, gst_no: e.target.value.toUpperCase()})} />
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Opening Balance</label>
                           <input type="number" className="form-control" value={newCust.opening_balance} onChange={e => setNewCust({...newCust, opening_balance: e.target.value})} />
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Balance Type</label>
                           <select className="form-select" value={newCust.balance_type} onChange={e => setNewCust({...newCust, balance_type: e.target.value})}>
                               <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
                               <option value="PAYABLE">I OWE THEM (Payable)</option>
                           </select>
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Email</label>
                           <input type="email" className="form-control" value={newCust.email || ''} onChange={e => setNewCust({...newCust, email: e.target.value})} />
                       </div>
-                      <div className="col-md-6 text-uppercase">
+                      <div className="col-12 col-md-6 text-uppercase">
                           <label className="form-label small fw-bold">Voucher Code</label>
                           <input type="text" className="form-control" value={newCust.voucher_code || ''} onChange={e => setNewCust({...newCust, voucher_code: e.target.value.toUpperCase()})} />
                       </div>

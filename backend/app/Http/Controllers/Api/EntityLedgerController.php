@@ -574,6 +574,15 @@ class EntityLedgerController extends Controller
 
             $appliedTo = $this->applySettlementToInvoices($entity, $data['entity_name'], $data['type'], (float) $data['amount']);
 
+            $this->notifyOwner(
+                ($data['type'] === 'IN' ? "💰 *Cash IN — {$data['entity_name']}*\n" : "💸 *Cash OUT — {$data['entity_name']}*\n") .
+                "Amount: ₹" . number_format($data['amount'], 2) . "\n" .
+                "Mode: {$data['payment_mode']}\n" .
+                "Category: {$data['category']}\n" .
+                ($data['description'] ?? '' ? "Note: {$data['description']}\n" : '') .
+                "By: {$user->name}"
+            );
+
             return response()->json([
                 'message' => 'Settlement recorded successfully',
                 'transaction' => $transaction,
