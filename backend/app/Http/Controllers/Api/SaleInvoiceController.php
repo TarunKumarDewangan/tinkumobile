@@ -868,6 +868,9 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+        if (! $user->hasFullAccess() && ! $user->can('convert_kaccha_to_pakka')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
         if ($saleInvoice->bill_type !== 'kaccha') {
             return response()->json(['message' => 'Only kaccha bills can be converted'], 422);

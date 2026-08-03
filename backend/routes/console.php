@@ -15,3 +15,8 @@ Schedule::command('report:daily-summary --slot=night')->dailyAt('21:00')->timezo
 
 Schedule::command('report:emi-due-reminder')->dailyAt('10:00')->timezone('Asia/Kolkata');
 Schedule::command('report:emi-due-reminder')->dailyAt('14:00')->timezone('Asia/Kolkata');
+
+Schedule::command('report:repair-status-reminder')->everyTwoHours()->timezone('Asia/Kolkata');
+
+// Activity logs are only kept for a rolling 7-day window.
+Schedule::command('activitylogs:prune')->dailyAt('03:00')->timezone('Asia/Kolkata');

@@ -70,12 +70,15 @@ class ReportNotificationService
         // counted as "collections" or the owner would think money hit the bank that didn't.
         $nonCashModes = ['EXCHANGE', 'FINANCE'];
 
-        $cashIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'CASH')->sum('amount');
-        $bankIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
-        $exchangeIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'EXCHANGE')->sum('amount');
-        $financeIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'FINANCE')->sum('amount');
-        $cashOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->where('payment_mode', 'CASH')->sum('amount');
-        $bankOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
+        // is_internal_transfer rows are the mirrored bank-side postings of a payment
+        // already counted once against the customer/supplier/party — excluding them
+        // here prevents double-counting the same money as a collection.
+        $cashIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'CASH')->where('is_internal_transfer', false)->sum('amount');
+        $bankIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->where('is_internal_transfer', false)->sum('amount');
+        $exchangeIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'EXCHANGE')->where('is_internal_transfer', false)->sum('amount');
+        $financeIn = Transaction::whereDate('transaction_date', $today)->where('type', 'IN')->where('payment_mode', 'FINANCE')->where('is_internal_transfer', false)->sum('amount');
+        $cashOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->where('payment_mode', 'CASH')->where('is_internal_transfer', false)->sum('amount');
+        $bankOut = Transaction::whereDate('transaction_date', $today)->where('type', 'OUT')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->where('is_internal_transfer', false)->sum('amount');
 
         $totalIn = $cashIn + $bankIn;
         $totalOut = $cashOut + $bankOut;
@@ -332,6 +335,44 @@ class ReportNotificationService
         }
 
         $msg .= "\n---------------------------\n";
+        $msg .= "_Tinku Mobiles Management System_";
+
+        return $msg;
+    }
+
+    /**
+     * Full list of every repair not yet delivered — sent every 2 hours as a
+     * nudge to keep statuses current, not just a count. Capped defensively
+     * for Telegram's ~4096 character limit, same as the other list builders
+     * in this file.
+     */
+    public function buildRepairStatusReminderMessage(int $limit = 40): string
+    {
+        $now = Carbon::now();
+        $repairs = RepairRequest::where('status', '!=', 'delivered')
+            ->orderBy('submitted_date')
+            ->get();
+
+        $msg = "⏰ *Repair Status Reminder ({$now->format('d M Y, h:i A')})*\n";
+        $msg .= "---------------------------\n";
+
+        if ($repairs->isEmpty()) {
+            $msg .= "✅ No repairs pending — every job is delivered.";
+        } else {
+            $msg .= "🔧 *{$repairs->count()} repair(s) need a status update:*\n\n";
+            foreach ($repairs->take($limit) as $r) {
+                $forwarded = ($r->is_forwarded && $r->forwarded_to)
+                    ? " — Forwarded: {$r->forwarded_to}" . ($r->forwarded_phone ? " ({$r->forwarded_phone})" : '')
+                    : '';
+                $msg .= "#{$r->id} {$r->device_model} — {$r->customer_name} ({$r->customer_phone})\n";
+                $msg .= "   Status: " . strtoupper($r->status) . $forwarded . "\n\n";
+            }
+            if ($repairs->count() > $limit) {
+                $msg .= "... +" . ($repairs->count() - $limit) . " more\n";
+            }
+        }
+
+        $msg .= "---------------------------\n";
         $msg .= "_Tinku Mobiles Management System_";
 
         return $msg;

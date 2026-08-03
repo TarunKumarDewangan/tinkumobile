@@ -102,6 +102,7 @@ export default function SaleForm() {
   // External Finance / EMI (Bajaj, HDB, etc.)
   const [useFinance, setUseFinance] = useState(false);
   const [financers, setFinancers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
   const [showFinancerModal, setShowFinancerModal] = useState(false);
   const [newFinancer, setNewFinancer] = useState({ name: '', phone: '', gst_number: '', description: '' });
 
@@ -185,6 +186,7 @@ export default function SaleForm() {
       setStaff(staffRes.data);
       
       const entRes = await api.get('/entities').catch(() => ({ data: [] }));
+      setBankEntities((entRes.data || []).filter(e => ['BANK', 'CARD', 'UPI'].includes(e.type)));
       const types = (entRes.data || []).map(e => e.type).filter(Boolean);
       const uniqueCustomTypes = Array.from(new Set(types)).filter(
         t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
@@ -1848,6 +1850,10 @@ export default function SaleForm() {
                                     <option value="PHONEPE">PHONEPE</option>
                                     <option value="GPAY">GPAY</option>
                                     <option value="BANK / NEFT">BANK / NEFT</option>
+                                    {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                                    {bankEntities.map(b => (
+                                        <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                                    ))}
                                     {customerCredit > 0 && (
                                         <>
                                             <option value="EXCHANGE">EXCHANGE CREDIT</option>

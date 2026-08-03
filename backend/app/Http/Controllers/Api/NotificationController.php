@@ -55,4 +55,23 @@ class NotificationController extends Controller
             'telegram' => $result['telegram'],
         ]);
     }
+
+    public function sendRepairStatusReminder(Request $request, ReportNotificationService $service)
+    {
+        $user = $request->user();
+        if (!($user->is_owner || $user->hasRole('Admin'))) {
+            return response()->json(['message' => 'Only owner or admin can send reports manually'], 403);
+        }
+
+        $msg = $service->buildRepairStatusReminderMessage();
+        $result = $service->sendToChannels($msg);
+
+        ActivityLog::log('MANUAL_REPAIR_REMINDER_SENT', $user, "Repair status reminder manually sent by {$user->name}");
+
+        return response()->json([
+            'message' => $msg,
+            'whatsapp' => $result['whatsapp'],
+            'telegram' => $result['telegram'],
+        ]);
+    }
 }

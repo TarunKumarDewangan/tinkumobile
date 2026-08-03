@@ -187,16 +187,33 @@ class RepairController extends Controller
             "Customer: {$repair->customer_name} ({$repair->customer_phone})\n" .
             "Problem: " . (is_array($repair->issue_description) ? implode(', ', $repair->issue_description) : $repair->issue_description) . "\n" .
             "Quoted: ₹" . number_format($repair->quoted_amount, 2) . "\n" .
+            $this->forwardedLine($repair) .
             "By: {$user->name}"
         );
 
         return response()->json($repair, 201);
     }
 
+    /**
+     * "Forwarded To: ShopName (Phone)\n" when a repair was sent to an external
+     * shop, else empty — shared by both the create and status-update
+     * notifications so staff/owner always know which external shop is
+     * involved, not just that it was forwarded.
+     */
+    private function forwardedLine(RepairRequest $repair): string
+    {
+        if (!$repair->is_forwarded || !$repair->forwarded_to) return '';
+        $phone = $repair->forwarded_phone ? " ({$repair->forwarded_phone})" : '';
+        return "Forwarded To: {$repair->forwarded_to}{$phone}\n";
+    }
+
     public function update(Request $request, RepairRequest $repair)
     {
         $user = $request->user();
         if (! $user->hasFullAccess() && $repair->shop_id !== $user->shop_id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        if (($request->has('staff_id') || $request->has('assigned_to')) && ! $user->hasFullAccess() && ! $user->can('assign_repair')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -280,6 +297,7 @@ class RepairController extends Controller
                 "Device: {$repair->device_model}\n" .
                 "Customer: {$repair->customer_name}\n" .
                 "New Status: " . strtoupper($repair->status) . "\n" .
+                $this->forwardedLine($repair) .
                 "By: {$user->name}"
             );
         }

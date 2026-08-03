@@ -59,6 +59,16 @@ export default function EntityLedger() {
     transaction_date: new Date().toISOString().split('T')[0]
   });
   const [categories, setCategories] = useState(['ENTITY_SETTLEMENT', 'SHOP_EXPENSE', 'PERSONAL', 'LOAN_PAYMENT']);
+  const [bankEntities, setBankEntities] = useState([]);
+
+  useEffect(() => {
+    api.get('/entities')
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setBankEntities(list.filter(e => ['BANK', 'CARD', 'UPI'].includes(e.type)));
+      })
+      .catch(() => {});
+  }, []);
 
   const handleViewEntry = async (item) => {
     if (!await pinGate.confirm()) return;
@@ -389,7 +399,7 @@ export default function EntityLedger() {
                    <div className="d-flex gap-2 align-items-center mt-1">
                       <span className="badge bg-light text-muted fw-normal rounded-pill px-2 xx-small">{targetEntity?.type || 'Entity'}</span>
                       <span className={`xx-small fw-bold text-uppercase ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                          {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable' : 'Payable'}
+                          {targetEntity?.is_asset_account ? '🏦 Balance' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable' : 'Payable')}
                       </span>
                    </div>
                 </div>
@@ -451,9 +461,9 @@ export default function EntityLedger() {
               {/* Ledger Stats Summary Bar */}
               <div className="bg-light bg-opacity-25 p-2 px-3 d-flex gap-4 border-bottom flex-wrap">
                   <div className="stat-item">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Closing Bal</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">{targetEntity?.is_asset_account ? 'Balance' : 'Closing Bal'}</div>
                     <div className="fw-bold x-small text-dark">
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}
+                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {!targetEntity?.is_asset_account && (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr')}
                     </div>
                   </div>
                   <div className="stat-item border-start ps-3">
@@ -507,7 +517,7 @@ export default function EntityLedger() {
                             <td className="text-end text-muted">—</td>
                             <td className="text-end text-muted">—</td>
                             <td className="text-end fw-bold x-small text-dark">
-                               ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
+                               ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {!targetEntity?.is_asset_account && (targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr')}
                             </td>
                             <td className="xx-small italic text-muted fw-bold">Opening Balance</td>
                             <td></td>
@@ -585,8 +595,8 @@ export default function EntityLedger() {
                             <span style={{ fontSize: '0.95rem' }}>₹{totalCredit.toLocaleString()}</span>
                           </td>
                           <td className="text-end text-dark align-middle">
-                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Closing Bal</span>
-                            <span style={{ fontSize: '0.95rem' }}>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</span>
+                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">{targetEntity?.is_asset_account ? 'Balance' : 'Closing Bal'}</span>
+                            <span style={{ fontSize: '0.95rem' }}>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {!targetEntity?.is_asset_account && (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr')}</span>
                           </td>
                           <td colSpan="2"></td>
                         </tr>
@@ -634,9 +644,9 @@ export default function EntityLedger() {
                 <div className="modal-body p-4">
                   {/* Current Balance Hint */}
                   <div className="d-flex justify-content-between align-items-center bg-light p-3 rounded-3 mb-4 border">
-                     <span className="x-small text-muted fw-bold">Current Outstanding:</span>
+                     <span className="x-small text-muted fw-bold">{targetEntity?.is_asset_account ? 'Current Balance:' : 'Current Outstanding:'}</span>
                      <span className={`fw-bold x-small ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)'}
+                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {targetEntity?.is_asset_account ? '' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)')}
                      </span>
                   </div>
 
@@ -693,6 +703,10 @@ export default function EntityLedger() {
                         <option value="CASH">Cash</option>
                         <option value="UPI">UPI / Digital</option>
                         <option value="BANK_TRANSFER">Bank Transfer</option>
+                        {bankEntities.length > 0 && <option disabled>── My Banks/Cards ──</option>}
+                        {bankEntities.map(b => (
+                          <option key={b.id} value={b.name}>🏦 {b.name}</option>
+                        ))}
                         <option value="ADJUSTMENT">Discount / Adjustment</option>
                         <option value="OTHER">Other Mode</option>
                       </select>
@@ -939,6 +953,10 @@ export default function EntityLedger() {
                         <option value="CASH">Cash</option>
                         <option value="UPI">UPI / Digital</option>
                         <option value="BANK_TRANSFER">Bank Transfer</option>
+                        {bankEntities.length > 0 && <option disabled>── My Banks/Cards ──</option>}
+                        {bankEntities.map(b => (
+                          <option key={b.id} value={b.name}>🏦 {b.name}</option>
+                        ))}
                         <option value="ADJUSTMENT">Discount / Adjustment</option>
                         <option value="OTHER">Other Mode</option>
                       </select>

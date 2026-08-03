@@ -298,6 +298,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Manual "Send Now" report triggers (Settings > Notifications)
     Route::post('notifications/send-daily-summary', [\App\Http\Controllers\Api\NotificationController::class, 'sendDailySummary']);
     Route::post('notifications/send-emi-reminder', [\App\Http\Controllers\Api\NotificationController::class, 'sendEmiDueReminder']);
+    Route::post('notifications/send-repair-reminder', [\App\Http\Controllers\Api\NotificationController::class, 'sendRepairStatusReminder']);
     Route::post('settings/verify-pin', [\App\Http\Controllers\Api\SettingsController::class, 'verifyPin'])->middleware('throttle:10,1');
     Route::post('settings/change-pin', [\App\Http\Controllers\Api\SettingsController::class, 'changePin'])->middleware('throttle:5,1');
 

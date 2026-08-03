@@ -31,6 +31,11 @@ class TransactionController extends Controller
             $query->whereNotIn('category', $airtelCategories);
         }
 
+        // Bank-mirror rows are internal bookkeeping (the same money already
+        // appears once against the party) — they're visible on that bank
+        // entity's own Entity Ledger page, not in this general list.
+        $query->where('is_internal_transfer', false);
+
         if ($request->type) $query->where('type', $request->type);
         if ($request->category) $query->where('category', $request->category);
         if ($request->payment_mode) $query->where('payment_mode', $request->payment_mode);

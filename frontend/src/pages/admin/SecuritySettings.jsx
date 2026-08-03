@@ -53,15 +53,6 @@ export default function SecuritySettings() {
     }
   };
 
-  if (!isAdmin) {
-    return (
-      <div className="container-fluid py-4 text-center">
-        <div style={{ fontSize: '3rem' }}>🔒</div>
-        <p className="fw-bold text-uppercase text-muted">Access Restricted — Admins Only</p>
-      </div>
-    );
-  }
-
   const inputStyle = {
     width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0',
     borderRadius: 8, fontSize: '.85rem', color: '#1e293b',
@@ -122,38 +113,42 @@ export default function SecuritySettings() {
     <div className="container-fluid py-3">
       <div className="page-header mb-4">
         <h2 className="fw-bold text-uppercase mb-0">🔐 Security Settings</h2>
-        <p className="text-muted small mb-0 text-uppercase">Change the action PIN and your login password</p>
+        <p className="text-muted small mb-0 text-uppercase">
+          {isAdmin ? 'Change the action PIN and your login password' : 'Change your login password'}
+        </p>
       </div>
 
       <div className="row justify-content-center g-4">
-        <div className="col-12 col-sm-8 col-md-5 col-lg-4">
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '28px 24px' }}>
+        {isAdmin && (
+          <div className="col-12 col-sm-8 col-md-5 col-lg-4">
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '28px 24px' }}>
 
-            {/* Info box */}
-            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 14px', marginBottom: 24, fontSize: '.75rem', color: '#1d4ed8', lineHeight: 1.6 }}>
-              <strong>ℹ️ Action PIN</strong><br />
-              The action PIN is required whenever anyone tries to cancel, delete, or perform a sensitive operation in the system.
-              Only the owner or admin can change it.
+              {/* Info box */}
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 14px', marginBottom: 24, fontSize: '.75rem', color: '#1d4ed8', lineHeight: 1.6 }}>
+                <strong>ℹ️ Action PIN</strong><br />
+                The action PIN is required whenever anyone tries to cancel, delete, or perform a sensitive operation in the system.
+                Only the owner or admin can change it.
+              </div>
+
+              <form onSubmit={handleSubmit}>
+                {fieldRow('Current PIN', 'old', '••••')}
+                {fieldRow('New PIN', 'new', 'Min 4 digits')}
+                {fieldRow('Confirm New PIN', 'confirm', 'Re-enter new PIN')}
+
+                <button type="submit" disabled={saving}
+                  style={{
+                    width: '100%', padding: '12px', fontWeight: 800,
+                    fontSize: '.85rem', textTransform: 'uppercase',
+                    background: '#1e293b', color: '#fff', border: 'none',
+                    borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer',
+                    marginTop: 8,
+                  }}>
+                  {saving ? 'Saving...' : '🔑 Change PIN'}
+                </button>
+              </form>
             </div>
-
-            <form onSubmit={handleSubmit}>
-              {fieldRow('Current PIN', 'old', '••••')}
-              {fieldRow('New PIN', 'new', 'Min 4 digits')}
-              {fieldRow('Confirm New PIN', 'confirm', 'Re-enter new PIN')}
-
-              <button type="submit" disabled={saving}
-                style={{
-                  width: '100%', padding: '12px', fontWeight: 800,
-                  fontSize: '.85rem', textTransform: 'uppercase',
-                  background: '#1e293b', color: '#fff', border: 'none',
-                  borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer',
-                  marginTop: 8,
-                }}>
-                {saving ? 'Saving...' : '🔑 Change PIN'}
-              </button>
-            </form>
           </div>
-        </div>
+        )}
 
         <div className="col-12 col-sm-8 col-md-5 col-lg-4">
           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '28px 24px' }}>

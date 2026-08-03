@@ -178,10 +178,17 @@ class EntityService
             $entity->setAttribute('in_worth', (float)$inWorth);
             $entity->setAttribute('out_worth', (float)$outWorth);
             $entity->setAttribute('unrealized', (float)$unrealized);
-            
-            $net = (float)($opening + $unrealized - $inWorth + $outWorth);
+
+            $isAssetAccount = in_array($entity->type, ['BANK', 'CARD', 'UPI']);
+            if ($isAssetAccount) {
+                // Asset account: deposits increase the balance, withdrawals decrease it.
+                $net = (float)((float)$entity->opening_balance + $inWorth - $outWorth);
+            } else {
+                $net = (float)($opening + $unrealized - $inWorth + $outWorth);
+            }
             $entity->setAttribute('net_balance', $net);
             $entity->setAttribute('repair_dues', (float)$repCharge);
+            $entity->setAttribute('is_asset_account', $isAssetAccount);
 
             return $entity;
         });

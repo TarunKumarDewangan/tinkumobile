@@ -4,6 +4,7 @@ import api from '../../api/axios';
 
 const GROUPS = {
   'Core':       ['view_dashboard', 'view_customers', 'view_suppliers', 'view_staff'],
+  'Accounts':   ['view_pending_balance', 'view_finance_tracker'],
   'Sales':      ['view_sales', 'create_sales', 'edit_sales', 'delete_sales', 'convert_kaccha_to_pakka'],
   'Purchases':  ['view_purchases', 'create_purchases', 'edit_purchases', 'delete_purchases'],
   'Products':   ['view_products', 'create_products', 'edit_products', 'delete_products'],

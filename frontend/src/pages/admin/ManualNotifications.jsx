@@ -19,6 +19,14 @@ const REPORTS = [
     endpoint: '/notifications/send-emi-reminder',
     hasSlot: false,
   },
+  {
+    key: 'repair-reminder',
+    icon: '🔧',
+    title: 'Repair Status Reminder',
+    description: 'Full list of every repair not yet delivered — normally sent automatically every 2 hours.',
+    endpoint: '/notifications/send-repair-reminder',
+    hasSlot: false,
+  },
 ];
 
 export default function ManualNotifications() {

@@ -12,7 +12,7 @@ class TransactionService
      */
     public function recordSettlement(array $data)
     {
-        return Transaction::create([
+        $transaction = Transaction::create([
             'shop_id' => $data['shop_id'],
             'user_id' => $data['user_id'],
             'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
@@ -24,6 +24,10 @@ class TransactionService
             'entity_name' => $data['entity_name'],
             'accounting_entity_id' => $data['accounting_entity_id'] ?? null,
         ]);
+
+        $this->maybeDualPostToBank($transaction);
+
+        return $transaction;
     }
 
     /**
@@ -66,7 +70,47 @@ class TransactionService
             $data['accounting_entity_id'] = $entity->id;
         }
 
-        return Transaction::create($data);
+        $transaction = Transaction::create($data);
+
+        $this->maybeDualPostToBank($transaction);
+
+        return $transaction;
+    }
+
+    /**
+     * If a transaction's payment mode matches the name of an existing
+     * Bank/Card/UPI entity, mirror it as a second transaction against that
+     * bank so its balance reflects real money flow. Marked as an internal
+     * transfer so cash/bank collection reports don't double-count it — the
+     * money already appears once against the customer/supplier/party.
+     */
+    protected function maybeDualPostToBank(Transaction $transaction): void
+    {
+        if ($transaction->is_internal_transfer || empty($transaction->payment_mode)) {
+            return;
+        }
+
+        $bank = \App\Models\Entity::whereIn('type', ['BANK', 'CARD', 'UPI'])
+            ->whereRaw('LOWER(name) = ?', [strtolower(trim($transaction->payment_mode))])
+            ->first();
+
+        if (!$bank || $bank->id === $transaction->accounting_entity_id) {
+            return;
+        }
+
+        Transaction::create([
+            'shop_id' => $transaction->shop_id,
+            'user_id' => $transaction->user_id,
+            'transaction_date' => $transaction->transaction_date,
+            'type' => $transaction->type,
+            'category' => $transaction->category,
+            'amount' => $transaction->amount,
+            'payment_mode' => $transaction->payment_mode,
+            'description' => 'Auto-posted: ' . ($transaction->entity_name ?? 'Party') . ' — ' . ($transaction->description ?? $transaction->category),
+            'entity_name' => $bank->name,
+            'accounting_entity_id' => $bank->id,
+            'is_internal_transfer' => true,
+        ]);
     }
 
     /**

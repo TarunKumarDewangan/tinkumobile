@@ -67,6 +67,7 @@ const PublicRetailerProfile = lazy(() => import('./pages/airtel/PublicRetailerPr
 
 const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
 const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
+const BankBalances = lazy(() => import('./pages/accounts/BankBalances'));
 const Daybook = lazy(() => import('./pages/accounts/Daybook'));
 const GroupSummary = lazy(() => import('./pages/accounts/GroupSummary'));
 const GroupDetails = lazy(() => import('./pages/accounts/GroupDetails'));
@@ -179,6 +180,7 @@ function AppRoutes() {
           {/* Accounts */}
           <Route path="accounts/entity-manager" element={<EntityManager />} />
           <Route path="accounts/entity-ledger" element={<EntityLedger />} />
+          <Route path="accounts/bank-balances" element={<BankBalances />} />
           <Route path="accounts/daybook" element={<Daybook />} />
           <Route path="accounts/group-summary" element={<GroupSummary />} />
           <Route path="accounts/group-details" element={<GroupDetails />} />

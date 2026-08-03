@@ -23,7 +23,7 @@ const parseIssues = (val) => {
 };
 
 export default function Repairs() {
-  const { hasFullAccess, user } = useAuth();
+  const { hasFullAccess, can, user } = useAuth();
   const navigate = useNavigate();
   const [repairs, setRepairs] = useState([]);
   const [page, setPage] = useState(1);
@@ -346,7 +346,7 @@ export default function Repairs() {
                       )}
                     </td>
                     <td style={{width:150}}>
-                      {hasFullAccess() ? (
+                      {can('assign_repair') ? (
                         <select className="form-select form-select-sm" style={{fontSize:'0.72rem'}}
                           value={r.staff?.id || ''} onChange={e => updateStaff(r.id, e.target.value)}>
                           <option value="">— Unassigned —</option>

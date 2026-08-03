@@ -298,7 +298,46 @@ class LedgerController extends Controller
             
             // Filter ledgers in memory for this entity
             $entityLedgers = $ledgers->where('entity_id', $entity->id);
-            
+
+            // Bank/Card/UPI entities are asset (cash-holding) accounts, not
+            // parties — money IN increases the balance instead of reducing
+            // "what they owe us", and none of the sales/purchase/repair
+            // category splitting below applies to them.
+            if (in_array($entity->type, ['BANK', 'CARD', 'UPI'])) {
+                $totalIn = 0.0;
+                $totalOut = 0.0;
+                foreach ($entityLedgers as $ledger) {
+                    // RECEIPT/PAYMENT rows: credit = money IN, debit = money OUT (see Transaction::getLedgerData()).
+                    $totalIn += (float)$ledger->credit;
+                    $totalOut += (float)$ledger->debit;
+                }
+                $assetNet = (float)$entity->opening_balance + $totalIn - $totalOut;
+
+                return [
+                    'id' => $entity->id,
+                    'name' => $entity->name,
+                    'phone' => $entity->phone,
+                    'type' => $entity->type,
+                    'opening_balance' => $entity->opening_balance,
+                    'balance_type' => $entity->balance_type,
+                    'net_balance' => $assetNet,
+                    'sales_balance' => 0.0,
+                    'purchase_balance' => 0.0,
+                    'repairs_balance' => 0.0,
+                    'works_balance' => $assetNet,
+                    'sub_balances' => [
+                        'NEW_MOBILE_SALE' => 0.0, 'NEW_MOBILE_PURCHASE' => 0.0,
+                        'OLD_MOBILE_SALE' => 0.0, 'OLD_MOBILE_PURCHASE' => 0.0,
+                        'RECHARGE_SALE' => 0.0, 'RECHARGE_PURCHASE' => 0.0,
+                        'ACCESSORY_SALE' => 0.0, 'ACCESSORY_PURCHASE' => 0.0,
+                        'SIM_SALE' => 0.0, 'SIM_PURCHASE' => 0.0,
+                        'REPAIR' => 0.0, 'OTHER' => 0.0,
+                    ],
+                    'has_mobile' => false,
+                    'is_asset_account' => true,
+                ];
+            }
+
             $salesBalance = 0.0;
             $repairsBalance = 0.0;
             $purchaseBalance = 0.0;
@@ -536,6 +575,7 @@ class LedgerController extends Controller
                 'works_balance' => $worksBalance,
                 'sub_balances' => $subBalances,
                 'has_mobile' => $hasMobile,
+                'is_asset_account' => false,
             ];
         })->filter(function($e) use ($query) {
             // Show all entities including zero balance entities

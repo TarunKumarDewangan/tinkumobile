@@ -204,13 +204,15 @@ export default function EntityManager() {
                   </td>
                   <td className={`small ${e.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
                     ₹{Number(e.opening_balance).toLocaleString()}
-                    <div className="x-small opacity-50">{e.balance_type}</div>
+                    <div className="x-small opacity-50">{e.is_asset_account ? 'OPENING BALANCE' : e.balance_type}</div>
                   </td>
                   <td>
                     <div className={`fw-bold ${e.net_balance >= 0 ? 'text-success' : 'text-danger'}`}>
                       ₹{Math.abs(Number(e.net_balance)).toLocaleString()}
                     </div>
-                    <div className="x-small opacity-50">{e.net_balance >= 0 ? 'RECEIVABLE' : 'PAYABLE'}</div>
+                    <div className="x-small opacity-50">
+                      {e.is_asset_account ? '🏦 BALANCE' : (e.net_balance >= 0 ? 'RECEIVABLE' : 'PAYABLE')}
+                    </div>
                   </td>
                   <td className="text-end pe-4">
                      <Link 
@@ -329,17 +331,25 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, opening_balance: e.target.value})}
                       />
                     </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
-                      <select 
-                        className="form-select"
-                        value={formData.balance_type}
-                        onChange={e => setFormData({...formData, balance_type: e.target.value})}
-                      >
-                        <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
-                        <option value="PAYABLE">I OWE THEM (Payable)</option>
-                      </select>
-                    </div>
+                    {['BANK', 'CARD', 'UPI'].includes(formData.type) ? (
+                      <div className="col-12 col-md-6 d-flex align-items-end">
+                        <div className="small text-muted fst-italic">
+                          This is just the current balance in the account — no owe-direction needed.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="col-12 col-md-6">
+                        <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
+                        <select
+                          className="form-select"
+                          value={formData.balance_type}
+                          onChange={e => setFormData({...formData, balance_type: e.target.value})}
+                        >
+                          <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
+                          <option value="PAYABLE">I OWE THEM (Payable)</option>
+                        </select>
+                      </div>
+                    )}
 
                     {['CUSTOMER', 'SHOP_CUSTOMER'].includes(formData.type) && (
                       <>

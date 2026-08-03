@@ -13,7 +13,8 @@ const NAV = [
     section: 'Accounts',
     dropdown: true,
     children: [
-        { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_sales' },
+        { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_pending_balance' },
+        { to: '/accounts/bank-balances', icon: '🏦', label: 'Bank Balances', perm: 'view_finance_tracker' },
         { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
         { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
         { to: '/accounts/trade-summary', icon: '⚖️', label: 'Sales & Purchase A/C', perm: 'view_reports' },
@@ -38,7 +39,7 @@ const NAV = [
         { to: '/stock-entry',      icon: '📦', label: 'Stocks',         perm: 'create_purchases' },
         { to: '/stock-transfers',  icon: '🚚', label: 'Stock Transfer', perm: 'create_purchases' },
         { to: '/sales',            icon: '🧾', label: 'Sales',          perm: 'view_sales' },
-        { to: '/finance-tracker',  icon: '💳', label: 'Finance',        perm: 'view_sales' },
+        { to: '/finance-tracker',  icon: '💳', label: 'Finance',        perm: 'view_finance_tracker' },
     ]
   },
   
@@ -341,6 +342,10 @@ export default function Layout() {
         </div>
 
         <div style={{ borderTop:'1px solid rgba(255,255,255,0.07)', flexShrink:0 }}>
+          <NavLink to="/admin/security-settings" onClick={closeSidebar}
+            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.65rem 1.1rem', color:'#cbd5e1', background:'none', border:'none', width:'100%', cursor:'pointer', fontSize:'0.875rem', fontWeight:500, textDecoration:'none' }}>
+            🔑 Change Password
+          </NavLink>
           <button onClick={handleLogout}
             style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.65rem 1.1rem', color:'#ff6b6b', background:'none', border:'none', width:'100%', cursor:'pointer', fontSize:'0.875rem', fontWeight:500 }}>
             🚪 Logout

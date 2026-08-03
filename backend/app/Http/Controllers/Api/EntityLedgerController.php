@@ -248,6 +248,13 @@ class EntityLedgerController extends Controller
         $entityId = $entity->id ?? 0;
         $ledgerItems = collect();
 
+        // Bank/Card/UPI entities are asset (cash-holding) accounts, not people/
+        // parties — money IN increases their balance instead of "what they owe
+        // us going down", and none of the virtual/unrealized charge sections
+        // below (sales, repairs, purchases, loans...) are ever posted against
+        // an asset account directly, so they're skipped entirely for these.
+        $isAssetAccount = in_array($entity->type, ['BANK', 'CARD', 'UPI']);
+
         // 1. REAL TRANSACTIONS (Money In/Out) - match by BOTH entity_name AND accounting_entity_id
         $txQuery = Transaction::where(function($q) use ($entityName, $entityId) {
             $q->where('entity_name', $entityName);
@@ -281,7 +288,8 @@ class EntityLedgerController extends Controller
             ]);
         }
 
-        // 2. VIRTUAL CHARGES
+        // 2. VIRTUAL CHARGES — none of these apply to an asset account
+        if (!$isAssetAccount) {
         // Repairs
         $repQuery = \App\Models\RepairRequest::where('customer_name', $entityName)->where('is_pay_later', true);
         if ($startDate) $repQuery->where('submitted_date', '>=', $startDate);
@@ -508,6 +516,7 @@ class EntityLedgerController extends Controller
                 'created_at' => $i->created_at
             ]);
         });
+        } // end !$isAssetAccount virtual charges
 
         // Compute running totals directly from ledger items for accuracy
         $totalIn  = $ledgerItems->sum('in_worth');
@@ -517,8 +526,14 @@ class EntityLedgerController extends Controller
         $entity->setAttribute('in_worth', (float)$totalIn);
         $entity->setAttribute('out_worth', (float)$totalOut);
         $entity->setAttribute('opening_balance', $realOpeningBalance);
-        // net_balance = realOpeningBalance (what they owed before) + new drops (out) - payments received (in)
-        $liveNet = $realOpeningBalance + $totalOut - $totalIn;
+        $entity->setAttribute('is_asset_account', $isAssetAccount);
+        if ($isAssetAccount) {
+            // Asset account: deposits increase the balance, withdrawals decrease it.
+            $liveNet = $realOpeningBalance + $totalIn - $totalOut;
+        } else {
+            // net_balance = realOpeningBalance (what they owed before) + new drops (out) - payments received (in)
+            $liveNet = $realOpeningBalance + $totalOut - $totalIn;
+        }
         $entity->setAttribute('net_balance', $liveNet);
 
         return response()->json([
@@ -544,6 +559,10 @@ class EntityLedgerController extends Controller
     public function recordSettlement(Request $request)
     {
         $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'entity_name' => 'required|string',
             'amount' => 'required|numeric|min:0',

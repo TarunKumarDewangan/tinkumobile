@@ -15,6 +15,7 @@ export default function PurchaseForm() {
   const defaultCategoryId = category_group === 'other' ? 3 : 1;
   const [suppliers, setSuppliers] = useState([]);
   const [entitySuppliers, setEntitySuppliers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands]         = useState([]);
@@ -213,6 +214,7 @@ export default function PurchaseForm() {
       ['SUPPLIER', 'DISTRIBUTOR', 'SHOP_CUSTOMER'].includes((e.type || '').toUpperCase())
     );
     setEntitySuppliers(entityList);
+    setBankEntities((entRes.data || []).filter(e => ['BANK', 'CARD', 'UPI'].includes(e.type)));
 
     // Extract custom types from loaded entities
     const types = (entRes.data || []).map(e => e.type).filter(Boolean);
@@ -1205,6 +1207,10 @@ export default function PurchaseForm() {
                           <option value="PHONEPE">PHONEPE</option>
                           <option value="GPAY">GPAY</option>
                           <option value="BANK / NEFT">BANK / NEFT</option>
+                          {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                          {bankEntities.map(b => (
+                            <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                          ))}
                           <option value="OTHER">OTHER</option>
                         </select>
                         {form.payment_method === 'OTHER' && (

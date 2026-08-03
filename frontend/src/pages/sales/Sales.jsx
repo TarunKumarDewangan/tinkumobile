@@ -11,7 +11,7 @@ export default function Sales() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [shops, setShops]       = useState([]);
-  const { hasFullAccess } = useAuth();
+  const { hasFullAccess, can } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const category_group = searchParams.get('category_group') || 'new_mobile';
@@ -419,7 +419,7 @@ export default function Sales() {
                           <>
                             <button onClick={() => navTo(`/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
                             <button onClick={() => navigate(category_group === 'master' ? `/sales/${inv.id}/edit-master` : `/sales/${inv.id}/edit${category_group ? `?category_group=${category_group}` : ''}`)} className="pm-act-btn btn-xs">EDIT</button>
-                            {inv.bill_type === 'kaccha' && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
+                            {inv.bill_type === 'kaccha' && can('convert_kaccha_to_pakka') && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
                             <button onClick={() => handleCancel(inv.id)} className="pm-act-btn btn-xs">CANCEL</button>
                           </>
                         )}
