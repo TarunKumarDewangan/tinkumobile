@@ -5,12 +5,18 @@ import { Modal, Button } from 'react-bootstrap';
 import Select from 'react-select';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
+import PaymentSplitInput from '../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../utils/paymentSplit';
+import { isAssetEntityType } from '../utils/assetEntityTypes';
 
 export default function Recharge() {
   const [purchases, setPurchases] = useState([]);
   const [sales, setSales] = useState([]);
   const [distributors, setDistributors] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [purchasePaymentLines, setPurchasePaymentLines] = useState(newSingleLine('CASH'));
+  const [salePaymentLines, setSalePaymentLines] = useState(newSingleLine('CASH'));
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('sales');
 
@@ -43,6 +49,11 @@ export default function Recharge() {
     cost_price: '',
     purchase_date: new Date().toISOString().split('T')[0]
   });
+
+  const rechargeModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const distributorOptions = useMemo(() => {
     return distributors.map(d => ({ value: `entity-${d.id}`, label: d.name }));
@@ -85,16 +96,18 @@ export default function Recharge() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [resPurchases, resSales, resDistributors, resCustomers] = await Promise.all([
+      const [resPurchases, resSales, resDistributors, resCustomers, resEntities] = await Promise.all([
         api.get('/recharge-purchases'),
         api.get('/recharge-sales'),
         api.get('/entities', { params: { type: 'DISTRIBUTOR' } }),
-        api.get('/customers')
+        api.get('/customers'),
+        api.get('/entities')
       ]);
       setPurchases(resPurchases.data);
       setSales(resSales.data);
       setDistributors(resDistributors.data);
       setCustomers(resCustomers.data);
+      setBankEntities((resEntities.data || []).filter(e => isAssetEntityType(e.type)));
     } catch (e) {
       toast.error("Failed to load recharge data");
     } finally {
@@ -245,13 +258,18 @@ export default function Recharge() {
       
     if (!finalOperator) return toast.error("Please specify the operator");
 
+    if (!paymentLinesSumMatches(purchasePaymentLines, purchaseForm.cost_price)) {
+      return toast.error("Split doesn't add up to the cost price");
+    }
+
     try {
       await api.post('/recharge-purchases', {
         supplier_id: purchaseForm.supplier_id,
         operator: finalOperator,
         amount: parseFloat(purchaseForm.amount) || 0,
         cost_price: parseFloat(purchaseForm.cost_price) || 0,
-        purchase_date: purchaseForm.purchase_date
+        purchase_date: purchaseForm.purchase_date,
+        ...buildPaymentPayload(purchasePaymentLines)
       });
       toast.success("Balance purchase recorded successfully!");
       setShowPurchaseModal(false);
@@ -263,6 +281,7 @@ export default function Recharge() {
         cost_price: '',
         purchase_date: new Date().toISOString().split('T')[0]
       });
+      setPurchasePaymentLines(newSingleLine('CASH'));
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to record purchase");
@@ -285,12 +304,17 @@ export default function Recharge() {
       if (!await pinGate.confirm()) return;
     }
 
+    if (!paymentLinesSumMatches(salePaymentLines, saleForm.selling_price || saleForm.amount)) {
+      return toast.error("Split doesn't add up to the selling price");
+    }
+
     const payload = {
       mobile_number: saleForm.mobile_number,
       operator: finalOperator,
       amount: reqAmount,
       selling_price: parseFloat(saleForm.selling_price || saleForm.amount),
-      sale_date: saleForm.sale_date
+      sale_date: saleForm.sale_date,
+      ...buildPaymentPayload(salePaymentLines)
     };
 
     if (saleForm.customer_mode === 'existing') {
@@ -318,6 +342,7 @@ export default function Recharge() {
         customer_name: '',
         customer_phone: ''
       });
+      setSalePaymentLines(newSingleLine('CASH'));
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to record recharge sale");
@@ -597,6 +622,19 @@ export default function Recharge() {
                       <div className="form-text xx-small">Amount paid to the distributor</div>
                     </div>
 
+                    {parseFloat(purchaseForm.cost_price) > 0 && (
+                      <div className="col-12">
+                        <label className="form-label x-small fw-bold text-dark">Payment Mode</label>
+                        <PaymentSplitInput
+                          totalAmount={purchaseForm.cost_price}
+                          lines={purchasePaymentLines}
+                          onChange={setPurchasePaymentLines}
+                          modeOptions={rechargeModeOptions}
+                          size="x-small"
+                        />
+                      </div>
+                    )}
+
                     <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Purchase Date</label>
                       <input 
@@ -710,6 +748,19 @@ export default function Recharge() {
                       />
                       <div className="form-text xx-small">Price charged to customer</div>
                     </div>
+
+                    {parseFloat(saleForm.selling_price || saleForm.amount) > 0 && (
+                      <div className="col-12">
+                        <label className="form-label x-small fw-bold text-dark">Payment Mode</label>
+                        <PaymentSplitInput
+                          totalAmount={saleForm.selling_price || saleForm.amount}
+                          lines={salePaymentLines}
+                          onChange={setSalePaymentLines}
+                          modeOptions={rechargeModeOptions}
+                          size="x-small"
+                        />
+                      </div>
+                    )}
 
                     <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Sale Date</label>

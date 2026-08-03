@@ -73,15 +73,32 @@ class LedgerController extends Controller
     public function statement(Request $request, $entityId)
     {
         $entity = Entity::findOrFail($entityId);
-        
+
+        // Bank/Card/UPI/Cash-Counter entities are asset (cash-holding) accounts,
+        // not parties — money IN increases the balance instead of reducing
+        // "what they owe us", so both the opening balance and the running
+        // total below need the opposite sign convention from a normal party.
+        $isAssetAccount = Entity::isAssetType($entity->type);
+
         $startDate = $request->query('start_date'); // null = all time
         $endDate = $request->query('end_date');
 
         // Calculate opening balance up to start_date
         $accounting = app(AccountingService::class);
-        $openingBalance = $startDate
-            ? $accounting->getClosingBalance($entity, date('Y-m-d', strtotime($startDate . ' - 1 day')))
-            : (($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance);
+        if ($isAssetAccount) {
+            $openingBalance = (float) $entity->opening_balance;
+            if ($startDate) {
+                $priorMovements = Ledger::where('entity_id', $entityId)
+                    ->where('date', '<', $startDate)
+                    ->selectRaw('SUM(debit) as dr, SUM(credit) as cr')
+                    ->first();
+                $openingBalance += (float) ($priorMovements->cr ?? 0) - (float) ($priorMovements->dr ?? 0);
+            }
+        } else {
+            $openingBalance = $startDate
+                ? $accounting->getClosingBalance($entity, date('Y-m-d', strtotime($startDate . ' - 1 day')))
+                : (($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance);
+        }
 
         $query = Ledger::where('entity_id', $entityId);
         if ($startDate) $query->where('date', '>=', $startDate);
@@ -132,7 +149,9 @@ class LedgerController extends Controller
                 continue;
             }
 
-            $runningBalance += ($ledger->debit - $ledger->credit);
+            $runningBalance += $isAssetAccount
+                ? ($ledger->credit - $ledger->debit)
+                : ($ledger->debit - $ledger->credit);
             $ledger->running_balance = $runningBalance;
 
             $isNonMobile = false;
@@ -215,6 +234,8 @@ class LedgerController extends Controller
             $ledger->is_non_mobile = $isNonMobile;
             $statement[] = $ledger;
         }
+
+        $entity->setAttribute('is_asset_account', $isAssetAccount);
 
         return response()->json([
             'entity' => $entity,
@@ -303,7 +324,7 @@ class LedgerController extends Controller
             // parties — money IN increases the balance instead of reducing
             // "what they owe us", and none of the sales/purchase/repair
             // category splitting below applies to them.
-            if (in_array($entity->type, ['BANK', 'CARD', 'UPI'])) {
+            if (\App\Models\Entity::isAssetType($entity->type)) {
                 $totalIn = 0.0;
                 $totalOut = 0.0;
                 foreach ($entityLedgers as $ledger) {

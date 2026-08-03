@@ -1,11 +1,17 @@
-﻿import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import pinGate from '../../utils/pinGate';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function RepairForm() {
   const [customers, setCustomers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [advancePaymentLines, setAdvancePaymentLines] = useState(newSingleLine('CASH'));
+  const [balancePaymentLines, setBalancePaymentLines] = useState(newSingleLine('CASH'));
   const [form, setForm] = useState({ 
     customer_name:'', 
     customer_phone:'', 
@@ -39,10 +45,11 @@ export default function RepairForm() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  useEffect(() => { 
-    api.get('/customers').then(r => setCustomers(r.data)); 
+  useEffect(() => {
+    api.get('/customers').then(r => setCustomers(r.data));
     api.get('/repairs/external-shops').then(r => setExternalShops(r.data));
-    
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+
     if (id) {
       api.get(`/repairs/${id}`).then(r => {
         setForm({
@@ -65,10 +72,17 @@ export default function RepairForm() {
           advance_payment_mode: r.data.advance_payment_mode || 'CASH',
           balance_payment_mode: r.data.balance_payment_mode || 'CASH',
         });
+        setAdvancePaymentLines(newSingleLine(r.data.advance_payment_mode && r.data.advance_payment_mode !== 'SPLIT' ? r.data.advance_payment_mode : 'CASH'));
+        setBalancePaymentLines(newSingleLine(r.data.balance_payment_mode && r.data.balance_payment_mode !== 'SPLIT' ? r.data.balance_payment_mode : 'CASH'));
         setCustomerSearch(r.data.customer_name || '');
       });
     }
   }, [id]);
+
+  const repairModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK/NEFT', label: 'BANK/NEFT' }, { value: 'CARD', label: 'CARD' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const fetchInternetTime = async () => {
     try {
@@ -105,17 +119,25 @@ export default function RepairForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!paymentLinesSumMatches(advancePaymentLines, form.advance_amount)) {
+      return toast.error("Advance split doesn't add up to the advance amount");
+    }
+    if (!form.balance_received_at && !paymentLinesSumMatches(balancePaymentLines, form.balance_amount_received)) {
+      return toast.error("Balance split doesn't add up to the balance amount");
+    }
     if (submitting) return; // Prevent double-submit
     setSubmitting(true);
     try {
       let finalForm = { ...form };
-      
-      // If OTHER is selected, replace mode with the specific value
-      if (form.advance_payment_mode === 'OTHER' && form.other_advance_mode) {
-        finalForm.advance_payment_mode = form.other_advance_mode;
-      }
-      if (form.balance_payment_mode === 'OTHER' && form.other_balance_mode) {
-        finalForm.balance_payment_mode = form.other_balance_mode;
+
+      const advPayload = buildPaymentPayload(advancePaymentLines);
+      finalForm.advance_payment_mode = advPayload.payment_mode;
+      if (advPayload.payment_lines) finalForm.advance_payment_lines = advPayload.payment_lines;
+
+      if (!form.balance_received_at) {
+        const balPayload = buildPaymentPayload(balancePaymentLines);
+        finalForm.balance_payment_mode = balPayload.payment_mode;
+        if (balPayload.payment_lines) finalForm.balance_payment_lines = balPayload.payment_lines;
       }
 
       // Forwarding is now an always-visible, optional section rather than a
@@ -317,22 +339,13 @@ export default function RepairForm() {
               </div>
 
               <div className="mb-2">
-                <select className="form-select form-select-sm x-small py-0" style={{ height: '24px' }} {...f('advance_payment_mode')}>
-                  <option value="CASH">ADVANCE MODE: CASH</option>
-                  <option value="PHONEPE">ADVANCE MODE: PHONEPE</option>
-                  <option value="GPAY">ADVANCE MODE: GPAY</option>
-                  <option value="BANK/NEFT">ADVANCE MODE: BANK/NEFT</option>
-                  <option value="CARD">ADVANCE MODE: CARD</option>
-                  <option value="OTHER">ADVANCE MODE: OTHER</option>
-                </select>
-                {form.advance_payment_mode === 'OTHER' && (
-                    <input 
-                        className="form-control form-control-sm x-small mt-1 text-uppercase fw-bold border-primary" 
-                        placeholder="SPECIFY MODE (e.g. CHEQUE)" 
-                        value={form.other_advance_mode}
-                        onChange={e => setForm({...form, other_advance_mode: e.target.value.toUpperCase()})}
-                    />
-                )}
+                <PaymentSplitInput
+                  totalAmount={form.advance_amount}
+                  lines={advancePaymentLines}
+                  onChange={setAdvancePaymentLines}
+                  modeOptions={repairModeOptions}
+                  size="form-select-sm x-small"
+                />
               </div>
 
               <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
@@ -358,21 +371,12 @@ export default function RepairForm() {
                     />
                   </div>
                   {!form.balance_received_at && (
-                    <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
-                        <option value="CASH">PAYMENT MODE: CASH</option>
-                        <option value="PHONEPE">PAYMENT MODE: PHONEPE</option>
-                        <option value="GPAY">PAYMENT MODE: GPAY</option>
-                        <option value="BANK/NEFT">PAYMENT MODE: BANK/NEFT</option>
-                        <option value="CARD">PAYMENT MODE: CARD</option>
-                        <option value="OTHER">PAYMENT MODE: OTHER</option>
-                    </select>
-                  )}
-                  {!form.balance_received_at && form.balance_payment_mode === 'OTHER' && (
-                    <input 
-                        className="form-control form-control-sm x-small mt-1 text-uppercase fw-bold border-primary" 
-                        placeholder="SPECIFY MODE (e.g. EXCHANGE)" 
-                        value={form.other_balance_mode}
-                        onChange={e => setForm({...form, other_balance_mode: e.target.value.toUpperCase()})}
+                    <PaymentSplitInput
+                      totalAmount={form.balance_amount_received}
+                      lines={balancePaymentLines}
+                      onChange={setBalancePaymentLines}
+                      modeOptions={repairModeOptions}
+                      size="form-select-sm x-small"
                     />
                   )}
                   {form.balance_received_at && (

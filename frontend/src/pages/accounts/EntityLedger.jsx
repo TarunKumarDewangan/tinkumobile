@@ -5,9 +5,25 @@ import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import _ from 'lodash'; // Using lodash for debounce
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
 
 const getVoucherBadgeClass = (type) => {
   return 'bg-light text-dark border border-secondary border-opacity-25 xx-small';
+};
+
+// Asset accounts (Bank/Card/UPI/Cash Counter) have no Dr/Cr framing, so a
+// negative balance needs its own signal — a plain "₹2,297" looks identical
+// to a healthy positive balance otherwise, silently hiding an overdrawn
+// account.
+const AssetBalance = ({ amount }) => {
+  const n = parseFloat(amount) || 0;
+  return (
+    <span className={n < 0 ? 'text-danger' : undefined}>
+      {n < 0 ? '−' : ''}₹{Math.abs(n).toLocaleString()}
+    </span>
+  );
 };
 
 export default function EntityLedger() {
@@ -60,12 +76,18 @@ export default function EntityLedger() {
   });
   const [categories, setCategories] = useState(['ENTITY_SETTLEMENT', 'SHOP_EXPENSE', 'PERSONAL', 'LOAN_PAYMENT']);
   const [bankEntities, setBankEntities] = useState([]);
+  const [settlePaymentLines, setSettlePaymentLines] = useState(newSingleLine('CASH'));
+
+  const settleModeOptions = buildModeOptions(
+    [{ value: 'CASH', label: 'Cash' }, { value: 'UPI', label: 'UPI / Digital' }, { value: 'BANK_TRANSFER', label: 'Bank Transfer' }],
+    bankEntities
+  ).concat([{ value: 'ADJUSTMENT', label: 'Discount / Adjustment' }, { value: 'OTHER', label: 'Other Mode' }]);
 
   useEffect(() => {
     api.get('/entities')
       .then(({ data }) => {
         const list = Array.isArray(data) ? data : (data.data || []);
-        setBankEntities(list.filter(e => ['BANK', 'CARD', 'UPI'].includes(e.type)));
+        setBankEntities(list.filter(e => isAssetEntityType(e.type)));
       })
       .catch(() => {});
   }, []);
@@ -251,11 +273,11 @@ export default function EntityLedger() {
   const handleSettle = async (e) => {
     e.preventDefault();
     if (!settleData.amount || settleData.amount <= 0) return toast.error('Enter valid amount');
+    if (!paymentLinesSumMatches(settlePaymentLines, settleData.amount)) {
+      return toast.error("Split doesn't add up to the total amount");
+    }
     try {
-      let finalData = { ...settleData };
-      if (settleData.payment_mode === 'OTHER' && settleData.other_mode) {
-        finalData.payment_mode = settleData.other_mode;
-      }
+      const finalData = { ...settleData, ...buildPaymentPayload(settlePaymentLines) };
       const { data } = await api.post('/entities/settle', {
         ...finalData,
         entity_name: selectedEntityName
@@ -269,6 +291,7 @@ export default function EntityLedger() {
       }
       setShowSettleModal(false);
       setSettleData({ ...settleData, amount: '', description: '', transaction_date: new Date().toISOString().split('T')[0] });
+      setSettlePaymentLines(newSingleLine('CASH'));
       loadLedger(selectedEntityId, selectedEntityName);
       fetchSummary();
       if (searchTerm) loadEntities(searchTerm, filterType);
@@ -463,7 +486,9 @@ export default function EntityLedger() {
                   <div className="stat-item">
                     <div className="xx-small text-muted fw-bold text-uppercase opacity-50">{targetEntity?.is_asset_account ? 'Balance' : 'Closing Bal'}</div>
                     <div className="fw-bold x-small text-dark">
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {!targetEntity?.is_asset_account && (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr')}
+                        {targetEntity?.is_asset_account
+                          ? <AssetBalance amount={targetEntity?.net_balance} />
+                          : <>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</>}
                     </div>
                   </div>
                   <div className="stat-item border-start ps-3">
@@ -517,7 +542,9 @@ export default function EntityLedger() {
                             <td className="text-end text-muted">—</td>
                             <td className="text-end text-muted">—</td>
                             <td className="text-end fw-bold x-small text-dark">
-                               ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {!targetEntity?.is_asset_account && (targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr')}
+                               {targetEntity?.is_asset_account
+                                 ? <AssetBalance amount={targetEntity?.opening_balance} />
+                                 : <>₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}</>}
                             </td>
                             <td className="xx-small italic text-muted fw-bold">Opening Balance</td>
                             <td></td>
@@ -541,7 +568,9 @@ export default function EntityLedger() {
                                   {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
                               </td>
                               <td className="text-end fw-bold x-small text-dark">
-                                  ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
+                                  {targetEntity?.is_asset_account
+                                    ? <AssetBalance amount={item.running_balance} />
+                                    : <>₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}</>}
                               </td>
                               <td>
                                   <div className="fw-semibold text-dark x-small">{item.particulars}</div>
@@ -596,7 +625,11 @@ export default function EntityLedger() {
                           </td>
                           <td className="text-end text-dark align-middle">
                             <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">{targetEntity?.is_asset_account ? 'Balance' : 'Closing Bal'}</span>
-                            <span style={{ fontSize: '0.95rem' }}>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {!targetEntity?.is_asset_account && (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr')}</span>
+                            <span style={{ fontSize: '0.95rem' }}>
+                              {targetEntity?.is_asset_account
+                                ? <AssetBalance amount={targetEntity?.net_balance} />
+                                : <>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</>}
+                            </span>
                           </td>
                           <td colSpan="2"></td>
                         </tr>
@@ -646,7 +679,7 @@ export default function EntityLedger() {
                   <div className="d-flex justify-content-between align-items-center bg-light p-3 rounded-3 mb-4 border">
                      <span className="x-small text-muted fw-bold">{targetEntity?.is_asset_account ? 'Current Balance:' : 'Current Outstanding:'}</span>
                      <span className={`fw-bold x-small ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {targetEntity?.is_asset_account ? '' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)')}
+                        {targetEntity?.is_asset_account && parseFloat(targetEntity?.net_balance || 0) < 0 ? '−' : ''}₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {targetEntity?.is_asset_account ? '' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)')}
                      </span>
                   </div>
 
@@ -693,37 +726,16 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-12 col-md-6">
+                    <div className="col-12">
                       <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
-                      <select 
-                        className="form-select x-small"
-                        value={settleData.payment_mode}
-                        onChange={e => setSettleData({...settleData, payment_mode: e.target.value})}
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="UPI">UPI / Digital</option>
-                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                        {bankEntities.length > 0 && <option disabled>── My Banks/Cards ──</option>}
-                        {bankEntities.map(b => (
-                          <option key={b.id} value={b.name}>🏦 {b.name}</option>
-                        ))}
-                        <option value="ADJUSTMENT">Discount / Adjustment</option>
-                        <option value="OTHER">Other Mode</option>
-                      </select>
+                      <PaymentSplitInput
+                        totalAmount={settleData.amount}
+                        lines={settlePaymentLines}
+                        onChange={setSettlePaymentLines}
+                        modeOptions={settleModeOptions}
+                        size="x-small"
+                      />
                     </div>
-
-                    {settleData.payment_mode === 'OTHER' && (
-                      <div className="col-12 animate-fadeIn">
-                         <input 
-                           type="text" 
-                           className="form-control form-control-sm x-small" 
-                           placeholder="Specify custom payment mode..." 
-                           required 
-                           value={settleData.other_mode || ''}
-                           onChange={e => setSettleData({...settleData, other_mode: e.target.value})}
-                         />
-                      </div>
-                    )}
 
                     <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">SETTLEMENT DATE</label>

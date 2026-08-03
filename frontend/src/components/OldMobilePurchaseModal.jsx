@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../api/axios';
+import { buildModeOptions } from '../utils/paymentSplit';
+import { isAssetEntityType } from '../utils/assetEntityTypes';
 
 // Same fields/flow as OldMobilePurchaseForm.jsx, packaged as a modal so it
 // can be triggered from inside another form (e.g. New Sale) without
@@ -16,11 +18,20 @@ export default function OldMobilePurchaseModal({ show, onHide, shopId, customerI
   const [isExchange, setIsExchange] = useState(true);
   const [devices, setDevices] = useState([emptyDevice()]);
   const [saving, setSaving] = useState(false);
+  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [bankEntities, setBankEntities] = useState([]);
+
+  const modeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   useEffect(() => {
     if (show) {
       setDevices([emptyDevice()]);
       setIsExchange(true);
+      setPaymentMode('CASH');
+      api.get('/entities').then(res => setBankEntities((res.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
     }
   }, [show]);
 
@@ -56,6 +67,7 @@ export default function OldMobilePurchaseModal({ show, onHide, shopId, customerI
         customer_id: customerId,
         purchase_date: purchaseDate || new Date().toISOString().split('T')[0],
         is_exchange: isExchange ? 1 : 0,
+        payment_mode: isExchange ? undefined : paymentMode,
         items: devices.map(d => ({
           ...d,
           purchase_price: parseFloat(d.purchase_price),
@@ -98,6 +110,18 @@ export default function OldMobilePurchaseModal({ show, onHide, shopId, customerI
               </div>
             </div>
           </div>
+
+          {!isExchange && totalPurchasePrice > 0 && (
+            <div className="mb-4">
+              <label className="form-label text-muted small fw-bold">PAID VIA</label>
+              <select className="form-select bg-white text-dark border-secondary-subtle fw-semibold"
+                value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
+                {modeOptions.map((o, i) => (
+                  <option key={o.value || `sep-${i}`} value={o.value} disabled={o.disabled}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {devices.map((d, idx) => (
             <div key={idx} className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4 mb-3">

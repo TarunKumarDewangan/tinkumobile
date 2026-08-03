@@ -12,6 +12,13 @@ use Carbon\Carbon;
 
 class FinancePlanController extends Controller
 {
+    protected $transactionService;
+
+    public function __construct(\App\Services\TransactionService $transactionService)
+    {
+        $this->transactionService = $transactionService;
+    }
+
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -148,12 +155,19 @@ class FinancePlanController extends Controller
             'amount'       => 'required|numeric|min:0.01',
             'payment_date' => 'required|date',
             'payment_mode' => 'nullable|string|max:50',
+            'payment_lines' => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
             'emi_number'   => 'nullable|integer|min:1',
             'notes'        => 'nullable|string|max:500',
         ]);
 
         if ($financePlan->status === 'SETTLED') {
             return response()->json(['message' => 'This finance plan is already settled.'], 422);
+        }
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['amount'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount'], 422);
         }
 
         return DB::transaction(function () use ($data, $financePlan, $request) {
@@ -166,6 +180,22 @@ class FinancePlanController extends Controller
                 'emi_number'           => $data['emi_number'] ?? null,
                 'notes'                => $data['notes'] ?? null,
                 'created_by'           => $request->user()->id,
+            ]);
+
+            // Record the collection to the Ledger — previously this only ever
+            // touched FinancePayment/SaleFinancePlan/SaleInvoice rows, so EMI
+            // cash collected here was invisible to Cashbook/Entity Ledger/Bank
+            // balances even though the money was really received.
+            $this->transactionService->recordForModel($payment, [
+                'type'             => 'IN',
+                'category'         => 'SHOP_FINANCE_EMI_COLLECTION',
+                'amount'           => $data['amount'],
+                'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                'payment_lines'    => $data['payment_lines'] ?? null,
+                'entity_name'      => $financePlan->customer->name ?? null,
+                'transaction_date' => $data['payment_date'],
+                'shop_id'          => $financePlan->saleInvoice->shop_id,
+                'description'      => "EMI payment for Sale Invoice #{$financePlan->saleInvoice->invoice_no}" . (!empty($data['emi_number']) ? " (EMI #{$data['emi_number']})" : ''),
             ]);
 
             // Update plan's total_paid
@@ -219,16 +249,35 @@ class FinancePlanController extends Controller
                 $data = request()->validate([
                     'payment_date' => 'nullable|date',
                     'payment_mode' => 'nullable|string|max:50',
+                    'payment_lines' => 'nullable|array|min:2',
+                    'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+                    'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
                     'notes'        => 'nullable|string|max:500',
                 ]);
 
-                FinancePayment::create([
+                if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $remaining)) {
+                    return response()->json(['message' => 'Split payment lines must add up to the remaining amount'], 422);
+                }
+
+                $payment = FinancePayment::create([
                     'sale_finance_plan_id' => $financePlan->id,
                     'amount'               => $remaining,
                     'payment_date'         => $data['payment_date'] ?? today()->toDateString(),
                     'payment_mode'         => $data['payment_mode'] ?? 'CASH',
                     'notes'                => $data['notes'] ?? 'Final settlement',
                     'created_by'           => $request->user()->id,
+                ]);
+
+                $this->transactionService->recordForModel($payment, [
+                    'type'             => 'IN',
+                    'category'         => 'SHOP_FINANCE_EMI_COLLECTION',
+                    'amount'           => $remaining,
+                    'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                    'payment_lines'    => $data['payment_lines'] ?? null,
+                    'entity_name'      => $financePlan->customer->name ?? null,
+                    'transaction_date' => $data['payment_date'] ?? today()->toDateString(),
+                    'shop_id'          => $financePlan->saleInvoice->shop_id,
+                    'description'      => "Final EMI settlement for Sale Invoice #{$financePlan->saleInvoice->invoice_no}",
                 ]);
 
                 $invoice = SaleInvoice::lockForUpdate()->findOrFail($financePlan->sale_invoice_id);

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import _ from 'lodash';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function EntityManager() {
   const [entities, setEntities] = useState([]);
@@ -12,6 +13,8 @@ export default function EntityManager() {
   const [showModal, setShowModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState(null);
   const [customTypes, setCustomTypes] = useState([]);
+  const [sortBy, setSortBy] = useState(null); // null = API's natural order
+  const [sortDir, setSortDir] = useState('asc');
   const [formData, setFormData] = useState({
     name: '',
     type: '',
@@ -134,6 +137,30 @@ export default function EntityManager() {
   };
 
 
+  const toggleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedEntities = sortBy
+    ? [...entities].sort((a, b) => {
+        const av = (a[sortBy] ?? '').toString().toUpperCase();
+        const bv = (b[sortBy] ?? '').toString().toUpperCase();
+        if (av < bv) return sortDir === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      })
+    : entities;
+
+  const sortIcon = (column) => {
+    if (sortBy !== column) return <i className="bi bi-arrow-down-up opacity-25 ms-1" />;
+    return sortDir === 'asc' ? <i className="bi bi-sort-alpha-down ms-1" /> : <i className="bi bi-sort-alpha-up ms-1" />;
+  };
+
   const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(formData.type);
   const isCustomType = customTypes.includes(formData.type);
   const showCustomInput = formData.type === 'OTHER' || (!isDefaultType && !isCustomType && formData.type !== '');
@@ -170,7 +197,9 @@ export default function EntityManager() {
             <thead className="table-light text-uppercase">
               <tr>
                 <th className="ps-4">Entity Name</th>
-                <th>Type</th>
+                <th role="button" onClick={() => toggleSort('type')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Type{sortIcon('type')}
+                </th>
                 <th>Contact</th>
                 <th>Opening</th>
                 <th>Net Balance</th>
@@ -180,9 +209,9 @@ export default function EntityManager() {
             <tbody>
               {loading ? (
                 <tr><td colSpan="6" className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : entities.length === 0 ? (
+              ) : sortedEntities.length === 0 ? (
                 <tr><td colSpan="6" className="text-center py-5 text-muted">No entities found. {searchTerm ? 'Try a different search term.' : 'Use Auto-Sync or Create New.'}</td></tr>
-              ) : entities.map(e => (
+              ) : sortedEntities.map(e => (
                 <tr key={e.id}>
                   <td className="ps-4">
                     <div className="fw-bold">{e.name} <span className="small text-muted fw-normal">({e.type})</span></div>
@@ -208,7 +237,7 @@ export default function EntityManager() {
                   </td>
                   <td>
                     <div className={`fw-bold ${e.net_balance >= 0 ? 'text-success' : 'text-danger'}`}>
-                      ₹{Math.abs(Number(e.net_balance)).toLocaleString()}
+                      {e.net_balance < 0 ? '−' : ''}₹{Math.abs(Number(e.net_balance)).toLocaleString()}
                     </div>
                     <div className="x-small opacity-50">
                       {e.is_asset_account ? '🏦 BALANCE' : (e.net_balance >= 0 ? 'RECEIVABLE' : 'PAYABLE')}
@@ -331,7 +360,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, opening_balance: e.target.value})}
                       />
                     </div>
-                    {['BANK', 'CARD', 'UPI'].includes(formData.type) ? (
+                    {isAssetEntityType(formData.type) ? (
                       <div className="col-12 col-md-6 d-flex align-items-end">
                         <div className="small text-muted fst-italic">
                           This is just the current balance in the account — no owe-direction needed.

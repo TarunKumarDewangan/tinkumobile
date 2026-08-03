@@ -5,6 +5,8 @@ import debounce from 'lodash/debounce';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
+import { buildModeOptions } from '../utils/paymentSplit';
+import { isAssetEntityType } from '../utils/assetEntityTypes';
 
 export default function OldMobilePurchaseForm() {
   const { user, isOwner, hasFullAccess } = useAuth();
@@ -25,8 +27,14 @@ export default function OldMobilePurchaseForm() {
     customer_address: '',
     is_exchange: true,
     purchase_date: new Date().toISOString().split('T')[0],
+    payment_mode: 'CASH',
   });
   const [devices, setDevices] = useState([emptyDevice()]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const modeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const updateDevice = (idx, field, val) => {
     setDevices(prev => prev.map((d, i) => i === idx ? { ...d, [field]: val } : d));
@@ -69,6 +77,10 @@ export default function OldMobilePurchaseForm() {
     // Customers
     api.get('/customers')
       .then(res => setCustomers(res.data))
+      .catch(err => console.error(err));
+
+    api.get('/entities')
+      .then(res => setBankEntities((res.data || []).filter(e => isAssetEntityType(e.type))))
       .catch(err => console.error(err));
   }, [user, hasFullAccess]);
 
@@ -158,6 +170,7 @@ export default function OldMobilePurchaseForm() {
       await api.post('/old-mobiles/bulk', {
         ...form,
         is_exchange: form.is_exchange ? 1 : 0,
+        payment_mode: form.is_exchange ? undefined : (form.payment_mode || 'CASH'),
         items: devices.map(d => ({
           ...d,
           purchase_price: parseFloat(d.purchase_price),
@@ -237,6 +250,20 @@ export default function OldMobilePurchaseForm() {
                   </div>
                 </div>
               </div>
+
+              {!form.is_exchange && totalPurchasePrice > 0 && (
+                <div className="col-12">
+                  <label className="form-label text-muted small fw-bold">PAID VIA</label>
+                  <select className="form-select bg-white text-dark border-secondary-subtle fw-semibold"
+                    value={form.payment_mode || 'CASH'}
+                    onChange={e => setForm({...form, payment_mode: e.target.value})}>
+                    {modeOptions.map((o, i) => (
+                      <option key={o.value || `sep-${i}`} value={o.value} disabled={o.disabled}>{o.label}</option>
+                    ))}
+                  </select>
+                  <div className="form-text xx-small">Applies to the whole batch — for individual device splits, edit that device afterward.</div>
+                </div>
+              )}
             </div>
           </div>
 

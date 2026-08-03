@@ -225,6 +225,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         Route::get('/dashboard', [ReportController::class, 'dashboard']);
         Route::get('/financer', [ReportController::class, 'financerReport']);
         Route::get('/old-mobile-exchange', [ReportController::class, 'oldMobileExchangeReport']);
+        Route::get('/business-summary', [ReportController::class, 'businessSummary']);
     });
 
     // Airtel Recovery System

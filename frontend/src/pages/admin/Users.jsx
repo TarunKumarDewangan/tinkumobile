@@ -4,6 +4,9 @@ import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -31,6 +34,8 @@ export default function Users() {
   });
   const [history, setHistory]             = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
+  const [bankEntities, setBankEntities] = useState([]);
 
   const standardRoles = ['owner', 'manager', 'cashier', 'sales_person', 'computer_operator', 'stock_clerk', 'repair_tech', 'auditor', 'recovery_man'];
 
@@ -38,6 +43,15 @@ export default function Users() {
     setLoading(true);
     api.get('/users').then(r => setUsers(r.data)).finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const salaryModeOptions = buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]);
 
   // ── Payroll Handlers (Consolidated) ──
   const handleOpenPayment = (staff) => {
@@ -50,15 +64,21 @@ export default function Users() {
         payment_date: new Date().toISOString().slice(0, 10),
         notes: ''
     });
+    setPaymentLines(newSingleLine('CASH'));
     setShowPaymentModal(true);
   };
 
   const handleSavePayment = async (e) => {
     e.preventDefault();
+    if (!paymentLinesSumMatches(paymentLines, paymentData.amount)) {
+        return toast.error("Split doesn't add up to the amount");
+    }
     try {
-        await api.post('/salary-payments', paymentData);
+        const finalData = { ...paymentData, ...buildPaymentPayload(paymentLines) };
+        await api.post('/salary-payments', finalData);
         toast.success('✅ Payment recorded successfully');
         setShowPaymentModal(false);
+        load();
     } catch (e) {
         toast.error(e.response?.data?.message || 'Error recording payment');
     }
@@ -405,9 +425,18 @@ export default function Users() {
                             <input type="month" className="form-control" required value={paymentData.for_month} onChange={e => setPaymentData({...paymentData, for_month: e.target.value})} />
                       </div>
                   )}
+                  <div className="mb-3">
+                      <label className="form-label small fw-bold">Payment Mode</label>
+                      <PaymentSplitInput
+                        totalAmount={paymentData.amount}
+                        lines={paymentLines}
+                        onChange={setPaymentLines}
+                        modeOptions={salaryModeOptions}
+                      />
+                  </div>
                   <div className="mb-0">
                       <label className="form-label small fw-bold">Notes / Reference</label>
-                      <textarea className="form-control text-uppercase" rows={2} placeholder="e.g. Paid via Cash, PhonePe, etc..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
+                      <textarea className="form-control text-uppercase" rows={2} placeholder="e.g. Cheque no, remarks, etc..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
                   </div>
               </Modal.Body>
               <Modal.Footer>

@@ -46,7 +46,15 @@ class LoanController extends Controller
             'notes'         => 'nullable|string',
             'interest_type' => 'in:simple,compound',
             'shop_id'       => 'nullable|integer',
+            'payment_mode'  => 'nullable|string',
+            'payment_lines' => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['principal'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the principal'], 422);
+        }
 
         $user = $request->user();
         $shopId = ($user->hasFullAccess() && $request->shop_id) ? $request->shop_id : $user->shop_id;
@@ -93,6 +101,9 @@ class LoanController extends Controller
             $this->transactionService->recordForModel($loan, [
                 'type'             => 'OUT',
                 'category'         => 'LOAN_DISBURSEMENT',
+                'amount'           => $principal,
+                'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                'payment_lines'    => $data['payment_lines'] ?? null,
                 'description'      => "Loan disbursed to {$loan->customer->name}",
                 'shop_id'          => $loan->shop_id,
             ]);
@@ -121,10 +132,18 @@ class LoanController extends Controller
     public function recordPayment(Request $request, LoanPayment $loanPayment)
     {
         $data = $request->validate([
-            'paid_date' => 'required|date',
-            'penalty'   => 'nullable|numeric|min:0',
-            'notes'     => 'nullable|string',
+            'paid_date'     => 'required|date',
+            'penalty'       => 'nullable|numeric|min:0',
+            'notes'         => 'nullable|string',
+            'payment_mode'  => 'nullable|string',
+            'payment_lines' => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($loanPayment->amount + ($data['penalty'] ?? 0)))) {
+            return response()->json(['message' => 'Split payment lines must add up to the payment amount'], 422);
+        }
 
         return DB::transaction(function () use ($data, $loanPayment, $request) {
             // Lock target payment record safely
@@ -152,6 +171,8 @@ class LoanController extends Controller
                 'type'             => 'IN',
                 'category'         => 'LOAN_REPAYMENT',
                 'amount'           => $payment->amount + ($data['penalty'] ?? 0),
+                'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                'payment_lines'    => $data['payment_lines'] ?? null,
                 'description'      => "Loan repayment from {$payment->loan->customer->name} (EMI)",
                 'transaction_date' => Carbon::parse($payment->paid_date)->toDateString(),
                 'shop_id'          => $payment->shop_id,

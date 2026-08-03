@@ -179,7 +179,7 @@ class EntityService
             $entity->setAttribute('out_worth', (float)$outWorth);
             $entity->setAttribute('unrealized', (float)$unrealized);
 
-            $isAssetAccount = in_array($entity->type, ['BANK', 'CARD', 'UPI']);
+            $isAssetAccount = Entity::isAssetType($entity->type);
             if ($isAssetAccount) {
                 // Asset account: deposits increase the balance, withdrawals decrease it.
                 $net = (float)((float)$entity->opening_balance + $inWorth - $outWorth);

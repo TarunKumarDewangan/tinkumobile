@@ -7,6 +7,8 @@ import Modal from '../../components/Modal';
 
 import { useAuth } from '../../contexts/AuthContext';
 import pinGate from '../../utils/pinGate';
+import { buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 export default function AirtelDrops() {
   const { can, isManager, hasFullAccess, isOwner } = useAuth();
   const navigate = useNavigate();
@@ -29,7 +31,9 @@ export default function AirtelDrops() {
    const [showImport, setShowImport] = useState(false);
   const [importMode, setImportMode] = useState('DROPS'); // 'DROPS' or 'UPI'
   const [importText, setImportText] = useState('');
-  
+  const [importPaymentMode, setImportPaymentMode] = useState('DIGITAL');
+  const [bankEntities, setBankEntities] = useState([]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const [summary, setSummary] = useState({ total_dropped: 0, total_recovered: 0, pending_recovery: 0, grand_total_pending: 0 });
@@ -45,6 +49,15 @@ export default function AirtelDrops() {
     fetchDrops();
     fetchSummary();
   }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, overpaidOnly, paymentMode, sortBy, order]);
+
+  useEffect(() => {
+    axios.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const importModeOptions = buildModeOptions(
+    [{ value: 'DIGITAL', label: 'DIGITAL (UPI to Airtel)' }, { value: 'CASH', label: 'CASH' }],
+    bankEntities
+  );
 
   const getParams = () => {
     let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}&payment_mode=${paymentMode}&sort_by=${sortBy}&order=${order}`;
@@ -141,7 +154,7 @@ export default function AirtelDrops() {
 
     try {
       if (importMode === 'UPI') {
-          const { data } = await axios.post('/airtel-drops/import-upi', { payments: parsedData });
+          const { data } = await axios.post('/airtel-drops/import-upi', { payments: parsedData, payment_mode: importPaymentMode });
           const failures = data.errors ? data.errors.map(err => {
               const match = err.match(/MSISDN: (\d+)/);
               return match ? match[1] : err;
@@ -580,6 +593,17 @@ export default function AirtelDrops() {
               Supports Space, Tab, or Underscore separation. Works with copy-paste directly from Excel.
             </div>
           </div>
+          {importMode === 'UPI' && (
+            <div className="mb-3">
+              <label className="form-label text-uppercase small fw-bold">Landed In</label>
+              <select className="form-select" value={importPaymentMode} onChange={e => setImportPaymentMode(e.target.value)}>
+                {importModeOptions.map((o, i) => (
+                  <option key={o.value || `sep-${i}`} value={o.value} disabled={o.disabled}>{o.label}</option>
+                ))}
+              </select>
+              <div className="form-text x-small">Applies to every payment in this paste — matches which account actually received the money.</div>
+            </div>
+          )}
           <div className="d-grid mt-4">
             <button type="submit" className="btn btn-primary text-uppercase fw-bold py-2" disabled={submitting}>
               {submitting ? 'Processing...' : 'Process Import'}

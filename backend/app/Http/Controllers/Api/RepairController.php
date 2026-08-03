@@ -151,10 +151,17 @@ class RepairController extends Controller
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
             'advance_payment_mode'      => 'nullable|string|max:50',
+            'advance_payment_lines'     => 'nullable|array|min:2',
+            'advance_payment_lines.*.payment_mode' => 'required_with:advance_payment_lines|string',
+            'advance_payment_lines.*.amount'       => 'required_with:advance_payment_lines|numeric|min:0.01',
             'balance_amount_received'   => 'nullable|numeric',
             'balance_payment_mode'      => 'nullable|string|max:50',
             'balance_received_at'       => 'nullable|date',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['advance_payment_lines'] ?? null, (float) ($data['advance_amount'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the advance amount'], 422);
+        }
 
         $repair = DB::transaction(function () use ($data, $shopId, $user) {
             $customerId = $this->syncCustomer($data, 'REPAIR');
@@ -172,6 +179,7 @@ class RepairController extends Controller
                     'category' => 'REPAIR_ADVANCE',
                     'amount' => $data['advance_amount'],
                     'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
+                    'payment_lines' => $data['advance_payment_lines'] ?? null,
                     'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
                 ]);
             }
@@ -240,8 +248,15 @@ class RepairController extends Controller
             'external_expected_delivery'=> 'nullable|date',
             'balance_amount_received'   => 'nullable|numeric',
             'balance_payment_mode'      => 'nullable|string|max:50',
+            'balance_payment_lines'     => 'nullable|array|min:2',
+            'balance_payment_lines.*.payment_mode' => 'required_with:balance_payment_lines|string',
+            'balance_payment_lines.*.amount'       => 'required_with:balance_payment_lines|numeric|min:0.01',
             'balance_received_at'       => 'nullable|date',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['balance_payment_lines'] ?? null, (float) ($data['balance_amount_received'] ?? $request->balance_amount_received ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the balance amount'], 422);
+        }
 
         if ($request->hasAny(['customer_name', 'customer_phone', 'customer_email', 'customer_address'])) {
             $data['customer_id'] = $this->syncCustomer(array_merge($repair->toArray(), $data), 'REPAIR');
@@ -283,6 +298,7 @@ class RepairController extends Controller
                     'category' => 'REPAIR_SETTLEMENT',
                     'amount' => $request->balance_amount_received,
                     'payment_mode' => $request->balance_payment_mode ?? $repair->balance_payment_mode ?? 'CASH',
+                    'payment_lines' => $data['balance_payment_lines'] ?? null,
                     'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
                 ]);
             }

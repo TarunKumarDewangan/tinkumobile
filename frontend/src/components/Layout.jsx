@@ -19,6 +19,8 @@ const NAV = [
         { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
         { to: '/accounts/trade-summary', icon: '⚖️', label: 'Sales & Purchase A/C', perm: 'view_reports' },
         { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
+        { to: '/accounts/overheads', icon: '🧾', label: 'Expenses / Cashbook', perm: 'view_reports' },
+        { to: '/accounts/expense-categories', icon: '🗂️', label: 'Expense Categories', perm: 'view_reports' },
     ]
   },
 

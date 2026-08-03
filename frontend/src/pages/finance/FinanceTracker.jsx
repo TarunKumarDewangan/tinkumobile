@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 const PAYMENT_MODES = ['CASH', 'PHONEPE', 'GPAY', 'BANK / NEFT', 'OTHER'];
 
@@ -19,17 +22,28 @@ export default function FinanceTracker() {
   const [payModal, setPayModal]   = useState(null); // plan object
   const [payForm, setPayForm]     = useState({ amount: '', payment_date: today(), payment_mode: 'CASH', emi_number: '', notes: '' });
   const [paying, setPaying]       = useState(false);
+  const [payPaymentLines, setPayPaymentLines] = useState(newSingleLine('CASH'));
 
   // Settle modal state
   const [settleModal, setSettleModal] = useState(null);
   const [settleForm, setSettleForm]   = useState({ payment_date: today(), payment_mode: 'CASH', notes: '' });
   const [settling, setSettling]       = useState(false);
+  const [settlePaymentLines, setSettlePaymentLines] = useState(newSingleLine('CASH'));
+
+  const [bankEntities, setBankEntities] = useState([]);
+  const financeModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   // Schedule drawer
   const [scheduleModal, setScheduleModal] = useState(null); // { plan, schedule[] }
   const [schedLoading, setSchedLoading]   = useState(false);
 
   useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -140,14 +154,16 @@ export default function FinanceTracker() {
       emi_number:   next ? next.nextNo : '',
       notes:        '',
     });
+    setPayPaymentLines(newSingleLine('CASH'));
     setPayModal(plan);
   }
 
   async function submitPayment() {
     if (!payForm.amount || parseFloat(payForm.amount) <= 0) return toast.warning('Enter a valid amount');
+    if (!paymentLinesSumMatches(payPaymentLines, payForm.amount)) return toast.warning("Split doesn't add up to the amount");
     setPaying(true);
     try {
-      const res = await api.post(`/finance-plans/${payModal.id}/add-payment`, payForm);
+      const res = await api.post(`/finance-plans/${payModal.id}/add-payment`, { ...payForm, ...buildPaymentPayload(payPaymentLines) });
       toast.success(res.data.message || 'Payment recorded');
       setPayModal(null);
       load();
@@ -158,13 +174,15 @@ export default function FinanceTracker() {
   // ── Settle modal ──────────────────────────────────────────────────────────
   function openSettleModal(plan) {
     setSettleForm({ payment_date: today(), payment_mode: 'CASH', notes: 'Final settlement' });
+    setSettlePaymentLines(newSingleLine('CASH'));
     setSettleModal(plan);
   }
 
   async function submitSettle() {
+    if (!paymentLinesSumMatches(settlePaymentLines, remaining(settleModal))) return toast.warning("Split doesn't add up to the remaining amount");
     setSettling(true);
     try {
-      const res = await api.post(`/finance-plans/${settleModal.id}/settle`, settleForm);
+      const res = await api.post(`/finance-plans/${settleModal.id}/settle`, { ...settleForm, ...buildPaymentPayload(settlePaymentLines) });
       toast.success(res.data.message || 'Plan settled');
       setSettleModal(null);
       load();
@@ -449,13 +467,17 @@ export default function FinanceTracker() {
                 <input type="date" className="form-control form-control-sm" value={payForm.payment_date}
                   onChange={e => setPayForm(f => ({...f, payment_date: e.target.value}))} />
               </div>
-              <div className="col-6">
-                <label className="x-small fw-bold text-uppercase text-muted mb-1">Mode</label>
-                <select className="form-select form-select-sm fw-bold" value={payForm.payment_mode}
-                  onChange={e => setPayForm(f => ({...f, payment_mode: e.target.value}))}>
-                  {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
+            </div>
+
+            <div className="mb-3">
+              <label className="x-small fw-bold text-uppercase text-muted mb-1">Mode</label>
+              <PaymentSplitInput
+                totalAmount={payForm.amount}
+                lines={payPaymentLines}
+                onChange={setPayPaymentLines}
+                modeOptions={financeModeOptions}
+                size="form-select-sm"
+              />
             </div>
 
             {payModal.type === 'PERSONAL' && (
@@ -505,13 +527,16 @@ export default function FinanceTracker() {
                 <input type="date" className="form-control form-control-sm" value={settleForm.payment_date}
                   onChange={e => setSettleForm(f => ({...f, payment_date: e.target.value}))} />
               </div>
-              <div className="col-6">
-                <label className="x-small fw-bold text-uppercase text-muted mb-1">Mode</label>
-                <select className="form-select form-select-sm fw-bold" value={settleForm.payment_mode}
-                  onChange={e => setSettleForm(f => ({...f, payment_mode: e.target.value}))}>
-                  {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
+            </div>
+            <div className="mb-3">
+              <label className="x-small fw-bold text-uppercase text-muted mb-1">Mode</label>
+              <PaymentSplitInput
+                totalAmount={remaining(settleModal)}
+                lines={settlePaymentLines}
+                onChange={setSettlePaymentLines}
+                modeOptions={financeModeOptions}
+                size="form-select-sm"
+              />
             </div>
             <div className="mb-3">
               <label className="x-small fw-bold text-uppercase text-muted mb-1">Notes</label>

@@ -5,6 +5,7 @@ import { Modal, Button } from 'react-bootstrap';
 import debounce from 'lodash/debounce';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 // Simple UUID v4 generator for idempotency
 function generateIdempotencyKey() {
@@ -90,6 +91,12 @@ export default function MasterSaleForm() {
   // Finance / EMI state
   const [useFinance, setUseFinance] = useState(false);
   const [financers, setFinancers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  // Split the cash payment (form.total_paid) across a 2nd mode — e.g. half
+  // cash, half UPI. Only offered for the plain-cash path, not EXCHANGE modes
+  // (those already have their own dedicated cash/UPI split via the payment
+  // method dropdown itself).
+  const [splitSecondary, setSplitSecondary] = useState(null);
   const [showFinancerModal, setShowFinancerModal] = useState(false);
   const [newFinancer, setNewFinancer] = useState({ name: '', phone: '', gst_number: '', description: '' });
   
@@ -162,6 +169,7 @@ export default function MasterSaleForm() {
       setStaff(staffRes.data);
       
       const entRes = await api.get('/entities').catch(() => ({ data: [] }));
+      setBankEntities((entRes.data || []).filter(e => isAssetEntityType(e.type)));
       const types = (entRes.data || []).map(e => e.type).filter(Boolean);
       const uniqueCustomTypes = Array.from(new Set(types)).filter(
         t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
@@ -755,6 +763,9 @@ export default function MasterSaleForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.customer_id) return toast.warning('Please select a customer');
+    if (splitSecondary && splitSecondary.amount > (parseFloat(form.total_paid) || 0)) {
+      return toast.warning("Split payment amount can't exceed the amount paid");
+    }
     if (submitting) return; // Prevent double-submit
     setSubmitting(true);
     
@@ -789,7 +800,18 @@ export default function MasterSaleForm() {
       if (form.payment_method === 'OTHER' && form.other_mode) {
           finalForm.payment_method = form.other_mode;
       }
-      
+
+      if (splitSecondary && splitSecondary.amount > 0 && !form.payment_method?.startsWith('EXCHANGE')) {
+          const firstMode = finalForm.payment_method;
+          const secondMode = splitSecondary.mode === 'OTHER' ? (splitSecondary.otherMode || 'OTHER') : splitSecondary.mode;
+          const firstAmt = Math.max(0, (parseFloat(form.total_paid) || 0) - splitSecondary.amount);
+          finalForm.payment_lines = [
+              { payment_mode: firstMode, amount: firstAmt },
+              { payment_mode: secondMode, amount: splitSecondary.amount },
+          ];
+          finalForm.payment_method = 'SPLIT';
+      }
+
       if (id) {
         await api.put(`/sale-invoices/${id}`, finalForm);
         toast.success('✅ Sale updated successfully');
@@ -1509,6 +1531,10 @@ export default function MasterSaleForm() {
                                     <option value="PHONEPE">PHONEPE</option>
                                     <option value="GPAY">GPAY</option>
                                     <option value="BANK / NEFT">BANK / NEFT</option>
+                                    {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                                    {bankEntities.map(b => (
+                                        <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                                    ))}
                                     {customerCredit > 0 && (
                                         <>
                                             <option value="EXCHANGE">EXCHANGE CREDIT</option>
@@ -1523,6 +1549,54 @@ export default function MasterSaleForm() {
                                         placeholder="SPECIFY MODE (E.G. CHEQUE)"
                                         value={form.other_mode}
                                         onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})} />
+                                )}
+
+                                {!splitSecondary ? (
+                                    <button type="button" className="btn btn-link btn-sm p-0 mt-2 text-decoration-none fw-bold"
+                                        onClick={() => setSplitSecondary({ mode: 'UPI', otherMode: '', amount: 0 })}
+                                        disabled={!(parseFloat(form.total_paid) > 0)}>
+                                        ➕ Split payment (e.g. half cash, half online)
+                                    </button>
+                                ) : (
+                                    <div className="mt-2 p-2 rounded-3" style={{background:'#fff', border:'1px dashed #cbd5e1'}}>
+                                        <div className="d-flex gap-2 align-items-start">
+                                            <div style={{flex:1}}>
+                                                <select className="form-select form-select-sm fw-bold text-uppercase" value={splitSecondary.mode}
+                                                    onChange={e => setSplitSecondary({...splitSecondary, mode: e.target.value, otherMode: ''})}>
+                                                    <option value="CASH">CASH</option>
+                                                    <option value="PHONEPE">PHONEPE</option>
+                                                    <option value="GPAY">GPAY</option>
+                                                    <option value="BANK / NEFT">BANK / NEFT</option>
+                                                    {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                                                    {bankEntities.map(b => (
+                                                        <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                                                    ))}
+                                                    <option value="OTHER">OTHER</option>
+                                                </select>
+                                                {splitSecondary.mode === 'OTHER' && (
+                                                    <input className="form-control form-control-sm mt-1 text-uppercase fw-bold" style={{fontSize:'.72rem'}}
+                                                        placeholder="SPECIFY MODE"
+                                                        value={splitSecondary.otherMode}
+                                                        onChange={e => setSplitSecondary({...splitSecondary, otherMode: e.target.value.toUpperCase()})} />
+                                                )}
+                                            </div>
+                                            <div style={{flex:'0 0 120px'}}>
+                                                <div className="input-group input-group-sm">
+                                                    <span className="input-group-text">₹</span>
+                                                    <input type="number" step="0.01" className="form-control fw-bold"
+                                                        value={splitSecondary.amount === 0 ? '' : splitSecondary.amount}
+                                                        onFocus={e => e.target.select()}
+                                                        onChange={e => setSplitSecondary({...splitSecondary, amount: parseFloat(e.target.value) || 0})} />
+                                                </div>
+                                            </div>
+                                            <button type="button" className="btn btn-outline-danger btn-sm" title="Remove split" onClick={() => setSplitSecondary(null)}>
+                                                <i className="bi bi-x-lg" />
+                                            </button>
+                                        </div>
+                                        <div style={{fontSize:'.65rem', color:'#64748b', marginTop:4}}>
+                                            First mode gets ₹{Math.max(0, (parseFloat(form.total_paid) || 0) - splitSecondary.amount).toLocaleString('en-IN')}, this gets ₹{Number(splitSecondary.amount || 0).toLocaleString('en-IN')}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         )}

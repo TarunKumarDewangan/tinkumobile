@@ -13,8 +13,15 @@ use App\Models\FollowUp;
 use App\Models\LoanPayment;
 use App\Models\GiftInventory;
 use App\Models\SaleInvoice as SaleInvoiceAlias;
+use App\Models\Transaction;
+use App\Models\Entity;
+use App\Models\Category;
+use App\Models\SaleFinancePlan;
+use App\Models\FinancePayment;
+use App\Services\EntityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class ReportController extends Controller
 {
@@ -669,6 +676,167 @@ class ReportController extends Controller
                 'total_cash_value'     => $cashRows->sum('purchase_price'),
                 'total_credit_pending' => $totalCreditPending,
             ],
+        ]);
+    }
+
+    /**
+     * One consolidated business summary across every module (sales, purchases,
+     * repairs, recharge, old mobile, airtel recovery, salary, expenses,
+     * cash/bank movement, finance EMI) for a date range, plus a day-wise
+     * breakdown and a live bank-balance snapshot — the single "give me
+     * everything" report.
+     */
+    public function businessSummary(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+        $start = $request->query('start_date', now()->startOfMonth()->toDateString());
+        $end = $request->query('end_date', now()->toDateString());
+
+        // ── Sales ──────────────────────────────────────────────────────────
+        $salesQuery = SaleInvoice::whereBetween('sale_date', [$start, $end])->where('is_cancelled', false);
+        if ($shopId) $salesQuery->where('shop_id', $shopId);
+        $saleInvoiceIds = (clone $salesQuery)->pluck('id');
+        $totalSaleInvoices = $saleInvoiceIds->count();
+        $totalSalesAmount = (clone $salesQuery)->sum('grand_total');
+        $totalSetsSold = (int) SaleItem::whereIn('sale_invoice_id', $saleInvoiceIds)->sum('quantity');
+
+        // ── Purchases ──────────────────────────────────────────────────────
+        $purchaseQuery = PurchaseInvoice::whereBetween('purchase_date', [$start, $end]);
+        if ($shopId) $purchaseQuery->where('shop_id', $shopId);
+        $totalPurchaseInvoices = (clone $purchaseQuery)->count();
+        $totalPurchaseAmount = (clone $purchaseQuery)->sum('grand_total');
+
+        // ── Repairs ────────────────────────────────────────────────────────
+        $repairQuery = RepairRequest::whereBetween('submitted_date', [$start, $end]);
+        if ($shopId) $repairQuery->where('shop_id', $shopId);
+        $repairCount = (clone $repairQuery)->count();
+
+        // ── Transactions: everything else funnels through here ───────────────
+        $txQuery = Transaction::whereBetween('transaction_date', [$start, $end])->where('is_internal_transfer', false);
+        if ($shopId) $txQuery->where('shop_id', $shopId);
+
+        // Same convention as the Daily Summary report: EXCHANGE (old-mobile
+        // trade-in credit) and FINANCE (generic, unmatched-to-a-bank EMI
+        // receivable) are accounting adjustments, not real cash/bank
+        // movement, so they're reported separately, not folded into Bank.
+        $nonCashModes = ['EXCHANGE', 'FINANCE'];
+        $cashIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'CASH')->sum('amount');
+        $bankIn = (clone $txQuery)->where('type', 'IN')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
+        $exchangeIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'EXCHANGE')->sum('amount');
+        $financeIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'FINANCE')->sum('amount');
+        $cashOut = (clone $txQuery)->where('type', 'OUT')->where('payment_mode', 'CASH')->sum('amount');
+        $bankOut = (clone $txQuery)->where('type', 'OUT')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
+
+        $repairIncome = (clone $txQuery)->whereIn('category', ['REPAIR_ADVANCE', 'REPAIR_SETTLEMENT'])->where('type', 'IN')->sum('amount');
+        $rechargeSale = (clone $txQuery)->where('category', 'RECHARGE_SALE')->sum('amount');
+        $rechargePurchase = (clone $txQuery)->where('category', 'RECHARGE_PURCHASE')->sum('amount');
+        $oldMobilePurchase = (clone $txQuery)->where('category', 'OLD_MOBILE_PURCHASE')->sum('amount');
+        $oldMobileExchange = (clone $txQuery)->where('category', 'OLD_MOBILE_EXCHANGE')->sum('amount');
+        $airtelRecovery = (clone $txQuery)->where('category', 'AIRTEL_RECOVERY')->sum('amount');
+        $salaryPaid = (clone $txQuery)->where('category', 'SALARY')->sum('amount');
+        $expenses = (clone $txQuery)->where('category', 'EXPENSE')->where('type', 'OUT')->sum('amount');
+        $otherIncome = (clone $txQuery)->where('category', 'OTHER_INCOME')->where('type', 'IN')->sum('amount');
+
+        $companyFinanceDone = (clone $txQuery)->where('category', 'FINANCE_INCOME')->sum('amount');
+        $shopFinanceDone = (clone $txQuery)->whereIn('category', ['SHOP_FINANCE_EMI_COLLECTION', 'SHOP_FINANCE_DOWN_PAYMENT'])->sum('amount');
+
+        // ── Cash in hand — a running (not period-limited) balance of every
+        // literal "CASH" transaction ever recorded, mirroring how a real
+        // cash drawer works. If the owner has also set up a dedicated Cash
+        // Counter entity, that shows up separately in bank_balances below —
+        // this is only the generic bucket for whichever transactions were
+        // never tagged to a specific account.
+        $allCashQuery = Transaction::where('payment_mode', 'CASH')->where('is_internal_transfer', false);
+        if ($shopId) $allCashQuery->where('shop_id', $shopId);
+        $cashInHand = (clone $allCashQuery)->where('type', 'IN')->sum('amount') - (clone $allCashQuery)->where('type', 'OUT')->sum('amount');
+
+        // ── Live bank/card/UPI/cash-counter balances (snapshot, not period-limited) ──
+        $assetEntities = Entity::whereIn('type', Entity::ASSET_ENTITY_TYPES)
+            ->orWhereRaw("UPPER(REPLACE(type, ' ', '_')) = 'CASH_COUNTER'")
+            ->get();
+        $bankBalances = app(EntityService::class)->calculateBalances($assetEntities)->map(fn ($e) => [
+            'id' => $e->id, 'name' => $e->name, 'type' => $e->type, 'net_balance' => (float) $e->net_balance,
+        ])->values();
+
+        // ── Day-wise breakdown ─────────────────────────────────────────────
+        $salesByDay = (clone $salesQuery)->selectRaw('DATE(sale_date) as d, COUNT(*) as invoices, SUM(grand_total) as amount')
+            ->groupBy('d')->get()->keyBy('d');
+        $setsByDay = SaleItem::whereIn('sale_invoice_id', $saleInvoiceIds)
+            ->join('sale_invoices', 'sale_invoices.id', '=', 'sale_items.sale_invoice_id')
+            ->selectRaw('DATE(sale_invoices.sale_date) as d, SUM(sale_items.quantity) as qty')
+            ->groupBy('d')->get()->keyBy('d');
+        $txByDay = (clone $txQuery)->selectRaw("
+                DATE(transaction_date) as d,
+                SUM(CASE WHEN type='IN' AND payment_mode='CASH' THEN amount ELSE 0 END) as cash_in,
+                SUM(CASE WHEN type='IN' AND payment_mode NOT IN ('CASH','EXCHANGE','FINANCE') THEN amount ELSE 0 END) as bank_in,
+                SUM(CASE WHEN type='OUT' AND payment_mode='CASH' THEN amount ELSE 0 END) as cash_out,
+                SUM(CASE WHEN type='OUT' AND payment_mode NOT IN ('CASH','EXCHANGE','FINANCE') THEN amount ELSE 0 END) as bank_out
+            ")->groupBy('d')->get()->keyBy('d');
+
+        $dayWise = [];
+        $cursor = Carbon::parse($start);
+        $endDate = Carbon::parse($end);
+        while ($cursor->lte($endDate)) {
+            $d = $cursor->toDateString();
+            $s = $salesByDay->get($d);
+            $sets = $setsByDay->get($d);
+            $t = $txByDay->get($d);
+            $dayWise[] = [
+                'date' => $d,
+                'sale_invoices' => (int) ($s->invoices ?? 0),
+                'sales_amount' => (float) ($s->amount ?? 0),
+                'sets_sold' => (int) ($sets->qty ?? 0),
+                'cash_in' => (float) ($t->cash_in ?? 0),
+                'bank_in' => (float) ($t->bank_in ?? 0),
+                'cash_out' => (float) ($t->cash_out ?? 0),
+                'bank_out' => (float) ($t->bank_out ?? 0),
+            ];
+            $cursor->addDay();
+        }
+
+        return response()->json([
+            'period' => ['start_date' => $start, 'end_date' => $end],
+            'sales' => [
+                'invoices' => $totalSaleInvoices,
+                'sets_sold' => $totalSetsSold,
+                'amount' => (float) $totalSalesAmount,
+            ],
+            'purchases' => [
+                'invoices' => $totalPurchaseInvoices,
+                'amount' => (float) $totalPurchaseAmount,
+            ],
+            'repairs' => [
+                'count' => $repairCount,
+                'income' => (float) $repairIncome,
+            ],
+            'recharge' => [
+                'sale' => (float) $rechargeSale,
+                'purchase' => (float) $rechargePurchase,
+            ],
+            'old_mobile' => [
+                'purchase' => (float) $oldMobilePurchase,
+                'exchange' => (float) $oldMobileExchange,
+            ],
+            'airtel_recovery' => (float) $airtelRecovery,
+            'salary_paid' => (float) $salaryPaid,
+            'expenses' => (float) $expenses,
+            'other_income' => (float) $otherIncome,
+            'payments' => [
+                'cash_in' => (float) $cashIn,
+                'bank_in' => (float) $bankIn,
+                'exchange_in' => (float) $exchangeIn,
+                'finance_in' => (float) $financeIn,
+                'cash_out' => (float) $cashOut,
+                'bank_out' => (float) $bankOut,
+                'net' => (float) ($cashIn + $bankIn - $cashOut - $bankOut),
+            ],
+            'finance' => [
+                'company_finance_done' => (float) $companyFinanceDone,
+                'shop_finance_done' => (float) $shopFinanceDone,
+            ],
+            'cash_in_hand' => (float) $cashInHand,
+            'bank_balances' => $bankBalances,
+            'day_wise' => $dayWise,
         ]);
     }
 }

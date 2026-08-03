@@ -43,10 +43,20 @@ class OldMobileController extends Controller
             'color'          => 'nullable|string|max:100',
             'condition_note' => 'nullable|string',
             'purchase_date'  => 'required|date',
+            'payment_mode'   => 'nullable|string',
+            'payment_lines'  => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        // The split only makes sense for real cash paid out — trade-in exchange
+        // credit isn't a cash account movement, so it never gets a mode/split.
+        if (!($data['is_exchange'] ?? false) && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
         }
 
         // Sanitize IMEI: treat placeholder values (000000, empty, all-zeros) as null
@@ -102,7 +112,8 @@ class OldMobileController extends Controller
                         'type'             => 'OUT',
                         'category'         => 'OLD_MOBILE_PURCHASE',
                         'amount'           => $purchase->purchase_price,
-                        'payment_mode'     => 'CASH',
+                        'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                        'payment_lines'    => $data['payment_lines'] ?? null,
                         'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
                         'transaction_date' => $purchase->purchase_date,
                         'shop_id'          => $purchase->shop_id,
@@ -152,6 +163,7 @@ class OldMobileController extends Controller
             'items.*.storage'        => 'nullable|string|max:50',
             'items.*.color'          => 'nullable|string|max:100',
             'items.*.condition_note' => 'nullable|string',
+            'payment_mode'   => 'nullable|string',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -224,7 +236,7 @@ class OldMobileController extends Controller
                             'type'             => 'OUT',
                             'category'         => 'OLD_MOBILE_PURCHASE',
                             'amount'           => $purchase->purchase_price,
-                            'payment_mode'     => 'CASH',
+                            'payment_mode'     => $data['payment_mode'] ?? 'CASH',
                             'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
                             'transaction_date' => $purchase->purchase_date,
                             'shop_id'          => $shopId,
@@ -284,10 +296,18 @@ class OldMobileController extends Controller
             'color'          => 'nullable|string|max:100',
             'condition_note' => 'nullable|string',
             'purchase_date'  => 'required|date',
+            'payment_mode'   => 'nullable|string',
+            'payment_lines'  => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        if (!($data['is_exchange'] ?? false) && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
         }
 
         // Check if the associated product has already been sold
@@ -331,12 +351,17 @@ class OldMobileController extends Controller
             }
         }
 
-        // Sync associated Transaction record
-        $transaction = \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
+        // Sync associated Transaction record(s) — a split payment turns one row
+        // into several, which a plain ->update() can't do, so any existing
+        // rows are replaced wholesale via recordForModel whenever a split is
+        // requested; a non-split edit keeps the cheaper single-row update.
+        $existingTransactions = \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
             ->where('entity_id', $oldMobilePurchase->id)
-            ->first();
+            ->get();
+        $transaction = $existingTransactions->first();
+        $wantsSplit = !empty($data['payment_lines']) && !($oldMobilePurchase->is_exchange);
 
-        if ($transaction) {
+        if ($transaction && !$wantsSplit) {
             if ($oldMobilePurchase->purchase_price > 0) {
                 if ($oldMobilePurchase->is_exchange) {
                     $transaction->update([
@@ -352,7 +377,7 @@ class OldMobileController extends Controller
                         'type'             => 'OUT',
                         'category'         => 'OLD_MOBILE_PURCHASE',
                         'amount'           => $oldMobilePurchase->purchase_price,
-                        'payment_mode'     => 'CASH',
+                        'payment_mode'     => $data['payment_mode'] ?? 'CASH',
                         'description'      => "Purchased old mobile: {$oldMobilePurchase->model_name} from " . ($oldMobilePurchase->customer->name ?? 'Customer'),
                         'transaction_date' => $oldMobilePurchase->purchase_date,
                     ]);
@@ -360,7 +385,12 @@ class OldMobileController extends Controller
             } else {
                 $transaction->delete();
             }
-        } else if ($oldMobilePurchase->purchase_price > 0) {
+        } else if ($oldMobilePurchase->purchase_price > 0 && (!$transaction || $wantsSplit)) {
+            if ($transaction) {
+                foreach ($existingTransactions as $tx) {
+                    $tx->delete();
+                }
+            }
             if ($oldMobilePurchase->is_exchange) {
                 $this->transactionService->recordForModel($oldMobilePurchase, [
                     'type'             => 'IN',
@@ -376,7 +406,8 @@ class OldMobileController extends Controller
                     'type'             => 'OUT',
                     'category'         => 'OLD_MOBILE_PURCHASE',
                     'amount'           => $oldMobilePurchase->purchase_price,
-                    'payment_mode'     => 'CASH',
+                    'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                    'payment_lines'    => $data['payment_lines'] ?? null,
                     'description'      => "Purchased old mobile: {$oldMobilePurchase->model_name} from " . ($oldMobilePurchase->customer->name ?? 'Customer'),
                     'transaction_date' => $oldMobilePurchase->purchase_date,
                     'shop_id'          => $oldMobilePurchase->shop_id,

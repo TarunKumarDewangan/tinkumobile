@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import Modal from '../../components/Modal';
+import { buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 // import { format } from 'date-fns'; // REMOVED dependency
 
 export default function RecoveryDashboard() {
@@ -13,6 +15,8 @@ export default function RecoveryDashboard() {
   const [selected, setSelected] = useState([]);
   const [customAmounts, setCustomAmounts] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [recoverPaymentMode, setRecoverPaymentMode] = useState('CASH');
+  const [bankEntities, setBankEntities] = useState([]);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpForm, setFollowUpForm] = useState({ reason: '', next_date: '' });
   const [summary, setSummary] = useState({ total_dropped: 0, total_recovered: 0, pending_recovery: 0, grand_total_pending: 0 });
@@ -40,6 +44,15 @@ export default function RecoveryDashboard() {
     fetchPending();
     fetchSummary();
   }, [debouncedRetailerName, minAmount, maxAmount, fromDate, toDate, useRange, followUpOnly, status]);
+
+  useEffect(() => {
+    axios.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const recoverModeOptions = buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'DIGITAL', label: 'DIGITAL' }],
+    bankEntities
+  );
 
   const fetchPending = async () => {
     setLoading(true);
@@ -99,11 +112,11 @@ export default function RecoveryDashboard() {
 
     setSubmitting(true);
     try {
-      const recoveries = selected.map(id => ({ 
-          id, 
-          amount: parseFloat(customAmounts[id]) 
+      const recoveries = selected.map(id => ({
+          id,
+          amount: parseFloat(customAmounts[id])
       }));
-      await axios.post('/airtel-drops/mark-recovered', { recoveries });
+      await axios.post('/airtel-drops/mark-recovered', { recoveries, payment_mode: recoverPaymentMode });
       toast.success('Successfully recorded recovery');
       setSelected([]);
       setCustomAmounts({});
@@ -150,15 +163,25 @@ export default function RecoveryDashboard() {
         <div className="d-flex gap-2">
             {selected.length > 0 && (
             <>
-                <button 
-                    className="btn btn-warning btn-sm text-uppercase fw-bold shadow-sm" 
+                <select
+                    className="form-select form-select-sm fw-bold text-uppercase"
+                    style={{ width: 'auto' }}
+                    value={recoverPaymentMode}
+                    onChange={e => setRecoverPaymentMode(e.target.value)}
+                >
+                    {recoverModeOptions.map((o, i) => (
+                      <option key={o.value || `sep-${i}`} value={o.value} disabled={o.disabled}>{o.label}</option>
+                    ))}
+                </select>
+                <button
+                    className="btn btn-warning btn-sm text-uppercase fw-bold shadow-sm"
                     onClick={() => setShowFollowUp(true)}
                     disabled={submitting}
                 >
                     Not Paid
                 </button>
-                <button 
-                    className="btn btn-success btn-sm text-uppercase fw-bold shadow-sm" 
+                <button
+                    className="btn btn-success btn-sm text-uppercase fw-bold shadow-sm"
                     onClick={handleRecover}
                     disabled={submitting}
                 >

@@ -54,6 +54,7 @@ const SetSalesMatrix = lazy(() => import('./pages/reports/SetSalesMatrix'));
 const ProfitReport = lazy(() => import('./pages/reports/ProfitReport'));
 const StockReport = lazy(() => import('./pages/reports/StockReport'));
 const LoanReport = lazy(() => import('./pages/reports/LoanReport'));
+const BusinessSummaryReport = lazy(() => import('./pages/reports/BusinessSummaryReport'));
 const StockEntry = lazy(() => import('./pages/StockEntry'));
 const StockTransfers = lazy(() => import('./pages/stock/StockTransfers'));
 const ClosingStockDetail = lazy(() => import('./pages/stock/ClosingStockDetail'));
@@ -68,6 +69,8 @@ const PublicRetailerProfile = lazy(() => import('./pages/airtel/PublicRetailerPr
 const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
 const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
 const BankBalances = lazy(() => import('./pages/accounts/BankBalances'));
+const Overheads = lazy(() => import('./pages/accounts/Overheads'));
+const ExpenseCategories = lazy(() => import('./pages/accounts/ExpenseCategories'));
 const Daybook = lazy(() => import('./pages/accounts/Daybook'));
 const GroupSummary = lazy(() => import('./pages/accounts/GroupSummary'));
 const GroupDetails = lazy(() => import('./pages/accounts/GroupDetails'));
@@ -170,6 +173,7 @@ function AppRoutes() {
           <Route path="reports/profit" element={<ProfitReport />} />
           <Route path="reports/stock" element={<StockReport />} />
           <Route path="reports/loans" element={<LoanReport />} />
+          <Route path="reports/business-summary" element={<BusinessSummaryReport />} />
           {/* Airtel Recovery */}
           <Route path="airtel/retailers" element={<AirtelRetailers />} />
           <Route path="airtel/quick-recovery" element={<QuickRecovery />} />
@@ -181,6 +185,8 @@ function AppRoutes() {
           <Route path="accounts/entity-manager" element={<EntityManager />} />
           <Route path="accounts/entity-ledger" element={<EntityLedger />} />
           <Route path="accounts/bank-balances" element={<BankBalances />} />
+          <Route path="accounts/overheads" element={<Overheads />} />
+          <Route path="accounts/expense-categories" element={<ExpenseCategories />} />
           <Route path="accounts/daybook" element={<Daybook />} />
           <Route path="accounts/group-summary" element={<GroupSummary />} />
           <Route path="accounts/group-details" element={<GroupDetails />} />

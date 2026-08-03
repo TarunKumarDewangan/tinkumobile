@@ -253,7 +253,7 @@ class EntityLedgerController extends Controller
         // us going down", and none of the virtual/unrealized charge sections
         // below (sales, repairs, purchases, loans...) are ever posted against
         // an asset account directly, so they're skipped entirely for these.
-        $isAssetAccount = in_array($entity->type, ['BANK', 'CARD', 'UPI']);
+        $isAssetAccount = \App\Models\Entity::isAssetType($entity->type);
 
         // 1. REAL TRANSACTIONS (Money In/Out) - match by BOTH entity_name AND accounting_entity_id
         $txQuery = Transaction::where(function($q) use ($entityName, $entityId) {
@@ -567,24 +567,36 @@ class EntityLedgerController extends Controller
             'entity_name' => 'required|string',
             'amount' => 'required|numeric|min:0',
             'type' => 'required|in:IN,OUT',
-            'payment_mode' => 'required|string',
+            'payment_mode' => 'required_without:payment_lines|string',
+            'payment_lines' => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount' => 'required_with:payment_lines|numeric|min:0.01',
             'description' => 'nullable|string',
             'category' => 'required|string',
             'transaction_date' => 'nullable|date'
         ]);
 
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['amount'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the total amount'], 422);
+        }
+
         $entity = \App\Models\Entity::where('name', $data['entity_name'])->first();
 
         $shopId = $user->hasFullAccess() ? ($request->shop_id ?? $user->shop_id ?? \App\Models\Shop::first()->id ?? 1) : $user->shop_id;
 
-        return DB::transaction(function () use ($data, $user, $entity, $shopId) {
+        $modeLabel = !empty($data['payment_lines'])
+            ? collect($data['payment_lines'])->map(fn ($l) => "{$l['payment_mode']} (₹" . number_format($l['amount'], 2) . ')')->implode(' + ')
+            : $data['payment_mode'];
+
+        return DB::transaction(function () use ($data, $user, $entity, $shopId, $modeLabel) {
             $transaction = $this->transactionService->recordSettlement([
                 'shop_id' => $shopId,
                 'user_id' => $user->id,
                 'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
                 'type' => $data['type'],
                 'amount' => $data['amount'],
-                'payment_mode' => $data['payment_mode'],
+                'payment_mode' => $data['payment_mode'] ?? null,
+                'payment_lines' => $data['payment_lines'] ?? null,
                 'category' => $data['category'],
                 'description' => $data['description'] ?? "Manual settlement for {$data['entity_name']}",
                 'entity_name' => $data['entity_name'],
@@ -596,7 +608,7 @@ class EntityLedgerController extends Controller
             $this->notifyOwner(
                 ($data['type'] === 'IN' ? "💰 *Cash IN — {$data['entity_name']}*\n" : "💸 *Cash OUT — {$data['entity_name']}*\n") .
                 "Amount: ₹" . number_format($data['amount'], 2) . "\n" .
-                "Mode: {$data['payment_mode']}\n" .
+                "Mode: {$modeLabel}\n" .
                 "Category: {$data['category']}\n" .
                 ($data['description'] ?? '' ? "Note: {$data['description']}\n" : '') .
                 "By: {$user->name}"

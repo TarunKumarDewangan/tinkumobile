@@ -29,6 +29,25 @@ class Entity extends Model
     ];
 
     /**
+     * Asset (cash-holding) account types — Bank/Card/UPI/Cash Counter — get a
+     * plain running Balance instead of Receivable/Payable, since money IN
+     * increases the balance rather than reducing "what they owe us".
+     * Normalized so both "CASH COUNTER" (free-typed) and "CASH_COUNTER"
+     * match the same entry.
+     */
+    public const ASSET_ENTITY_TYPES = ['BANK', 'CARD', 'UPI', 'CASH_COUNTER'];
+
+    public static function normalizeTypeForComparison(?string $type): string
+    {
+        return strtoupper(str_replace(' ', '_', trim((string) $type)));
+    }
+
+    public static function isAssetType(?string $type): bool
+    {
+        return in_array(self::normalizeTypeForComparison($type), self::ASSET_ENTITY_TYPES, true);
+    }
+
+    /**
      * Get the cached balance record.
      */
     public function balance()

@@ -140,6 +140,9 @@ class SaleInvoiceController extends Controller
             'sale_date'        => 'required|date',
             'bill_type'        => 'in:kaccha,pakka',
             'payment_method'   => 'nullable|string',
+            'payment_lines'    => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
             'discount'         => 'nullable|numeric|min:0',
             'total_paid'       => 'nullable|numeric|min:0',
             'exchange_paid'    => 'nullable|numeric|min:0',
@@ -174,6 +177,7 @@ class SaleInvoiceController extends Controller
             'down_payment'             => 'nullable|numeric|min:0',
             'finance_amount'           => 'nullable|numeric|min:0',
             'finance_payment_status'   => 'nullable|in:RECEIVED,PENDING',
+            'finance_payment_mode'     => 'nullable|string',
             // Shop Finance Plan (Personal EMI or Favor)
             'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR',
             'shop_finance.principal'      => 'nullable|numeric|min:0.01',
@@ -195,6 +199,10 @@ class SaleInvoiceController extends Controller
 
         if ($imeiError = $this->validateNewMobileImeiRequired($data['items'], $user)) {
             return $imeiError;
+        }
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
         }
 
         // Idempotency check — prevent duplicate submissions
@@ -271,6 +279,7 @@ class SaleInvoiceController extends Controller
                     'type'        => 'IN',
                     'category'    => 'SALE_INCOME',
                     'amount'      => $cashPaid,
+                    'payment_lines' => $data['payment_lines'] ?? null,
                     'description' => "Sale income recorded for Invoice #{$invoice->invoice_no} ({$invoice->customer_name})" . ($itemNames ? " [{$itemNames}]" : ''),
                 ]);
             }
@@ -289,7 +298,7 @@ class SaleInvoiceController extends Controller
                             'type'                 => 'IN',
                             'category'             => 'FINANCE_INCOME',
                             'amount'               => $financeAmt,
-                            'payment_mode'         => 'FINANCE',
+                            'payment_mode'         => $data['finance_payment_mode'] ?? 'FINANCE',
                             'accounting_entity_id' => $financer->id,
                             'entity_name'          => $financer->name,
                             'description'          => "Finance payment received from {$financer->name} for Invoice #{$invoice->invoice_no}",
@@ -565,6 +574,9 @@ class SaleInvoiceController extends Controller
             'sgst_amount'    => 'nullable|numeric',
             'is_gst_manual'  => 'nullable|boolean',
             'payment_method' => 'nullable|string',
+            'payment_lines'  => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
             'notes'          => 'nullable|string',
             'items'          => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
@@ -585,6 +597,7 @@ class SaleInvoiceController extends Controller
             'down_payment'           => 'nullable|numeric|min:0',
             'finance_amount'         => 'nullable|numeric|min:0',
             'finance_payment_status' => 'nullable|in:PENDING,RECEIVED',
+            'finance_payment_mode'   => 'nullable|string',
             // Shop Finance Plan (Personal EMI or Favor) — was previously only
             // accepted on create; editing a sale to add/update one silently did nothing.
             'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR',
@@ -603,6 +616,10 @@ class SaleInvoiceController extends Controller
 
         if ($imeiError = $this->validateNewMobileImeiRequired($data['items'], $user)) {
             return $imeiError;
+        }
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
         }
 
         // A finance plan that already has payments recorded against it can't be
@@ -725,6 +742,7 @@ class SaleInvoiceController extends Controller
                     'type'        => 'IN',
                     'category'    => 'SALE_INCOME',
                     'amount'      => $cashPaid,
+                    'payment_lines' => $data['payment_lines'] ?? null,
                     'description' => "Sale income recorded for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})" . ($itemNames ? " [{$itemNames}]" : ''),
                 ]);
             }
@@ -740,7 +758,7 @@ class SaleInvoiceController extends Controller
                             'type'                 => 'IN',
                             'category'             => 'FINANCE_INCOME',
                             'amount'               => $financeAmt,
-                            'payment_mode'         => 'FINANCE',
+                            'payment_mode'         => $data['finance_payment_mode'] ?? 'FINANCE',
                             'accounting_entity_id' => $financer->id,
                             'entity_name'          => $financer->name,
                             'description'          => "Finance payment received from {$financer->name} for Invoice #{$saleInvoice->invoice_no}",
@@ -1081,6 +1099,8 @@ class SaleInvoiceController extends Controller
             return response()->json(['message' => 'Finance payment already marked as received.'], 422);
         }
 
+        $mode = $request->validate(['payment_mode' => 'nullable|string'])['payment_mode'] ?? 'FINANCE';
+
         DB::beginTransaction();
         try {
             $saleInvoice->finance_payment_status = 'RECEIVED';
@@ -1095,7 +1115,7 @@ class SaleInvoiceController extends Controller
                         'type'                 => 'IN',
                         'category'             => 'FINANCE_INCOME',
                         'amount'               => $saleInvoice->finance_amount,
-                        'payment_mode'         => 'FINANCE',
+                        'payment_mode'         => $mode,
                         'accounting_entity_id' => $financer->id,
                         'entity_name'          => $financer->name,
                         'description'          => "Finance payment received from {$financer->name} for Invoice #{$saleInvoice->invoice_no}",

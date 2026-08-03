@@ -253,6 +253,7 @@ class AirtelDropController extends Controller
             'payments.*.msisdn' => 'required|string',
             'payments.*.amount' => 'required|numeric',
             'payments.*.recovered_at' => 'required|date',
+            'payment_mode' => 'nullable|string',
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
@@ -300,7 +301,7 @@ class AirtelDropController extends Controller
                     'type'             => 'IN',
                     'category'         => 'AIRTEL_RECOVERY',
                     'amount'           => $recovery->amount,
-                    'payment_mode'     => 'DIGITAL',
+                    'payment_mode'     => $validated['payment_mode'] ?? 'DIGITAL',
                     'description'      => "Direct UPI Payment from {$retailer->name} (MSISDN: {$retailer->msisdn})",
                     'entity_name'      => $retailer->name,
                     'transaction_date' => $recovery->recovered_at->toDateString(),
@@ -338,7 +339,8 @@ class AirtelDropController extends Controller
         $validated = $request->validate([
             'recoveries' => 'required|array',
             'recoveries.*.id' => 'required|exists:airtel_drops,id',
-            'recoveries.*.amount' => 'required|numeric'
+            'recoveries.*.amount' => 'required|numeric',
+            'payment_mode' => 'nullable|string',
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
@@ -367,7 +369,7 @@ class AirtelDropController extends Controller
                     'type'             => 'IN',
                     'category'         => 'AIRTEL_RECOVERY',
                     'amount'           => $recovery->amount,
-                    'payment_mode'     => 'CASH',
+                    'payment_mode'     => $validated['payment_mode'] ?? 'CASH',
                     'description'      => "Bulk recovery from Dashboard for {$drop->retailer->name}",
                     'entity_name'      => $drop->retailer->name,
                     'shop_id'          => $drop->retailer->shop_id,

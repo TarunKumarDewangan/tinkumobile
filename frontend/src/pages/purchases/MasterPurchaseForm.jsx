@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api/axios';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import BulkScanModal from '../../components/BulkScanModal';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
 
 const MOBILE_CATEGORIES = ['mobile-new', 'mobile-old', 'laptop', 'tablet'];
 
@@ -16,6 +19,8 @@ export default function MasterPurchaseForm() {
   const defaultCategoryId = 1; // Default to MOBILE-NEW
   const [suppliers, setSuppliers] = useState([]);
   const [entitySuppliers, setEntitySuppliers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
@@ -55,6 +60,11 @@ export default function MasterPurchaseForm() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const enableBulkAdd = true; 
+
+  const purchaseModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const supplierOptions = useMemo(() => {
     const opts = [];
@@ -141,6 +151,7 @@ export default function MasterPurchaseForm() {
           payment_method: p.payment_method || 'CASH',
           other_payment_mode: p.other_payment_mode || ''
         });
+        setPaymentLines(newSingleLine(p.payment_method && p.payment_method !== 'SPLIT' ? p.payment_method : 'CASH'));
         if (p.rounding_mode === 'manual') setIsManualRound(true);
         if (p.is_gst_manual) setIsManualGst(true);
 
@@ -242,6 +253,7 @@ export default function MasterPurchaseForm() {
       ['SUPPLIER', 'DISTRIBUTOR', 'SHOP_CUSTOMER'].includes((e.type || '').toUpperCase())
     );
     setEntitySuppliers(entityList);
+    setBankEntities((entRes.data || []).filter(e => isAssetEntityType(e.type)));
 
     const types = (entRes.data || []).map(e => e.type).filter(Boolean);
     const uniqueCustomTypes = Array.from(new Set(types)).filter(
@@ -719,16 +731,28 @@ export default function MasterPurchaseForm() {
       return;
     }
 
+    if (parseFloat(form.total_paid) > 0 && !paymentLinesSumMatches(paymentLines, form.total_paid)) {
+      toast.error("Split doesn't add up to the amount paid");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       setLoading(true);
+      // PurchaseInvoiceController's field is historically named
+      // payment_method (not payment_mode like most other flows) — map it
+      // explicitly rather than spreading buildPaymentPayload's payment_mode
+      // key, which the backend would silently ignore.
+      const paymentPayload = parseFloat(form.total_paid) > 0 ? buildPaymentPayload(paymentLines) : null;
       let finalForm = {
         ...form,
+        ...(paymentPayload ? { payment_method: paymentPayload.payment_mode, payment_lines: paymentPayload.payment_lines } : {}),
         cgst_amount: cgstAmount,
         sgst_amount: sgstAmount,
         round_off: parseFloat(roundOff),
         is_gst_manual: isManualGst
       };
-      
+
       let flatItems = [];
       items.forEach(it => {
         const { imei_list, ...rest } = it;
@@ -745,10 +769,6 @@ export default function MasterPurchaseForm() {
       });
       
       finalForm.items = flatItems;
-
-      if (form.payment_method === 'OTHER' && form.other_payment_mode) {
-        finalForm.payment_method = form.other_payment_mode;
-      }
 
       if (id) {
         await api.put(`/purchase-invoices/${id}`, finalForm);
@@ -1668,24 +1688,24 @@ export default function MasterPurchaseForm() {
                 <div className="pf-sec">💳 Payments & Notes</div>
                 <div className="row g-2">
                   <div className="col-6">
-                    <span className="pf-lbl">Payment Mode</span>
-                    <select className="pf-inp" value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
-                      <option value="CASH">💵 CASH</option>
-                      <option value="BANK">🏛️ BANK TRANSFER / IMPS / NEFT</option>
-                      <option value="UPI">📱 UPI / GPAY / PHONEPE</option>
-                      <option value="CREDIT">🤝 CREDIT (PARTIAL / OUTSTANDING)</option>
-                      <option value="OTHER">⚙️ OTHER PAYMENT MODE</option>
-                    </select>
-                  </div>
-                  {form.payment_method === 'OTHER' && (
-                    <div className="col-6">
-                      <span className="pf-lbl">Specify Payment Mode *</span>
-                      <input type="text" required className="pf-inp" style={{borderColor:'#818cf8'}} placeholder="e.g. CHEQUE, DEBIT CARD" value={form.other_payment_mode} onChange={e=>setForm({...form,other_payment_mode:e.target.value})}/>
-                    </div>
-                  )}
-                  <div className="col-6">
                     <span className="pf-lbl">Amount Paid (₹)</span>
                     <input type="number" min="0" max={grandTotal} className="pf-inp" value={form.total_paid===0?'':form.total_paid} onChange={e=>setForm({...form,total_paid:parseFloat(e.target.value)||0})} style={{fontWeight:700,color:'#16a34a'}}/>
+                  </div>
+                  <div className="col-6">
+                    <span className="pf-lbl">Payment Mode</span>
+                    {parseFloat(form.total_paid) > 0 ? (
+                      <PaymentSplitInput
+                        totalAmount={form.total_paid}
+                        lines={paymentLines}
+                        onChange={setPaymentLines}
+                        modeOptions={purchaseModeOptions}
+                        size="pf-inp"
+                      />
+                    ) : (
+                      <select className="pf-inp" value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
+                        <option value="CREDIT">🤝 CREDIT (PARTIAL / OUTSTANDING)</option>
+                      </select>
+                    )}
                   </div>
                   <div className="col-12">
                     <span className="pf-lbl">Internal Notes / Reminders</span>

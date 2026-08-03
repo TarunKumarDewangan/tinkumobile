@@ -117,6 +117,9 @@ class PurchaseInvoiceController extends Controller
             'sgst_amount'        => 'nullable|numeric',
             'is_gst_manual'      => 'nullable|boolean',
             'payment_method'     => 'nullable|string|max:50',
+            'payment_lines'      => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
             'gst_rounding_mode'  => 'nullable|in:exact,2pt,down,up',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
@@ -150,6 +153,10 @@ class PurchaseInvoiceController extends Controller
             'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
 
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
+        }
+
         return DB::transaction(function () use ($data, $shopId, $user) {
             $calc = app(\App\Services\InvoiceService::class)->calculateTotals($data['items'], $data);
             $invoiceNo = 'PUR-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
@@ -178,6 +185,7 @@ class PurchaseInvoiceController extends Controller
                 $this->transactionService->recordForModel($invoice, [
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
+                    'payment_lines'    => $data['payment_lines'] ?? null,
                     'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
                     'entity_name'      => $invoice->supplier?->name,
                 ]);
@@ -337,6 +345,9 @@ class PurchaseInvoiceController extends Controller
             'sgst_amount'        => 'nullable|numeric',
             'is_gst_manual'      => 'nullable|boolean',
             'payment_method'     => 'nullable|string|max:50',
+            'payment_lines'      => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
             'gst_rounding_mode'  => 'nullable|in:exact,2pt,down,up',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
@@ -369,6 +380,10 @@ class PurchaseInvoiceController extends Controller
             'items.*.description'      => 'nullable|string',
             'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
+        }
 
         return DB::transaction(function () use ($data, $purchaseInvoice) {
             $shopId = $purchaseInvoice->shop_id;
@@ -422,6 +437,7 @@ class PurchaseInvoiceController extends Controller
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
                     'amount'           => $purchaseInvoice->total_paid,
+                    'payment_lines'    => $data['payment_lines'] ?? null,
                     'description'      => "Initial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
                     'entity_name'      => $purchaseInvoice->supplier?->name,
                 ]);

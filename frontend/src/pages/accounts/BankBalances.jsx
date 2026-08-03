@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
-const TYPE_ICON = { BANK: '🏦', CARD: '💳', UPI: '📱' };
+const TYPE_ICON = { BANK: '🏦', CARD: '💳', UPI: '📱', CASH_COUNTER: '🪙' };
 
 export default function BankBalances() {
     const [accounts, setAccounts] = useState([]);
@@ -12,12 +13,11 @@ export default function BankBalances() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const results = await Promise.all(
-                ['BANK', 'CARD', 'UPI'].map(type =>
-                    api.get('/ledgers/entity-balances', { params: { type } }).then(r => r.data)
-                )
-            );
-            setAccounts(results.flat());
+            // Fetch everything and filter client-side (rather than per-type
+            // requests) since asset types like a free-typed "CASH COUNTER"
+            // don't have a fixed backend enum value to filter by exactly.
+            const { data } = await api.get('/ledgers/entity-balances');
+            setAccounts((data || []).filter(e => isAssetEntityType(e.type)));
         } catch {
             toast.error('Failed to load bank balances');
         } finally {
@@ -58,7 +58,7 @@ export default function BankBalances() {
             ) : accounts.length === 0 ? (
                 <div className="card shadow-sm border-0">
                     <div className="card-body text-center py-5 text-muted">
-                        No Bank / Card / UPI accounts yet. Add one from <Link to="/accounts/entity-manager">Entity Manager</Link> (type = BANK, CARD, or UPI).
+                        No Bank / Card / UPI / Cash Counter accounts yet. Add one from <Link to="/accounts/entity-manager">Entity Manager</Link>.
                     </div>
                 </div>
             ) : (
@@ -82,7 +82,7 @@ export default function BankBalances() {
                                         </div>
                                     </div>
                                     <div className={`fw-bold ${acc.net_balance >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '1.4rem' }}>
-                                        ₹{Math.abs(acc.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        {acc.net_balance < 0 ? '−' : ''}₹{Math.abs(acc.net_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                     </div>
                                     {acc.net_balance < 0 && (
                                         <div className="x-small text-danger fw-bold text-uppercase mt-1">Overdrawn</div>

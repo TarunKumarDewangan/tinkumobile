@@ -107,6 +107,7 @@ class Transaction extends Model
         'ref_id',
         'transaction_date',
         'is_internal_transfer',
+        'mirror_of_transaction_id',
     ];
 
     protected $casts = [

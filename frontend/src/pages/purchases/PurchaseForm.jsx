@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api/axios';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import BulkScanModal from '../../components/BulkScanModal';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
 
 export default function PurchaseForm() {
   const [searchParams] = useSearchParams();
@@ -16,6 +19,7 @@ export default function PurchaseForm() {
   const [suppliers, setSuppliers] = useState([]);
   const [entitySuppliers, setEntitySuppliers] = useState([]);
   const [bankEntities, setBankEntities] = useState([]);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands]         = useState([]);
@@ -54,6 +58,11 @@ export default function PurchaseForm() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const enableBulkAdd = true; // Set to true to show "+ Bulk Add" button later
+
+  const purchaseModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const supplierOptions = useMemo(() => {
     const opts = [];
@@ -139,6 +148,7 @@ export default function PurchaseForm() {
           payment_method: p.payment_method || 'CASH',
           other_payment_mode: p.other_payment_mode || ''
         });
+        setPaymentLines(newSingleLine(p.payment_method && p.payment_method !== 'SPLIT' ? p.payment_method : 'CASH'));
         if (p.rounding_mode === 'manual') setIsManualRound(true);
         if (p.is_gst_manual) setIsManualGst(true);
         const rawRows = p.items.map(i => {
@@ -214,7 +224,7 @@ export default function PurchaseForm() {
       ['SUPPLIER', 'DISTRIBUTOR', 'SHOP_CUSTOMER'].includes((e.type || '').toUpperCase())
     );
     setEntitySuppliers(entityList);
-    setBankEntities((entRes.data || []).filter(e => ['BANK', 'CARD', 'UPI'].includes(e.type)));
+    setBankEntities((entRes.data || []).filter(e => isAssetEntityType(e.type)));
 
     // Extract custom types from loaded entities
     const types = (entRes.data || []).map(e => e.type).filter(Boolean);
@@ -612,16 +622,29 @@ export default function PurchaseForm() {
       return;
     }
 
+    if (!paymentLinesSumMatches(paymentLines, form.total_paid)) {
+      toast.error("Split doesn't add up to the amount paid");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       setLoading(true);
+      // PurchaseInvoiceController's field is historically named
+      // payment_method (not payment_mode like most other flows) — map it
+      // explicitly rather than spreading buildPaymentPayload's payment_mode
+      // key, which the backend would silently ignore.
+      const paymentPayload = buildPaymentPayload(paymentLines);
       let finalForm = {
         ...form,
+        payment_method: paymentPayload.payment_mode,
+        payment_lines: paymentPayload.payment_lines,
         cgst_amount: cgstAmount,
         sgst_amount: sgstAmount,
         round_off: parseFloat(roundOff),
         is_gst_manual: isManualGst
       };
-      
+
       let flatItems = [];
       items.forEach(it => {
         const { imei_list, ...rest } = it;
@@ -635,10 +658,6 @@ export default function PurchaseForm() {
       });
       
       finalForm.items = flatItems;
-
-      if (form.payment_method === 'OTHER' && form.other_payment_mode) {
-        finalForm.payment_method = form.other_payment_mode;
-      }
 
       if (id) {
         await api.put(`/purchase-invoices/${id}`, finalForm);
@@ -1201,28 +1220,15 @@ export default function PurchaseForm() {
                         placeholder="0.00" value={form.total_paid===0?'':form.total_paid} onFocus={e=>e.target.select()} onChange={e=>setForm({...form,total_paid:parseFloat(e.target.value)||0})}/>
                     </div>
                     {parseFloat(form.total_paid) > 0 && (
-                      <>
-                        <select className="pf-inp mt-1" style={{fontSize:'.7rem',height:'28px',padding:'2px 8px'}} value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
-                          <option value="CASH">CASH</option>
-                          <option value="PHONEPE">PHONEPE</option>
-                          <option value="GPAY">GPAY</option>
-                          <option value="BANK / NEFT">BANK / NEFT</option>
-                          {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
-                          {bankEntities.map(b => (
-                            <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
-                          ))}
-                          <option value="OTHER">OTHER</option>
-                        </select>
-                        {form.payment_method === 'OTHER' && (
-                          <input 
-                            className="pf-inp mt-1" 
-                            style={{fontSize:'.7rem',height:'28px',padding:'2px 8px',borderColor:'#6366f1',color:'#6366f1',fontWeight:700}}
-                            placeholder="SPECIFY MODE..."
-                            value={form.other_payment_mode}
-                            onChange={e=>setForm({...form,other_payment_mode:e.target.value.toUpperCase()})}
-                          />
-                        )}
-                      </>
+                      <div className="mt-1">
+                        <PaymentSplitInput
+                          totalAmount={form.total_paid}
+                          lines={paymentLines}
+                          onChange={setPaymentLines}
+                          modeOptions={purchaseModeOptions}
+                          size="pf-inp"
+                        />
+                      </div>
                     )}
                   </div>
                   <div className="col-12 col-md-3">
