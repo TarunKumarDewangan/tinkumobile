@@ -316,8 +316,10 @@ export default function Sales() {
                       })}
                     </td>
 
-                    {/* 4. Grand Total */}
-                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>₹{parseFloat(inv.grand_total).toLocaleString('en-IN')}</td>
+                    {/* 4. Grand Total (full bill amount, before discount) */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
+                      ₹{(parseFloat(inv.grand_total) + parseFloat(inv.discount || 0) + (inv.is_cash_discount_on_bill ? parseFloat(inv.cash_discount || 0) : 0)).toLocaleString('en-IN')}
+                    </td>
 
                     {/* 5. Discount */}
                     <td className="text-end fw-bold" style={{ color: '#475569', whiteSpace: 'nowrap' }}>
