@@ -69,6 +69,7 @@ const PublicRetailerProfile = lazy(() => import('./pages/airtel/PublicRetailerPr
 const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
 const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
 const BankBalances = lazy(() => import('./pages/accounts/BankBalances'));
+const PromiseToPay = lazy(() => import('./pages/accounts/PromiseToPay'));
 const Overheads = lazy(() => import('./pages/accounts/Overheads'));
 const ExpenseCategories = lazy(() => import('./pages/accounts/ExpenseCategories'));
 const Daybook = lazy(() => import('./pages/accounts/Daybook'));
@@ -185,6 +186,7 @@ function AppRoutes() {
           <Route path="accounts/entity-manager" element={<EntityManager />} />
           <Route path="accounts/entity-ledger" element={<EntityLedger />} />
           <Route path="accounts/bank-balances" element={<BankBalances />} />
+          <Route path="accounts/promise-to-pay" element={<PromiseToPay />} />
           <Route path="accounts/overheads" element={<Overheads />} />
           <Route path="accounts/expense-categories" element={<ExpenseCategories />} />
           <Route path="accounts/daybook" element={<Daybook />} />

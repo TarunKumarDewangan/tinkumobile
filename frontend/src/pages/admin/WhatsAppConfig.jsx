@@ -9,8 +9,10 @@ export default function WhatsAppConfig() {
         OWNER_MOBILE: '',
         TELEGRAM_BOT_TOKEN: '',
         TELEGRAM_CHAT_ID: '',
-        TELEGRAM_CHANNEL_ID: ''
+        TELEGRAM_CHANNEL_ID: '',
+        WHATSAPP_AUTO_ENABLED: '0'
     });
+    const [autoSaving, setAutoSaving] = useState(false);
     const [loading, setLoading] = useState(false);
     const [testLoading, setTestLoading] = useState(false);
     const [telegramSaving, setTelegramSaving] = useState(false);
@@ -31,7 +33,8 @@ export default function WhatsAppConfig() {
                 OWNER_MOBILE: data.OWNER_MOBILE || '',
                 TELEGRAM_BOT_TOKEN: data.TELEGRAM_BOT_TOKEN || '',
                 TELEGRAM_CHAT_ID: data.TELEGRAM_CHAT_ID || '',
-                TELEGRAM_CHANNEL_ID: data.TELEGRAM_CHANNEL_ID || ''
+                TELEGRAM_CHANNEL_ID: data.TELEGRAM_CHANNEL_ID || '',
+                WHATSAPP_AUTO_ENABLED: data.WHATSAPP_AUTO_ENABLED || '0'
             });
         } catch (error) {
             toast.error('Failed to load settings');
@@ -54,6 +57,20 @@ export default function WhatsAppConfig() {
             toast.error('Failed to save settings');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleToggleAuto = async () => {
+        const next = settings.WHATSAPP_AUTO_ENABLED === '1' ? '0' : '1';
+        setAutoSaving(true);
+        try {
+            await api.post('/settings', { WHATSAPP_AUTO_ENABLED: next });
+            setSettings(s => ({ ...s, WHATSAPP_AUTO_ENABLED: next }));
+            toast.success(next === '1' ? 'Automatic WhatsApp messages turned ON' : 'Automatic WhatsApp messages turned OFF');
+        } catch (error) {
+            toast.error('Failed to update setting');
+        } finally {
+            setAutoSaving(false);
         }
     };
 
@@ -110,6 +127,29 @@ export default function WhatsAppConfig() {
         <div className="container-fluid py-4">
             <div className="row justify-content-center">
                 <div className="col-12 col-md-8 col-lg-6">
+                    <div className="card shadow-sm border-0 mb-4">
+                        <div className="card-body p-3 d-flex justify-content-between align-items-center">
+                            <div>
+                                <div className="fw-bold small text-uppercase">Automatic WhatsApp Messages</div>
+                                <div className="text-muted small">
+                                    Owner alerts for business events (sales, repairs, etc.) and scheduled reports (Daily Summary, EMI/Repair reminders).
+                                    Manual sends (Send Offer, Pending Balance reminder) are not affected by this toggle.
+                                </div>
+                            </div>
+                            <div className="form-check form-switch ms-3">
+                                <input
+                                    className="form-check-input"
+                                    type="checkbox"
+                                    role="switch"
+                                    style={{ width: '2.5em', height: '1.4em' }}
+                                    checked={settings.WHATSAPP_AUTO_ENABLED === '1'}
+                                    disabled={autoSaving}
+                                    onChange={handleToggleAuto}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="card shadow-sm border-0">
                         <div className="card-header bg-primary text-white py-3">
                             <h5 className="card-title mb-0">
@@ -268,7 +308,7 @@ export default function WhatsAppConfig() {
                             <li>The system automatically prepends <strong>91</strong> to all mobile numbers.</li>
                             <li>Messages are sent via the JSON API endpoint of iconics.</li>
                             <li>Failed messages are logged in the backend error logs.</li>
-                            <li>The daily summary (5 PM &amp; 9 PM) is sent via both WhatsApp and Telegram automatically.</li>
+                            <li>The daily summary (5 PM &amp; 9 PM) and other automated alerts go to Telegram always, and to WhatsApp only when the "Automatic WhatsApp Messages" switch above is ON.</li>
                         </ul>
                     </div>
                 </div>

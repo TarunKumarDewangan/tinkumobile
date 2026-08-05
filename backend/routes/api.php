@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\SimStockController;
 use App\Http\Controllers\Api\OldMobileController;
 use App\Http\Controllers\Api\GiftController;
 use App\Http\Controllers\Api\FollowUpController;
+use App\Http\Controllers\Api\EntityNoteController;
 use App\Http\Controllers\Api\IncentiveController;
 use App\Http\Controllers\Api\CompanyOfferController;
 use App\Http\Controllers\Api\ReportController;
@@ -146,6 +147,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Follow-ups
     Route::apiResource('follow-ups', FollowUpController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::apiResource('entity-notes', EntityNoteController::class)->only(['index', 'store', 'destroy']);
 
     // Users
     Route::get('/users', [UserController::class, 'index']);
@@ -256,6 +258,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('entities/customer-ledger', [EntityLedgerController::class, 'showForCustomer']);
     Route::get('entities/{name}/ledger', [EntityLedgerController::class, 'show']);
     Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
+    Route::post('pending-balance/send-reminder', [EntityLedgerController::class, 'sendPendingBalanceReminder']);
 
     Route::apiResource('entities', EntityController::class);
     Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory']);

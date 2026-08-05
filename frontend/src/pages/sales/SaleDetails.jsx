@@ -119,6 +119,12 @@ export default function SaleDetails() {
   const effectivePaid = fp
     ? fpDownPayment + fpInstallmentsPaid
     : parseFloat(invoice.total_paid || 0) + financerPaid;
+  // grand_total is already POST-discount — the raw pre-discount price is
+  // grand_total + discount, which is what "Total Bill" should show (the
+  // sticker/quoted price), not the same figure as the discounted amount.
+  const totalDiscount = parseFloat(invoice.discount || 0) +
+    (invoice.is_cash_discount_on_bill ? parseFloat(invoice.cash_discount || 0) : 0);
+  const totalBillBeforeDiscount = parseFloat(invoice.grand_total) + totalDiscount;
   const isOldMobileSale = invoice?.items?.some(
       item => item.product?.category?.slug === 'mobile-old' || item.product?.category?.slug === 'MOBILE-OLD'
   );
@@ -596,18 +602,20 @@ export default function SaleDetails() {
                         <div className="d-flex flex-column gap-2">
                              <div className="d-flex justify-content-between p-2 bg-light rounded">
                                  <span className="small fw-bold text-muted">TOTAL BILL:</span>
-                                 <span className="fw-bold text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 <span className="fw-bold text-primary">₹{totalBillBeforeDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                              </div>
-                             {(() => {
-                               const totalDisc = parseFloat(invoice.discount || 0) +
-                                 (invoice.is_cash_discount_on_bill ? parseFloat(invoice.cash_discount || 0) : 0);
-                               return totalDisc > 0 ? (
+                             {totalDiscount > 0 && (
+                               <>
                                  <div className="d-flex justify-content-between p-2 rounded" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
                                    <span className="small fw-bold" style={{ color: '#92400e' }}>🏷️ DISCOUNT GIVEN:</span>
-                                   <span className="fw-bold" style={{ color: '#b45309' }}>- ₹{totalDisc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                   <span className="fw-bold" style={{ color: '#b45309' }}>- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                  </div>
-                               ) : null;
-                             })()}
+                                 <div className="d-flex justify-content-between p-2 bg-light rounded border-top">
+                                   <span className="small fw-bold text-dark">AMOUNT AFTER DISCOUNT:</span>
+                                   <span className="fw-bold text-dark">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 </div>
+                               </>
+                             )}
                              {fp ? (
                                  <>
                                      <div className="d-flex justify-content-between p-2 rounded" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>

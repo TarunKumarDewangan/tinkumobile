@@ -11,6 +11,9 @@ const CATEGORIES = [
   { id: 'COMPANY_FINANCE', label: 'Other Company Finance' },
 ];
 
+const defaultReminderMessage = (name, balance) =>
+  `Dear ${name},\n\nThis is a reminder from *Tinku Mobiles* that you have a pending balance of *₹${Number(balance).toLocaleString('en-IN')}*.\n\nPlease clear it at your earliest convenience. Thank you!\n\n_Tinku Mobiles Management System_`;
+
 export default function PendingBalance() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
@@ -19,6 +22,10 @@ export default function PendingBalance() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('ALL');
+  const [reminderModal, setReminderModal] = useState(null); // { row, message, sending }
+  const [noteModal, setNoteModal] = useState(null); // { row, promise_date, note, saving }
+  const [notes, setNotes] = useState([]);
+  const [notesOnly, setNotesOnly] = useState(false);
 
   useEffect(() => {
     load();
@@ -32,12 +39,14 @@ export default function PendingBalance() {
       // entity). Customer/Shop Customer now come straight from the entity
       // balances themselves, so ANY kind of pending debt shows up here —
       // repairs, loans, opening balances, not just an open sale invoice.
-      const [invRes, entRes] = await Promise.all([
+      const [invRes, entRes, notesRes] = await Promise.all([
         api.get('/sale-invoices', { params: { has_balance: 1, per_page: 1000 } }),
         api.get('/ledgers/entity-balances'),
+        api.get('/entity-notes'),
       ]);
       setInvoices(invRes.data.data || invRes.data);
       setEntities(entRes.data || []);
+      setNotes(notesRes.data || []);
       const map = {};
       (entRes.data || []).forEach(e => { map[(e.name || '').toUpperCase()] = e; });
       setEntityByName(map);
@@ -46,6 +55,18 @@ export default function PendingBalance() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Latest promise-to-pay note for a row — matched by entity first, falling
+  // back to name+phone for rows without a resolvable entity (e.g. some
+  // Personal Finance rows).
+  const latestNoteForRow = (r) => {
+    const candidates = notes.filter(n =>
+      (r.entityId && n.entity_id === r.entityId) ||
+      (!n.entity_id && (n.name || '').toUpperCase() === (r.name || '').toUpperCase() && (n.phone || '') === (r.phone || ''))
+    );
+    if (candidates.length === 0) return null;
+    return candidates.reduce((latest, n) => (!latest || n.created_at > latest.created_at ? n : latest), null);
   };
 
   const invoiceBalance = (inv) => {
@@ -123,6 +144,10 @@ export default function PendingBalance() {
   const allRows = [...customerRows, ...personalFinanceRows, ...companyFinanceRows];
 
   let rows = category === 'ALL' ? allRows : allRows.filter(r => r.category === category);
+  rows = rows.map(r => {
+    const latest = latestNoteForRow(r);
+    return { ...r, noteDate: latest?.promise_date || null };
+  });
   rows.sort((a, b) => b.balance - a.balance);
 
   const s = search.trim().toUpperCase();
@@ -130,7 +155,58 @@ export default function PendingBalance() {
     rows = rows.filter(r => r.name.toUpperCase().includes(s) || r.phone.includes(s));
   }
 
+  if (notesOnly) {
+    rows = rows.filter(r => r.noteDate);
+  }
+
   const totalBalance = rows.reduce((sum, r) => sum + r.balance, 0);
+
+  const openReminderModal = (r) => {
+    setReminderModal({ row: r, message: defaultReminderMessage(r.name, r.balance), sending: false });
+  };
+
+  const sendReminder = async () => {
+    if (!reminderModal) return;
+    setReminderModal(m => ({ ...m, sending: true }));
+    try {
+      const { data } = await api.post('/pending-balance/send-reminder', {
+        name: reminderModal.row.name,
+        phone: reminderModal.row.phone,
+        message: reminderModal.message,
+      });
+      toast.success(data.message || 'Reminder sent');
+      setReminderModal(null);
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to send reminder');
+      setReminderModal(m => ({ ...m, sending: false }));
+    }
+  };
+
+  const openNoteModal = (r) => {
+    setNoteModal({ row: r, promise_date: new Date().toISOString().slice(0, 10), note: '', saving: false });
+  };
+
+  const saveNote = async () => {
+    if (!noteModal) return;
+    setNoteModal(m => ({ ...m, saving: true }));
+    try {
+      const { data } = await api.post('/entity-notes', {
+        entity_id: noteModal.row.entityId || null,
+        name: noteModal.row.name,
+        phone: noteModal.row.phone || null,
+        category: noteModal.row.category,
+        promise_date: noteModal.promise_date,
+        note: noteModal.note,
+        balance_at_time: noteModal.row.balance,
+      });
+      setNotes(prev => [...prev, data]);
+      toast.success('Promise-to-pay note saved');
+      setNoteModal(null);
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to save note');
+      setNoteModal(m => ({ ...m, saving: false }));
+    }
+  };
 
   const goToAccount = (r) => {
     if (r.entityId) {
@@ -166,6 +242,13 @@ export default function PendingBalance() {
           >
             {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
+          <button
+            type="button"
+            className={`btn btn-sm rounded-pill fw-bold ${notesOnly ? 'btn-warning' : 'btn-outline-secondary'}`}
+            onClick={() => setNotesOnly(v => !v)}
+          >
+            📝 {notesOnly ? 'Showing: Notes Only' : 'Show Notes Only'}
+          </button>
         </div>
       </div>
 
@@ -177,15 +260,16 @@ export default function PendingBalance() {
                 <th style={{ width: 60 }}>S.No</th>
                 <th>Entity Name</th>
                 {category === 'ALL' && <th style={{ width: 180 }}>Category</th>}
+                <th className="text-center" style={{ width: 130 }}>Notes Date</th>
                 <th className="text-end">Balance</th>
-                <th className="text-center" style={{ width: 120 }}>Action</th>
+                <th className="text-center" style={{ width: 150 }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={category === 'ALL' ? 5 : 4} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+                <tr><td colSpan={category === 'ALL' ? 6 : 5} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={category === 'ALL' ? 5 : 4} className="text-center py-5 text-muted fw-bold">🎉 No pending balances found</td></tr>
+                <tr><td colSpan={category === 'ALL' ? 6 : 5} className="text-center py-5 text-muted fw-bold">🎉 No pending balances found</td></tr>
               ) : rows.map((r, idx) => (
                 <tr key={r.category + '-' + r.name}>
                   <td className="fw-bold text-muted">{idx + 1}</td>
@@ -200,9 +284,35 @@ export default function PendingBalance() {
                       <span className="badge bg-light text-dark border">{categoryLabel(r.category)}</span>
                     </td>
                   )}
+                  <td className="text-center">
+                    {r.noteDate ? (
+                      <span className={`badge ${r.noteDate < new Date().toISOString().slice(0, 10) ? 'bg-danger' : 'bg-warning text-dark'}`}>
+                        {r.noteDate}
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
                   <td className="text-end fw-bold text-danger" style={{ whiteSpace: 'nowrap' }}>₹{r.balance.toLocaleString('en-IN')}</td>
                   <td className="text-center">
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => goToAccount(r)}>VIEW</button>
+                    <div className="d-flex gap-1 justify-content-center">
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => goToAccount(r)}>VIEW</button>
+                      <button
+                        className="btn btn-sm btn-outline-success"
+                        title={r.phone ? 'Send WhatsApp reminder' : 'No phone number on file'}
+                        disabled={!r.phone}
+                        onClick={() => openReminderModal(r)}
+                      >
+                        📲
+                      </button>
+                      <button
+                        className="btn btn-sm btn-outline-warning"
+                        title="Note when they promised to pay"
+                        onClick={() => openNoteModal(r)}
+                      >
+                        📝
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -211,6 +321,7 @@ export default function PendingBalance() {
               <tfoot>
                 <tr className="fw-bold bg-dark text-white">
                   <td colSpan={category === 'ALL' ? 3 : 2} className="text-uppercase">Total ({rows.length})</td>
+                  <td></td>
                   <td className="text-end">₹{totalBalance.toLocaleString('en-IN')}</td>
                   <td></td>
                 </tr>
@@ -219,6 +330,84 @@ export default function PendingBalance() {
           </table>
         </div>
       </div>
+
+      {reminderModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1055 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-4">
+              <div className="modal-header border-0 bg-success text-white rounded-top-4 px-4 pt-4 pb-3">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0">📲 Send WhatsApp Reminder</h5>
+                  <div className="small opacity-75">To {reminderModal.row.name} {reminderModal.row.phone ? `(${reminderModal.row.phone})` : ''}</div>
+                </div>
+                <button className="btn-close btn-close-white" onClick={() => setReminderModal(null)} disabled={reminderModal.sending}></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                <label className="form-label fw-bold x-small text-uppercase text-muted">Message (editable)</label>
+                <textarea
+                  className="form-control"
+                  rows={7}
+                  value={reminderModal.message}
+                  onChange={e => setReminderModal(m => ({ ...m, message: e.target.value }))}
+                />
+              </div>
+              <div className="modal-footer border-0 px-4 pb-4 pt-2 gap-2">
+                <button type="button" className="btn btn-light fw-bold px-4" onClick={() => setReminderModal(null)} disabled={reminderModal.sending}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-success fw-bold px-4" onClick={sendReminder} disabled={reminderModal.sending || !reminderModal.message.trim()}>
+                  {reminderModal.sending ? <><span className="spinner-border spinner-border-sm me-2"></span>Sending...</> : '📲 Send Reminder'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {noteModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1055 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-4">
+              <div className="modal-header border-0 bg-warning text-dark rounded-top-4 px-4 pt-4 pb-3">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0">📝 Promise to Pay</h5>
+                  <div className="small opacity-75">{noteModal.row.name} — ₹{noteModal.row.balance.toLocaleString('en-IN')} pending</div>
+                </div>
+                <button className="btn-close" onClick={() => setNoteModal(null)} disabled={noteModal.saving}></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                <div className="mb-3">
+                  <label className="form-label fw-bold x-small text-uppercase text-muted">They said they'll pay on</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={noteModal.promise_date}
+                    onChange={e => setNoteModal(m => ({ ...m, promise_date: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="form-label fw-bold x-small text-uppercase text-muted">Note (optional)</label>
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    placeholder="E.g. Will pay after salary, asked to call back next week..."
+                    value={noteModal.note}
+                    onChange={e => setNoteModal(m => ({ ...m, note: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer border-0 px-4 pb-4 pt-2 gap-2">
+                <button type="button" className="btn btn-light fw-bold px-4" onClick={() => setNoteModal(null)} disabled={noteModal.saving}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-warning fw-bold px-4" onClick={saveNote} disabled={noteModal.saving || !noteModal.promise_date}>
+                  {noteModal.saving ? <><span className="spinner-border spinner-border-sm me-2"></span>Saving...</> : '📝 Save Note'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

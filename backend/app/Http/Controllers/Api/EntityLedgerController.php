@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Transaction;
 use App\Traits\RecordsTransactions;
 use App\Services\EntityService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -45,6 +47,37 @@ class EntityLedgerController extends Controller
             'receivable' => (float)($totals->receivable ?? 0),
             'payable' => (float)($totals->payable ?? 0),
         ]);
+    }
+
+    /**
+     * Send a WhatsApp pending-balance reminder directly to a customer/party
+     * (not the owner) — used by the Pending Balance page's per-row action.
+     * The message is built server-side from a default template but the
+     * caller (frontend) may preview/edit it before sending.
+     */
+    public function sendPendingBalanceReminder(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string',
+            'phone' => 'required|string',
+            'message' => 'required|string|max:1000',
+        ]);
+
+        $waService = app(WhatsAppService::class);
+
+        if (!$waService->isConfigured()) {
+            return response()->json(['message' => 'WhatsApp is not configured (Settings > WhatsApp Config).'], 422);
+        }
+
+        $sent = $waService->sendMessage($data['phone'], $data['message']);
+
+        if (!$sent) {
+            return response()->json(['message' => "Failed to send WhatsApp message to {$data['name']}. Check the phone number and WhatsApp connection."], 500);
+        }
+
+        ActivityLog::log('PENDING_BALANCE_REMINDER_SENT', null, "WhatsApp pending-balance reminder sent to {$data['name']} ({$data['phone']})");
+
+        return response()->json(['message' => "Reminder sent to {$data['name']}"]);
     }
 
     /**
