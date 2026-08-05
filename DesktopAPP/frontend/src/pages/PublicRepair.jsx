@@ -48,11 +48,11 @@ export default function PublicRepair() {
         </div>
         <form onSubmit={handleSubmit}>
           <div className="row g-3">
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Your Name *</label>
               <input className="form-control" required placeholder="Full name" {...f('customer_name')} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Phone Number *</label>
               <input className="form-control" required placeholder="10-digit mobile" {...f('customer_phone')} />
             </div>

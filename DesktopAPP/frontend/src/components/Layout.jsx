@@ -3,13 +3,30 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
+import GlobalSearch from './GlobalSearch';
 
 const NAV = [
   { section: 'Main' },
   { to: '/', icon: '📊', label: 'Dashboard', perm: 'view_dashboard', end: true },
-  
-  { 
-    section: 'Master Entries', 
+
+  {
+    section: 'Accounts',
+    dropdown: true,
+    children: [
+        { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_pending_balance' },
+        { to: '/accounts/promise-to-pay', icon: '📝', label: 'Promise to Pay', perm: 'view_pending_balance' },
+        { to: '/accounts/bank-balances', icon: '🏦', label: 'Bank Balances', perm: 'view_finance_tracker' },
+        { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
+        { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
+        { to: '/accounts/trade-summary', icon: '⚖️', label: 'Sales & Purchase A/C', perm: 'view_reports' },
+        { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
+        { to: '/accounts/overheads', icon: '🧾', label: 'Expenses / Cashbook', perm: 'view_reports' },
+        { to: '/accounts/expense-categories', icon: '🗂️', label: 'Expense Categories', perm: 'view_reports' },
+    ]
+  },
+
+  {
+    section: 'Master Entries',
     dropdown: true,
     children: [
         { to: '/purchases?category_group=master', icon: '🛒', label: 'Master Purchase', perm: 'view_purchases' },
@@ -17,13 +34,15 @@ const NAV = [
     ]
   },
   
-  { 
-    section: 'New Mobile', 
+  {
+    section: 'New Mobile',
     dropdown: true,
     children: [
-        { to: '/purchases',   icon: '🛒', label: 'Purchases',  perm: 'view_purchases' },
-        { to: '/stock-entry', icon: '📦', label: 'Stocks',       perm: 'create_purchases' },
-        { to: '/sales',       icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+        { to: '/purchases',        icon: '🛒', label: 'Purchases',      perm: 'view_purchases' },
+        { to: '/stock-entry',      icon: '📦', label: 'Stocks',         perm: 'create_purchases' },
+        { to: '/stock-transfers',  icon: '🚚', label: 'Stock Transfer', perm: 'create_purchases' },
+        { to: '/sales',            icon: '🧾', label: 'Sales',          perm: 'view_sales' },
+        { to: '/finance-tracker',  icon: '💳', label: 'Finance',        perm: 'view_finance_tracker' },
     ]
   },
   
@@ -34,6 +53,7 @@ const NAV = [
         { to: '/old-mobiles',        icon: '🛒', label: 'Purchase',   perm: 'view_old_mobile_purchases', end: true },
         { to: '/old-mobiles/stocks', icon: '📦', label: '2nd Stocks', perm: 'view_old_mobile_purchases' },
         { to: '/old-mobiles/sales',  icon: '🧾', label: 'Sales',      perm: 'view_sales' },
+        { to: '/old-mobiles/report', icon: '📊', label: 'Report',     perm: 'view_old_mobile_purchases' },
     ]
   },
   
@@ -47,8 +67,18 @@ const NAV = [
     ]
   },
 
-  { 
-    section: 'Services', 
+  {
+    section: 'Stickers',
+    dropdown: true,
+    children: [
+        { to: '/stickers/generate', icon: '🏷️', label: 'Generate Stickers', perm: 'view_products' },
+        { to: '/stickers/crud',     icon: '🛠️', label: 'CRUD',              perm: 'create_products' },
+        { to: '/stickers/print',    icon: '🖨️', label: 'Sticker Print',     perm: 'view_products' },
+    ]
+  },
+
+  {
+    section: 'Services',
     dropdown: true,
     children: [
         { to: '/recharge',    icon: '⚡', label: 'Recharge',   perm: 'view_recharge_sales' },
@@ -62,30 +92,25 @@ const NAV = [
     section: 'Business', 
     dropdown: true,
     children: [
-        { to: '/admin/users', icon: '👷', label: 'Staff Details', perm: 'manage_users' },
-        { to: '/admin/shops', icon: '🏪', label: 'Shops Manager',  perm: 'manage_shops' },
+        { to: '/admin/users',            icon: '👷', label: 'Staff Details',     perm: 'manage_users' },
+        { to: '/admin/shops',            icon: '🏪', label: 'Shops Manager',     perm: 'manage_shops' },
+        { to: '/admin/role-permissions',  icon: '🔑', label: 'Role Permissions',  perm: 'manage_users' },
+        { to: '/admin/security-settings', icon: '🔐', label: 'Security / PIN',   perm: 'manage_users' },
+        { to: '/admin/activity-logs',     icon: '📋', label: 'Activity Logs',    perm: 'manage_users' },
+        { to: '/admin/trash',             icon: '🗑️', label: 'Trash Manager',    perm: 'manage_users' },
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
         { to: '/send-offers', icon: '✉️', label: 'Send Offers', perm: 'manage_offers' },
-        { to: '/reports',     icon: '📈', label: 'Reports',    perm: 'view_reports', end: true },
-        { to: '/reports/combined-sales', icon: '📊', label: 'Combined Sales', perm: 'view_reports' },
-        { to: '/reports/set-sales-matrix', icon: '📅', label: 'Set Sales Matrix', perm: 'view_reports' },
+        { to: '/reports',                  icon: '📈', label: 'Reports',          perm: 'view_reports', end: true },
+        { to: '/reports/combined-sales',   icon: '📊', label: 'Combined Sales',    perm: 'view_reports' },
+        { to: '/reports/set-sales-matrix', icon: '📅', label: 'Set Sales Matrix',  perm: 'view_reports' },
+        { to: '/reports/financer',         icon: '🏦', label: 'Financer Report',   perm: 'view_reports' },
     ]
   },
 
 
-  { 
-    section: 'Accounts', 
-    dropdown: true,
-    children: [
-        { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
-        { to: '/accounts/group-summary', icon: '📋', label: 'Group Summary', perm: 'view_reports' },
-        { to: '/accounts/trade-summary', icon: '⚖️', label: 'Sales & Purchase A/C', perm: 'view_reports' },
-        { to: '/accounts/daybook', icon: '📖', label: 'Daybook', perm: 'view_reports' },
-    ]
-  },
-  { 
-    section: 'Airtel Recovery', 
+  {
+    section: 'Airtel Recovery',
     dropdown: true,
     children: [
         { to: '/airtel/quick-recovery', icon: '⚡', label: 'Quick Recovery', perm: 'view_airtel_recovery' },
@@ -108,7 +133,8 @@ const NAV = [
     section: 'Settings', 
     dropdown: true,
     children: [
-        { to: '/admin/whatsapp-config', icon: '⚙️', label: 'WhatsApp Config', perm: 'manage_users' },
+        { to: '/admin/whatsapp-config', icon: '⚙️', label: 'WhatsApp / Telegram', perm: 'manage_users' },
+        { to: '/admin/notifications',   icon: '📨', label: 'Send Reports Now',    perm: 'manage_users' },
     ]
   },
 
@@ -126,7 +152,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Settings': false });
+  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Stickers': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Tasks': false, 'Settings': false });
   
   const getNavLinkClass = (to, end) => {
     try {
@@ -203,12 +229,27 @@ export default function Layout() {
       }
   };
   
-  // Shortcut: Alt + S for Stocks
+  // Shortcuts: Alt + S (Stocks), Alt + N (New Sale), Alt + E (Entity Manager),
+  // Alt + P (New Purchase), Alt + R (New Repair)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.altKey && e.key.toLowerCase() === 's') {
+      if (!e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
         e.preventDefault();
         navigate('/stock-entry');
+      } else if (key === 'n') {
+        e.preventDefault();
+        navigate('/sales/new?category_group=new_mobile');
+      } else if (key === 'e') {
+        e.preventDefault();
+        navigate('/accounts/entity-manager');
+      } else if (key === 'p') {
+        e.preventDefault();
+        navigate('/purchases/new?category_group=new_mobile');
+      } else if (key === 'r') {
+        e.preventDefault();
+        navigate('/repairs/new');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -304,6 +345,10 @@ export default function Layout() {
         </div>
 
         <div style={{ borderTop:'1px solid rgba(255,255,255,0.07)', flexShrink:0 }}>
+          <NavLink to="/admin/security-settings" onClick={closeSidebar}
+            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.65rem 1.1rem', color:'#cbd5e1', background:'none', border:'none', width:'100%', cursor:'pointer', fontSize:'0.875rem', fontWeight:500, textDecoration:'none' }}>
+            🔑 Change Password
+          </NavLink>
           <button onClick={handleLogout}
             style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.65rem 1.1rem', color:'#ff6b6b', background:'none', border:'none', width:'100%', cursor:'pointer', fontSize:'0.875rem', fontWeight:500 }}>
             🚪 Logout
@@ -326,6 +371,7 @@ export default function Layout() {
             <span className="topbar-brand">Tinku<span>Mobiles</span></span>
             {shopName && <span className="text-muted d-none d-sm-inline" style={{ fontSize:'0.78rem' }}>— {shopName}</span>}
           </div>
+          <GlobalSearch />
           <div className="topbar-right">
             <span className="badge rounded-pill" style={{ background:isAdmin()? '#fef3c7':  'var(--primary)', color: isAdmin()? '#92400e' : '#fff', fontSize:'0.7rem' }}>{roleName}</span>
             <span className="text-muted d-none d-md-inline" style={{ fontSize:'0.8rem' }}>{user?.email}</span>

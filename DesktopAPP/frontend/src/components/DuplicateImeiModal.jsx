@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { Modal, Button, Spinner } from 'react-bootstrap';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
@@ -25,7 +26,7 @@ export default function DuplicateImeiModal({ show, onHide, onRefresh }) {
     };
 
     const handleClear = async () => {
-        if (!window.confirm(`This will permanently delete all duplicate IMEI entries, keeping only the first occurrence for each. Inventory stock will be adjusted. Proceed?`)) return;
+        if (!await pinGate.confirm()) return;
         
         setClearing(true);
         try {

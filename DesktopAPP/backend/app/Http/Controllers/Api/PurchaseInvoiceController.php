@@ -116,6 +116,11 @@ class PurchaseInvoiceController extends Controller
             'cgst_amount'        => 'nullable|numeric',
             'sgst_amount'        => 'nullable|numeric',
             'is_gst_manual'      => 'nullable|boolean',
+            'payment_method'     => 'nullable|string|max:50',
+            'payment_lines'      => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
+            'gst_rounding_mode'  => 'nullable|in:exact,2pt,down,up',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
@@ -127,13 +132,19 @@ class PurchaseInvoiceController extends Controller
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
             'items.*.wholeseller_price' => 'nullable|numeric|min:0',
-            'items.*.imei'       => 'nullable|string|max:255',
+            // purchase_items.imei is a TEXT column, not varchar(255) — a bulk-quantity
+            // row stores every unit's IMEI as one comma-separated string here, which
+            // easily exceeds 255 chars once a row covers more than ~12 phones.
+            'items.*.imei'       => 'nullable|string|max:20000',
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
             'items.*.min_selling_price' => 'nullable|numeric|min:0',
             'items.*.max_selling_price' => 'nullable|numeric|min:0',
             'items.*.incentive_amount' => 'nullable|numeric|min:0',
+            'items.*.trade_disc_pct'   => 'nullable|numeric|min:0|max:100',
+            'items.*.cash_disc_pct'    => 'nullable|numeric|min:0|max:100',
+            'items.*.calc_gst_rate'    => 'nullable|numeric|min:0|max:100',
             'items.*.subcategory'      => 'nullable|string|max:255',
             'items.*.location'         => 'nullable|string|max:255',
             'items.*.gst_rate'         => 'nullable|string|max:50',
@@ -141,6 +152,10 @@ class PurchaseInvoiceController extends Controller
             'items.*.description'      => 'nullable|string',
             'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
+        }
 
         return DB::transaction(function () use ($data, $shopId, $user) {
             $calc = app(\App\Services\InvoiceService::class)->calculateTotals($data['items'], $data);
@@ -158,16 +173,20 @@ class PurchaseInvoiceController extends Controller
                 'received_at'   => $data['status'] === 'received' ? ($data['received_at'] ?? now()) : null,
                 'total_paid'    => $data['total_paid'] ?? 0,
                 'notes'         => $data['notes'] ?? null,
+                'payment_method'    => $data['payment_method'] ?? 'CASH',
+                'gst_rounding_mode' => $data['gst_rounding_mode'] ?? '2pt',
             ]));
 
             $invoice->updatePaymentStatus();
 
             // Record Transaction using Service
             if ($invoice->total_paid > 0) {
+                $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($invoice, [
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
-                    'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}",
+                    'payment_lines'    => $data['payment_lines'] ?? null,
+                    'description'      => "Initial payment for Purchase Invoice #{$invoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
                     'entity_name'      => $invoice->supplier?->name,
                 ]);
             }
@@ -266,6 +285,10 @@ class PurchaseInvoiceController extends Controller
                     'max_selling_price'   => $item['max_selling_price'] ?? null,
                     'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
+                    'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
+                    'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
+                    'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
+                    'apply_gst'           => isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null,
                 ]);
 
                 // ── Update inventory ONLY if received ──
@@ -273,15 +296,18 @@ class PurchaseInvoiceController extends Controller
                     Inventory::addStock($shopId, $productId, $item['quantity']);
                 }
             }
-            // Send WhatsApp Notification
-            try {
-                $amount = number_format($invoice->grand_total, 2);
-                $supplierName = $invoice->supplier->name ?? 'Unknown Supplier';
-                $msg = "📦 *New Purchase*\nInvoice: #{$invoice->invoice_no}\nAmount: ₹{$amount}\nSupplier: {$supplierName}";
-                app(\App\Services\WhatsAppService::class)->sendToOwner($msg);
-            } catch (\Exception $waEx) {
-                \Illuminate\Support\Facades\Log::error('WhatsApp Notification Failed for Purchase', ['error' => $waEx->getMessage()]);
-            }
+            // Send Purchase Notification (WhatsApp + Telegram)
+            $supplierName = $invoice->supplier->name ?? 'Unknown Supplier';
+            $itemsSummary = $this->itemNamesSummary($data['items']);
+            $msg = "📦 *New Purchase*\n";
+            $msg .= "Invoice: #{$invoice->invoice_no}\n";
+            $msg .= "Supplier: {$supplierName}\n";
+            if ($itemsSummary) $msg .= "Items: {$itemsSummary}\n";
+            $msg .= "Amount: ₹" . number_format($invoice->grand_total, 2) . "\n";
+            $msg .= "Paid: ₹" . number_format($invoice->total_paid, 2) . "\n";
+            $msg .= "Status: " . strtoupper($invoice->status) . "\n";
+            $msg .= "By: {$user->name}";
+            $this->notifyOwner($msg);
 
             // Audit log
             ActivityLog::log('PURCHASE_CREATED', $user, "Purchase #{$invoice->invoice_no} created");
@@ -318,6 +344,11 @@ class PurchaseInvoiceController extends Controller
             'cgst_amount'        => 'nullable|numeric',
             'sgst_amount'        => 'nullable|numeric',
             'is_gst_manual'      => 'nullable|boolean',
+            'payment_method'     => 'nullable|string|max:50',
+            'payment_lines'      => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
+            'gst_rounding_mode'  => 'nullable|in:exact,2pt,down,up',
             'notes'              => 'nullable|string',
             'items'              => 'required|array|min:1',
             'items.*.product_id' => 'nullable|exists:products,id',
@@ -329,13 +360,19 @@ class PurchaseInvoiceController extends Controller
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
             'items.*.wholeseller_price' => 'nullable|numeric|min:0',
-            'items.*.imei'       => 'nullable|string|max:255',
+            // purchase_items.imei is a TEXT column, not varchar(255) — a bulk-quantity
+            // row stores every unit's IMEI as one comma-separated string here, which
+            // easily exceeds 255 chars once a row covers more than ~12 phones.
+            'items.*.imei'       => 'nullable|string|max:20000',
             'items.*.ram'        => 'nullable|string|max:50',
             'items.*.storage'    => 'nullable|string|max:50',
             'items.*.color'      => 'nullable|string|max:50',
             'items.*.min_selling_price' => 'nullable|numeric|min:0',
             'items.*.max_selling_price' => 'nullable|numeric|min:0',
             'items.*.incentive_amount' => 'nullable|numeric|min:0',
+            'items.*.trade_disc_pct'   => 'nullable|numeric|min:0|max:100',
+            'items.*.cash_disc_pct'    => 'nullable|numeric|min:0|max:100',
+            'items.*.calc_gst_rate'    => 'nullable|numeric|min:0|max:100',
             'items.*.subcategory'      => 'nullable|string|max:255',
             'items.*.location'         => 'nullable|string|max:255',
             'items.*.gst_rate'         => 'nullable|string|max:50',
@@ -343,6 +380,10 @@ class PurchaseInvoiceController extends Controller
             'items.*.description'      => 'nullable|string',
             'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
+        }
 
         return DB::transaction(function () use ($data, $purchaseInvoice) {
             $shopId = $purchaseInvoice->shop_id;
@@ -375,6 +416,8 @@ class PurchaseInvoiceController extends Controller
                 'received_at'   => $data['status'] === 'received' ? ($data['received_at'] ?? $purchaseInvoice->received_at ?? now()) : null,
                 'total_paid'    => $data['total_paid'] ?? $purchaseInvoice->total_paid,
                 'notes'         => $data['notes'] ?? null,
+                'payment_method'    => $data['payment_method'] ?? $purchaseInvoice->payment_method,
+                'gst_rounding_mode' => $data['gst_rounding_mode'] ?? $purchaseInvoice->gst_rounding_mode,
             ]));
             $purchaseInvoice->updatePaymentStatus();
 
@@ -389,11 +432,13 @@ class PurchaseInvoiceController extends Controller
 
             // Record updated Transaction using Service if total_paid > 0
             if ($purchaseInvoice->total_paid > 0) {
+                $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($purchaseInvoice, [
                     'type'             => 'OUT',
                     'category'         => 'PURCHASE',
                     'amount'           => $purchaseInvoice->total_paid,
-                    'description'      => "Initial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+                    'payment_lines'    => $data['payment_lines'] ?? null,
+                    'description'      => "Initial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
                     'entity_name'      => $purchaseInvoice->supplier?->name,
                 ]);
             }
@@ -507,6 +552,10 @@ class PurchaseInvoiceController extends Controller
                     'max_selling_price'   => $item['max_selling_price'] ?? null,
                     'incentive_amount'    => $item['incentive_amount'] ?? null,
                     'total'               => $item['quantity'] * $item['unit_price'],
+                    'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
+                    'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
+                    'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
+                    'apply_gst'           => isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null,
                 ]);
             }
 
@@ -621,11 +670,14 @@ class PurchaseInvoiceController extends Controller
         $purchaseInvoice->updatePaymentStatus();
 
         // Record Transaction using Service
+        $itemNames = $purchaseInvoice->items()->with('product')->get()
+            ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+            ->implode(', ');
         $this->transactionService->recordForModel($purchaseInvoice, [
             'type'             => 'OUT',
             'category'         => 'PURCHASE',
             'amount'           => $data['amount'],
-            'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}",
+            'description'      => "Partial payment for Purchase Invoice #{$purchaseInvoice->invoice_no}" . ($itemNames ? " [{$itemNames}]" : ''),
             'entity_name'      => $purchaseInvoice->supplier?->name,
         ]);
 
@@ -666,9 +718,20 @@ class PurchaseInvoiceController extends Controller
                 $tx->delete();
             }
 
+            // PurchaseInvoice uses SoftDeletes — a soft delete never fires the DB's
+            // ON DELETE CASCADE, so purchase_items (which has no soft-delete of its
+            // own) would otherwise be left dangling forever, still referencing their
+            // product via a real foreign key (the same bug already fixed for sales).
+            $purchaseInvoice->items()->delete();
             $purchaseInvoice->delete();
             // Audit log
             ActivityLog::log('PURCHASE_DELETED', $user, "Purchase #{$purchaseInvoice->invoice_no} deleted");
+
+            $this->notifyOwner(
+                "🗑️ *Purchase Deleted*\nInvoice: #{$purchaseInvoice->invoice_no}\nSupplier: " . ($purchaseInvoice->supplier->name ?? 'Unknown') .
+                "\nAmount: ₹" . number_format($purchaseInvoice->grand_total, 2) . "\nBy: {$user->name}"
+            );
+
             return response()->json(['message' => 'Purchase order deleted.']);
         });
     }
@@ -825,7 +888,7 @@ class PurchaseInvoiceController extends Controller
             return response()->json(['message' => 'Purchase backup restored successfully']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 
@@ -853,5 +916,27 @@ class PurchaseInvoiceController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * "VIVO Y11 (x2), SAMSUNG A14" style summary of what's actually in the
+     * purchase, for use in ledger/transaction narrations — otherwise a
+     * supplier's Entity Ledger shows a payment with no indication of what it
+     * was for. Takes the raw items array from the request rather than a
+     * loaded relation, since store()/update() record the transaction before
+     * new "quick-add" products in the same request necessarily have an id.
+     */
+    private function itemNamesSummary(array $items): string
+    {
+        $productIds = collect($items)->pluck('product_id')->filter()->unique();
+        $names = $productIds->isNotEmpty()
+            ? Product::whereIn('id', $productIds)->pluck('name', 'id')
+            : collect();
+
+        return collect($items)->map(function ($item) use ($names) {
+            $name = $names[$item['product_id'] ?? null] ?? ($item['new_product_name'] ?? 'Unknown');
+            $qty  = (int) ($item['quantity'] ?? 1);
+            return $qty > 1 ? "{$name} (x{$qty})" : $name;
+        })->implode(', ');
     }
 }

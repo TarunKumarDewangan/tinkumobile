@@ -5,6 +5,8 @@ import { Modal, Button } from 'react-bootstrap';
 import debounce from 'lodash/debounce';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import OldMobilePurchaseModal from '../../components/OldMobilePurchaseModal';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 // Simple UUID v4 generator for idempotency
 function generateIdempotencyKey() {
@@ -12,6 +14,25 @@ function generateIdempotencyKey() {
     const r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
+}
+
+// Numerically solves for the monthly reducing-balance rate r that makes
+// P*r*(1+r)^n/((1+r)^n-1) == emi. No closed form exists for r, so this
+// bisects — emi is strictly increasing in r for r >= 0, so it converges
+// reliably. Returns the rate annualized as a percentage. This is a live
+// preview only; the backend re-derives the authoritative rate the same way
+// when a total-payable figure is submitted instead of a rate.
+function solveReducingRate(principal, emi, months) {
+  if (!principal || !months || emi <= principal / months) return 0;
+  let lo = 0, hi = 5; // 500%/month upper bound — comfortably above any real input
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const calcEmi = mid === 0
+      ? principal / months
+      : principal * mid * Math.pow(1 + mid, months) / (Math.pow(1 + mid, months) - 1);
+    if (calcEmi < emi) lo = mid; else hi = mid;
+  }
+  return ((lo + hi) / 2) * 12 * 100;
 }
 
 export default function SaleForm() {
@@ -77,12 +98,30 @@ export default function SaleForm() {
   
   // Exchange credit state
   const [customerCredit, setCustomerCredit] = useState(0);
+  const [showOldMobileModal, setShowOldMobileModal] = useState(false);
   
-  // Finance / EMI state
+  // External Finance / EMI (Bajaj, HDB, etc.)
   const [useFinance, setUseFinance] = useState(false);
   const [financers, setFinancers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  // Split the cash payment (form.total_paid) across a 2nd mode — e.g. half
+  // cash, half UPI. Only offered for the plain-cash path, not EXCHANGE modes
+  // (those already have their own dedicated cash/UPI split via the payment
+  // method dropdown itself).
+  const [splitSecondary, setSplitSecondary] = useState(null);
   const [showFinancerModal, setShowFinancerModal] = useState(false);
   const [newFinancer, setNewFinancer] = useState({ name: '', phone: '', gst_number: '', description: '' });
+
+  // Shop Finance (Personal EMI / Favor)
+  const [useShopFinance, setUseShopFinance] = useState(false);
+  const [shopFinanceType, setShopFinanceType] = useState('PERSONAL');
+  const [shopFinance, setShopFinance] = useState({
+    down_payment: 0, principal: 0, interest_rate: 0, interest_type: 'FLAT',
+    total_payable: 0, tenure_months: 12, emi_start_date: '',
+  });
+  // Whether the Interest % field or the Total Payable field is the one the
+  // user is actively driving — the other one auto-fills from it.
+  const [emiInputMode, setEmiInputMode] = useState('RATE'); // 'RATE' | 'TOTAL'
   
   // Internal state to track if round_off is manually overridden
   const [isManualRound, setIsManualRound] = useState(false);
@@ -102,6 +141,7 @@ export default function SaleForm() {
     name: '',
     type: 'CUSTOMER',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -152,9 +192,10 @@ export default function SaleForm() {
       setStaff(staffRes.data);
       
       const entRes = await api.get('/entities').catch(() => ({ data: [] }));
+      setBankEntities((entRes.data || []).filter(e => isAssetEntityType(e.type)));
       const types = (entRes.data || []).map(e => e.type).filter(Boolean);
       const uniqueCustomTypes = Array.from(new Set(types)).filter(
-        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
       );
       setCustomTypes(uniqueCustomTypes);
       
@@ -283,6 +324,24 @@ export default function SaleForm() {
       });
       if (data.finance_amount > 0) {
         setUseFinance(true);
+      }
+      if (data.finance_plan) {
+        const fp = data.finance_plan;
+        setUseShopFinance(true);
+        setShopFinanceType(fp.type || 'PERSONAL');
+        setShopFinance({
+          down_payment: fp.down_payment || 0,
+          principal: fp.principal || 0,
+          interest_rate: fp.interest_rate || 0,
+          interest_type: fp.interest_type || 'FLAT',
+          total_payable: fp.total_payable || 0,
+          tenure_months: fp.tenure_months || 12,
+          // emi_start_date comes back as a full ISO timestamp (the model casts it
+          // to a Carbon 'date', but JSON serialization still includes the time
+          // portion) — a plain <input type="date"> needs exactly YYYY-MM-DD or it
+          // silently renders blank.
+          emi_start_date: fp.emi_start_date ? fp.emi_start_date.slice(0, 10) : '',
+        });
       }
       if (data.rounding_mode === 'manual') setIsManualRound(true);
       if (data.is_gst_manual) setIsManualGst(true);
@@ -606,6 +665,45 @@ export default function SaleForm() {
 
   const grandTotal = rawTotal + (parseFloat(form.round_off) || 0);
 
+  // Shop Finance EMI calculator — supports both input directions (rate ->
+  // total, or total -> implied rate) and both interest models (flat simple
+  // interest vs reducing-balance amortization). This is a live preview only;
+  // the backend recomputes the authoritative figures the same way on submit.
+  const shopFinanceCalc = useMemo(() => {
+    const p = parseFloat(shopFinance.principal) || 0;
+    const n = parseInt(shopFinance.tenure_months) || 0;
+    const type = shopFinance.interest_type || 'FLAT';
+    const empty = { monthlyEmi: 0, totalPayable: p, impliedRate: 0 };
+
+    if (!p || !n || shopFinanceType !== 'PERSONAL') return empty;
+
+    if (emiInputMode === 'TOTAL') {
+      const targetTotal = parseFloat(shopFinance.total_payable) || 0;
+      if (targetTotal <= p) return { monthlyEmi: parseFloat((p / n).toFixed(2)), totalPayable: p, impliedRate: 0 };
+
+      const emi = parseFloat((targetTotal / n).toFixed(2));
+      const impliedRate = type === 'FLAT'
+        ? ((targetTotal - p) * 12) / (p * n) * 100
+        : solveReducingRate(p, emi, n);
+
+      return { monthlyEmi: emi, totalPayable: parseFloat(targetTotal.toFixed(2)), impliedRate: parseFloat(impliedRate.toFixed(4)) };
+    }
+
+    // RATE mode (default)
+    const r = parseFloat(shopFinance.interest_rate) || 0;
+    if (!r) return { monthlyEmi: parseFloat((p / n).toFixed(2)), totalPayable: p, impliedRate: 0 };
+
+    if (type === 'FLAT') {
+      const interest = p * (r / 100) * (n / 12);
+      const totalPayable = parseFloat((p + interest).toFixed(2));
+      return { monthlyEmi: parseFloat((totalPayable / n).toFixed(2)), totalPayable, impliedRate: r };
+    }
+
+    const rate = r / 12 / 100;
+    const emi  = p * rate * Math.pow(1 + rate, n) / (Math.pow(1 + rate, n) - 1);
+    return { monthlyEmi: parseFloat(emi.toFixed(2)), totalPayable: parseFloat((emi * n).toFixed(2)), impliedRate: r };
+  }, [shopFinance.principal, shopFinance.interest_rate, shopFinance.interest_type, shopFinance.total_payable, shopFinance.tenure_months, shopFinanceType, emiInputMode]);
+
   // Auto-calculate exchange payment split when grand total or credit changes
   useEffect(() => {
     if (form.payment_method === 'EXCHANGE') {
@@ -649,28 +747,28 @@ export default function SaleForm() {
     c.phone.includes(customerSearch)
   );
 
+  const refreshCustomerCredit = (customerId) => {
+    if (!customerId) {
+      setCustomerCredit(0);
+      return;
+    }
+    const params = new URLSearchParams({ customer_id: customerId });
+    if (id) params.set('exclude_sale_invoice_id', id);
+    api.get(`/entities/customer-ledger?${params}`)
+      .then(res => {
+        const bal = parseFloat(res.data.entity?.net_balance || 0);
+        setCustomerCredit(bal < 0 ? Math.abs(bal) : 0);
+      })
+      .catch(() => setCustomerCredit(0));
+  };
+
   const handleSelectCustomer = (c) => {
     setForm({ ...form, customer_id: c.id });
     setCustomerSearch(c.name);
     setCustomerInputText(c.name);
     setSelectedCustomer(c);
     setPriceMode(c.category === 'SHOP' ? 'WHOLESALE' : 'RETAIL');
-    if (c.id) {
-      const params = new URLSearchParams({ customer_id: c.id });
-      if (id) params.set('exclude_sale_invoice_id', id);
-      api.get(`/entities/customer-ledger?${params}`)
-        .then(res => {
-          const bal = parseFloat(res.data.entity?.net_balance || 0);
-          if (bal < 0) {
-            setCustomerCredit(Math.abs(bal));
-          } else {
-            setCustomerCredit(0);
-          }
-        })
-        .catch(() => setCustomerCredit(0));
-    } else {
-      setCustomerCredit(0);
-    }
+    refreshCustomerCredit(c.id);
   };
 
   const handlePaymentMethodChange = (method) => {
@@ -729,7 +827,7 @@ export default function SaleForm() {
           phone: data.phone || '',
           email: data.email || '',
           gst_no: data.gst_number || '',
-          address: data.description || '',
+          address: data.address || '',
           category: data.type === 'SHOP_CUSTOMER' ? 'SHOP' : 'REGULAR',
           voucher_code: data.voucher_code || '',
           events: data.events || []
@@ -745,6 +843,7 @@ export default function SaleForm() {
         name: '',
         type: 'CUSTOMER',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -779,6 +878,9 @@ export default function SaleForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.customer_id) return toast.warning('Please select a customer');
+    if (splitSecondary && splitSecondary.amount > (parseFloat(form.total_paid) || 0)) {
+      return toast.warning("Split payment amount can't exceed the amount paid");
+    }
     if (submitting) return; // Prevent double-submit
     setSubmitting(true);
     
@@ -813,7 +915,36 @@ export default function SaleForm() {
       if (form.payment_method === 'OTHER' && form.other_mode) {
           finalForm.payment_method = form.other_mode;
       }
-      
+
+      if (splitSecondary && splitSecondary.amount > 0 && !form.payment_method?.startsWith('EXCHANGE')) {
+          const firstMode = finalForm.payment_method;
+          const secondMode = splitSecondary.mode === 'OTHER' ? (splitSecondary.otherMode || 'OTHER') : splitSecondary.mode;
+          const firstAmt = Math.max(0, (parseFloat(form.total_paid) || 0) - splitSecondary.amount);
+          finalForm.payment_lines = [
+              { payment_mode: firstMode, amount: firstAmt },
+              { payment_mode: secondMode, amount: splitSecondary.amount },
+          ];
+          finalForm.payment_method = 'SPLIT';
+      }
+
+      // Attach shop finance plan data if enabled — works for both a new sale
+      // and editing an existing one (the backend creates the plan if the
+      // invoice doesn't have one yet, or updates it in place if it does).
+      if (useShopFinance && shopFinance.principal > 0) {
+          finalForm.shop_finance = {
+              type:           shopFinanceType,
+              down_payment:   shopFinance.down_payment,
+              principal:      shopFinance.principal,
+              interest_type:  shopFinanceType === 'PERSONAL' ? shopFinance.interest_type : null,
+              // Only send the field the user actually drove — the backend
+              // derives the other one (and the authoritative EMI) from it.
+              interest_rate:  shopFinanceType === 'PERSONAL' && emiInputMode === 'RATE' ? (shopFinance.interest_rate || 0) : null,
+              total_payable:  shopFinanceType === 'PERSONAL' && emiInputMode === 'TOTAL' ? (shopFinance.total_payable || 0) : null,
+              tenure_months:  shopFinanceType === 'PERSONAL' ? (shopFinance.tenure_months || null) : null,
+              emi_start_date: shopFinanceType === 'PERSONAL' ? (shopFinance.emi_start_date || null) : null,
+          };
+      }
+
       if (id) {
         await api.put(`/sale-invoices/${id}`, finalForm);
         toast.success('✅ Sale updated successfully');
@@ -875,7 +1006,7 @@ export default function SaleForm() {
     }
     return item.selection_id || '';
   };
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(newEntity.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(newEntity.type);
   const isCustomType = customTypes.includes(newEntity.type);
   const showCustomInput = newEntity.type === 'OTHER' || (!isDefaultType && !isCustomType && newEntity.type !== '');
 
@@ -889,7 +1020,7 @@ export default function SaleForm() {
                 : (isOldMobileSale ? (id ? '✍️ EDIT 2ND HAND SALE' : '➕ 2ND HAND SALE ENTRY') : (id ? '✍️ EDIT SALE' : '➕ NEW SALE ENTRY'))
               }
            </h2>
-           <p className="text-muted small mb-0">RECORD PRODUCT SALES, CONFIGURATIONS AND GST</p>
+           <p className="text-muted small mb-0">RECORD PRODUCT SALES, CONFIGURATIONS AND GST <span className="text-muted" style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + N</span></p>
         </div>
         <button onClick={() => navigate(category_group === 'other' ? '/sales?category_group=other' : (isOldMobileSale ? '/old-mobiles/sales' : '/sales'))} className="btn btn-outline-secondary btn-sm text-uppercase fw-bold">← Back to List</button>
       </div>
@@ -953,6 +1084,18 @@ export default function SaleForm() {
                                 </div>
                             )}
                         </div>
+
+                        {form.customer_id && (
+                            <div className="col-12">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-success btn-sm fw-bold w-100 py-2"
+                                    onClick={() => setShowOldMobileModal(true)}
+                                >
+                                    📲 RECORD OLD PHONE PURCHASE / EXCHANGE FROM THIS CUSTOMER
+                                </button>
+                            </div>
+                        )}
 
                         {/* Price Mode Toggle Block */}
                         <div className="col-12 mt-3 pt-3 border-top">
@@ -1513,7 +1656,211 @@ export default function SaleForm() {
                                     {form.finance_payment_status === 'PENDING' && (
                                         <div style={{fontSize:'.6rem', color:'#dc2626', marginTop:4, fontWeight:600}}>⚠️ Finance amount will show as RECEIVABLE in {financers.find(f=>f.id==form.financer_id)?.name || 'financer'}'s ledger</div>
                                     )}
+                                    {form.finance_payment_status === 'RECEIVED' && (
+                                        <div className="mt-2">
+                                            <label style={{fontSize:'.6rem', fontWeight:700, color:'#92400e', display:'block', marginBottom:2}}>LANDED IN</label>
+                                            <select className="form-select form-select-sm fw-bold text-uppercase" style={{fontSize:'.7rem'}}
+                                                value={form.finance_payment_mode || 'FINANCE'}
+                                                onChange={e => setForm(f => ({...f, finance_payment_mode: e.target.value}))}>
+                                                <option value="FINANCE">GENERIC (NOT TRACKED TO AN ACCOUNT)</option>
+                                                <option value="CASH">CASH</option>
+                                                {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                                                {bankEntities.map(b => (
+                                                    <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Shop Finance Section (Personal EMI / Favor) ── */}
+                    <div style={{background:'#fff', borderRadius:10, border:'1px solid #e8ecf0', marginBottom:10, overflow:'hidden'}}>
+                        <div className="d-flex justify-content-between align-items-center" style={{padding:'8px 12px', background: useShopFinance ? '#eff6ff' : '#f8fafc', borderBottom: useShopFinance ? '1px solid #bfdbfe' : 'none'}}>
+                            <div>
+                                <span style={{fontSize:'.75rem', fontWeight:800, color: useShopFinance ? '#1d4ed8' : '#64748b'}}>💳 SHOP FINANCE</span>
+                                {!useShopFinance && <span style={{fontSize:'.6rem', color:'#94a3b8', marginLeft:6}}>Personal EMI / Favor</span>}
+                            </div>
+                            <div className="form-check form-switch p-0 m-0">
+                                <input className="form-check-input ms-0" type="checkbox" checked={useShopFinance}
+                                    onChange={e => {
+                                        const on = e.target.checked;
+                                        setUseShopFinance(on);
+                                        if (on) {
+                                            const remaining = Math.max(0, grandTotal - parseFloat(form.total_paid || 0));
+                                            setShopFinance(f => ({ ...f, principal: parseFloat(remaining.toFixed(2)) }));
+                                        }
+                                    }} />
+                            </div>
+                        </div>
+
+                        {useShopFinance && (
+                            <div style={{padding:'10px 12px'}}>
+                                {/* Type toggle */}
+                                <div className="d-flex gap-2 mb-3">
+                                    <button type="button"
+                                        onClick={() => setShopFinanceType('PERSONAL')}
+                                        style={{flex:1, padding:'6px 0', fontSize:'.68rem', fontWeight:800, borderRadius:8, border:'none',
+                                            background: shopFinanceType === 'PERSONAL' ? '#1d4ed8' : '#e2e8f0',
+                                            color: shopFinanceType === 'PERSONAL' ? '#fff' : '#64748b'}}>
+                                        📅 PERSONAL EMI
+                                    </button>
+                                    <button type="button"
+                                        onClick={() => setShopFinanceType('FAVOR')}
+                                        style={{flex:1, padding:'6px 0', fontSize:'.68rem', fontWeight:800, borderRadius:8, border:'none',
+                                            background: shopFinanceType === 'FAVOR' ? '#0891b2' : '#e2e8f0',
+                                            color: shopFinanceType === 'FAVOR' ? '#fff' : '#64748b'}}>
+                                        🤝 FAVOR (FLEXIBLE)
+                                    </button>
+                                </div>
+
+                                {/* Down Payment + Principal */}
+                                <div className="row g-1 mb-2">
+                                    <div className="col-6">
+                                        <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>DOWN PAYMENT</label>
+                                        <div className="input-group input-group-sm">
+                                            <span className="input-group-text" style={{fontSize:'.7rem'}}>₹</span>
+                                            <input type="number" step="0.01" min="0"
+                                                className="form-control fw-bold text-end"
+                                                style={{fontSize:'.78rem', borderColor:'#86efac', color:'#16a34a'}}
+                                                value={shopFinance.down_payment || ''}
+                                                onFocus={e => e.target.select()}
+                                                onChange={e => {
+                                                    const dp = parseFloat(e.target.value) || 0;
+                                                    const pr = Math.max(0, grandTotal - dp);
+                                                    setShopFinance(f => ({ ...f, down_payment: dp, principal: parseFloat(pr.toFixed(2)) }));
+                                                    // Keep the actual cash-collected field (which drives the real
+                                                    // Transaction/dual-post) in sync — otherwise it's left stale at
+                                                    // whatever it was before Shop Finance was turned on, and the sale
+                                                    // ends up recording the down payment as cash received TWICE.
+                                                    setForm(f => ({ ...f, total_paid: dp }));
+                                                }} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6">
+                                        <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>FINANCED AMOUNT</label>
+                                        <div className="input-group input-group-sm">
+                                            <span className="input-group-text" style={{fontSize:'.7rem'}}>₹</span>
+                                            <input type="number" step="0.01" min="0"
+                                                className="form-control fw-bold text-end"
+                                                style={{fontSize:'.78rem', borderColor:'#bfdbfe', color:'#1d4ed8', background:'#eff6ff'}}
+                                                value={shopFinance.principal || ''}
+                                                onFocus={e => e.target.select()}
+                                                onChange={e => setShopFinance(f => ({ ...f, principal: parseFloat(e.target.value) || 0 }))} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Personal EMI fields */}
+                                {shopFinanceType === 'PERSONAL' && (
+                                    <>
+                                        {/* Flat vs Reducing-balance interest toggle */}
+                                        <div className="d-flex gap-1 mb-2">
+                                            {['FLAT', 'REDUCING'].map(t => (
+                                                <button key={t} type="button"
+                                                    onClick={() => setShopFinance(f => ({ ...f, interest_type: t }))}
+                                                    style={{
+                                                        flex: 1, fontSize: '.64rem', fontWeight: 800, padding: '4px 6px',
+                                                        borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer',
+                                                        background: shopFinance.interest_type === t ? '#1d4ed8' : '#f8fafc',
+                                                        color: shopFinance.interest_type === t ? '#fff' : '#64748b',
+                                                    }}>
+                                                    {t === 'FLAT' ? 'FLAT RATE' : 'REDUCING BALANCE'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{fontSize: '.6rem', color: '#94a3b8', marginBottom: 6}}>
+                                            {shopFinance.interest_type === 'FLAT'
+                                                ? 'Flat: interest charged once on the full amount for the whole tenure.'
+                                                : 'Reducing: interest recalculated each month on the outstanding balance.'}
+                                        </div>
+
+                                        <div className="row g-1 mb-2">
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>INTEREST % p.a.</label>
+                                                <input type="number" step="0.01" min="0" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor: emiInputMode === 'RATE' ? '#fcd34d' : '#e2e8f0', background: emiInputMode === 'RATE' ? '#fff' : '#f8fafc'}}
+                                                    value={emiInputMode === 'RATE' ? (shopFinance.interest_rate || '') : (shopFinanceCalc.impliedRate ? shopFinanceCalc.impliedRate.toFixed(2) : '')}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => {
+                                                        setEmiInputMode('RATE');
+                                                        setShopFinance(f => ({ ...f, interest_rate: parseFloat(e.target.value) || 0 }));
+                                                    }} />
+                                            </div>
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TOTAL PAYABLE (₹)</label>
+                                                <input type="number" step="1" min="0" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor: emiInputMode === 'TOTAL' ? '#fcd34d' : '#e2e8f0', background: emiInputMode === 'TOTAL' ? '#fff' : '#f8fafc'}}
+                                                    value={emiInputMode === 'TOTAL' ? (shopFinance.total_payable || '') : (shopFinanceCalc.totalPayable || '')}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => {
+                                                        setEmiInputMode('TOTAL');
+                                                        setShopFinance(f => ({ ...f, total_payable: parseFloat(e.target.value) || 0 }));
+                                                    }} />
+                                            </div>
+                                        </div>
+                                        <div style={{fontSize: '.58rem', color: '#94a3b8', marginBottom: 6}}>
+                                            Fill either field — the other one (and the interest rate this implies) fills in automatically.
+                                        </div>
+
+                                        <div className="row g-1 mb-2">
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TENURE (MONTHS)</label>
+                                                <input type="number" step="1" min="1" max="360" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor:'#fcd34d'}}
+                                                    value={shopFinance.tenure_months || ''}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => setShopFinance(f => ({ ...f, tenure_months: parseInt(e.target.value) || 0 }))} />
+                                            </div>
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>1st EMI DATE</label>
+                                                <input type="date" className="form-control form-control-sm"
+                                                    style={{fontSize:'.72rem'}}
+                                                    value={shopFinance.emi_start_date}
+                                                    onChange={e => setShopFinance(f => ({ ...f, emi_start_date: e.target.value }))} />
+                                            </div>
+                                        </div>
+
+                                        {/* EMI preview card */}
+                                        {shopFinanceCalc.monthlyEmi > 0 && (
+                                            <div style={{background:'#eff6ff', borderRadius:8, padding:'8px 12px', border:'1px solid #bfdbfe'}}>
+                                                <div className="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <div style={{fontSize:'.62rem', color:'#1d4ed8', fontWeight:700}}>MONTHLY EMI</div>
+                                                        <div style={{fontSize:'1.1rem', fontWeight:900, color:'#1d4ed8'}}>
+                                                            ₹{shopFinanceCalc.monthlyEmi.toLocaleString('en-IN')}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <div style={{fontSize:'.62rem', color:'#64748b', fontWeight:700}}>× {shopFinance.tenure_months} MONTHS</div>
+                                                        <div style={{fontSize:'.62rem', color:'#64748b', fontWeight:700}}>= TOTAL PAYABLE</div>
+                                                    </div>
+                                                    <div className="text-end">
+                                                        <div style={{fontSize:'.62rem', color:'#64748b', fontWeight:700}}>TOTAL PAYABLE</div>
+                                                        <div style={{fontSize:'1.1rem', fontWeight:900, color:'#0f172a'}}>
+                                                            ₹{shopFinanceCalc.totalPayable.toLocaleString('en-IN')}
+                                                        </div>
+                                                        {shopFinanceCalc.totalPayable > shopFinance.principal && (
+                                                            <div style={{fontSize:'.58rem', color:'#dc2626'}}>
+                                                                Interest: ₹{(shopFinanceCalc.totalPayable - shopFinance.principal).toLocaleString('en-IN')}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                {/* Favor info */}
+                                {shopFinanceType === 'FAVOR' && (
+                                    <div style={{background:'#ecfeff', borderRadius:8, padding:'8px 12px', border:'1px solid #a5f3fc', fontSize:'.68rem', color:'#0891b2', fontWeight:600}}>
+                                        🤝 Flexible repayment — customer can pay any time in any amount.<br/>
+                                        No interest. Balance = ₹{(parseFloat(shopFinance.principal) || 0).toLocaleString('en-IN')}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1543,6 +1890,10 @@ export default function SaleForm() {
                                     <option value="PHONEPE">PHONEPE</option>
                                     <option value="GPAY">GPAY</option>
                                     <option value="BANK / NEFT">BANK / NEFT</option>
+                                    {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                                    {bankEntities.map(b => (
+                                        <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                                    ))}
                                     {customerCredit > 0 && (
                                         <>
                                             <option value="EXCHANGE">EXCHANGE CREDIT</option>
@@ -1558,10 +1909,58 @@ export default function SaleForm() {
                                         value={form.other_mode}
                                         onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})} />
                                 )}
+
+                                {!splitSecondary ? (
+                                    <button type="button" className="btn btn-link btn-sm p-0 mt-2 text-decoration-none fw-bold"
+                                        onClick={() => setSplitSecondary({ mode: 'UPI', otherMode: '', amount: 0 })}
+                                        disabled={!(parseFloat(form.total_paid) > 0)}>
+                                        ➕ Split payment (e.g. half cash, half online)
+                                    </button>
+                                ) : (
+                                    <div className="mt-2 p-2 rounded-3" style={{background:'#fff', border:'1px dashed #cbd5e1'}}>
+                                        <div className="d-flex gap-2 align-items-start">
+                                            <div style={{flex:1}}>
+                                                <select className="form-select form-select-sm fw-bold text-uppercase" value={splitSecondary.mode}
+                                                    onChange={e => setSplitSecondary({...splitSecondary, mode: e.target.value, otherMode: ''})}>
+                                                    <option value="CASH">CASH</option>
+                                                    <option value="PHONEPE">PHONEPE</option>
+                                                    <option value="GPAY">GPAY</option>
+                                                    <option value="BANK / NEFT">BANK / NEFT</option>
+                                                    {bankEntities.length > 0 && <option disabled>── MY BANKS/CARDS ──</option>}
+                                                    {bankEntities.map(b => (
+                                                        <option key={b.id} value={b.name}>🏦 {b.name.toUpperCase()}</option>
+                                                    ))}
+                                                    <option value="OTHER">OTHER</option>
+                                                </select>
+                                                {splitSecondary.mode === 'OTHER' && (
+                                                    <input className="form-control form-control-sm mt-1 text-uppercase fw-bold" style={{fontSize:'.72rem'}}
+                                                        placeholder="SPECIFY MODE"
+                                                        value={splitSecondary.otherMode}
+                                                        onChange={e => setSplitSecondary({...splitSecondary, otherMode: e.target.value.toUpperCase()})} />
+                                                )}
+                                            </div>
+                                            <div style={{flex:'0 0 120px'}}>
+                                                <div className="input-group input-group-sm">
+                                                    <span className="input-group-text">₹</span>
+                                                    <input type="number" step="0.01" className="form-control fw-bold"
+                                                        value={splitSecondary.amount === 0 ? '' : splitSecondary.amount}
+                                                        onFocus={e => e.target.select()}
+                                                        onChange={e => setSplitSecondary({...splitSecondary, amount: parseFloat(e.target.value) || 0})} />
+                                                </div>
+                                            </div>
+                                            <button type="button" className="btn btn-outline-danger btn-sm" title="Remove split" onClick={() => setSplitSecondary(null)}>
+                                                <i className="bi bi-x-lg" />
+                                            </button>
+                                        </div>
+                                        <div style={{fontSize:'.65rem', color:'#64748b', marginTop:4}}>
+                                            First mode gets ₹{Math.max(0, (parseFloat(form.total_paid) || 0) - splitSecondary.amount).toLocaleString('en-IN')}, this gets ₹{Number(splitSecondary.amount || 0).toLocaleString('en-IN')}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        <label style={{fontSize:'.68rem', fontWeight:700, color:'#16a34a', display:'block', marginBottom:4}}>{useFinance ? 'DOWN PAYMENT (CASH COLLECTED)' : 'AMOUNT PAID (INITIAL)'}</label>
+                        <label style={{fontSize:'.68rem', fontWeight:700, color:'#16a34a', display:'block', marginBottom:4}}>{(useFinance || useShopFinance) ? 'DOWN PAYMENT (CASH COLLECTED)' : 'AMOUNT PAID (INITIAL)'}</label>
                         <input type="number" step="0.01"
                             className="form-control fw-bold border-success"
                             style={{fontSize:'1.6rem', fontWeight:900, color:'#16a34a', background:'#f0fdf4', borderRadius:10}}
@@ -1575,12 +1974,19 @@ export default function SaleForm() {
                                     total_paid: e.target.value,
                                     ...(useFinance ? { down_payment: val, finance_amount: Math.max(0, parseFloat((grandTotal - val).toFixed(2))) } : {})
                                 }));
+                                if (useShopFinance) {
+                                    const pr = Math.max(0, grandTotal - val);
+                                    setShopFinance(f => ({ ...f, down_payment: val, principal: parseFloat(pr.toFixed(2)) }));
+                                }
                             }} />
-                        
-                        {/* Pending balance — exclude finance_amount if RECEIVED */}
+
+                        {/* Pending balance — exclude finance_amount if RECEIVED, and exclude the
+                            Shop Finance principal entirely (it's tracked via the finance plan's
+                            own EMI schedule, not owed against this invoice directly). */}
                         {(() => {
                             const financePaid = useFinance && form.finance_payment_status === 'RECEIVED' ? parseFloat(form.finance_amount || 0) : 0;
-                            const pending = grandTotal - parseFloat(form.total_paid||0) - parseFloat(form.exchange_paid||0) - financePaid;
+                            const shopFinancePrincipal = useShopFinance ? parseFloat(shopFinance.principal || 0) : 0;
+                            const pending = grandTotal - parseFloat(form.total_paid||0) - parseFloat(form.exchange_paid||0) - financePaid - shopFinancePrincipal;
                             return pending > 0.01 ? (
                                 <div style={{fontSize:'.72rem', color:'#dc2626', fontWeight:700, marginTop:4}}>PENDING BALANCE: ₹{pending.toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
                             ) : null;
@@ -1620,7 +2026,7 @@ export default function SaleForm() {
                   onChange={e => setNewEntity({...newEntity, name: e.target.value.toUpperCase()})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Category *</label>
                 <select 
                   className="form-select fw-semibold text-uppercase"
@@ -1638,6 +2044,9 @@ export default function SaleForm() {
                   <option value="SHOP">SHOP</option>
                   <option value="SUPPLIER">SUPPLIER</option>
                   <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                  <option value="BANK">BANK</option>
+                  <option value="CARD">CARD</option>
+                  <option value="UPI">UPI</option>
                   {customTypes.map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
@@ -1658,26 +2067,36 @@ export default function SaleForm() {
                   />
                 </div>
               )}
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newEntity.phone}
                   onChange={e => setNewEntity({...newEntity, phone: e.target.value})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newEntity.address}
+                  onChange={e => setNewEntity({...newEntity, address: e.target.value})}
+                />
+              </div>
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control text-uppercase"
                   placeholder="Optional"
                   value={newEntity.gst_number}
                   onChange={e => setNewEntity({...newEntity, gst_number: e.target.value.toUpperCase()})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Opening Balance</label>
                 <input 
                   type="number" 
@@ -1686,7 +2105,7 @@ export default function SaleForm() {
                   onChange={e => setNewEntity({...newEntity, opening_balance: e.target.value})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
                 <select 
                   className="form-select text-uppercase"
@@ -1700,7 +2119,7 @@ export default function SaleForm() {
 
               {['CUSTOMER', 'SHOP_CUSTOMER'].includes(newEntity.type) && (
                 <>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <label className="form-label fw-bold small text-muted text-uppercase">Email</label>
                     <input 
                       type="email" 
@@ -1710,7 +2129,7 @@ export default function SaleForm() {
                       onChange={e => setNewEntity({...newEntity, email: e.target.value})}
                     />
                   </div>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <label className="form-label fw-bold small text-muted text-uppercase">Voucher Code</label>
                     <input 
                       type="text" 
@@ -1743,7 +2162,7 @@ export default function SaleForm() {
                         <div key={idx} className="col-12 p-3 bg-light rounded border mb-2">
                           <div className="row g-2 align-items-center">
                             
-                            <div className="col-md-4">
+                            <div className="col-12 col-md-4">
                               <select 
                                 className="form-select form-select-sm fw-semibold text-uppercase" 
                                 value={ev.type} 
@@ -1761,7 +2180,7 @@ export default function SaleForm() {
                             </div>
 
                             {ev.type === 'other' && (
-                              <div className="col-md-3">
+                              <div className="col-12 col-md-3">
                                 <input 
                                   className="form-control form-control-sm fw-semibold text-uppercase" 
                                   placeholder="Event Name" 
@@ -1788,7 +2207,7 @@ export default function SaleForm() {
                               />
                             </div>
 
-                            <div className="col-md-1 text-end">
+                            <div className="col-12 col-md-1 text-end">
                               <button 
                                 type="button" 
                                 className="btn btn-sm btn-link text-danger p-0 border-0 bg-transparent" 
@@ -1885,6 +2304,16 @@ export default function SaleForm() {
               </Modal.Footer>
           </form>
       </Modal>
+
+      <OldMobilePurchaseModal
+          show={showOldMobileModal}
+          onHide={() => setShowOldMobileModal(false)}
+          shopId={form.shop_id}
+          customerId={form.customer_id}
+          customerName={selectedCustomer?.name}
+          purchaseDate={form.sale_date}
+          onSaved={() => refreshCustomerCredit(form.customer_id)}
+      />
 
       <style>{`
           .x-small { font-size: 0.7rem; }

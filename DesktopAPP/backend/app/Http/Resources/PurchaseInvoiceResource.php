@@ -38,6 +38,8 @@ class PurchaseInvoiceResource extends JsonResource
             'grand_total' => $this->grand_total,
             'total_paid' => $this->total_paid,
             'payment_status' => $this->payment_status,
+            'payment_method' => $this->payment_method,
+            'gst_rounding_mode' => $this->gst_rounding_mode,
             'notes' => $this->notes,
             'items' => PurchaseItemResource::collection($this->whenLoaded('items')),
         ];

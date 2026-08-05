@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'react-toastify';
+import pinGate from '../../../utils/pinGate';
 import api from '../../../api/axios';
 import BarcodeScannerModal from '../../../components/BarcodeScannerModal';
 import BulkScanModal from '../../../components/BulkScanModal';
@@ -105,7 +106,7 @@ export default function OpeningStockForm({
     });
   };
 
-  const handleFindEraseDuplicates = () => {
+  const handleFindEraseDuplicates = async () => {
     const imeis = new Set();
     const uniqueItems = [];
     let duplicateCount = 0;
@@ -120,7 +121,7 @@ export default function OpeningStockForm({
     });
 
     if (duplicateCount > 0) {
-        if (window.confirm(`Found ${duplicateCount} duplicate IMEI entries. Erase them?`)) {
+        if (await pinGate.confirm()) {
             setOpeningStockItems(uniqueItems);
             toast.success(`Erased ${duplicateCount} duplicate entries.`);
         }
@@ -133,37 +134,22 @@ export default function OpeningStockForm({
     setOpeningStockItems(openingStockItems.filter((_, idx) => idx !== i));
   };
 
-  const handleBulkAddClick = () => {
-    const pin = window.prompt("Enter Admin PIN to Bulk Add Products:");
-    if (pin === "71727378") {
-      setShowBulkScan(true);
-    } else if (pin !== null) {
-      toast.error("Incorrect PIN");
-    }
+  const handleBulkAddClick = async () => {
+    if (!await pinGate.confirm()) return;
+    setShowBulkScan(true);
   };
 
-  const handleExcelImportClick = () => {
-    const pin = window.prompt("Enter Admin PIN to Import Excel:");
-    if (pin === "71727378") {
-      setShowExcelImport(true);
-    } else if (pin !== null) {
-      toast.error("Incorrect PIN");
-    }
+  const handleExcelImportClick = async () => {
+    if (!await pinGate.confirm()) return;
+    setShowExcelImport(true);
   };
 
-  const handleClearExcel = () => {
+  const handleClearExcel = async () => {
     const hasExcelItems = openingStockItems.some(i => i._from_excel);
-    if (!hasExcelItems) {
-      toast.info("No Excel items to clear.");
-      return;
-    }
-    const pin = window.prompt("Enter Admin PIN to Clear Excel Imports:");
-    if (pin === "71727378") {
-      setOpeningStockItems(prev => prev.filter(i => !i._from_excel));
-      toast.success("Cleared all items imported from Excel.");
-    } else if (pin !== null) {
-      toast.error("Incorrect PIN");
-    }
+    if (!hasExcelItems) { toast.info("No Excel items to clear."); return; }
+    if (!await pinGate.confirm()) return;
+    setOpeningStockItems(prev => prev.filter(i => !i._from_excel));
+    toast.success("Cleared all items imported from Excel.");
   };
 
   const handleBulkSubmit = async (e) => {

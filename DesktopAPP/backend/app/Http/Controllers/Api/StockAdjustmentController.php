@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\StockAdjustment;
@@ -81,6 +82,10 @@ class StockAdjustmentController extends Controller
                 Inventory::removeStock($shopId, $validated['product_id'], $validated['quantity']);
             }
 
+            $product = Product::find($validated['product_id']);
+            ActivityLog::log('STOCK_ADJUSTED', $adjustment,
+                "Stock {$validated['type']}: {$validated['quantity']} unit(s) of {$product?->name} — {$validated['reason']}"
+            );
             return response()->json($adjustment->load(['product', 'shop', 'user']), 201);
         });
     }
@@ -150,8 +155,8 @@ class StockAdjustmentController extends Controller
 
                 if (count($imeis) > 0) {
                     foreach ($imeis as $imei) {
-                        // Check if IMEI already exists in the system
-                        $exists = \App\Models\PurchaseItem::where('imei', $imei)->exists();
+                        // Check if IMEI already exists (handles comma-separated storage)
+                        $exists = \App\Models\PurchaseItem::whereRaw('FIND_IN_SET(?, imei)', [$imei])->exists();
                         if ($exists) {
                             $ignoredImeis[] = $imei;
                             continue; // Skip this IMEI and continue with others
@@ -463,6 +468,10 @@ class StockAdjustmentController extends Controller
      */
     public function clearDuplicates(Request $request)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         return DB::transaction(function () {
             $duplicates = DB::table('purchase_items')
                 ->select('imei', DB::raw('MIN(id) as keep_id'), DB::raw('COUNT(*) as count'))
@@ -514,13 +523,13 @@ class StockAdjustmentController extends Controller
      */
     public function clearAllStocks(Request $request)
     {
-        $request->validate([
-            'pin' => 'required|string'
-        ]);
-
-        if ($request->pin !== '71727378') {
-            return response()->json(['message' => 'Invalid PIN provided. Access denied.'], 403);
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        ActivityLog::log('CLEAR_ALL_STOCKS', null,
+            '⚠️ DANGER: All new mobile stocks, purchases, and sales permanently cleared by ' . ($request->user()?->name ?? 'Unknown')
+        );
 
         // NOTE: TRUNCATE in MySQL issues an implicit commit and cannot run inside a
         // transactional block. We disable FK checks, run all truncates, then re-enable.

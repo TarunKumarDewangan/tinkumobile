@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\RechargePurchase;
 use App\Models\RechargeSale;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RechargeController extends Controller
 {
@@ -33,10 +34,20 @@ class RechargeController extends Controller
         $data = $request->validate([
             'supplier_id'   => 'required|exists:suppliers,id',
             'operator'      => 'required|string|max:50',
-            'amount'        => 'required|numeric|min:0',
-            'cost_price'    => 'required|numeric|min:0',
+            'amount'        => 'nullable|numeric|min:0',
+            'cost_price'    => 'nullable|numeric|min:0',
             'purchase_date' => 'required|date',
+            'payment_mode'  => 'nullable|string',
+            'payment_lines' => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
         ]);
+        $data['amount'] = $data['amount'] ?? 0;
+        $data['cost_price'] = $data['cost_price'] ?? 0;
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['cost_price'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the cost price'], 422);
+        }
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         if (in_array($shopId, [null, '', 0, 'null', 'undefined'], true)) {
             $shopId = null;
@@ -46,17 +57,24 @@ class RechargeController extends Controller
         }
         $data['shop_id'] = $shopId;
         $data['user_id'] = $user->id;
-        $purchase = RechargePurchase::create($data);
 
-        // Record Transaction
-        $this->transactionService->recordForModel($purchase, [
-            'type'             => 'OUT',
-            'category'         => 'RECHARGE_PURCHASE',
-            'amount'           => $purchase->cost_price,
-            'description'      => "Recharge stock purchased: {$purchase->operator} (Amount: {$purchase->amount})",
-            'transaction_date' => $purchase->purchase_date,
-            'shop_id'          => $purchase->shop_id,
-        ]);
+        $purchase = DB::transaction(function () use ($data) {
+            $purchase = RechargePurchase::create($data);
+
+            // Record Transaction
+            $this->transactionService->recordForModel($purchase, [
+                'type'             => 'OUT',
+                'category'         => 'RECHARGE_PURCHASE',
+                'amount'           => $purchase->cost_price,
+                'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                'payment_lines'    => $data['payment_lines'] ?? null,
+                'description'      => "Recharge stock purchased: {$purchase->operator} (Amount: {$purchase->amount})",
+                'transaction_date' => $purchase->purchase_date,
+                'shop_id'          => $purchase->shop_id,
+            ]);
+
+            return $purchase;
+        });
 
         return response()->json($purchase, 201);
     }
@@ -82,6 +100,10 @@ class RechargeController extends Controller
             'amount'         => 'required|numeric|min:0',
             'selling_price'  => 'required|numeric|min:0',
             'sale_date'      => 'required|date',
+            'payment_mode'   => 'nullable|string',
+            'payment_lines'  => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
         ]);
 
         $customerId = $data['customer_id'] ?? null;
@@ -89,6 +111,10 @@ class RechargeController extends Controller
 
         if (!$customerId && !$customerPhone) {
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
+        }
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['selling_price'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the selling price'], 422);
         }
 
         $data['customer_id'] = $customerId ?? $this->syncCustomer($data, 'RECHARGE');
@@ -101,19 +127,26 @@ class RechargeController extends Controller
         }
         $data['shop_id'] = $shopId;
         $data['user_id'] = $user->id;
-        $recharge = RechargeSale::create($data);
 
-        // Record Income Transaction
-        if ($recharge->selling_price > 0) {
-            $this->transactionService->recordForModel($recharge, [
-                'type'             => 'IN',
-                'category'         => 'RECHARGE_SALE',
-                'amount'           => $recharge->selling_price,
-                'description'      => "Recharge sale: {$recharge->operator} for {$recharge->mobile_number}",
-                'transaction_date' => $recharge->sale_date,
-                'shop_id'          => $recharge->shop_id,
-            ]);
-        }
+        $recharge = DB::transaction(function () use ($data) {
+            $recharge = RechargeSale::create($data);
+
+            // Record Income Transaction
+            if ($recharge->selling_price > 0) {
+                $this->transactionService->recordForModel($recharge, [
+                    'type'             => 'IN',
+                    'category'         => 'RECHARGE_SALE',
+                    'amount'           => $recharge->selling_price,
+                    'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                    'payment_lines'    => $data['payment_lines'] ?? null,
+                    'description'      => "Recharge sale: {$recharge->operator} for {$recharge->mobile_number}",
+                    'transaction_date' => $recharge->sale_date,
+                    'shop_id'          => $recharge->shop_id,
+                ]);
+            }
+
+            return $recharge;
+        });
 
         return response()->json($recharge, 201);
     }

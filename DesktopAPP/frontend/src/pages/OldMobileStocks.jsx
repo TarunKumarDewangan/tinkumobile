@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -64,7 +65,7 @@ export default function OldMobileStocks() {
   }, [selectedShop]);
 
   const handleDelete = async (id) => {
-    if(!window.confirm('Are you sure you want to delete this device?')) return;
+    if (!await pinGate.confirm()) return;
     try {
         await api.delete(`/products/${id}`);
         toast.success('Device deleted successfully');
@@ -112,7 +113,7 @@ export default function OldMobileStocks() {
       {/* Filter Bar */}
       <div className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-3 mb-4">
         <div className="row g-2">
-          <div className="col-md-4">
+          <div className="col-12 col-md-4">
             <div className="input-group">
               <span className="input-group-text bg-light border-secondary-subtle text-muted">🔍</span>
               <input 

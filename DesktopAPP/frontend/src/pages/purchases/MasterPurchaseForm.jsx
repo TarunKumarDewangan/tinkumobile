@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api/axios';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import BulkScanModal from '../../components/BulkScanModal';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
 
 const MOBILE_CATEGORIES = ['mobile-new', 'mobile-old', 'laptop', 'tablet'];
 
@@ -16,6 +19,8 @@ export default function MasterPurchaseForm() {
   const defaultCategoryId = 1; // Default to MOBILE-NEW
   const [suppliers, setSuppliers] = useState([]);
   const [entitySuppliers, setEntitySuppliers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
@@ -56,6 +61,11 @@ export default function MasterPurchaseForm() {
   const [submitting, setSubmitting] = useState(false);
   const enableBulkAdd = true; 
 
+  const purchaseModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
+
   const supplierOptions = useMemo(() => {
     const opts = [];
     if (suppliers.length > 0) {
@@ -88,6 +98,7 @@ export default function MasterPurchaseForm() {
     name: '',
     type: '',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -140,9 +151,12 @@ export default function MasterPurchaseForm() {
           payment_method: p.payment_method || 'CASH',
           other_payment_mode: p.other_payment_mode || ''
         });
+        setPaymentLines(newSingleLine(p.payment_method && p.payment_method !== 'SPLIT' ? p.payment_method : 'CASH'));
         if (p.rounding_mode === 'manual') setIsManualRound(true);
         if (p.is_gst_manual) setIsManualGst(true);
-        setItems(p.items.map(i => {
+
+        // Map each saved purchase_item to a row object
+        const rawRows = p.items.map(i => {
           const unit_price = parseFloat(i.unit_price) || 0;
           const gst = parseFloat(i.calc_gst_rate ?? 18) || 0;
 
@@ -163,7 +177,13 @@ export default function MasterPurchaseForm() {
           const tDisc = parseFloat(i.trade_disc_pct ?? defaultTradeDisc) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? defaultCashDisc) || 0;
           const pAttrs = i.product?.attributes || {};
-          const applyGst = !!pAttrs.gst_rate;
+          // Use stored apply_gst if available (new records); fall back to the invoice's own GST
+          // setting for old records — gating on whether the product has a gst_rate attribute
+          // was wrong and silently zeroed out GST on any GST-applicable item whose product was
+          // never given that attribute.
+          const applyGst = i.apply_gst !== null
+            ? !!i.apply_gst
+            : (p.calculate_gst ?? true);
 
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
@@ -196,12 +216,29 @@ export default function MasterPurchaseForm() {
             location: i.product?.location || '',
             brand_name: pAttrs.brand || '',
             has_brand: !!pAttrs.brand,
-            apply_gst: !!pAttrs.gst_rate,
+            apply_gst: applyGst,
             gst_rate: pAttrs.gst_rate || '',
             warranty: pAttrs.warranty || 'No Warranty',
             description: pAttrs.description || ''
           };
-        }));
+        });
+
+        // Merge rows with same product+specs+price into one row with combined IMEIs.
+        // Handles old purchases that were saved one-row-per-IMEI.
+        const grouped = [];
+        const seenKeys = {};
+        rawRows.forEach(row => {
+          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${String(row.unit_price)}`;
+          const idx = seenKeys[key];
+          if (idx !== undefined) {
+            grouped[idx].imei_list.push(...row.imei_list);
+            grouped[idx].quantity = grouped[idx].imei_list.filter(Boolean).length || grouped[idx].quantity + row.quantity;
+          } else {
+            seenKeys[key] = grouped.length;
+            grouped.push({ ...row, imei_list: [...row.imei_list] });
+          }
+        });
+        setItems(grouped);
       }).finally(() => setLoading(false));
     }
   }, [isOwner, id]);
@@ -216,10 +253,11 @@ export default function MasterPurchaseForm() {
       ['SUPPLIER', 'DISTRIBUTOR', 'SHOP_CUSTOMER'].includes((e.type || '').toUpperCase())
     );
     setEntitySuppliers(entityList);
+    setBankEntities((entRes.data || []).filter(e => isAssetEntityType(e.type)));
 
     const types = (entRes.data || []).map(e => e.type).filter(Boolean);
     const uniqueCustomTypes = Array.from(new Set(types)).filter(
-      t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+      t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
     );
     setCustomTypes(uniqueCustomTypes);
   };
@@ -238,6 +276,7 @@ export default function MasterPurchaseForm() {
         name: '',
         type: '',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -364,7 +403,7 @@ export default function MasterPurchaseForm() {
       } else if (field === 'dp_inc_gst') {
         const dp = parseFloat(val) || 0;
         if (dp > 0) {
-          const baseExGst = dp / (1 + (gst / 100));
+          const baseExGst = a[i].apply_gst ? dp / (1 + (gst / 100)) : dp;
           a[i].rate_ex_gst = parseFloat(baseExGst.toFixed(2));
           const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
           const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
@@ -378,7 +417,7 @@ export default function MasterPurchaseForm() {
       } else if (field === 'rate_ex_gst') {
         const baseExGst = parseFloat(val) || 0;
         if (baseExGst > 0) {
-          a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+          a[i].dp_inc_gst = a[i].apply_gst ? parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2)) : baseExGst;
           a[i].selling_price = a[i].dp_inc_gst;
           const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
           const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
@@ -394,20 +433,20 @@ export default function MasterPurchaseForm() {
         const factor = (1 - tDisc/100) * (1 - cDisc/100);
         const baseExGst = factor > 0 ? unit_price / factor : unit_price;
         a[i].rate_ex_gst = parseFloat(baseExGst.toFixed(2));
-        a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+        a[i].dp_inc_gst = a[i].apply_gst ? parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2)) : baseExGst;
         a[i].selling_price = a[i].dp_inc_gst;
       } else {
         const baseExGst = parseFloat(a[i].rate_ex_gst) || 0;
         const dp = parseFloat(a[i].dp_inc_gst) || 0;
 
         if (baseExGst > 0) {
-          a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
+          a[i].dp_inc_gst = a[i].apply_gst ? parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2)) : baseExGst;
           a[i].selling_price = a[i].dp_inc_gst;
           const afterTDisc = baseExGst - (baseExGst * tDisc / 100);
           const afterCDisc = afterTDisc - (afterTDisc * cDisc / 100);
           a[i].unit_price = parseFloat(afterCDisc.toFixed(2));
         } else if (dp > 0) {
-          const calcBase = dp / (1 + (gst / 100));
+          const calcBase = a[i].apply_gst ? dp / (1 + (gst / 100)) : dp;
           a[i].rate_ex_gst = parseFloat(calcBase.toFixed(2));
           a[i].selling_price = dp;
           const afterTDisc = calcBase - (calcBase * tDisc / 100);
@@ -577,6 +616,19 @@ export default function MasterPurchaseForm() {
     setShowBulkScan(true);
   };
 
+  const handleGstToggle = (checked) => {
+    setForm(prev => ({ ...prev, calculate_gst: checked }));
+    setItems(prev => prev.map(item => {
+      const gst = parseFloat(item.calc_gst_rate ?? 18) || 0;
+      const baseExGst = parseFloat(item.rate_ex_gst) || 0;
+      const newApplyGst = checked && !!item.gst_rate;
+      const newDpIncGst = baseExGst > 0
+        ? (newApplyGst ? parseFloat((baseExGst * (1 + gst / 100)).toFixed(2)) : baseExGst)
+        : item.dp_inc_gst;
+      return { ...item, apply_gst: newApplyGst, dp_inc_gst: newDpIncGst };
+    }));
+  };
+
   const total      = items.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)), 0);
   const gstTaxableTotal = items.reduce((s, i) => s + (i.apply_gst !== false ? (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)) : 0), 0);
   
@@ -679,16 +731,28 @@ export default function MasterPurchaseForm() {
       return;
     }
 
+    if (parseFloat(form.total_paid) > 0 && !paymentLinesSumMatches(paymentLines, form.total_paid)) {
+      toast.error("Split doesn't add up to the amount paid");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       setLoading(true);
+      // PurchaseInvoiceController's field is historically named
+      // payment_method (not payment_mode like most other flows) — map it
+      // explicitly rather than spreading buildPaymentPayload's payment_mode
+      // key, which the backend would silently ignore.
+      const paymentPayload = parseFloat(form.total_paid) > 0 ? buildPaymentPayload(paymentLines) : null;
       let finalForm = {
         ...form,
+        ...(paymentPayload ? { payment_method: paymentPayload.payment_mode, payment_lines: paymentPayload.payment_lines } : {}),
         cgst_amount: cgstAmount,
         sgst_amount: sgstAmount,
         round_off: parseFloat(roundOff),
         is_gst_manual: isManualGst
       };
-      
+
       let flatItems = [];
       items.forEach(it => {
         const { imei_list, ...rest } = it;
@@ -698,22 +762,13 @@ export default function MasterPurchaseForm() {
         if (!isImeiCategory(it.category_id)) {
           flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
         } else {
+          // Store all IMEIs as a single comma-separated row so edit loads as one row, not N rows
           const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
-          if (imeiArr.length > 0) {
-            imeiArr.forEach(imei => {
-              flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: imei, quantity: 1 });
-            });
-          } else {
-            flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: '', quantity: rest.quantity || 1 });
-          }
+          flatItems.push({ ...rest, category_id: categoryId, category_name: categoryName, subcategory: sub, imei: imeiArr.join(','), quantity: imeiArr.length || rest.quantity || 1 });
         }
       });
       
       finalForm.items = flatItems;
-
-      if (form.payment_method === 'OTHER' && form.other_payment_mode) {
-        finalForm.payment_method = form.other_payment_mode;
-      }
 
       if (id) {
         await api.put(`/purchase-invoices/${id}`, finalForm);
@@ -1093,7 +1148,7 @@ export default function MasterPurchaseForm() {
     .pf-field-group:focus-within{border-color:#c7d2fe;background:#fff}
   `;
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(newSupplier.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(newSupplier.type);
   const isCustomType = customTypes.includes(newSupplier.type);
   const showCustomInput = newSupplier.type === 'OTHER' || (!isDefaultType && !isCustomType && newSupplier.type !== '');
 
@@ -1476,7 +1531,7 @@ export default function MasterPurchaseForm() {
                           <tr>
                             <td className="lbl" style={{border: '1.5px solid #0f172a', padding: '8px 10px', textAlign: 'left', fontWeight: 800}} colSpan={2}>
                               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                                <input type="checkbox" id="calcGst" checked={form.calculate_gst} onChange={e=>setForm({...form,calculate_gst:e.target.checked})} style={{accentColor:'#0f172a'}}/>
+                                <input type="checkbox" id="calcGst" checked={form.calculate_gst} onChange={e=>handleGstToggle(e.target.checked)} style={{accentColor:'#0f172a'}}/>
                                 <label htmlFor="calcGst" style={{cursor:'pointer',margin:0,fontWeight:700}}>GST Options</label>
                               </div>
                             </td>
@@ -1633,24 +1688,24 @@ export default function MasterPurchaseForm() {
                 <div className="pf-sec">💳 Payments & Notes</div>
                 <div className="row g-2">
                   <div className="col-6">
-                    <span className="pf-lbl">Payment Mode</span>
-                    <select className="pf-inp" value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
-                      <option value="CASH">💵 CASH</option>
-                      <option value="BANK">🏛️ BANK TRANSFER / IMPS / NEFT</option>
-                      <option value="UPI">📱 UPI / GPAY / PHONEPE</option>
-                      <option value="CREDIT">🤝 CREDIT (PARTIAL / OUTSTANDING)</option>
-                      <option value="OTHER">⚙️ OTHER PAYMENT MODE</option>
-                    </select>
-                  </div>
-                  {form.payment_method === 'OTHER' && (
-                    <div className="col-6">
-                      <span className="pf-lbl">Specify Payment Mode *</span>
-                      <input type="text" required className="pf-inp" style={{borderColor:'#818cf8'}} placeholder="e.g. CHEQUE, DEBIT CARD" value={form.other_payment_mode} onChange={e=>setForm({...form,other_payment_mode:e.target.value})}/>
-                    </div>
-                  )}
-                  <div className="col-6">
                     <span className="pf-lbl">Amount Paid (₹)</span>
                     <input type="number" min="0" max={grandTotal} className="pf-inp" value={form.total_paid===0?'':form.total_paid} onChange={e=>setForm({...form,total_paid:parseFloat(e.target.value)||0})} style={{fontWeight:700,color:'#16a34a'}}/>
+                  </div>
+                  <div className="col-6">
+                    <span className="pf-lbl">Payment Mode</span>
+                    {parseFloat(form.total_paid) > 0 ? (
+                      <PaymentSplitInput
+                        totalAmount={form.total_paid}
+                        lines={paymentLines}
+                        onChange={setPaymentLines}
+                        modeOptions={purchaseModeOptions}
+                        size="pf-inp"
+                      />
+                    ) : (
+                      <select className="pf-inp" value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
+                        <option value="CREDIT">🤝 CREDIT (PARTIAL / OUTSTANDING)</option>
+                      </select>
+                    )}
                   </div>
                   <div className="col-12">
                     <span className="pf-lbl">Internal Notes / Reminders</span>
@@ -1743,6 +1798,9 @@ export default function MasterPurchaseForm() {
                   <option value="SUPPLIER">DISTRIBUTOR / SUPPLIER</option>
                   <option value="DISTRIBUTOR">MARKETING DISTRIBUTOR</option>
                   <option value="SHOP_CUSTOMER">SHOP CUSTOMER / SUNDRY CREDITOR</option>
+                  <option value="BANK">BANK</option>
+                  <option value="CARD">CARD</option>
+                  <option value="UPI">UPI</option>
                   {customTypes.map(t => <option key={t} value={t}>{t}</option>)}
                   <option value="OTHER">+ ADD OTHER / CUSTOM TYPE...</option>
                 </select>
@@ -1762,8 +1820,8 @@ export default function MasterPurchaseForm() {
                 <input type="text" className="pf-inp" placeholder="15-digit GSTIN" value={newSupplier.gst_number} onChange={e=>setNewSupplier({...newSupplier,gst_number:e.target.value.toUpperCase()})}/>
               </div>
               <div className="col-12">
-                <span className="pf-lbl">Distributor Address / Description</span>
-                <textarea className="pf-inp" rows="2" style={{resize:'none'}} placeholder="Physical address, terms, email..." value={newSupplier.description} onChange={e=>setNewSupplier({...newSupplier,description:e.target.value.toUpperCase()})}/>
+                <span className="pf-lbl">Distributor Address</span>
+                <textarea className="pf-inp" rows="2" style={{resize:'none'}} placeholder="Physical address, terms, email..." value={newSupplier.address} onChange={e=>setNewSupplier({...newSupplier,address:e.target.value.toUpperCase()})}/>
               </div>
               <div className="col-6">
                 <span className="pf-lbl">Opening Balance (₹)</span>

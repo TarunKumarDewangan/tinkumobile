@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 
 export default function SalesReport() {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [filter, setFilter] = useState({ from: '', to: '', bill_type: '' });
   const [loading, setLoading] = useState(false);
@@ -18,7 +20,10 @@ export default function SalesReport() {
 
   return (
     <div>
-      <div className="page-header"><h2>📊 Sales Report</h2></div>
+      <div className="page-header d-flex align-items-center gap-2">
+        <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate('/reports')}>← Back</button>
+        <h2 className="mb-0">📊 Sales Report</h2>
+      </div>
       <div className="table-card mb-3 p-3 d-flex gap-2 flex-wrap">
         <input type="date" className="form-control form-control-sm" style={{ maxWidth:150 }} value={filter.from} onChange={e => setFilter({...filter, from:e.target.value})} />
         <input type="date" className="form-control form-control-sm" style={{ maxWidth:150 }} value={filter.to} onChange={e => setFilter({...filter, to:e.target.value})} />

@@ -34,6 +34,33 @@ class LedgerController extends Controller
             'credit' => $ledgers->sum('credit'),
         ];
 
+        // Attach each row's own voucher payment status (how much has actually
+        // been paid on that specific invoice as of now, and what's still
+        // outstanding) — only meaningful for SALE/PURCHASE voucher rows,
+        // which are the only ones with a "grand total" to measure against.
+        $saleIds = $ledgers->where('voucher_type', 'SALE')->pluck('voucher_id')->unique()->filter();
+        $purchaseIds = $ledgers->where('voucher_type', 'PURCHASE')->pluck('voucher_id')->unique()->filter();
+
+        $sales = \App\Models\SaleInvoice::whereIn('id', $saleIds)->get()->keyBy('id');
+        $purchases = \App\Models\PurchaseInvoice::whereIn('id', $purchaseIds)->get()->keyBy('id');
+
+        foreach ($ledgers as $ledger) {
+            $paymentReceived = null;
+            $balance = null;
+
+            if ($ledger->voucher_type === 'SALE' && ($sale = $sales[$ledger->voucher_id] ?? null)) {
+                $financeReceived = $sale->finance_payment_status === 'RECEIVED' ? (float) $sale->finance_amount : 0;
+                $paymentReceived = (float) $sale->total_paid + (float) $sale->exchange_paid + $financeReceived;
+                $balance = max(0, (float) $sale->grand_total - $paymentReceived);
+            } elseif ($ledger->voucher_type === 'PURCHASE' && ($purchase = $purchases[$ledger->voucher_id] ?? null)) {
+                $paymentReceived = (float) $purchase->total_paid;
+                $balance = max(0, (float) $purchase->grand_total - $paymentReceived);
+            }
+
+            $ledger->payment_received = $paymentReceived;
+            $ledger->voucher_balance = $balance;
+        }
+
         return response()->json([
             'entries' => $ledgers,
             'totals' => $totals
@@ -46,15 +73,32 @@ class LedgerController extends Controller
     public function statement(Request $request, $entityId)
     {
         $entity = Entity::findOrFail($entityId);
-        
+
+        // Bank/Card/UPI/Cash-Counter entities are asset (cash-holding) accounts,
+        // not parties — money IN increases the balance instead of reducing
+        // "what they owe us", so both the opening balance and the running
+        // total below need the opposite sign convention from a normal party.
+        $isAssetAccount = Entity::isAssetType($entity->type);
+
         $startDate = $request->query('start_date'); // null = all time
         $endDate = $request->query('end_date');
 
         // Calculate opening balance up to start_date
         $accounting = app(AccountingService::class);
-        $openingBalance = $startDate
-            ? $accounting->getClosingBalance($entity, date('Y-m-d', strtotime($startDate . ' - 1 day')))
-            : (($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance);
+        if ($isAssetAccount) {
+            $openingBalance = (float) $entity->opening_balance;
+            if ($startDate) {
+                $priorMovements = Ledger::where('entity_id', $entityId)
+                    ->where('date', '<', $startDate)
+                    ->selectRaw('SUM(debit) as dr, SUM(credit) as cr')
+                    ->first();
+                $openingBalance += (float) ($priorMovements->cr ?? 0) - (float) ($priorMovements->dr ?? 0);
+            }
+        } else {
+            $openingBalance = $startDate
+                ? $accounting->getClosingBalance($entity, date('Y-m-d', strtotime($startDate . ' - 1 day')))
+                : (($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float)$entity->opening_balance);
+        }
 
         $query = Ledger::where('entity_id', $entityId);
         if ($startDate) $query->where('date', '>=', $startDate);
@@ -105,7 +149,9 @@ class LedgerController extends Controller
                 continue;
             }
 
-            $runningBalance += ($ledger->debit - $ledger->credit);
+            $runningBalance += $isAssetAccount
+                ? ($ledger->credit - $ledger->debit)
+                : ($ledger->debit - $ledger->credit);
             $ledger->running_balance = $runningBalance;
 
             $isNonMobile = false;
@@ -189,6 +235,8 @@ class LedgerController extends Controller
             $statement[] = $ledger;
         }
 
+        $entity->setAttribute('is_asset_account', $isAssetAccount);
+
         return response()->json([
             'entity' => $entity,
             'opening_balance' => $openingBalance,
@@ -271,7 +319,46 @@ class LedgerController extends Controller
             
             // Filter ledgers in memory for this entity
             $entityLedgers = $ledgers->where('entity_id', $entity->id);
-            
+
+            // Bank/Card/UPI entities are asset (cash-holding) accounts, not
+            // parties — money IN increases the balance instead of reducing
+            // "what they owe us", and none of the sales/purchase/repair
+            // category splitting below applies to them.
+            if (\App\Models\Entity::isAssetType($entity->type)) {
+                $totalIn = 0.0;
+                $totalOut = 0.0;
+                foreach ($entityLedgers as $ledger) {
+                    // RECEIPT/PAYMENT rows: credit = money IN, debit = money OUT (see Transaction::getLedgerData()).
+                    $totalIn += (float)$ledger->credit;
+                    $totalOut += (float)$ledger->debit;
+                }
+                $assetNet = (float)$entity->opening_balance + $totalIn - $totalOut;
+
+                return [
+                    'id' => $entity->id,
+                    'name' => $entity->name,
+                    'phone' => $entity->phone,
+                    'type' => $entity->type,
+                    'opening_balance' => $entity->opening_balance,
+                    'balance_type' => $entity->balance_type,
+                    'net_balance' => $assetNet,
+                    'sales_balance' => 0.0,
+                    'purchase_balance' => 0.0,
+                    'repairs_balance' => 0.0,
+                    'works_balance' => $assetNet,
+                    'sub_balances' => [
+                        'NEW_MOBILE_SALE' => 0.0, 'NEW_MOBILE_PURCHASE' => 0.0,
+                        'OLD_MOBILE_SALE' => 0.0, 'OLD_MOBILE_PURCHASE' => 0.0,
+                        'RECHARGE_SALE' => 0.0, 'RECHARGE_PURCHASE' => 0.0,
+                        'ACCESSORY_SALE' => 0.0, 'ACCESSORY_PURCHASE' => 0.0,
+                        'SIM_SALE' => 0.0, 'SIM_PURCHASE' => 0.0,
+                        'REPAIR' => 0.0, 'OTHER' => 0.0,
+                    ],
+                    'has_mobile' => false,
+                    'is_asset_account' => true,
+                ];
+            }
+
             $salesBalance = 0.0;
             $repairsBalance = 0.0;
             $purchaseBalance = 0.0;
@@ -509,6 +596,7 @@ class LedgerController extends Controller
                 'works_balance' => $worksBalance,
                 'sub_balances' => $subBalances,
                 'has_mobile' => $hasMobile,
+                'is_asset_account' => false,
             ];
         })->filter(function($e) use ($query) {
             // Show all entities including zero balance entities

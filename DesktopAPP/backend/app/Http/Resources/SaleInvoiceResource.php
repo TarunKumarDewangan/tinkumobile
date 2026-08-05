@@ -47,9 +47,11 @@ class SaleInvoiceResource extends JsonResource
             'sold_by_id'             => $this->sold_by_id,
             // Finance / EMI fields — required for correct balance display on frontend
             'financer_id'            => $this->financer_id,
+            'financer'               => $this->whenLoaded('financer'),
             'down_payment'           => $this->down_payment,
             'finance_amount'         => $this->finance_amount,
             'finance_payment_status' => $this->finance_payment_status,
+            'finance_plan'           => $this->whenLoaded('financePlan'),
             'items'                  => SaleItemResource::collection($this->whenLoaded('items'))->resolve(),
             'gift_items'             => $this->whenLoaded('giftItems'),
         ];

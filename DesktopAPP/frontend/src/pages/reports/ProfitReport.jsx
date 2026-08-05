@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 
 export default function ProfitReport() {
+  const navigate = useNavigate();
   const [data, setData]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ from: '', to: '' });
@@ -27,9 +29,12 @@ export default function ProfitReport() {
   return (
     <div className="container-fluid py-3">
       <div className="page-header mb-3 d-flex justify-content-between align-items-center">
-        <div>
-          <h2 className="mb-0 fw-bold">💹 Profit Analysis</h2>
-          <p className="text-muted small mb-0 text-uppercase">Invoice-level profit after all discounts</p>
+        <div className="d-flex align-items-center gap-2">
+          <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate('/reports')}>← Back</button>
+          <div>
+            <h2 className="mb-0 fw-bold">💹 Profit Analysis</h2>
+            <p className="text-muted small mb-0 text-uppercase">Invoice-level profit after all discounts</p>
+          </div>
         </div>
       </div>
 

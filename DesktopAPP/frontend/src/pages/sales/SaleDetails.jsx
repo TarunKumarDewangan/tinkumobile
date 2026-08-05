@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
@@ -69,7 +70,7 @@ export default function SaleDetails() {
   };
 
   const handleMarkFinanceReceived = async () => {
-      if (!window.confirm('Mark this finance payment as RECEIVED?')) return;
+      if (!await pinGate.confirm()) return;
       try {
           await api.post(`/sale-invoices/${id}/receive-finance`);
           toast.success('✅ Finance payment marked as received');
@@ -80,10 +81,21 @@ export default function SaleDetails() {
   };
 
   const handleConvertToNewSale = async () => {
-      if (!window.confirm("Are you sure you want to switch this sale to New Mobile Sales? This will update the categories of the sold devices to New Mobiles and calculate employee incentives.")) return;
+      if (!await pinGate.confirm()) return;
       try {
           const res = await api.post(`/sale-invoices/${id}/convert-to-new-sale`);
           toast.success(res.data.message || 'Converted to new sale successfully!');
+          loadInvoice();
+      } catch (e) {
+          toast.error(e.response?.data?.message || 'Failed to convert sale');
+      }
+  };
+
+  const handleConvertToOldSale = async () => {
+      if (!await pinGate.confirm()) return;
+      try {
+          const res = await api.post(`/sale-invoices/${id}/convert-to-old-sale`);
+          toast.success(res.data.message || 'Converted back to 2nd hand sale successfully!');
           loadInvoice();
       } catch (e) {
           toast.error(e.response?.data?.message || 'Failed to convert sale');
@@ -95,9 +107,29 @@ export default function SaleDetails() {
   if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
   if (!invoice) return <div className="alert alert-danger">Invoice not found</div>;
 
-  const balance = parseFloat(invoice.grand_total) - parseFloat(invoice.total_paid);
+  const fp = invoice.finance_plan; // Personal EMI / Favor plan if exists
+  const fpDownPayment = fp ? parseFloat(fp.down_payment || 0) : 0;
+  const fpInstallmentsPaid = fp ? parseFloat(fp.total_paid || 0) : 0;
+  const financerPaid = invoice.finance_payment_status === 'RECEIVED' ? parseFloat(invoice.finance_amount || 0) : 0;
+  // For personal/favor finance: balance = remaining principal not yet paid via installments
+  // For others: balance = grand_total minus all collected payments
+  const balance = fp
+    ? Math.max(0, parseFloat(fp.principal || 0) - fpInstallmentsPaid)
+    : Math.max(0, parseFloat(invoice.grand_total) - parseFloat(invoice.total_paid) - financerPaid);
+  const effectivePaid = fp
+    ? fpDownPayment + fpInstallmentsPaid
+    : parseFloat(invoice.total_paid || 0) + financerPaid;
+  // grand_total is already POST-discount — the raw pre-discount price is
+  // grand_total + discount, which is what "Total Bill" should show (the
+  // sticker/quoted price), not the same figure as the discounted amount.
+  const totalDiscount = parseFloat(invoice.discount || 0) +
+    (invoice.is_cash_discount_on_bill ? parseFloat(invoice.cash_discount || 0) : 0);
+  const totalBillBeforeDiscount = parseFloat(invoice.grand_total) + totalDiscount;
   const isOldMobileSale = invoice?.items?.some(
       item => item.product?.category?.slug === 'mobile-old' || item.product?.category?.slug === 'MOBILE-OLD'
+  );
+  const isNewMobileSale = invoice?.items?.some(
+      item => item.product?.category?.slug === 'mobile-new' || item.product?.category?.slug === 'MOBILE-NEW'
   );
 
   return (
@@ -111,6 +143,11 @@ export default function SaleDetails() {
             {isOldMobileSale && !invoice.is_cancelled && (
                 <button onClick={handleConvertToNewSale} className="btn btn-warning btn-sm fw-bold shadow-sm text-uppercase text-dark border-2">
                     🔄 Convert to New Sale
+                </button>
+            )}
+            {isNewMobileSale && !invoice.is_cancelled && (
+                <button onClick={handleConvertToOldSale} className="btn btn-outline-secondary btn-sm fw-bold shadow-sm text-uppercase border-2">
+                    🔄 Convert to 2nd Hand Sale
                 </button>
             )}
             <button onClick={() => setViewMode(viewMode === 'v1' ? 'v2' : 'v1')} className={`btn btn-sm fw-bold border-2 text-uppercase ${viewMode === 'v1' ? 'btn-outline-primary' : 'btn-primary'}`}>
@@ -243,25 +280,46 @@ export default function SaleDetails() {
                                   </div>
                                   
                                   {/* Payment Breakdown */}
-                                  {parseFloat(invoice.exchange_paid || 0) > 0 && (
-                                      <div className="d-flex justify-content-between mb-1 opacity-75 text-info">
-                                          <span className="x-small fw-black">EXCHANGE CREDIT:</span>
-                                          <span className="x-small fw-black">₹{parseFloat(invoice.exchange_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                      </div>
-                                  )}
-                                  <div className="d-flex justify-content-between mb-1 opacity-75">
-                                      <span className="x-small fw-black text-success">
-                                          {parseFloat(invoice.exchange_paid || 0) > 0 ? 'NET PAID (CASH/UPI):' : 'TOTAL PAID:'}
-                                      </span>
-                                      <span className="x-small fw-black text-success">
-                                          ₹{(parseFloat(invoice.total_paid) - parseFloat(invoice.exchange_paid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                      </span>
-                                  </div>
-                                  {parseFloat(invoice.exchange_paid || 0) > 0 && (
-                                      <div className="d-flex justify-content-between mb-1 opacity-75 border-top pt-1">
-                                          <span className="x-small fw-black text-dark">TOTAL PAID:</span>
-                                          <span className="x-small fw-black text-dark">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                      </div>
+                                  {fp ? (
+                                      <>
+                                          <div className="d-flex justify-content-between mb-1 opacity-75 text-primary">
+                                              <span className="x-small fw-black">DOWN PAYMENT:</span>
+                                              <span className="x-small fw-black">₹{fpDownPayment.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                          </div>
+                                          {fpInstallmentsPaid > 0 && (
+                                              <div className="d-flex justify-content-between mb-1 opacity-75 text-success">
+                                                  <span className="x-small fw-black">INSTALLMENTS PAID:</span>
+                                                  <span className="x-small fw-black">₹{fpInstallmentsPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                              </div>
+                                          )}
+                                          <div className="d-flex justify-content-between mb-1 opacity-75 border-top pt-1">
+                                              <span className="x-small fw-black text-dark">TOTAL PAID:</span>
+                                              <span className="x-small fw-black text-dark">₹{effectivePaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                          </div>
+                                      </>
+                                  ) : (
+                                      <>
+                                          {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                              <div className="d-flex justify-content-between mb-1 opacity-75 text-info">
+                                                  <span className="x-small fw-black">EXCHANGE CREDIT:</span>
+                                                  <span className="x-small fw-black">₹{parseFloat(invoice.exchange_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                              </div>
+                                          )}
+                                          <div className="d-flex justify-content-between mb-1 opacity-75">
+                                              <span className="x-small fw-black text-success">
+                                                  {parseFloat(invoice.exchange_paid || 0) > 0 ? 'NET PAID (CASH/UPI):' : 'TOTAL PAID:'}
+                                              </span>
+                                              <span className="x-small fw-black text-success">
+                                                  ₹{(parseFloat(invoice.total_paid) - parseFloat(invoice.exchange_paid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                              </span>
+                                          </div>
+                                          {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                              <div className="d-flex justify-content-between mb-1 opacity-75 border-top pt-1">
+                                                  <span className="x-small fw-black text-dark">TOTAL PAID:</span>
+                                                  <span className="x-small fw-black text-dark">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                              </div>
+                                          )}
+                                      </>
                                   )}
                                   <div className="d-flex justify-content-between">
                                       <span className="x-small fw-black text-danger">PENDING BALANCE:</span>
@@ -439,10 +497,24 @@ export default function SaleDetails() {
               <div className="card shadow-sm border-0 rounded-3 mb-3 bg-white">
                   <div className="card-body p-4">
                       <h5 className="fw-bold mb-3 border-bottom pb-2">📦 ORDER STATUS</h5>
+                      {fp && (
+                          <div className="mb-3">
+                              <label className="small text-muted fw-bold mb-1">FINANCE TYPE</label>
+                              <div className="d-block w-100">
+                                  <span className={`badge fs-6 w-100 py-2 rounded-1 ${fp.type === 'PERSONAL' ? 'bg-primary' : 'bg-info'}`}>
+                                      {fp.type === 'PERSONAL' ? '📅 PERSONAL FINANCE' : '🤝 FAVOR FINANCE'}
+                                  </span>
+                              </div>
+                          </div>
+                      )}
                       <div className="mb-3">
                           <label className="small text-muted fw-bold mb-1">PAYMENT STATUS</label>
                           <div className="d-block w-100">
-                             {invoice.is_cancelled ? <span className="badge bg-danger fs-6 w-100 py-2 rounded-1">CANCELLED</span> : (
+                             {invoice.is_cancelled ? <span className="badge bg-danger fs-6 w-100 py-2 rounded-1">CANCELLED</span> : fp ? (
+                                fp.status === 'SETTLED' ? <span className="badge bg-success fs-6 w-100 py-2 rounded-1">✅ SETTLED</span> :
+                                fp.status === 'OVERDUE' ? <span className="badge bg-danger fs-6 w-100 py-2 rounded-1">⚠️ OVERDUE</span> :
+                                <span className="badge bg-warning text-dark fs-6 w-100 py-2 rounded-1">📅 ACTIVE EMI</span>
+                             ) : (
                                 invoice.payment_status === 'paid' ? <span className="badge bg-success fs-6 w-100 py-2 rounded-1">✅ FULLY PAID</span> :
                                 invoice.payment_status === 'partial' ? <span className="badge bg-info fs-6 w-100 py-2 text-white rounded-1">💰 PARTIALLY PAID</span> :
                                 <span className="badge bg-danger fs-6 w-100 py-2 rounded-1">❌ UNPAID BILL</span>
@@ -455,6 +527,42 @@ export default function SaleDetails() {
                       )}
                   </div>
               </div>
+
+              {fp && (
+                  <div className="card shadow-sm border-0 rounded-3 mb-3 bg-white">
+                      <div className="card-body p-4">
+                          <h5 className="fw-bold mb-3 border-bottom pb-2">
+                              {fp.type === 'PERSONAL' ? '📅 PERSONAL EMI PLAN' : '🤝 FAVOR FINANCE PLAN'}
+                          </h5>
+                          <div className="d-flex flex-column gap-2">
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">TYPE:</span>
+                                  <span className={`badge ${fp.type === 'PERSONAL' ? 'bg-primary' : 'bg-info'}`}>
+                                      {fp.type === 'PERSONAL' ? '📅 PERSONAL FINANCE' : '🤝 FAVOR FINANCE'}
+                                  </span>
+                              </div>
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">DOWN PAYMENT:</span>
+                                  <span className="fw-bold text-dark">₹{fpDownPayment.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">PRINCIPAL (TO RECOVER):</span>
+                                  <span className="fw-bold text-dark">₹{parseFloat(fp.principal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">INSTALLMENTS PAID:</span>
+                                  <span className="fw-bold text-success">₹{fpInstallmentsPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                  <span className="small fw-bold text-muted">PLAN STATUS:</span>
+                                  <span className={`badge ${fp.status === 'SETTLED' ? 'bg-success' : fp.status === 'OVERDUE' ? 'bg-danger' : 'bg-warning text-dark'}`}>
+                                      {fp.status}
+                                  </span>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              )}
 
               {parseFloat(invoice.finance_amount || 0) > 0 && (
                   <div className="card shadow-sm border-0 rounded-3 mb-3 bg-white">
@@ -494,33 +602,56 @@ export default function SaleDetails() {
                         <div className="d-flex flex-column gap-2">
                              <div className="d-flex justify-content-between p-2 bg-light rounded">
                                  <span className="small fw-bold text-muted">TOTAL BILL:</span>
-                                 <span className="fw-bold text-primary">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 <span className="fw-bold text-primary">₹{totalBillBeforeDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                              </div>
-                             {(() => {
-                               const totalDisc = parseFloat(invoice.discount || 0) +
-                                 (invoice.is_cash_discount_on_bill ? parseFloat(invoice.cash_discount || 0) : 0);
-                               return totalDisc > 0 ? (
+                             {totalDiscount > 0 && (
+                               <>
                                  <div className="d-flex justify-content-between p-2 rounded" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
                                    <span className="small fw-bold" style={{ color: '#92400e' }}>🏷️ DISCOUNT GIVEN:</span>
-                                   <span className="fw-bold" style={{ color: '#b45309' }}>- ₹{totalDisc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                   <span className="fw-bold" style={{ color: '#b45309' }}>- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                  </div>
-                               ) : null;
-                             })()}
-                             {parseFloat(invoice.exchange_paid || 0) > 0 && (
-                                 <div className="d-flex justify-content-between p-2 rounded text-info" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                                     <span className="small fw-bold">🔄 EXCHANGE CREDIT USED:</span>
-                                     <span className="fw-bold">₹{parseFloat(invoice.exchange_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                 <div className="d-flex justify-content-between p-2 bg-light rounded border-top">
+                                   <span className="small fw-bold text-dark">AMOUNT AFTER DISCOUNT:</span>
+                                   <span className="fw-bold text-dark">₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                  </div>
+                               </>
                              )}
-                             <div className="d-flex justify-content-between p-2 bg-success bg-opacity-10 rounded text-success">
-                                 <span className="small fw-bold">{parseFloat(invoice.exchange_paid || 0) > 0 ? 'NET PAID (CASH/UPI):' : 'RECEIVED:'}</span>
-                                 <span className="fw-bold">₹{(parseFloat(invoice.total_paid) - parseFloat(invoice.exchange_paid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                             </div>
-                             {parseFloat(invoice.exchange_paid || 0) > 0 && (
-                                 <div className="d-flex justify-content-between p-2 bg-light rounded text-dark border-top">
-                                     <span className="small fw-bold">TOTAL RECEIVED:</span>
-                                     <span className="fw-bold">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                                 </div>
+                             {fp ? (
+                                 <>
+                                     <div className="d-flex justify-content-between p-2 rounded" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                                         <span className="small fw-bold text-primary">⬇️ DOWN PAYMENT:</span>
+                                         <span className="fw-bold text-primary">₹{fpDownPayment.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                     </div>
+                                     {fpInstallmentsPaid > 0 && (
+                                         <div className="d-flex justify-content-between p-2 bg-success bg-opacity-10 rounded text-success">
+                                             <span className="small fw-bold">📅 INSTALLMENTS PAID:</span>
+                                             <span className="fw-bold">₹{fpInstallmentsPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                         </div>
+                                     )}
+                                     <div className="d-flex justify-content-between p-2 bg-light rounded text-dark border-top">
+                                         <span className="small fw-bold">TOTAL PAID:</span>
+                                         <span className="fw-bold">₹{effectivePaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                     </div>
+                                 </>
+                             ) : (
+                                 <>
+                                     {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                         <div className="d-flex justify-content-between p-2 rounded text-info" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                                             <span className="small fw-bold">🔄 EXCHANGE CREDIT USED:</span>
+                                             <span className="fw-bold">₹{parseFloat(invoice.exchange_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                         </div>
+                                     )}
+                                     <div className="d-flex justify-content-between p-2 bg-success bg-opacity-10 rounded text-success">
+                                         <span className="small fw-bold">{parseFloat(invoice.exchange_paid || 0) > 0 ? 'NET PAID (CASH/UPI):' : 'RECEIVED:'}</span>
+                                         <span className="fw-bold">₹{(parseFloat(invoice.total_paid) - parseFloat(invoice.exchange_paid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                     </div>
+                                     {parseFloat(invoice.exchange_paid || 0) > 0 && (
+                                         <div className="d-flex justify-content-between p-2 bg-light rounded text-dark border-top">
+                                             <span className="small fw-bold">TOTAL RECEIVED:</span>
+                                             <span className="fw-bold">₹{parseFloat(invoice.total_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                         </div>
+                                     )}
+                                 </>
                              )}
                              <div className="d-flex justify-content-between p-2 bg-danger bg-opacity-10 rounded text-danger">
                                  <span className="small fw-bold">OUTSTANDING:</span>

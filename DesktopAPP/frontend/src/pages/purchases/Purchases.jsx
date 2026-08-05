@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import pinGate from '../../utils/pinGate';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
@@ -192,6 +193,7 @@ export default function Purchases() {
   const executeAction = async () => {
     const { id, type } = confirmModal;
     setConfirmModal({ show: false, id: null, type: '' });
+    if (!await pinGate.confirm()) return;
 
     if (type === 'delete') {
       try {
@@ -436,7 +438,7 @@ export default function Purchases() {
                       {(() => {
                         // Filter items client-side if any item-level filters are active
                         const hasItemFilter = filters.model || filters.imei || filters.color || filters.ram || filters.storage || filters.description;
-                        const filteredAll = hasItemFilter ? (p.items || []).filter(item => {
+                        const rawItems = hasItemFilter ? (p.items || []).filter(item => {
                           const name = (item.product?.name || '').toUpperCase();
                           if (filters.model && !name.includes(filters.model.toUpperCase())) return false;
                           if (filters.imei && !(item.imei || '').includes(filters.imei)) return false;
@@ -446,6 +448,22 @@ export default function Purchases() {
                           if (filters.description && !(item.product?.attributes?.description || '').toUpperCase().includes(filters.description.toUpperCase())) return false;
                           return true;
                         }) : (p.items || []);
+                        // Group split-row items (same product+specs+price → one entry)
+                        const seenG = {};
+                        const filteredAll = [];
+                        rawItems.forEach(row => {
+                          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${String(row.unit_price)}`;
+                          const gi = seenG[key];
+                          if (gi !== undefined) {
+                            const ex = filteredAll[gi];
+                            const exImeis = ex.imei ? ex.imei.split(',').filter(Boolean) : [];
+                            const newImeis = row.imei ? row.imei.split(',').filter(Boolean) : [];
+                            filteredAll[gi] = { ...ex, imei: [...exImeis, ...newImeis].join(','), quantity: ex.quantity + row.quantity, received_quantity: (ex.received_quantity||0) + (row.received_quantity||0), damaged_quantity: (ex.damaged_quantity||0) + (row.damaged_quantity||0) };
+                          } else {
+                            seenG[key] = filteredAll.length;
+                            filteredAll.push({ ...row });
+                          }
+                        });
                         const isExpanded = expandedRows[p.id];
                         const items = isExpanded ? filteredAll : filteredAll.slice(0, 3);
                         const extra = filteredAll.length - 3;
@@ -467,11 +485,11 @@ export default function Purchases() {
                                 {/* Row 2: Config */}
                                 <div style={{marginTop:2,color:'#475569',fontSize:'.65rem'}}>
                                   {[item.ram, item.storage, item.color].filter(Boolean).join(' / ')}
-                                  {item.imei && (
-                                    <span style={{display:'inline-block',marginLeft:6,color:'#475569',fontWeight:700}}>
-                                      🆔 <Link to={category_group === 'master' ? `/sales/new-master?imei=${item.imei}` : `/sales/new?category_group=${category_group}&imei=${item.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{item.imei}</Link>
+                                  {item.imei && item.imei.split(',').filter(Boolean).map((imei, ii) => (
+                                    <span key={ii} style={{display:'inline-block',marginLeft:6,color:'#475569',fontWeight:700}}>
+                                      🆔 <Link to={category_group === 'master' ? `/sales/new-master?imei=${imei}` : `/sales/new?category_group=${category_group}&imei=${imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this IMEI">{imei}</Link>
                                     </span>
-                                  )}
+                                  ))}
                                 </div>
                               </div>
                             ))}
@@ -569,6 +587,20 @@ export default function Purchases() {
                   </tr>
                 ))}
               </tbody>
+              {!loadingStocks && availableStock.length > 0 && (
+                <tfoot>
+                  <tr style={{background:'#f1f5f9',borderTop:'2px solid #cbd5e1'}}>
+                    <td colSpan={3} style={{fontWeight:800,color:'#1e293b',textTransform:'uppercase',fontSize:'.72rem'}}>Total</td>
+                    <td style={{textAlign:'center',fontWeight:800,color:'#1e293b'}}>
+                      {availableStock.reduce((sum,p) => sum + (parseInt(p.current_stock)||0), 0)} pcs
+                    </td>
+                    <td style={{textAlign:'right',fontWeight:800,color:'#1e293b'}}>
+                      ₹{availableStock.reduce((sum,p) => sum + ((parseInt(p.current_stock)||0) * (parseFloat(p.selling_price)||0)), 0).toLocaleString('en-IN')}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -617,6 +649,19 @@ export default function Purchases() {
                   </tr>
                 ))}
               </tbody>
+              {!loadingStocks && pendingStock.length > 0 && (
+                <tfoot>
+                  <tr style={{background:'#f1f5f9',borderTop:'2px solid #cbd5e1'}}>
+                    <td colSpan={2} style={{fontWeight:800,color:'#1e293b',textTransform:'uppercase',fontSize:'.72rem'}}>Total</td>
+                    <td style={{textAlign:'center'}}>
+                      <span style={{background:'#e2e8f0',color:'#1e293b',border:'1px solid #94a3b8',fontWeight:800,fontSize:'.75rem',padding:'3px 12px',borderRadius:4}}>
+                        {pendingStock.reduce((sum,item) => sum + (parseInt(item.quantity)||0), 0)}
+                      </span>
+                    </td>
+                    <td colSpan={3}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
@@ -9,7 +10,7 @@ export default function CompanyOffers() {
   useEffect(() => { load(); }, []);
 
   const markFulfilled = async (id) => {
-    if (!window.confirm('Mark this offer as fulfilled?')) return;
+    if (!await pinGate.confirm()) return;
     await api.put(`/company-offers/${id}`, { is_fulfilled: true });
     toast.success('Offer fulfilled!'); load();
   };

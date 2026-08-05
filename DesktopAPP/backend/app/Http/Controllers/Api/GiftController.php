@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GiftProduct;
 use App\Models\GiftInventory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class GiftController extends Controller
 {
@@ -47,22 +48,27 @@ class GiftController extends Controller
             'quantity'        => 'required|integer|min:1',
         ]);
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
-        $inv = GiftInventory::firstOrCreate(
-            ['shop_id' => $shopId, 'gift_product_id' => $data['gift_product_id']],
-            ['stock' => 0]
-        );
-        $inv->increment('stock', $data['quantity']);
-        $product = $inv->giftProduct;
 
-        // Record Transaction (Expense)
-        $this->transactionService->recordForModel($inv, [
-            'type'             => 'OUT',
-            'category'         => 'GIFT_STOCK_PURCHASE',
-            'amount'           => $product->purchase_price * $data['quantity'],
-            'description'      => "Purchased gift stock: {$product->name} (Qty: {$data['quantity']})",
-            'transaction_date' => now()->toDateString(),
-            'shop_id'          => $inv->shop_id,
-        ]);
+        $inv = DB::transaction(function () use ($shopId, $data) {
+            $inv = GiftInventory::firstOrCreate(
+                ['shop_id' => $shopId, 'gift_product_id' => $data['gift_product_id']],
+                ['stock' => 0]
+            );
+            $inv->increment('stock', $data['quantity']);
+            $product = $inv->giftProduct;
+
+            // Record Transaction (Expense)
+            $this->transactionService->recordForModel($inv, [
+                'type'             => 'OUT',
+                'category'         => 'GIFT_STOCK_PURCHASE',
+                'amount'           => $product->purchase_price * $data['quantity'],
+                'description'      => "Purchased gift stock: {$product->name} (Qty: {$data['quantity']})",
+                'transaction_date' => now()->toDateString(),
+                'shop_id'          => $inv->shop_id,
+            ]);
+
+            return $inv;
+        });
 
         return response()->json($inv->fresh()->load('giftProduct'));
     }

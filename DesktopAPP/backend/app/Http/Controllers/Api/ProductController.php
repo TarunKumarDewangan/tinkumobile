@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\Inventory;
 use Illuminate\Http\Request;
@@ -13,6 +14,39 @@ use App\Http\Resources\ProductResource;
 
 class ProductController extends Controller
 {
+    /**
+     * Simple paginated, searchable, filterable product list for the Stickers
+     * feature. Deliberately separate from index() above, which is entangled
+     * with stock-grouping logic for the main Products/Stock pages.
+     */
+    public function stickerList(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->can('view_products') && !$user->isOwner()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $query = Product::with('category:id,name')
+            ->select('id', 'category_id', 'name', 'sku', 'imei', 'selling_price', 'attributes')
+            ->orderBy('name');
+
+        if ($request->search) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('name', 'like', "%{$s}%")
+                  ->orWhere('sku', 'like', "%{$s}%")
+                  ->orWhere('imei', 'like', "%{$s}%")
+                  ->orWhere('attributes->brand', 'like', "%{$s}%");
+            });
+        }
+
+        if ($request->category_id) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        return response()->json($query->paginate($request->per_page ?? 20));
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -60,9 +94,13 @@ class ProductController extends Controller
 
             if ($request->category_group !== 'old_mobile') {
                 $query = \App\Models\PurchaseItem::with(['product.category', 'product.brand', 'invoice.supplier'])
-                    ->whereHas('invoice', function($q) use ($shopId, $request) {
+                    // "Currently at" shop — not the invoice's (buying) shop, since Stock
+                    // Transfer can move a unit to a different shop than the one that paid
+                    // for it. The purchase invoice itself (price, supplier, GST, date
+                    // filters below) always stays tied to whichever shop actually bought it.
+                    ->when($shopId, fn($q) => $q->where('current_shop_id', $shopId))
+                    ->whereHas('invoice', function($q) use ($request) {
                         $q->where('status', 'received');
-                        if ($shopId) $q->where('shop_id', $shopId);
                         if ($request->supplier_id) $q->where('supplier_id', $request->supplier_id);
                         if ($request->from) $q->where('purchase_date', '>=', $request->from);
                         if ($request->to) $q->where('purchase_date', '<=', $request->to);
@@ -115,14 +153,37 @@ class ProductController extends Controller
                     $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
                 }
 
+                // group_by_config === 'true' merges every batch of a given product+config into
+                // one summary row (id "group_<hash>") for the Model Wise Stock view — those rows
+                // aren't individually editable/deletable since they can span many purchase
+                // invoices. group_by_config === 'false' (the "All Stocks" list, where Edit/Del
+                // are shown) must instead emit one row per real, actionable unit so those buttons
+                // have a concrete PurchaseItem to act on.
+                $isGrouped = $request->group_by_config !== 'false';
+
                 foreach ($items as $item) {
                     $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
-                    $imeis = $item->imei ? array_filter(array_map('trim', explode(',', $item->imei))) : [];
-                    $unsoldImeis = array_values(array_filter($imeis, fn($id) => !in_array($id, $soldImeis)));
+                    $imeisRaw = $item->imei ? array_map('trim', explode(',', $item->imei)) : [];
+                    $unsoldImeis = [];
+                    foreach ($imeisRaw as $idx => $imeiVal) {
+                        if ($imeiVal === '' || in_array($imeiVal, $soldImeis)) continue;
+                        // The query above matches this whole PurchaseItem batch if ANY of its
+                        // comma-joined IMEIs contains the search term — without this check every
+                        // sibling device in the batch would be returned too, so picking data[0]
+                        // (e.g. the New Sale IMEI pre-fill) could silently grab the wrong device.
+                        if ($request->imei && stripos($imeiVal, $request->imei) === false) continue;
+                        $unsoldImeis[] = ['imei' => $imeiVal, 'idx' => $idx];
+                    }
                     $availableImeiCount = count($unsoldImeis);
-                    $totalQty = ($item->received_quantity > 0) ? $item->received_quantity : $item->quantity;
+                    // This whole query is already scoped to status === 'received' invoices
+                    // (see the whereHas above), so received_quantity was always deliberately
+                    // set by then — either at creation, or explicitly via markReceived(),
+                    // which can legitimately be 0 for an item that was fully rejected/damaged.
+                    // Falling back to the original ordered quantity here would silently treat
+                    // that as fully received, showing ordered-but-not-actually-received stock.
+                    $totalQty = $item->received_quantity;
                     $nonImeiQty = ($item->imei) ? 0 : $totalQty;
-                    
+
                     if ($nonImeiQty > 0 && isset($soldCounts[$key])) {
                         $diff = min($nonImeiQty, $soldCounts[$key]);
                         $nonImeiQty -= $diff;
@@ -132,17 +193,77 @@ class ProductController extends Controller
                     $currentStock = $availableImeiCount + $nonImeiQty;
                     if ($currentStock <= 0) continue;
 
-                    if (!isset($grouped[$key])) {
-                        $grouped[$key] = [
-                            'id' => 'group_' . md5($key),
-                            'product_id' => $item->product_id,
-                            'name' => $item->product->name,
-                            'attributes' => ['color' => $item->color, 'ram' => $item->ram, 'storage' => $item->storage, 'imeis' => [], 'description' => $item->product->attributes['description'] ?? ''],
-                            'current_stock' => 0, 'selling_price' => $item->selling_price, 'wholeseller_price' => $item->wholeseller_price, 'purchase_price' => $item->unit_price, 'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount, 'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price, 'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price, 'location' => $item->location ?? $item->product->location, 'category' => $item->product->category, 'brand' => $item->product->brand, 'is_grouped' => true
-                        ];
+                    $baseFields = [
+                        'product_id' => $item->product_id,
+                        'name' => $item->product->name,
+                        'selling_price' => $item->selling_price, 'wholeseller_price' => $item->wholeseller_price,
+                        'purchase_price' => $item->unit_price,
+                        'incentive_amount' => $item->incentive_amount ?? $item->product->incentive_amount,
+                        'min_selling_price' => $item->min_selling_price ?? $item->product->min_selling_price,
+                        'max_selling_price' => $item->max_selling_price ?? $item->product->max_selling_price,
+                        'location' => $item->location ?? $item->product->location,
+                        'category' => $item->product->category, 'brand' => $item->product->brand,
+                    ];
+                    $baseAttrs = ['color' => $item->color, 'ram' => $item->ram, 'storage' => $item->storage, 'description' => $item->product->attributes['description'] ?? ''];
+
+                    if ($isGrouped) {
+                        if (!isset($grouped[$key])) {
+                            $grouped[$key] = array_merge($baseFields, [
+                                'id' => 'group_' . md5($key),
+                                'attributes' => array_merge($baseAttrs, ['imeis' => []]),
+                                'current_stock' => 0,
+                                'is_grouped' => true,
+                            ]);
+                        }
+                        $grouped[$key]['current_stock'] += $currentStock;
+                        $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], array_column($unsoldImeis, 'imei'));
+                    } else {
+                        foreach ($unsoldImeis as $u) {
+                            $rowKey = "item_{$item->id}_{$u['idx']}";
+                            $grouped[$rowKey] = array_merge($baseFields, [
+                                'id' => $rowKey,
+                                'attributes' => array_merge($baseAttrs, ['imei' => $u['imei'], 'imeis' => [$u['imei']]]),
+                                'current_stock' => 1,
+                                'is_grouped' => false,
+                            ]);
+                        }
+                        if ($nonImeiQty > 0) {
+                            $rowKey = "item_ni_{$item->id}";
+                            $grouped[$rowKey] = array_merge($baseFields, [
+                                'id' => $rowKey,
+                                'attributes' => array_merge($baseAttrs, ['imeis' => []]),
+                                'current_stock' => $nonImeiQty,
+                                'is_grouped' => false,
+                            ]);
+                        }
                     }
-                    $grouped[$key]['current_stock'] += $currentStock;
-                    $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], $unsoldImeis);
+                }
+
+                // Reconcile leftover no-IMEI sales that never matched a no-IMEI purchase
+                // batch (i.e. the product's stock was purchased with IMEIs tracked, but the
+                // sale was recorded without one). Those units are gone but the loop above has
+                // no way to remove a *specific* IMEI for them, so subtract from the group total
+                // and drop that many IMEIs from the picker list to keep both in sync. Only
+                // applies to the merged (grouped) view — the ungrouped view already reflects
+                // real per-batch data as-is.
+                //
+                // $soldCounts is built from ALL sales system-wide (not scoped to the current
+                // model/color/ram/storage/imei/search filters), so it's only a valid correction
+                // against the FULL, unfiltered stock total for a group. Applying it while a
+                // narrow filter is active would deduct unrelated sales from a tiny filtered
+                // result and could zero out a unit that's genuinely still in stock — so skip
+                // it entirely whenever the request is searching for something specific.
+                $hasNarrowFilter = $request->color || $request->ram || $request->storage || $request->imei || $request->model || $request->search;
+                if ($isGrouped && !$hasNarrowFilter) {
+                    foreach ($soldCounts as $key => $leftover) {
+                        if ($leftover <= 0 || !isset($grouped[$key])) continue;
+                        $deduct = min($leftover, $grouped[$key]['current_stock']);
+                        $grouped[$key]['current_stock'] -= $deduct;
+                        if ($deduct > 0 && !empty($grouped[$key]['attributes']['imeis'])) {
+                            $grouped[$key]['attributes']['imeis'] = array_slice($grouped[$key]['attributes']['imeis'], 0, max(0, count($grouped[$key]['attributes']['imeis']) - $deduct));
+                        }
+                    }
+                    $grouped = array_filter($grouped, fn($g) => $g['current_stock'] > 0 || !empty($g['attributes']['imeis']));
                 }
             }
             return response()->json($this->sortStockItems(array_values($grouped)));
@@ -185,6 +306,11 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if (!$user->can('view_products') && !$user->isOwner()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'category_id'       => 'required|exists:categories,id',
             'brand_id'          => 'nullable|exists:brands,id',
@@ -210,7 +336,9 @@ class ProductController extends Controller
             $data['subcategory'] = strtoupper($sub);
         }
 
-        return response()->json(Product::create($data), 201);
+        $product = Product::create($data);
+        ActivityLog::log('PRODUCT_CREATED', $product, "Product added: {$product->name} (SKU: {$product->sku}) ₹{$product->selling_price}");
+        return response()->json($product, 201);
     }
 
     public function show(Request $request, Product $product)
@@ -227,6 +355,11 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
+        $user = $request->user();
+        if (!$user->can('view_products') && !$user->isOwner()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'category_id'       => 'sometimes|exists:categories,id',
             'brand_id'          => 'nullable|exists:brands,id',
@@ -253,11 +386,37 @@ class ProductController extends Controller
         }
 
         $product->update($data);
+        ActivityLog::log('PRODUCT_UPDATED', $product, "Product updated: {$product->name} (SKU: {$product->sku})");
         return response()->json($product);
     }
 
-    public function destroy(Product $product)
+    public function destroy(Request $request, Product $product)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        ActivityLog::log('PRODUCT_DELETED', $product, "Product deleted: {$product->name} (SKU: {$product->sku}) ₹{$product->selling_price}");
+
+        // A soft delete leaves products.sku/imei permanently blocked from reuse (MySQL's
+        // UNIQUE index doesn't exempt soft-deleted rows). If this product genuinely has
+        // no purchase/sale history at all, hard-delete it outright so its SKU/IMEI can be
+        // reused later — otherwise fall back to the normal, safe soft delete that
+        // preserves history for products with real invoices behind them. purchase_items
+        // and sale_items have no cascade/null-on-delete on product_id, so a product still
+        // referenced there will simply fail to hard-delete and we fall through safely.
+        $hasHistory = \App\Models\PurchaseItem::where('product_id', $product->id)->exists()
+            || \App\Models\SaleItem::where('product_id', $product->id)->exists();
+
+        if (!$hasHistory) {
+            try {
+                $product->forceDelete();
+                return response()->json(['message' => 'Product deleted']);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // fall through to the normal soft delete below
+            }
+        }
+
         $product->delete();
         return response()->json(['message' => 'Product deleted']);
     }
@@ -355,14 +514,26 @@ class ProductController extends Controller
             $item = \App\Models\PurchaseItem::with('invoice')->findOrFail($itemId);
 
             // Update IMEI
-            if ($request->has('imei') && $imeiIndex !== null && $item->imei) {
-                $imeis = array_map('trim', explode(',', $item->imei));
-                if (isset($imeis[$imeiIndex])) {
-                    $imeis[$imeiIndex] = $request->imei;
-                    $item->imei = implode(', ', $imeis);
+            if ($request->has('imeis') && is_array($request->imeis) && $imeiIndex === null) {
+                // item_ni_<id>: this row IS the entire remaining no-IMEI batch (no sibling
+                // units live outside it), so a full multi-box replace is safe. Used to
+                // backfill IMEIs on old bulk stock that was purchased without them.
+                $item->imei = implode(', ', array_filter(array_map('trim', $request->imeis), fn($v) => $v !== ''));
+            } else {
+                // item_<id>_<idx>: this row is ONE unit inside a possibly multi-unit batch
+                // that may have sibling IMEIs recorded on the same PurchaseItem — only the
+                // single value at $imeiIndex may be touched, never the whole field.
+                $singleImei = ($request->has('imeis') && is_array($request->imeis)) ? ($request->imeis[0] ?? null) : $request->imei;
+
+                if ($singleImei !== null && $imeiIndex !== null && $item->imei) {
+                    $imeis = array_map('trim', explode(',', $item->imei));
+                    if (isset($imeis[$imeiIndex])) {
+                        $imeis[$imeiIndex] = $singleImei;
+                        $item->imei = implode(', ', $imeis);
+                    }
+                } else if ($singleImei !== null && (!$item->imei || $item->quantity == 1)) {
+                    $item->imei = $singleImei;
                 }
-            } else if ($request->has('imei') && (!$item->imei || $item->quantity == 1)) {
-                $item->imei = $request->imei;
             }
 
             // Update other fields
@@ -508,12 +679,12 @@ class ProductController extends Controller
      */
     private function getOldMobileStock($shopId, $request): array
     {
-        $oldMobileCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-        if (!$oldMobileCat) return [];
+        $oldMobileCatId = \App\Models\Category::mobileOldId();
+        if (!$oldMobileCatId) return [];
 
         // Fetch products in MOBILE-OLD category that have inventory stock > 0
         $productQuery = Product::with(['category', 'brand'])
-            ->where('category_id', $oldMobileCat->id)
+            ->where('category_id', $oldMobileCatId)
             ->where('deleted_at', null)
             ->whereHas('inventory', function($q) use ($shopId) {
                 $q->where('stock', '>', 0);
@@ -555,8 +726,8 @@ class ProductController extends Controller
             $q->where('is_cancelled', false);
             if ($shopId) $q->where('shop_id', $shopId);
         })
-        ->whereHas('product', function($q) use ($oldMobileCat) {
-            $q->where('category_id', $oldMobileCat->id);
+        ->whereHas('product', function($q) use ($oldMobileCatId) {
+            $q->where('category_id', $oldMobileCatId);
         })
         ->pluck('product_id')
         ->toArray();

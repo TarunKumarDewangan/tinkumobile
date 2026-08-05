@@ -63,6 +63,7 @@ class EntityController extends Controller
             'name' => 'required|string|unique:entities,name',
             'type' => 'required|string',
             'phone' => 'nullable|string',
+            'address' => 'nullable|string|max:255',
             'email' => 'nullable|string',
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
@@ -89,7 +90,7 @@ class EntityController extends Controller
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
                     'email' => $data['email'],
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'category' => 'REGULAR',
                     'gst_no' => $data['gst_number'] ?? null,
                     'voucher_code' => $data['voucher_code'] ?? null
@@ -99,7 +100,7 @@ class EntityController extends Controller
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
                     'email' => $data['email'],
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'category' => 'SHOP',
                     'gst_no' => $data['gst_number'] ?? null,
                     'voucher_code' => $data['voucher_code'] ?? null
@@ -108,14 +109,14 @@ class EntityController extends Controller
                 $model = \App\Models\Supplier::create([
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'gst_no' => $data['gst_number'],
                 ]);
             } elseif ($data['type'] === 'SHOP') {
                 $model = \App\Models\Shop::create([
                     'name' => $data['name'],
                     'phone' => $data['phone'] ?? '',
-                    'address' => $data['description'],
+                    'address' => $data['address'] ?? null,
                     'email' => $data['email'],
                     'gstin' => $data['gst_number'],
                 ]);
@@ -151,6 +152,7 @@ class EntityController extends Controller
             'name' => 'required|string|unique:entities,name,' . $entity->id,
             'type' => 'required|string',
             'phone' => 'nullable|string',
+            'address' => 'nullable|string|max:255',
             'email' => 'nullable|string',
             'opening_balance' => 'numeric',
             'balance_type' => 'required|in:RECEIVABLE,PAYABLE',
@@ -180,10 +182,19 @@ class EntityController extends Controller
                     'phone' => $entity->phone ?? '',
                 ];
                 
+                // suppliers.address and shops.address are NOT NULL at the DB level (unlike
+                // entities.address, which is nullable). Entities created before the address
+                // field existed on this table never got backfilled, so entity->address can
+                // still be empty even when the linked Supplier/Shop already has a real one.
+                // Never let a blank entity address overwrite (and crash on, for Supplier/Shop)
+                // an existing real address — only push it down when something was actually
+                // entered.
+                $addressToSync = $entity->address ?: $relation->address;
+
                 if ($relation instanceof \App\Models\Customer) {
                     $relationData['category'] = in_array($data['type'], ['SHOP_CUSTOMER']) ? 'SHOP' : 'REGULAR';
                     $relationData['email'] = $entity->email;
-                    $relationData['address'] = $entity->description;
+                    $relationData['address'] = $addressToSync;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relationData['voucher_code'] = $data['voucher_code'] ?? null;
 
@@ -198,11 +209,11 @@ class EntityController extends Controller
                         }
                     }
                 } elseif ($relation instanceof \App\Models\Supplier) {
-                    $relationData['address'] = $entity->description;
+                    $relationData['address'] = $addressToSync;
                     $relationData['gst_no'] = $entity->gst_number;
                     $relation->fill($relationData)->saveQuietly();
                 } elseif ($relation instanceof \App\Models\Shop) {
-                    $relationData['address'] = $entity->description;
+                    $relationData['address'] = $addressToSync;
                     $relationData['email'] = $entity->email;
                     $relationData['gstin'] = $entity->gst_number;
                     $relation->fill($relationData)->saveQuietly();
@@ -213,11 +224,43 @@ class EntityController extends Controller
         });
     }
 
-    public function destroy(Entity $entity)
+    public function destroy(Request $request, Entity $entity)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         return DB::transaction(function() use ($entity) {
-            if ($entity->relation) {
-                $entity->relation->delete();
+            $relation = $entity->relation;
+
+            // entities.name is unique, so a soft delete here permanently blocks that name
+            // from ever being reused. Customer/Supplier hard deletes are already guarded
+            // by real (non-cascading) FK constraints on sale/purchase invoices, so try a
+            // genuine hard delete first and only fall back to the safe soft delete if the
+            // relation still has real history. Shops are never force-deleted here — many
+            // tables (products, retailers, employees, tasks...) cascade on shop_id.
+            if (!$relation || !($relation instanceof \App\Models\Shop)) {
+                try {
+                    if ($relation) {
+                        $relation->forceDelete();
+                    }
+                    $entity->forceDelete();
+                    return response()->json(['message' => 'Entity deleted']);
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Still referenced somewhere real — fall through to soft delete. Must
+                    // re-fetch a fresh instance: forceDelete() only resets its internal
+                    // "forceDeleting" flag on success, so a failed attempt leaves it stuck
+                    // true on $relation, which would silently turn the fallback ->delete()
+                    // below into another real hard delete that fails the same way.
+                    if ($relation) {
+                        $relation = $relation->fresh();
+                    }
+                    $entity = $entity->fresh();
+                }
+            }
+
+            if ($relation) {
+                $relation->delete();
             }
             $entity->delete();
             return response()->json(['message' => 'Entity deleted']);
@@ -228,8 +271,16 @@ class EntityController extends Controller
      * Completely purge an entity AND all its transaction history.
      * Matches transactions by both entity ID and entity name for full coverage.
      */
-    public function destroyWithHistory(Entity $entity)
+    public function destroyWithHistory(Request $request, Entity $entity)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        \App\Models\ActivityLog::log('ENTITY_DELETED_WITH_HISTORY', $entity,
+            "⚠️ Entity \"{$entity->name}\" and all transaction history permanently deleted by {$request->user()->name}"
+        );
+
         return DB::transaction(function () use ($entity) {
             $name = $entity->name;
             $id   = $entity->id;
@@ -243,16 +294,43 @@ class EntityController extends Controller
             // 2. Remove cached balance row
             DB::table('entity_balances')->where('entity_id', $id)->delete();
 
-            // Delete the related morph model if it exists
-            if ($entity->relation) {
-                $entity->relation->delete();
+            // 3. Delete the related morph model and the entity itself. This method
+            // promises a *permanent* purge, so actually hard-delete both (not just soft
+            // delete) — Customer/Supplier hard deletes are safely guarded by real FK
+            // constraints on sale/purchase invoices. Shops are never force-deleted: many
+            // tables cascade on shop_id, so a Shop relation still just gets soft-deleted.
+            // Both must land in the SAME state (both erased or both merely soft-deleted)
+            // — otherwise the entity could vanish while its customer/supplier record is
+            // left behind soft-deleted with a now-dangling relation, or vice versa.
+            $relation = $entity->relation;
+            $fullyErased = false;
+
+            if (!$relation || !($relation instanceof \App\Models\Shop)) {
+                try {
+                    if ($relation) {
+                        $relation->forceDelete();
+                    }
+                    $entity->forceDelete();
+                    $fullyErased = true;
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Still referenced somewhere real — fall through to soft delete below.
+                    // forceDelete() only clears its internal "forceDeleting" flag on
+                    // success, so re-fetch fresh instances or the fallback ->delete() would
+                    // silently attempt another real hard delete and fail the same way.
+                }
             }
 
-            // 3. Delete the entity itself
-            $entity->delete();
+            if (!$fullyErased) {
+                if ($relation) {
+                    $relation->fresh()?->delete();
+                }
+                $entity->fresh()->delete();
+            }
 
             return response()->json([
-                'message' => "\"$name\" and all its transaction history have been permanently deleted."
+                'message' => $fullyErased
+                    ? "\"$name\" and all its transaction history have been permanently deleted."
+                    : "\"$name\"'s transaction history was permanently deleted, but the record itself is still referenced elsewhere — it was moved to Trash instead of being fully erased."
             ]);
         });
     }
@@ -309,8 +387,16 @@ class EntityController extends Controller
      * Complete reset and rebuild of the entity system.
      * Use this when balances are corrupt or duplicated.
      */
-    public function hardReset()
+    public function hardReset(Request $request)
     {
+        if (!$request->user()->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        \App\Models\ActivityLog::log('ENTITY_HARD_RESET', null,
+            "⚠️ DANGER: Full entity/ledger system reset performed by {$request->user()->name}"
+        );
+
         // 1. Clear caches and entities
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
         DB::table('entity_balances')->truncate();

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
@@ -69,7 +70,7 @@ export default function AirtelRetailers() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('ARE YOU SURE?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await axios.delete(`/airtel-retailers/${id}`);
       toast.success('Retailer deleted');
@@ -115,7 +116,7 @@ export default function AirtelRetailers() {
                   const file = e.target.files[0];
                   if (!file) return;
 
-                  if (!window.confirm("WARNING: This will replace ALL existing Airtel data! Are you absolutely sure you want to restore from this backup?")) {
+                  if (!await pinGate.confirm()) {
                     e.target.value = '';
                     return;
                   }

@@ -32,6 +32,10 @@ class PurchaseItemResource extends JsonResource
             'max_selling_price' => $this->max_selling_price,
             'incentive_amount' => $this->incentive_amount,
             'total' => $this->total,
+            'trade_disc_pct' => $this->trade_disc_pct,
+            'cash_disc_pct' => $this->cash_disc_pct,
+            'calc_gst_rate' => $this->calc_gst_rate,
+            'apply_gst' => $this->apply_gst,
         ];
     }
 }

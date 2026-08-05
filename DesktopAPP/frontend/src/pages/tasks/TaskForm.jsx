@@ -52,6 +52,7 @@ export default function TaskForm() {
 
   return (
     <div className="page-container fade-in" style={{ maxWidth: 680, margin: '0 auto' }}>
+      <button type="button" className="btn btn-sm btn-outline-secondary fw-bold mb-2" onClick={() => navigate('/tasks')}>← Back</button>
       <h4 className="fw-bold mb-4">➕ New Task</h4>
 
       <form onSubmit={handleSubmit}>
@@ -101,7 +102,7 @@ export default function TaskForm() {
 
             {/* Priority + Due Date */}
             <div className="row g-3 mb-3">
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-semibold">Priority</label>
                 <select
                   className="form-select"
@@ -114,7 +115,7 @@ export default function TaskForm() {
                   <option value="urgent">Urgent</option>
                 </select>
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-semibold">Due Date</label>
                 <input
                   type="date"
@@ -129,7 +130,7 @@ export default function TaskForm() {
             <div className="mb-3">
               <label className="form-label fw-semibold">Link to Record (optional)</label>
               <div className="row g-2">
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                   <select
                     className="form-select"
                     value={form.related_type}
@@ -142,7 +143,7 @@ export default function TaskForm() {
                     <option value="airtel_retailer">Airtel Retailer</option>
                   </select>
                 </div>
-                <div className="col-md-8">
+                <div className="col-12 col-md-8">
                   <input
                     type="number"
                     className="form-control"

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
@@ -10,7 +11,7 @@ export default function Incentives() {
   useEffect(() => { load(); }, []);
 
   const markPaid = async (id) => {
-    if (!window.confirm('Mark this incentive as paid?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/incentives/${id}/mark-paid`, { payment_date: new Date().toISOString().slice(0, 10) });
       toast.success('Incentive marked as paid!');

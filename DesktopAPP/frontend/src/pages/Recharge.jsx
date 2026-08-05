@@ -1,15 +1,22 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
+import pinGate from '../utils/pinGate';
 import { Modal, Button } from 'react-bootstrap';
 import Select from 'react-select';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
+import PaymentSplitInput from '../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../utils/paymentSplit';
+import { isAssetEntityType } from '../utils/assetEntityTypes';
 
 export default function Recharge() {
   const [purchases, setPurchases] = useState([]);
   const [sales, setSales] = useState([]);
   const [distributors, setDistributors] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [purchasePaymentLines, setPurchasePaymentLines] = useState(newSingleLine('CASH'));
+  const [salePaymentLines, setSalePaymentLines] = useState(newSingleLine('CASH'));
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('sales');
 
@@ -18,6 +25,20 @@ export default function Recharge() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [showEntityModal, setShowEntityModal] = useState(false);
   const [entitySubmitting, setEntitySubmitting] = useState(false);
+
+  // SIM Stock (bulk count ledger by operator/distributor)
+  const [simStockSummary, setSimStockSummary] = useState([]);
+  const [showSimStockModal, setShowSimStockModal] = useState(false);
+  const [showSimSellModal, setShowSimSellModal] = useState(false);
+  const [simStockForm, setSimStockForm] = useState({
+    distributor_id: '', operator: 'JIO', custom_operator: '',
+    quantity: '', price_per_sim: 10, remarks: '',
+    entry_date: new Date().toISOString().split('T')[0]
+  });
+  const [simSellForm, setSimSellForm] = useState({
+    operator: 'JIO', custom_operator: '', quantity: '', remarks: '',
+    entry_date: new Date().toISOString().split('T')[0]
+  });
 
   // Form states
   const [purchaseForm, setPurchaseForm] = useState({
@@ -28,6 +49,11 @@ export default function Recharge() {
     cost_price: '',
     purchase_date: new Date().toISOString().split('T')[0]
   });
+
+  const rechargeModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const distributorOptions = useMemo(() => {
     return distributors.map(d => ({ value: `entity-${d.id}`, label: d.name }));
@@ -42,6 +68,7 @@ export default function Recharge() {
     name: '',
     type: 'DISTRIBUTOR',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -69,16 +96,18 @@ export default function Recharge() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [resPurchases, resSales, resDistributors, resCustomers] = await Promise.all([
+      const [resPurchases, resSales, resDistributors, resCustomers, resEntities] = await Promise.all([
         api.get('/recharge-purchases'),
         api.get('/recharge-sales'),
         api.get('/entities', { params: { type: 'DISTRIBUTOR' } }),
-        api.get('/customers')
+        api.get('/customers'),
+        api.get('/entities')
       ]);
       setPurchases(resPurchases.data);
       setSales(resSales.data);
       setDistributors(resDistributors.data);
       setCustomers(resCustomers.data);
+      setBankEntities((resEntities.data || []).filter(e => isAssetEntityType(e.type)));
     } catch (e) {
       toast.error("Failed to load recharge data");
     } finally {
@@ -86,21 +115,81 @@ export default function Recharge() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const loadSimStock = async () => {
+    try {
+      const res = await api.get('/sim-stock/summary');
+      setSimStockSummary(res.data);
+    } catch (e) {
+      toast.error('Failed to load SIM stock');
+    }
+  };
 
   useEffect(() => {
-    if (distributors.length > 0) {
+    loadData();
+    loadSimStock();
+  }, []);
+
+  const handleAddSimStock = async (e) => {
+    e.preventDefault();
+    const operator = simStockForm.operator === 'OTHER' ? simStockForm.custom_operator.trim().toUpperCase() : simStockForm.operator;
+    if (!operator) return toast.error('Enter an operator name');
+    try {
+      await api.post('/sim-stock', {
+        distributor_id: simStockForm.distributor_id || null,
+        operator,
+        quantity: simStockForm.quantity,
+        price_per_sim: simStockForm.price_per_sim,
+        remarks: simStockForm.remarks,
+        entry_date: simStockForm.entry_date,
+      });
+      toast.success('SIM stock added');
+      setShowSimStockModal(false);
+      setSimStockForm({ distributor_id: '', operator: 'JIO', custom_operator: '', quantity: '', price_per_sim: 10, remarks: '', entry_date: new Date().toISOString().split('T')[0] });
+      loadSimStock();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add SIM stock');
+    }
+  };
+
+  const handleSellSimStock = async (e) => {
+    e.preventDefault();
+    const operator = simSellForm.operator === 'OTHER' ? simSellForm.custom_operator.trim().toUpperCase() : simSellForm.operator;
+    if (!operator) return toast.error('Enter an operator name');
+    try {
+      await api.post('/sim-stock/sell', {
+        operator,
+        quantity: simSellForm.quantity,
+        remarks: simSellForm.remarks,
+        entry_date: simSellForm.entry_date,
+      });
+      toast.success('SIM stock reduced');
+      setShowSimSellModal(false);
+      setSimSellForm({ operator: 'JIO', custom_operator: '', quantity: '', remarks: '', entry_date: new Date().toISOString().split('T')[0] });
+      loadSimStock();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to record SIM sale');
+    }
+  };
+
+  const simStockTotal = simStockSummary.reduce((sum, s) => sum + s.available, 0);
+
+  const hasDistributors = distributors.length > 0;
+
+  // Depends on hasDistributors (a boolean), not the distributors array itself —
+  // the array gets a new reference every time one is added (see
+  // handleQuickEntityAdd below), which previously re-triggered this whole
+  // custom-types fetch as a side effect of adding a single distributor.
+  useEffect(() => {
+    if (hasDistributors) {
       api.get('/entities').then(res => {
         const types = (res.data || []).map(e => e.type).filter(Boolean);
         const uniqueCustomTypes = Array.from(new Set(types)).filter(
-          t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+          t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
         );
         setCustomTypes(uniqueCustomTypes);
       }).catch(() => {});
     }
-  }, [distributors]);
+  }, [hasDistributors]);
 
   const handleQuickEntityAdd = async (e) => {
     e.preventDefault();
@@ -116,6 +205,7 @@ export default function Recharge() {
         name: '',
         type: 'DISTRIBUTOR',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -168,13 +258,18 @@ export default function Recharge() {
       
     if (!finalOperator) return toast.error("Please specify the operator");
 
+    if (!paymentLinesSumMatches(purchasePaymentLines, purchaseForm.cost_price)) {
+      return toast.error("Split doesn't add up to the cost price");
+    }
+
     try {
       await api.post('/recharge-purchases', {
         supplier_id: purchaseForm.supplier_id,
         operator: finalOperator,
-        amount: parseFloat(purchaseForm.amount),
-        cost_price: parseFloat(purchaseForm.cost_price),
-        purchase_date: purchaseForm.purchase_date
+        amount: parseFloat(purchaseForm.amount) || 0,
+        cost_price: parseFloat(purchaseForm.cost_price) || 0,
+        purchase_date: purchaseForm.purchase_date,
+        ...buildPaymentPayload(purchasePaymentLines)
       });
       toast.success("Balance purchase recorded successfully!");
       setShowPurchaseModal(false);
@@ -186,6 +281,7 @@ export default function Recharge() {
         cost_price: '',
         purchase_date: new Date().toISOString().split('T')[0]
       });
+      setPurchasePaymentLines(newSingleLine('CASH'));
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to record purchase");
@@ -205,13 +301,11 @@ export default function Recharge() {
     const reqAmount = parseFloat(saleForm.amount || 0);
     
     if (reqAmount > currentBal) {
-      const confirmProceed = window.confirm(
-        `⚠️ Warning: Insufficient balance for ${finalOperator}.\n` +
-        `Available Balance: ₹${currentBal.toLocaleString()}\n` +
-        `Recharge Amount: ₹${reqAmount.toLocaleString()}\n\n` +
-        `Do you want to proceed with this entry anyway?`
-      );
-      if (!confirmProceed) return;
+      if (!await pinGate.confirm()) return;
+    }
+
+    if (!paymentLinesSumMatches(salePaymentLines, saleForm.selling_price || saleForm.amount)) {
+      return toast.error("Split doesn't add up to the selling price");
     }
 
     const payload = {
@@ -219,7 +313,8 @@ export default function Recharge() {
       operator: finalOperator,
       amount: reqAmount,
       selling_price: parseFloat(saleForm.selling_price || saleForm.amount),
-      sale_date: saleForm.sale_date
+      sale_date: saleForm.sale_date,
+      ...buildPaymentPayload(salePaymentLines)
     };
 
     if (saleForm.customer_mode === 'existing') {
@@ -247,6 +342,7 @@ export default function Recharge() {
         customer_name: '',
         customer_phone: ''
       });
+      setSalePaymentLines(newSingleLine('CASH'));
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to record recharge sale");
@@ -258,7 +354,7 @@ export default function Recharge() {
     : saleForm.operator;
   const currentSaleOpBalance = operatorMap[selectedSaleOperator]?.balance || 0;
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(newEntity.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(newEntity.type);
   const isCustomType = customTypes.includes(newEntity.type);
   const showCustomInput = newEntity.type === 'OTHER' || (!isDefaultType && !isCustomType && newEntity.type !== '');
 
@@ -284,6 +380,40 @@ export default function Recharge() {
             ⚡ New Recharge
           </button>
         </div>
+      </div>
+
+      {/* SIM Stock Row */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h6 className="fw-bold text-muted text-uppercase x-small mb-0">📱 SIM Stocks {simStockTotal > 0 && `(${simStockTotal} total)`}</h6>
+        <div className="d-flex gap-2">
+          <button className="btn btn-outline-danger btn-sm rounded-2 px-3 fw-bold" onClick={() => setShowSimSellModal(true)}>
+            − Sell SIM
+          </button>
+          <button className="btn btn-outline-dark btn-sm rounded-2 px-3 fw-bold" onClick={() => setShowSimStockModal(true)}>
+            ➕ Add New Stock (New Arrival)
+          </button>
+        </div>
+      </div>
+      <div className="row g-3 mb-4">
+        {simStockSummary.length === 0 ? (
+          <div className="col-12">
+            <div className="card border border-secondary border-opacity-25 bg-white p-3 shadow-none rounded-2 text-muted small text-center">
+              No SIM stock recorded yet. Click "Add New Stock" to log a new arrival.
+            </div>
+          </div>
+        ) : (
+          simStockSummary.map(s => (
+            <div key={s.operator} className="col-md-2 col-6">
+              <div className="card border border-secondary border-opacity-25 bg-white p-3 shadow-none rounded-2">
+                <div className="small text-uppercase fw-bold text-muted opacity-75 mb-1">{s.operator}</div>
+                <div className={`h5 mb-0 fw-bold ${s.available <= 5 ? 'text-danger' : 'text-dark'}`}>
+                  {s.available} <span className="x-small text-muted">sims</span>
+                </div>
+                <div className="x-small text-muted">₹{(s.available * 10).toLocaleString('en-IN')} value</div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Operator Balances Row */}
@@ -437,7 +567,7 @@ export default function Recharge() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Operator <span className="text-danger">*</span></label>
                       <select 
                         className="form-select"
@@ -453,7 +583,7 @@ export default function Recharge() {
                     </div>
 
                     {purchaseForm.operator === 'OTHER' && (
-                      <div className="col-md-6">
+                      <div className="col-12 col-md-6">
                         <label className="form-label x-small fw-bold text-dark">Custom Operator Name <span className="text-danger">*</span></label>
                         <input 
                           type="text" 
@@ -466,13 +596,12 @@ export default function Recharge() {
                       </div>
                     )}
 
-                    <div className="col-md-6">
-                      <label className="form-label x-small fw-bold text-dark">Credit Amount (₹) <span className="text-danger">*</span></label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        className="form-control" 
-                        required
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Credit Amount (₹)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="form-control"
                         placeholder="E.g. 5000"
                         value={purchaseForm.amount}
                         onChange={e => setPurchaseForm({...purchaseForm, amount: e.target.value})}
@@ -480,13 +609,12 @@ export default function Recharge() {
                       <div className="form-text xx-small">Actual recharge balance added to wallet</div>
                     </div>
 
-                    <div className="col-md-6">
-                      <label className="form-label x-small fw-bold text-dark">Cost Price Paid (₹) <span className="text-danger">*</span></label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        className="form-control" 
-                        required
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Cost Price Paid (₹)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="form-control"
                         placeholder="E.g. 4850"
                         value={purchaseForm.cost_price}
                         onChange={e => setPurchaseForm({...purchaseForm, cost_price: e.target.value})}
@@ -494,7 +622,20 @@ export default function Recharge() {
                       <div className="form-text xx-small">Amount paid to the distributor</div>
                     </div>
 
-                    <div className="col-md-6">
+                    {parseFloat(purchaseForm.cost_price) > 0 && (
+                      <div className="col-12">
+                        <label className="form-label x-small fw-bold text-dark">Payment Mode</label>
+                        <PaymentSplitInput
+                          totalAmount={purchaseForm.cost_price}
+                          lines={purchasePaymentLines}
+                          onChange={setPurchasePaymentLines}
+                          modeOptions={rechargeModeOptions}
+                          size="x-small"
+                        />
+                      </div>
+                    )}
+
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Purchase Date</label>
                       <input 
                         type="date" 
@@ -528,7 +669,7 @@ export default function Recharge() {
               <form onSubmit={handleSaleSubmit}>
                 <div className="modal-body p-3">
                   <div className="row g-3">
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Mobile Number <span className="text-danger">*</span></label>
                       <input 
                         type="tel" 
@@ -541,7 +682,7 @@ export default function Recharge() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Operator <span className="text-danger">*</span></label>
                       <select 
                         className="form-select"
@@ -573,7 +714,7 @@ export default function Recharge() {
                       </div>
                     )}
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Recharge Amount (₹) <span className="text-danger">*</span></label>
                       <input 
                         type="number" 
@@ -595,7 +736,7 @@ export default function Recharge() {
                       )}
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Selling Price (₹) <span className="text-danger">*</span></label>
                       <input 
                         type="number" 
@@ -608,7 +749,20 @@ export default function Recharge() {
                       <div className="form-text xx-small">Price charged to customer</div>
                     </div>
 
-                    <div className="col-md-6">
+                    {parseFloat(saleForm.selling_price || saleForm.amount) > 0 && (
+                      <div className="col-12">
+                        <label className="form-label x-small fw-bold text-dark">Payment Mode</label>
+                        <PaymentSplitInput
+                          totalAmount={saleForm.selling_price || saleForm.amount}
+                          lines={salePaymentLines}
+                          onChange={setSalePaymentLines}
+                          modeOptions={rechargeModeOptions}
+                          size="x-small"
+                        />
+                      </div>
+                    )}
+
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">Sale Date</label>
                       <input 
                         type="date" 
@@ -693,6 +847,143 @@ export default function Recharge() {
         </div>
       )}
 
+      {/* ADD SIM STOCK MODAL (New Arrival) */}
+      {showSimStockModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-3">
+              <div className="modal-header border-bottom p-3">
+                <h5 className="modal-title fw-bold text-dark mb-0">➕ Add New SIM Stock (New Arrival)</h5>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowSimStockModal(false)}></button>
+              </div>
+              <form onSubmit={handleAddSimStock}>
+                <div className="modal-body p-3">
+                  <div className="row g-3">
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-dark">Distributor (if any)</label>
+                      <Select
+                        options={distributorOptions}
+                        value={distributorOptions.find(opt => opt.value === simStockForm.distributor_id) || null}
+                        onChange={opt => setSimStockForm({...simStockForm, distributor_id: opt ? opt.value : ''})}
+                        placeholder="-- Optional --"
+                        isSearchable
+                        isClearable
+                        styles={{
+                          control: (base) => ({ ...base, minHeight: '38px', fontSize: '0.85rem', borderColor: '#cbd5e1', borderRadius: '0.375rem', boxShadow: 'none' }),
+                          menu: (base) => ({ ...base, fontSize: '0.85rem', zIndex: 1100 }),
+                        }}
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Operator <span className="text-danger">*</span></label>
+                      <select className="form-select" value={simStockForm.operator} onChange={e => setSimStockForm({...simStockForm, operator: e.target.value})}>
+                        <option value="JIO">JIO</option>
+                        <option value="AIRTEL">AIRTEL</option>
+                        <option value="VI">VI</option>
+                        <option value="BSNL">BSNL</option>
+                        <option value="OTHER">OTHER OPERATOR</option>
+                      </select>
+                    </div>
+                    {simStockForm.operator === 'OTHER' && (
+                      <div className="col-12 col-md-6">
+                        <label className="form-label x-small fw-bold text-dark">Operator Name <span className="text-danger">*</span></label>
+                        <input type="text" className="form-control text-uppercase" value={simStockForm.custom_operator} onChange={e => setSimStockForm({...simStockForm, custom_operator: e.target.value})} />
+                      </div>
+                    )}
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">SIM Count <span className="text-danger">*</span></label>
+                      <input type="number" min="1" required className="form-control" value={simStockForm.quantity} onChange={e => setSimStockForm({...simStockForm, quantity: e.target.value})} />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Price / SIM</label>
+                      <div className="input-group">
+                        <span className="input-group-text">₹</span>
+                        <input type="number" min="0" step="0.01" className="form-control" value={simStockForm.price_per_sim} onChange={e => setSimStockForm({...simStockForm, price_per_sim: e.target.value})} />
+                      </div>
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-dark">Total Value</label>
+                      <div className="form-control bg-light fw-bold text-success">
+                        ₹{((parseFloat(simStockForm.quantity) || 0) * (parseFloat(simStockForm.price_per_sim) || 0)).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Entry Date <span className="text-danger">*</span></label>
+                      <input type="date" required className="form-control" value={simStockForm.entry_date} onChange={e => setSimStockForm({...simStockForm, entry_date: e.target.value})} />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-dark">Remarks</label>
+                      <textarea rows="2" className="form-control text-uppercase" value={simStockForm.remarks} onChange={e => setSimStockForm({...simStockForm, remarks: e.target.value.toUpperCase()})} />
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer border-top p-2 bg-light justify-content-end gap-2">
+                  <button type="button" className="btn btn-outline-secondary btn-sm rounded-2 px-3 fw-bold" onClick={() => setShowSimStockModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-dark btn-sm rounded-2 px-4 fw-bold">Save Stock Entry</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SELL SIM MODAL */}
+      {showSimSellModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg rounded-3">
+              <div className="modal-header border-bottom p-3">
+                <h5 className="modal-title fw-bold text-dark mb-0">− Sell SIM (Reduce Stock)</h5>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowSimSellModal(false)}></button>
+              </div>
+              <form onSubmit={handleSellSimStock}>
+                <div className="modal-body p-3">
+                  <div className="row g-3">
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Operator <span className="text-danger">*</span></label>
+                      <select className="form-select" value={simSellForm.operator} onChange={e => setSimSellForm({...simSellForm, operator: e.target.value})}>
+                        <option value="JIO">JIO</option>
+                        <option value="AIRTEL">AIRTEL</option>
+                        <option value="VI">VI</option>
+                        <option value="BSNL">BSNL</option>
+                        <option value="OTHER">OTHER OPERATOR</option>
+                      </select>
+                      {(() => {
+                        const op = simSellForm.operator === 'OTHER' ? simSellForm.custom_operator.trim().toUpperCase() : simSellForm.operator;
+                        const avail = simStockSummary.find(s => s.operator === op)?.available ?? 0;
+                        return <div className="x-small text-muted mt-1">Available: <span className="fw-bold">{avail}</span></div>;
+                      })()}
+                    </div>
+                    {simSellForm.operator === 'OTHER' && (
+                      <div className="col-12 col-md-6">
+                        <label className="form-label x-small fw-bold text-dark">Operator Name <span className="text-danger">*</span></label>
+                        <input type="text" className="form-control text-uppercase" value={simSellForm.custom_operator} onChange={e => setSimSellForm({...simSellForm, custom_operator: e.target.value})} />
+                      </div>
+                    )}
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Quantity <span className="text-danger">*</span></label>
+                      <input type="number" min="1" required className="form-control" value={simSellForm.quantity} onChange={e => setSimSellForm({...simSellForm, quantity: e.target.value})} />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label x-small fw-bold text-dark">Date <span className="text-danger">*</span></label>
+                      <input type="date" required className="form-control" value={simSellForm.entry_date} onChange={e => setSimSellForm({...simSellForm, entry_date: e.target.value})} />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label x-small fw-bold text-dark">Remarks</label>
+                      <textarea rows="2" className="form-control text-uppercase" value={simSellForm.remarks} onChange={e => setSimSellForm({...simSellForm, remarks: e.target.value.toUpperCase()})} />
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer border-top p-2 bg-light justify-content-end gap-2">
+                  <button type="button" className="btn btn-outline-secondary btn-sm rounded-2 px-3 fw-bold" onClick={() => setShowSimSellModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-danger btn-sm rounded-2 px-4 fw-bold">Confirm Sale</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* NEW ENTITY MODAL */}
       <Modal show={showEntityModal} onHide={() => setShowEntityModal(false)} centered className="text-uppercase modal-dialog-scrollable" style={{ zIndex: 1060 }}>
         <Modal.Header closeButton className="bg-primary text-white">
@@ -711,7 +1002,7 @@ export default function Recharge() {
                   onChange={e => setNewEntity({...newEntity, name: e.target.value.toUpperCase()})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Category *</label>
                 <select 
                   className="form-select fw-semibold text-uppercase"
@@ -729,6 +1020,9 @@ export default function Recharge() {
                   <option value="SHOP">SHOP</option>
                   <option value="SUPPLIER">SUPPLIER</option>
                   <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                  <option value="BANK">BANK</option>
+                  <option value="CARD">CARD</option>
+                  <option value="UPI">UPI</option>
                   {customTypes.map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
@@ -749,26 +1043,36 @@ export default function Recharge() {
                   />
                 </div>
               )}
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newEntity.phone}
                   onChange={e => setNewEntity({...newEntity, phone: e.target.value})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newEntity.address}
+                  onChange={e => setNewEntity({...newEntity, address: e.target.value})}
+                />
+              </div>
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control text-uppercase"
                   placeholder="Optional"
                   value={newEntity.gst_number}
                   onChange={e => setNewEntity({...newEntity, gst_number: e.target.value.toUpperCase()})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Opening Balance</label>
                 <input 
                   type="number" 
@@ -777,7 +1081,7 @@ export default function Recharge() {
                   onChange={e => setNewEntity({...newEntity, opening_balance: e.target.value})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
                 <select 
                   className="form-select text-uppercase"
@@ -791,7 +1095,7 @@ export default function Recharge() {
 
               {['CUSTOMER', 'SHOP_CUSTOMER'].includes(newEntity.type) && (
                 <>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <label className="form-label fw-bold small text-muted text-uppercase">Email</label>
                     <input 
                       type="email" 
@@ -801,7 +1105,7 @@ export default function Recharge() {
                       onChange={e => setNewEntity({...newEntity, email: e.target.value})}
                     />
                   </div>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <label className="form-label fw-bold small text-muted text-uppercase">Voucher Code</label>
                     <input 
                       type="text" 
@@ -834,7 +1138,7 @@ export default function Recharge() {
                         <div key={idx} className="col-12 p-3 bg-light rounded border mb-2">
                           <div className="row g-2 align-items-center">
                             
-                            <div className="col-md-4">
+                            <div className="col-12 col-md-4">
                               <select 
                                 className="form-select form-select-sm fw-semibold text-uppercase" 
                                 value={ev.type} 
@@ -852,7 +1156,7 @@ export default function Recharge() {
                             </div>
 
                             {ev.type === 'other' && (
-                              <div className="col-md-3">
+                              <div className="col-12 col-md-3">
                                 <input 
                                   className="form-control form-control-sm fw-semibold text-uppercase" 
                                   placeholder="Event Name" 
@@ -879,7 +1183,7 @@ export default function Recharge() {
                               />
                             </div>
 
-                            <div className="col-md-1 text-end">
+                            <div className="col-12 col-md-1 text-end">
                               <button 
                                 type="button" 
                                 className="btn btn-sm btn-link text-danger p-0 border-0 bg-transparent" 

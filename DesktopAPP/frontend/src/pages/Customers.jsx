@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 
@@ -29,13 +30,12 @@ export default function Customers() {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this customer?')) {
-      try {
-        await api.delete(`/customers/${id}`);
-        toast.success('Customer deleted');
-        load();
-      } catch(e) { toast.error(e.response?.data?.message || 'Error deleting'); }
-    }
+    if (!await pinGate.confirm()) return;
+    try {
+      await api.delete(`/customers/${id}`);
+      toast.success('Customer deleted');
+      load();
+    } catch(e) { toast.error(e.response?.data?.message || 'Error deleting'); }
   };
 
   return (

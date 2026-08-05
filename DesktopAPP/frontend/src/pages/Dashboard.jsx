@@ -3,14 +3,12 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/axios';
 import DataBackupModal from '../components/DataBackupModal';
-import CloudSyncModal from '../components/CloudSyncModal';
 
 export default function Dashboard() {
   const { user, isOwner, can, hasFullAccess } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSyncModal, setShowSyncModal] = useState(false);
-  const [showCloudSyncModal, setShowCloudSyncModal] = useState(false);
   const [myTasks, setMyTasks] = useState([]);
   const [teamTasks, setTeamTasks] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -91,7 +89,7 @@ export default function Dashboard() {
 
       {/* ── Task Widgets ── */}
       <div className="row g-4 mb-4">
-        <div className="col-md-6">
+        <div className="col-12 col-md-6">
           <div className="glass-card p-4 h-100 border-0 bg-white">
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">✅ My Pending Tasks</h5>
@@ -120,7 +118,7 @@ export default function Dashboard() {
           </div>
         </div>
         {(can('assign_tasks') || hasFullAccess()) && (
-          <div className="col-md-6">
+          <div className="col-12 col-md-6">
             <div className="glass-card p-4 h-100 border-0 bg-white">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">👥 Team Tasks</h5>
@@ -157,9 +155,9 @@ export default function Dashboard() {
       </div>
 
       <div className="row g-4">
-        <div className="col-md-8">
+        <div className="col-12 col-md-8">
             <div className="row g-4">
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                     <div className="glass-card p-4 h-100 border-0 bg-white">
                         <div className="d-flex justify-content-between align-items-center mb-4">
                             <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">📅 Follow-ups</h5>
@@ -169,7 +167,7 @@ export default function Dashboard() {
                         <Link to="/follow-ups" className="btn btn-primary btn-sm rounded-pill px-4">View All</Link>
                     </div>
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                     <div className="glass-card p-4 h-100 border-0 bg-white">
                         <div className="d-flex justify-content-between align-items-center mb-4">
                             <h5 className="mb-0 fw-bold small text-muted text-uppercase letter-spacing-1">⚠️ Overdue</h5>
@@ -182,7 +180,7 @@ export default function Dashboard() {
             </div>
         </div>
         
-        <div className="col-md-4">
+        <div className="col-12 col-md-4">
           <div className="glass-card p-4 h-100 border-0 bg-white shadow-sm">
             <div className="fw-bold mb-4 small text-muted text-uppercase letter-spacing-1">⚡ Quick Actions</div>
             <div className="d-grid gap-3">
@@ -192,14 +190,9 @@ export default function Dashboard() {
                 </Link>
               ))}
               {hasFullAccess() && (
-                <>
-                  <button onClick={() => setShowCloudSyncModal(true)} disabled={showCloudSyncModal || showSyncModal} className="btn btn-primary btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
-                    ☁️ CLOUD SYNC
-                  </button>
-                  <button onClick={() => setShowSyncModal(true)} disabled={showCloudSyncModal || showSyncModal} className="btn btn-dark btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
-                    💾 LOCAL BACKUP
-                  </button>
-                </>
+                <button onClick={() => setShowSyncModal(true)} disabled={showSyncModal} className="btn btn-dark btn-md rounded-pill shadow-sm py-2 text-uppercase fw-bold x-small d-flex align-items-center justify-content-center gap-2">
+                  🔄 FULL SYSTEM SYNC
+                </button>
               )}
               {quickActions.length === 0 && <div className="text-muted small italic">No actions available</div>}
             </div>
@@ -214,12 +207,6 @@ export default function Dashboard() {
         title="Full System Sync (Master)"
         endpoint="/system"
         typeLabel="Entire System"
-      />
-
-      <CloudSyncModal
-        isOpen={showCloudSyncModal}
-        onClose={() => setShowCloudSyncModal(false)}
-        onRefresh={() => setRefreshKey(k => k + 1)}
       />
     </div>
   );

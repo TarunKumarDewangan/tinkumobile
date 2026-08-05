@@ -45,11 +45,11 @@ export default function Shops() {
         <div className="table-card p-4 mb-3">
           <form onSubmit={handleSubmit}>
             <div className="row g-3">
-              <div className="col-md-4"><input className="form-control" placeholder="Shop Name *" required value={form.name} onChange={e => setForm({...form, name:e.target.value})} /></div>
-              <div className="col-md-4"><input className="form-control" placeholder="Phone *" required value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} /></div>
-              <div className="col-md-4"><input className="form-control" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} /></div>
-              <div className="col-md-8"><input className="form-control" placeholder="Address *" required value={form.address} onChange={e => setForm({...form, address:e.target.value})} /></div>
-              <div className="col-md-4"><input className="form-control" placeholder="GSTIN" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} /></div>
+              <div className="col-12 col-md-4"><input className="form-control" placeholder="Shop Name *" required value={form.name} onChange={e => setForm({...form, name:e.target.value})} /></div>
+              <div className="col-12 col-md-4"><input className="form-control" placeholder="Phone *" required value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} /></div>
+              <div className="col-12 col-md-4"><input className="form-control" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} /></div>
+              <div className="col-12 col-md-8"><input className="form-control" placeholder="Address *" required value={form.address} onChange={e => setForm({...form, address:e.target.value})} /></div>
+              <div className="col-12 col-md-4"><input className="form-control" placeholder="GSTIN" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} /></div>
             </div>
             <div className="mt-3 d-flex gap-2">
               <button type="submit" className="btn btn-primary btn-sm">{editingId ? 'Update Shop' : 'Create Shop'}</button>
@@ -60,7 +60,7 @@ export default function Shops() {
       )}
       <div className="row g-3">
         {shops.map(s => (
-          <div key={s.id} className="col-md-4">
+          <div key={s.id} className="col-12 col-md-4">
             <div className="table-card p-4">
               <div className="d-flex justify-content-between align-items-start mb-2">
                 <h6 className="fw-bold mb-0">{s.name}</h6>

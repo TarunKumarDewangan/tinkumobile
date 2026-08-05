@@ -85,13 +85,13 @@ export default function Daybook() {
         </div>
 
         <div className="row g-3 mb-4">
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
                 <div className="card border border-secondary border-opacity-25 bg-white p-3 shadow-none rounded-2">
                     <div className="small text-uppercase fw-bold text-muted opacity-75 mb-1">Total Debit (Sales/Receivable/Paid Out)</div>
                     <div className="h4 mb-0 fw-bold text-dark">₹{filteredDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                 </div>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
                 <div className="card border border-secondary border-opacity-25 bg-white p-3 shadow-none rounded-2">
                     <div className="small text-uppercase fw-bold text-muted opacity-75 mb-1">Total Credit (Purchases/Payable/Received In)</div>
                     <div className="h4 mb-0 fw-bold text-dark">₹{filteredCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
@@ -140,14 +140,16 @@ export default function Daybook() {
                             <th style={{ width: '150px' }}>Voucher Type</th>
                             <th>Particulars</th>
                             <th className="text-end" style={{ width: '140px' }}>Debit (Dr)</th>
-                            <th className="text-end pe-3" style={{ width: '140px' }}>Credit (Cr)</th>
+                            <th className="text-end" style={{ width: '140px' }}>Credit (Cr)</th>
+                            <th className="text-end" style={{ width: '140px' }}>Payment Received</th>
+                            <th className="text-end pe-3" style={{ width: '140px' }}>Balance</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
-                            <tr><td colSpan="6" className="text-center py-5 border-0"><div className="spinner-border text-secondary" /></td></tr>
+                            <tr><td colSpan="8" className="text-center py-5 border-0"><div className="spinner-border text-secondary" /></td></tr>
                         ) : filteredEntries.length === 0 ? (
-                            <tr><td colSpan="6" className="text-center py-5 text-muted border-0"><i className="bi bi-journal-x display-6 d-block mb-3 opacity-25"></i> No entries found matching the filter.</td></tr>
+                            <tr><td colSpan="8" className="text-center py-5 text-muted border-0"><i className="bi bi-journal-x display-6 d-block mb-3 opacity-25"></i> No entries found matching the filter.</td></tr>
                         ) : filteredEntries.map(entry => (
                             <tr key={entry.id} className="tally-row">
                                 <td className="ps-3 text-muted small">{new Date(entry.date).toLocaleDateString('en-GB')}</td>
@@ -165,8 +167,18 @@ export default function Daybook() {
                                 <td className={`text-end fw-bold ${entry.debit > 0 ? 'text-dark' : 'text-muted opacity-25'}`}>
                                     {entry.debit > 0 ? `₹${Number(entry.debit).toLocaleString()}` : '—'}
                                 </td>
-                                <td className={`text-end pe-3 fw-bold ${entry.credit > 0 ? 'text-dark' : 'text-muted opacity-25'}`}>
+                                <td className={`text-end fw-bold ${entry.credit > 0 ? 'text-dark' : 'text-muted opacity-25'}`}>
                                     {entry.credit > 0 ? `₹${Number(entry.credit).toLocaleString()}` : '—'}
+                                </td>
+                                <td className="text-end fw-bold text-success">
+                                    {entry.payment_received !== null && entry.payment_received !== undefined ? `₹${Number(entry.payment_received).toLocaleString()}` : <span className="text-muted opacity-25">—</span>}
+                                </td>
+                                <td className="text-end pe-3 fw-bold">
+                                    {entry.voucher_balance !== null && entry.voucher_balance !== undefined
+                                        ? (entry.voucher_balance > 0.01
+                                            ? <span className="text-danger">₹{Number(entry.voucher_balance).toLocaleString()}</span>
+                                            : <span className="text-success">₹0</span>)
+                                        : <span className="text-muted opacity-25">—</span>}
                                 </td>
                             </tr>
                         ))}

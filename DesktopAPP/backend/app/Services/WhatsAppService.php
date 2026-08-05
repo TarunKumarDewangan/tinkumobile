@@ -10,14 +10,18 @@ class WhatsAppService
     protected $host;
     protected $apiKey;
     protected $ownerMobile;
+    protected $autoEnabled;
 
     public function __construct()
     {
-        $settings = \App\Models\Setting::whereIn('key', ['WAPP_HOST', 'WAPP_API_KEY', 'OWNER_MOBILE'])->pluck('value', 'key');
-        
+        $settings = \App\Models\Setting::whereIn('key', ['WAPP_HOST', 'WAPP_API_KEY', 'OWNER_MOBILE', 'WHATSAPP_AUTO_ENABLED'])->pluck('value', 'key');
+
         $this->host = $settings['WAPP_HOST'] ?? env('WAPP_HOST');
         $this->apiKey = $settings['WAPP_API_KEY'] ?? env('WAPP_API_KEY');
         $this->ownerMobile = $settings['OWNER_MOBILE'] ?? env('OWNER_MOBILE');
+        // Automatic owner notifications (business events, scheduled reports) are opt-in;
+        // manual/user-triggered sends (sendMessage() called directly) are unaffected.
+        $this->autoEnabled = in_array($settings['WHATSAPP_AUTO_ENABLED'] ?? '0', ['1', 'true', 'on'], true);
     }
 
     /**
@@ -110,6 +114,11 @@ class WhatsAppService
      */
     public function sendToOwner($message)
     {
+        if (!$this->autoEnabled) {
+            Log::info('Automatic WhatsApp owner notifications are disabled (WHATSAPP_AUTO_ENABLED off). Message not sent.');
+            return false;
+        }
+
         if (empty($this->ownerMobile)) {
             Log::warning('Owner mobile not configured. Owner message not sent.', ['message' => $message]);
             return false;

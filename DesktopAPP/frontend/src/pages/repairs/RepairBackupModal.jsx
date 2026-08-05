@@ -1,4 +1,5 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
+import pinGate from '../../utils/pinGate';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import Modal from '../../components/Modal';
@@ -55,9 +56,7 @@ export default function RepairBackupModal({ isOpen, onClose, onRefresh }) {
   const handleImport = async () => {
     if (!file) return toast.warning('Please select a backup file to restore.');
 
-    if (!window.confirm('Are you sure you want to restore this backup? Existing records with the same ID will be updated.')) {
-        return;
-    }
+    if (!await pinGate.confirm()) return;
 
     try {
       setLoading(true);

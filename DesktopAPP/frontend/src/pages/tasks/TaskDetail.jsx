@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
@@ -70,7 +71,7 @@ export default function TaskDetail() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this task permanently?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/tasks/${id}`);
       toast.success('Task deleted');

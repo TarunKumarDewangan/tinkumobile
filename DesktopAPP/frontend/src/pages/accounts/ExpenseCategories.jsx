@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
@@ -72,7 +73,7 @@ export default function ExpenseCategories() {
     };
 
     const deleteCategory = async (id) => {
-        if (!window.confirm('Delete this category? Transactions in this category will remain but reference will be broken.')) return;
+        if (!await pinGate.confirm()) return;
         try {
             await api.delete(`/expense-categories/${id}`);
             toast.success('Deleted');
@@ -90,7 +91,7 @@ export default function ExpenseCategories() {
             </div>
 
             <div className="row g-4">
-                <div className="col-md-8">
+                <div className="col-12 col-md-8">
                     <div className="card border-0 shadow-sm">
                         <div className="table-responsive">
                             <table className="table table-hover align-middle mb-0">
@@ -125,7 +126,7 @@ export default function ExpenseCategories() {
                         </div>
                     </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                     <div className="card border-0 shadow-sm bg-light">
                         <div className="card-body">
                             <h6 className="fw-bold mb-3">💡 Categories Tip</h6>

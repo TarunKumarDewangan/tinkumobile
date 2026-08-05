@@ -4,12 +4,17 @@ import { ToastContainer } from 'react-toastify';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import PermissionRoute from './components/PermissionRoute';
+import PinModal from './components/PinModal';
 
 // Pages
 const Login = lazy(() => import('./pages/auth/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const PendingBalance = lazy(() => import('./pages/PendingBalance'));
 const Products = lazy(() => import('./pages/products/Products'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
+const GenerateStickers = lazy(() => import('./pages/stickers/GenerateStickers'));
+const StickerProductCrud = lazy(() => import('./pages/stickers/StickerProductCrud'));
+const StickerPrint = lazy(() => import('./pages/stickers/StickerPrint'));
 const Purchases = lazy(() => import('./pages/purchases/Purchases'));
 const PurchaseForm = lazy(() => import('./pages/purchases/PurchaseForm'));
 const MasterPurchaseForm = lazy(() => import('./pages/purchases/MasterPurchaseForm'));
@@ -32,6 +37,7 @@ const OldMobiles = lazy(() => import('./pages/OldMobiles'));
 const OldMobilePurchaseForm = lazy(() => import('./pages/OldMobilePurchaseForm'));
 const OldMobileStocks = lazy(() => import('./pages/OldMobileStocks'));
 const OldMobileSales = lazy(() => import('./pages/OldMobileSales'));
+const OldMobileExchangeReport = lazy(() => import('./pages/reports/OldMobileExchangeReport'));
 const Gifts = lazy(() => import('./pages/Gifts'));
 const Employees = lazy(() => import('./pages/Employees'));
 const Incentives = lazy(() => import('./pages/Incentives'));
@@ -48,7 +54,10 @@ const SetSalesMatrix = lazy(() => import('./pages/reports/SetSalesMatrix'));
 const ProfitReport = lazy(() => import('./pages/reports/ProfitReport'));
 const StockReport = lazy(() => import('./pages/reports/StockReport'));
 const LoanReport = lazy(() => import('./pages/reports/LoanReport'));
+const BusinessSummaryReport = lazy(() => import('./pages/reports/BusinessSummaryReport'));
 const StockEntry = lazy(() => import('./pages/StockEntry'));
+const StockTransfers = lazy(() => import('./pages/stock/StockTransfers'));
+const ClosingStockDetail = lazy(() => import('./pages/stock/ClosingStockDetail'));
 const AirtelRetailers = lazy(() => import('./pages/airtel/AirtelRetailers'));
 const AirtelDrops = lazy(() => import('./pages/airtel/AirtelDrops'));
 const RecoveryDashboard = lazy(() => import('./pages/airtel/RecoveryDashboard'));
@@ -59,14 +68,23 @@ const PublicRetailerProfile = lazy(() => import('./pages/airtel/PublicRetailerPr
 
 const EntityLedger = lazy(() => import('./pages/accounts/EntityLedger'));
 const EntityManager = lazy(() => import('./pages/accounts/EntityManager'));
+const BankBalances = lazy(() => import('./pages/accounts/BankBalances'));
+const PromiseToPay = lazy(() => import('./pages/accounts/PromiseToPay'));
+const Overheads = lazy(() => import('./pages/accounts/Overheads'));
+const ExpenseCategories = lazy(() => import('./pages/accounts/ExpenseCategories'));
 const Daybook = lazy(() => import('./pages/accounts/Daybook'));
 const GroupSummary = lazy(() => import('./pages/accounts/GroupSummary'));
 const GroupDetails = lazy(() => import('./pages/accounts/GroupDetails'));
 const TradeGroupSummary = lazy(() => import('./pages/accounts/TradeGroupSummary'));
 const WhatsAppConfig = lazy(() => import('./pages/admin/WhatsAppConfig'));
+const ManualNotifications = lazy(() => import('./pages/admin/ManualNotifications'));
 const Tasks = lazy(() => import('./pages/tasks/Tasks'));
 const TaskForm = lazy(() => import('./pages/tasks/TaskForm'));
 const TaskDetail = lazy(() => import('./pages/tasks/TaskDetail'));
+const FinanceTracker = lazy(() => import('./pages/finance/FinanceTracker'));
+const FinancerReport = lazy(() => import('./pages/reports/FinancerReport'));
+const RolePermissions = lazy(() => import('./pages/admin/RolePermissions'));
+const SecuritySettings = lazy(() => import('./pages/admin/SecuritySettings'));
 
 const CustomerLogin = lazy(() => import('./pages/customer/CustomerLogin'));
 const CustomerProfile = lazy(() => import('./pages/customer/CustomerProfile'));
@@ -99,9 +117,13 @@ function AppRoutes() {
         {/* Protected */}
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
+          <Route path="pending-balance" element={<PendingBalance />} />
           <Route path="products" element={<Products />} />
           <Route path="products/new" element={<ProductForm />} />
           <Route path="products/:id/edit" element={<ProductForm />} />
+          <Route path="stickers/generate" element={<GenerateStickers />} />
+          <Route path="stickers/crud" element={<StickerProductCrud />} />
+          <Route path="stickers/print" element={<StickerPrint />} />
           <Route path="purchases" element={<Purchases />} />
           <Route path="purchases/new" element={<PurchaseForm />} />
           <Route path="purchases/new-master" element={<MasterPurchaseForm />} />
@@ -130,14 +152,19 @@ function AppRoutes() {
           <Route path="old-mobiles/sales" element={<OldMobileSales />} />
           <Route path="old-mobiles/sales/new" element={<SaleForm />} />
           <Route path="old-mobiles/sales/:id/edit" element={<SaleForm />} />
+          <Route path="old-mobiles/report" element={<OldMobileExchangeReport />} />
           <Route path="gifts" element={<Gifts />} />
           <Route path="stock-entry" element={<StockEntry />} />
+          <Route path="stock-entry/closing-stock" element={<ClosingStockDetail />} />
+          <Route path="stock-transfers" element={<StockTransfers />} />
           <Route path="employees" element={<Employees />} />
           <Route path="incentives" element={<Incentives />} />
           <Route path="offers" element={<CompanyOffers />} />
           <Route path="send-offers" element={<SendOffers />} />
           <Route path="admin/users" element={<Users />} />
           <Route path="admin/shops" element={<Shops />} />
+          <Route path="admin/role-permissions" element={<RolePermissions />} />
+          <Route path="admin/security-settings" element={<SecuritySettings />} />
           <Route path="admin/activity-logs" element={<ActivityLogs />} />
           <Route path="admin/trash" element={<TrashManager />} />
           <Route path="reports" element={<Reports />} />
@@ -147,6 +174,7 @@ function AppRoutes() {
           <Route path="reports/profit" element={<ProfitReport />} />
           <Route path="reports/stock" element={<StockReport />} />
           <Route path="reports/loans" element={<LoanReport />} />
+          <Route path="reports/business-summary" element={<BusinessSummaryReport />} />
           {/* Airtel Recovery */}
           <Route path="airtel/retailers" element={<AirtelRetailers />} />
           <Route path="airtel/quick-recovery" element={<QuickRecovery />} />
@@ -157,11 +185,21 @@ function AppRoutes() {
           {/* Accounts */}
           <Route path="accounts/entity-manager" element={<EntityManager />} />
           <Route path="accounts/entity-ledger" element={<EntityLedger />} />
+          <Route path="accounts/bank-balances" element={<BankBalances />} />
+          <Route path="accounts/promise-to-pay" element={<PromiseToPay />} />
+          <Route path="accounts/overheads" element={<Overheads />} />
+          <Route path="accounts/expense-categories" element={<ExpenseCategories />} />
           <Route path="accounts/daybook" element={<Daybook />} />
           <Route path="accounts/group-summary" element={<GroupSummary />} />
           <Route path="accounts/group-details" element={<GroupDetails />} />
           <Route path="accounts/trade-summary" element={<TradeGroupSummary />} />
           <Route path="admin/whatsapp-config" element={<WhatsAppConfig />} />
+          <Route path="admin/notifications" element={<ManualNotifications />} />
+
+          {/* Finance Tracker */}
+          <Route path="finance-tracker" element={<FinanceTracker />} />
+          {/* Financer Report */}
+          <Route path="reports/financer" element={<FinancerReport />} />
 
           {/* Tasks */}
           <Route path="tasks" element={<PermissionRoute permission="view_tasks"><Tasks /></PermissionRoute>} />
@@ -184,6 +222,7 @@ export default function App() {
       <BrowserRouter>
         <AppRoutes />
         <ToastContainer position="top-right" autoClose={3000} />
+        <PinModal />
       </BrowserRouter>
     </AuthProvider>
   );

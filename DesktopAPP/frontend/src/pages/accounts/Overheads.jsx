@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function Overheads() {
     const { hasFullAccess, user } = useAuth();
@@ -23,11 +27,19 @@ export default function Overheads() {
         shop_id: user?.shop_id || ''
     };
     const [form, setForm] = useState(initialForm);
+    const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
+    const [bankEntities, setBankEntities] = useState([]);
+
+    const modeOptions = buildModeOptions(
+        [{ value: 'CASH', label: 'Cash' }, { value: 'PHONEPE', label: 'PhonePe' }, { value: 'GPAY', label: 'GPay' }, { value: 'BANK / NEFT', label: 'Bank / NEFT' }],
+        bankEntities
+    ).concat([{ value: 'OTHER', label: 'Other' }]);
 
     useEffect(() => {
         fetchData();
         fetchCategories();
         if (hasFullAccess()) fetchShops();
+        api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
     }, []);
 
     const fetchData = async () => {
@@ -59,15 +71,16 @@ export default function Overheads() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!paymentLinesSumMatches(paymentLines, form.amount)) {
+            return toast.warning("Split doesn't add up to the amount");
+        }
         try {
-            let finalForm = { ...form };
-            if (form.payment_mode === 'OTHER' && form.other_mode) {
-                finalForm.payment_mode = form.other_mode;
-            }
+            const finalForm = { ...form, ...buildPaymentPayload(paymentLines) };
             await api.post('/transactions', finalForm);
             toast.success('Record saved');
             setShowModal(false);
             setForm(initialForm);
+            setPaymentLines(newSingleLine('CASH'));
             fetchData();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to save');
@@ -75,7 +88,7 @@ export default function Overheads() {
     };
 
     const deleteTransaction = async (id) => {
-        if (!window.confirm('Delete this record?')) return;
+        if (!await pinGate.confirm()) return;
         try {
             await api.delete(`/transactions/${id}`);
             toast.success('Deleted');
@@ -148,7 +161,7 @@ export default function Overheads() {
                                                 <label className="btn btn-outline-success" htmlFor="typeIn">Income (IN)</label>
                                             </div>
                                         </div>
-                                        <div className="col-md-6">
+                                        <div className="col-12 col-md-6">
                                             <label className="form-label small fw-bold">Amount</label>
                                             <div className="input-group">
                                                 <span className="input-group-text">₹</span>
@@ -156,7 +169,7 @@ export default function Overheads() {
                                                     value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
                                             </div>
                                         </div>
-                                        <div className="col-md-6">
+                                        <div className="col-12 col-md-6">
                                             <label className="form-label small fw-bold">Date</label>
                                             <input type="date" className="form-control" required
                                                 value={form.transaction_date} onChange={e => setForm({...form, transaction_date: e.target.value})} />
@@ -171,21 +184,12 @@ export default function Overheads() {
                                         </div>
                                         <div className="col-12">
                                             <label className="form-label small fw-bold">Payment Mode</label>
-                                            <select className="form-select" value={form.payment_mode} onChange={e => setForm({...form, payment_mode: e.target.value})}>
-                                                <option value="CASH">Cash</option>
-                                                <option value="PHONEPE">PhonePe</option>
-                                                <option value="GPAY">GPay</option>
-                                                <option value="BANK / NEFT">Bank / NEFT</option>
-                                                <option value="OTHER">Other</option>
-                                            </select>
-                                            {form.payment_mode === 'OTHER' && (
-                                                <input 
-                                                    className="form-control form-control-sm mt-2 text-uppercase fw-bold border-primary" 
-                                                    placeholder="Specify Mode (e.g. CHEQUE, EXCHANGE)" 
-                                                    value={form.other_mode || ''}
-                                                    onChange={e => setForm({...form, other_mode: e.target.value.toUpperCase()})}
-                                                />
-                                            )}
+                                            <PaymentSplitInput
+                                                totalAmount={form.amount}
+                                                lines={paymentLines}
+                                                onChange={setPaymentLines}
+                                                modeOptions={modeOptions}
+                                            />
                                         </div>
                                         {hasFullAccess() && (
                                             <div className="col-12">

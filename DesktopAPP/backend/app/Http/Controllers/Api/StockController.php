@@ -72,6 +72,395 @@ class StockController extends Controller
         ]);
     }
 
+    /**
+     * Closing stock breakdown as of a given date (inclusive) — company/model/config/color/IMEI,
+     * grouped the same way as the Model Wise Stock view. Uses the exact same quantity math as
+     * dailyLedger()'s running closing_stock total (just <= date, per-product, instead of a
+     * single aggregate) so the grand total here always matches the ledger's Closing badge.
+     */
+    public function closingStockDetail(Request $request)
+    {
+        $user   = $request->user();
+        $shopId = $user->hasFullAccess() ? ($request->shop_id ?: null) : $user->shop_id;
+        $date   = Carbon::parse($request->date ?? now())->toDateString();
+
+        // New Mobile stock only — 2nd Hand purchases/sales have their own dedicated
+        // section (Old/2nd Mobile) and shouldn't be mixed into this ledger.
+        $newCatId = Category::mobileNewId();
+        $catIds   = array_values(array_filter([$newCatId]));
+
+        $purchasesIn = PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('purchase_date', '<=', $date);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $adjAdd = StockAdjustment::where('type', 'add')->where('adjustment_date', '<=', $date)
+            ->where('reason', '!=', 'opening_stock')
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $adjRemove = StockAdjustment::where('type', 'remove')->where('adjustment_date', '<=', $date)
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        $salesOut = SaleItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('sale_date', '<=', $date)->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->pluck('qty', 'product_id');
+
+        // Real per-unit IMEIs live on purchase_items.imei (a comma-separated batch list),
+        // not on the product row itself — pull the raw (non-aggregated) rows so we can
+        // reconcile which specific IMEIs are still on hand as of this date.
+        $purchasedImeisByProduct = [];
+        PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('purchase_date', '<=', $date);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->whereNotNull('imei')->where('imei', '!=', '')
+            ->get(['product_id', 'imei'])
+            ->each(function ($item) use (&$purchasedImeisByProduct) {
+                foreach (explode(',', $item->imei) as $im) {
+                    $im = trim($im);
+                    if ($im === '') continue;
+                    $purchasedImeisByProduct[$item->product_id][] = $im;
+                }
+            });
+
+        $soldImeiCounts = [];
+        SaleItem::whereHas('invoice', function ($q) use ($shopId, $date) {
+                $q->where('sale_date', '<=', $date)->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->whereNotNull('imei')->where('imei', '!=', '')
+            ->get(['imei'])
+            ->each(function ($item) use (&$soldImeiCounts) {
+                $im = trim($item->imei);
+                if ($im === '') return;
+                $soldImeiCounts[$im] = ($soldImeiCounts[$im] ?? 0) + 1;
+            });
+
+        $productIds = collect()
+            ->merge($purchasesIn->keys())->merge($adjAdd->keys())
+            ->merge($adjRemove->keys())->merge($salesOut->keys())
+            ->unique()->values();
+
+        $products = Product::with('brand:id,name', 'category:id,name')->whereIn('id', $productIds)->get()->keyBy('id');
+
+        // Group the same way ModelWiseStock.jsx does client-side: brand + model + ram + storage + color.
+        $groups = [];
+        $grandTotal = 0;
+
+        foreach ($productIds as $pid) {
+            $product = $products[$pid] ?? null;
+            if (!$product) continue;
+
+            $stock = ($purchasesIn[$pid] ?? 0) + ($adjAdd[$pid] ?? 0) - ($adjRemove[$pid] ?? 0) - ($salesOut[$pid] ?? 0);
+
+            // Old Mobile purchases add stock straight via Inventory::addStock(), bypassing
+            // PurchaseItem/StockAdjustment entirely, so a handful of products can compute
+            // negative here even though they're not really "out of stock". Still fold that
+            // negative delta into the grand total (so it always matches dailyLedger()'s own
+            // running closing_stock exactly) — just don't render a confusing negative row.
+            $grandTotal += $stock;
+            if ($stock <= 0) continue;
+
+            $brand = $product->brand?->name ?: ($product->attributes['brand'] ?? '');
+            $brand = trim($brand) ?: strtoupper(explode(' ', $product->name)[0] ?? 'OTHER');
+            $brand = strtoupper($brand);
+
+            $ram     = $product->attributes['ram'] ?? '';
+            $storage = $product->attributes['storage'] ?? '';
+            $color   = strtoupper(trim($product->attributes['color'] ?? ''));
+
+            // Reconcile this product's purchased IMEIs against what's already sold by this
+            // date, so only genuinely-remaining units show up.
+            $remainingImeis = [];
+            foreach (($purchasedImeisByProduct[$pid] ?? []) as $im) {
+                if (($soldImeiCounts[$im] ?? 0) > 0) {
+                    $soldImeiCounts[$im]--;
+                    continue;
+                }
+                $remainingImeis[] = $im;
+            }
+            // Old Mobile purchases never create a purchase_items row at all (they add stock
+            // straight via Inventory::addStock()), so their single IMEI only ever lives on
+            // the product's own attributes — check that separately.
+            $singleImei = $product->attributes['imei'] ?? $product->imei ?? null;
+            if ($singleImei && !in_array($singleImei, $remainingImeis)) {
+                if (($soldImeiCounts[$singleImei] ?? 0) > 0) {
+                    $soldImeiCounts[$singleImei]--;
+                } else {
+                    $remainingImeis[] = $singleImei;
+                }
+            }
+
+            $key = strtoupper($product->name) . '|' . $ram . '|' . $storage . '|' . $color;
+
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'company'  => $brand,
+                    'model'    => strtoupper($product->name),
+                    'ram'      => $ram,
+                    'storage'  => $storage,
+                    'color'    => $color,
+                    'category' => $product->category?->name,
+                    'imeis'    => [],
+                    'pcs'      => 0,
+                ];
+            }
+
+            $groups[$key]['pcs'] += $stock;
+            $groups[$key]['imeis'] = array_merge($groups[$key]['imeis'], $remainingImeis);
+        }
+
+        // Defensive cap: a product occasionally carries both a legacy single attributes.imei
+        // AND its own real purchase-batch IMEIs (messy historical data), which can add up to
+        // more tracked IMEIs than the group's actual computed stock — never show more IMEIs
+        // than pcs, that would just be confusing.
+        foreach ($groups as &$g) {
+            $g['imeis'] = array_slice(array_unique($g['imeis']), 0, $g['pcs']);
+        }
+        unset($g);
+
+        $rows = array_values($groups);
+        usort($rows, fn($a, $b) => $a['company'] <=> $b['company'] ?: $a['model'] <=> $b['model']);
+
+        return response()->json([
+            'date'  => $date,
+            'rows'  => $rows,
+            'total' => $grandTotal,
+        ]);
+    }
+
+    /**
+     * Daily Stock Ledger — running balance with purchases, sales, and adjustments per day.
+     */
+    public function dailyLedger(Request $request)
+    {
+        $user   = $request->user();
+        $shopId = $user->hasFullAccess() ? ($request->shop_id ?: null) : $user->shop_id;
+
+        $fromDate = $request->from_date ? Carbon::parse($request->from_date)->startOfDay() : Carbon::now()->subDays(29)->startOfDay();
+        $toDate   = $request->to_date   ? Carbon::parse($request->to_date)->endOfDay()     : Carbon::now()->endOfDay();
+
+        // New Mobile stock only — 2nd Hand purchases/sales have their own dedicated
+        // section (Old/2nd Mobile) and shouldn't be mixed into this ledger.
+        $newCatId = Category::mobileNewId();
+        $catIds   = array_values(array_filter([$newCatId]));
+
+        // ── Opening stock (all movements strictly before fromDate) ──────────
+        $purchasesBefore = PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('purchase_date', '<', $fromDate->toDateString());
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $adjAddBefore    = StockAdjustment::where('type', 'add')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->where('reason', '!=', 'opening_stock') // opening_stock adjustments are already counted via their paired LEGACY_BAL PurchaseItem
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $adjRemoveBefore = StockAdjustment::where('type', 'remove')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $salesBefore = SaleItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('sale_date', '<', $fromDate->toDateString())->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->sum('quantity');
+
+        $openingStock = (int)$purchasesBefore + (int)$adjAddBefore - (int)$adjRemoveBefore - (int)$salesBefore;
+
+        // Per-product running quantity, so each day's closing MOP (market/selling
+        // price) value of stock-on-hand can be computed incrementally instead of
+        // re-deriving the full stock composition from scratch on every single day.
+        $productQty = [];
+        $addQty = function ($productId, $qty) use (&$productQty) {
+            if (!$productId) return;
+            $productQty[$productId] = ($productQty[$productId] ?? 0) + $qty;
+        };
+
+        PurchaseItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('purchase_date', '<', $fromDate->toDateString());
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, (int) $r->qty));
+
+        StockAdjustment::where('type', 'add')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->where('reason', '!=', 'opening_stock')
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, (int) $r->qty));
+
+        StockAdjustment::where('type', 'remove')->where('adjustment_date', '<', $fromDate->toDateString())
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, -(int) $r->qty));
+
+        SaleItem::whereHas('invoice', function ($q) use ($shopId, $fromDate) {
+                $q->where('sale_date', '<', $fromDate->toDateString())->where('is_cancelled', false);
+                if ($shopId) $q->where('shop_id', $shopId);
+            })
+            ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+            ->selectRaw('product_id, SUM(quantity) as qty')->groupBy('product_id')->get()
+            ->each(fn($r) => $addQty($r->product_id, -(int) $r->qty));
+
+        $sellingPrices = Product::pluck('selling_price', 'id');
+        $closingMopValue = function () use (&$productQty, $sellingPrices) {
+            $total = 0;
+            foreach ($productQty as $pid => $qty) {
+                if ($qty > 0) $total += $qty * (float) ($sellingPrices[$pid] ?? 0);
+            }
+            return $total;
+        };
+
+        $openingMopValue = $closingMopValue();
+
+        // ── Per-day movements ────────────────────────────────────────────────
+        $days     = [];
+        $running  = $openingStock;
+        $current  = $fromDate->copy();
+
+        while ($current->lte($toDate)) {
+            $dateStr = $current->toDateString();
+
+            // Purchases IN
+            $purchases = PurchaseItem::with(['product:id,name,purchase_price,selling_price', 'invoice:id,invoice_no,supplier_id,purchase_date'])
+                ->whereHas('invoice', function ($q) use ($shopId, $dateStr) {
+                    $q->where('purchase_date', $dateStr);
+                    if ($shopId) $q->where('shop_id', $shopId);
+                })
+                ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+                ->get();
+
+            // Sales OUT
+            $sales = SaleItem::with([
+                    'product:id,name,purchase_price',
+                    'invoice:id,invoice_no,sale_date,customer_id',
+                    'invoice.customer:id,name',
+                ])
+                ->whereHas('invoice', function ($q) use ($shopId, $dateStr) {
+                    $q->where('sale_date', $dateStr)->where('is_cancelled', false);
+                    if ($shopId) $q->where('shop_id', $shopId);
+                })
+                ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+                ->get();
+
+            // Adjustments (excludes 'opening_stock' — those are already counted via their paired LEGACY_BAL PurchaseItem, see bulkStore())
+            $adjustments = StockAdjustment::with('product:id,name,purchase_price')
+                ->where('adjustment_date', $dateStr)
+                ->where('reason', '!=', 'opening_stock')
+                ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+                ->when(!empty($catIds), fn($q) => $q->whereHas('product', fn($p) => $p->whereIn('category_id', $catIds)))
+                ->get();
+
+            $stockIn  = $purchases->sum('quantity')
+                      + $adjustments->where('type', 'add')->sum('quantity');
+            $stockOut = $sales->sum('quantity')
+                      + $adjustments->where('type', 'remove')->sum('quantity');
+
+            if ($stockIn === 0 && $stockOut === 0) {
+                $current->addDay();
+                continue;
+            }
+
+            $running += $stockIn - $stockOut;
+
+            foreach ($purchases as $item) $addQty($item->product_id, $item->quantity);
+            foreach ($sales as $item) $addQty($item->product_id, -$item->quantity);
+            foreach ($adjustments as $adj) $addQty($adj->product_id, $adj->type === 'add' ? $adj->quantity : -$adj->quantity);
+
+            // Aggregate purchase value from purchase items
+            $purchaseValue = $purchases->sum(fn($i) => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0));
+            $saleRevenue   = $sales->sum(fn($i) => $i->quantity * ($i->unit_price ?? 0));
+            // A purchase_price of 0 usually means the cost was never recorded (e.g. a bulk/
+            // legacy opening-stock entry), not that the unit genuinely cost nothing. Treating
+            // that as a real ₹0 cost would make the sale look like 100% profit, so those items
+            // are excluded from cost/profit entirely rather than assumed free.
+            $saleCost      = $sales->sum(fn($i) => ($i->product?->purchase_price ?? 0) > 0 ? $i->quantity * $i->product->purchase_price : 0);
+            $profitableRevenue = $sales->sum(fn($i) => ($i->product?->purchase_price ?? 0) > 0 ? $i->quantity * ($i->unit_price ?? 0) : 0);
+
+            $days[] = [
+                'date'           => $dateStr,
+                'opening_stock'  => $running - $stockIn + $stockOut,
+                'stock_in'       => $stockIn,
+                'stock_out'      => $stockOut,
+                'closing_stock'  => $running,
+                'closing_mop_value' => round($closingMopValue(), 2),
+                'purchase_value' => round($purchaseValue, 2),
+                'sale_revenue'   => round($saleRevenue, 2),
+                'sale_cost'      => round($saleCost, 2),
+                'profit'         => round($profitableRevenue - $saleCost, 2),
+                'purchases'      => $purchases->map(fn($i) => [
+                    'product_name'   => $i->product?->name,
+                    'quantity'       => $i->quantity,
+                    'unit_price'     => $i->unit_price ?? $i->product?->purchase_price,
+                    'total_value'    => $i->quantity * ($i->unit_price ?? $i->product?->purchase_price ?? 0),
+                    'mop'            => $i->selling_price ?? $i->product?->selling_price,
+                    'invoice_no'     => $i->invoice?->invoice_no,
+                ])->values(),
+                'sales' => $sales->map(function($i) {
+                    $purchasePrice = $i->product?->purchase_price ?? 0;
+                    return [
+                        'product_name'   => $i->product?->name,
+                        'quantity'       => $i->quantity,
+                        'sale_price'     => $i->unit_price,
+                        'purchase_price' => $i->product?->purchase_price,
+                        'profit'         => $purchasePrice > 0 ? $i->quantity * (($i->unit_price ?? 0) - $purchasePrice) : null,
+                        'customer_name'  => $i->invoice?->customer?->name ?? 'Walk-in',
+                        'invoice_no'     => $i->invoice?->invoice_no,
+                    ];
+                })->values(),
+                'adjustments' => $adjustments->map(fn($a) => [
+                    'product_name' => $a->product?->name,
+                    'quantity'     => $a->quantity,
+                    'type'         => $a->type,
+                    'reason'       => $a->reason,
+                ])->values(),
+            ];
+
+            $current->addDay();
+        }
+
+        // Overall summary for the period
+        $totalIn       = array_sum(array_column($days, 'stock_in'));
+        $totalOut      = array_sum(array_column($days, 'stock_out'));
+        $totalRevenue  = array_sum(array_column($days, 'sale_revenue'));
+        $totalCost     = array_sum(array_column($days, 'sale_cost'));
+        $totalProfit   = array_sum(array_column($days, 'profit'));
+        $closingStock  = count($days) ? end($days)['closing_stock'] : $openingStock;
+        $closingMop    = count($days) ? end($days)['closing_mop_value'] : round($openingMopValue, 2);
+
+        return response()->json([
+            'opening_stock' => $openingStock,
+            'closing_stock' => $closingStock,
+            'closing_mop_value' => $closingMop,
+            'total_in'      => $totalIn,
+            'total_out'     => $totalOut,
+            'total_revenue' => round($totalRevenue, 2),
+            'total_cost'    => round($totalCost, 2),
+            'total_profit'  => round($totalProfit, 2),
+            'days'          => $days,
+        ]);
+    }
+
     public function backup(Request $request)
     {
         $adjQuery = StockAdjustment::query();
@@ -191,7 +580,7 @@ class StockController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 }

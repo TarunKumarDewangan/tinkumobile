@@ -51,11 +51,27 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const res = await api.post('/login', { email, password });
+    if (res.data.otp_required) {
+      return { otp_required: true, email: res.data.email };
+    }
     localStorage.setItem('tinku_token', res.data.token);
     localStorage.setItem('tinku_user', JSON.stringify(res.data.user));
     localStorage.setItem('tinku_last_refresh', Date.now().toString());
     setUser(res.data.user);
     return res.data.user;
+  };
+
+  const verifyOtp = async (email, otp) => {
+    const res = await api.post('/login/verify-otp', { email, otp });
+    localStorage.setItem('tinku_token', res.data.token);
+    localStorage.setItem('tinku_user', JSON.stringify(res.data.user));
+    localStorage.setItem('tinku_last_refresh', Date.now().toString());
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
+  const resendOtp = async (email) => {
+    await api.post('/login/resend-otp', { email });
   };
 
   const logout = async () => {
@@ -79,7 +95,7 @@ export function AuthProvider({ children }) {
   const hasRole = (role) => user?.roles?.includes(role) || false;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, can, isOwner, isAdmin, isManager, hasFullAccess, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, verifyOtp, resendOtp, logout, can, isOwner, isAdmin, isManager, hasFullAccess, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

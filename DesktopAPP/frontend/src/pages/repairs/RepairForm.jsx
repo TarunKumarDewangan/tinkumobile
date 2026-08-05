@@ -1,10 +1,17 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function RepairForm() {
   const [customers, setCustomers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [advancePaymentLines, setAdvancePaymentLines] = useState(newSingleLine('CASH'));
+  const [balancePaymentLines, setBalancePaymentLines] = useState(newSingleLine('CASH'));
   const [form, setForm] = useState({ 
     customer_name:'', 
     customer_phone:'', 
@@ -38,10 +45,11 @@ export default function RepairForm() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  useEffect(() => { 
-    api.get('/customers').then(r => setCustomers(r.data)); 
+  useEffect(() => {
+    api.get('/customers').then(r => setCustomers(r.data));
     api.get('/repairs/external-shops').then(r => setExternalShops(r.data));
-    
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+
     if (id) {
       api.get(`/repairs/${id}`).then(r => {
         setForm({
@@ -64,10 +72,17 @@ export default function RepairForm() {
           advance_payment_mode: r.data.advance_payment_mode || 'CASH',
           balance_payment_mode: r.data.balance_payment_mode || 'CASH',
         });
+        setAdvancePaymentLines(newSingleLine(r.data.advance_payment_mode && r.data.advance_payment_mode !== 'SPLIT' ? r.data.advance_payment_mode : 'CASH'));
+        setBalancePaymentLines(newSingleLine(r.data.balance_payment_mode && r.data.balance_payment_mode !== 'SPLIT' ? r.data.balance_payment_mode : 'CASH'));
         setCustomerSearch(r.data.customer_name || '');
       });
     }
   }, [id]);
+
+  const repairModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK/NEFT', label: 'BANK/NEFT' }, { value: 'CARD', label: 'CARD' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const fetchInternetTime = async () => {
     try {
@@ -83,7 +98,7 @@ export default function RepairForm() {
     const balance = parseFloat(form.quoted_amount || 0) - parseFloat(form.advance_amount || 0);
     if (balance <= 0) return toast.info('No balance to settle');
     
-    if (!window.confirm(`Settle balance of ₹${balance.toLocaleString()}? This will capture current network time.`)) return;
+    if (!await pinGate.confirm()) return;
     
     setIsSettling(true);
     const istTime = await fetchInternetTime();
@@ -104,18 +119,32 @@ export default function RepairForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!paymentLinesSumMatches(advancePaymentLines, form.advance_amount)) {
+      return toast.error("Advance split doesn't add up to the advance amount");
+    }
+    if (!form.balance_received_at && !paymentLinesSumMatches(balancePaymentLines, form.balance_amount_received)) {
+      return toast.error("Balance split doesn't add up to the balance amount");
+    }
     if (submitting) return; // Prevent double-submit
     setSubmitting(true);
     try {
       let finalForm = { ...form };
-      
-      // If OTHER is selected, replace mode with the specific value
-      if (form.advance_payment_mode === 'OTHER' && form.other_advance_mode) {
-        finalForm.advance_payment_mode = form.other_advance_mode;
+
+      const advPayload = buildPaymentPayload(advancePaymentLines);
+      finalForm.advance_payment_mode = advPayload.payment_mode;
+      if (advPayload.payment_lines) finalForm.advance_payment_lines = advPayload.payment_lines;
+
+      if (!form.balance_received_at) {
+        const balPayload = buildPaymentPayload(balancePaymentLines);
+        finalForm.balance_payment_mode = balPayload.payment_mode;
+        if (balPayload.payment_lines) finalForm.balance_payment_lines = balPayload.payment_lines;
       }
-      if (form.balance_payment_mode === 'OTHER' && form.other_balance_mode) {
-        finalForm.balance_payment_mode = form.other_balance_mode;
-      }
+
+      // Forwarding is now an always-visible, optional section rather than a
+      // toggle — derive is_forwarded from whether a shop name was actually
+      // entered, so filters/settlement logic (which depend on this flag)
+      // keep working exactly as before.
+      finalForm.is_forwarded = !!(form.forwarded_to && form.forwarded_to.trim());
 
       if (id) {
         await api.put(`/repairs/${id}`, finalForm);
@@ -155,7 +184,7 @@ export default function RepairForm() {
   return (
     <div className="container-fluid py-2">
       <div className="page-header mb-2 py-1">
-        <h4 className="mb-0">{id ? '✏️ Edit Repair' : '➕ New Repair'}</h4>
+        <h4 className="mb-0">{id ? '✏️ Edit Repair' : '➕ New Repair'} <span className="text-muted" style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + R</span></h4>
         <button onClick={() => navigate('/repairs')} className="btn btn-outline-secondary btn-sm px-3">← Back</button>
       </div>
       
@@ -163,9 +192,9 @@ export default function RepairForm() {
         <form onSubmit={handleSubmit}>
           <div className="row g-2">
             {/* Customer & Specs Info */}
-            <div className="col-md-8 border-end pe-3">
+            <div className="col-12 col-md-8 border-end pe-3">
               <div className="row g-2">
-                <div className="col-md-6 text-uppercase position-relative">
+                <div className="col-12 col-md-6 text-uppercase position-relative">
                   <label className="x-small fw-bold text-muted mb-0">Customer Name *</label>
                   <input 
                     className="form-control form-control-sm border-2 fw-bold text-uppercase" 
@@ -195,27 +224,27 @@ export default function RepairForm() {
                       </div>
                   )}
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Phone *</label>
                   <input className="form-control form-control-sm border-2 fw-bold" required {...f('customer_phone')} />
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Email</label>
                   <input className="form-control form-control-sm" type="email" {...f('customer_email')} />
                 </div>
-                <div className="col-md-6">
+                <div className="col-12 col-md-6">
                   <label className="x-small fw-bold text-muted mb-0">Submitted Date</label>
                   <input type="date" className="form-control form-control-sm" {...f('submitted_date')} />
                 </div>
-                <div className="col-md-12">
+                <div className="col-12 col-md-12">
                   <label className="x-small fw-bold text-muted mb-0">Customer Address</label>
                   <input className="form-control form-control-sm" placeholder="Address Details" {...f('customer_address')} />
                 </div>
-                <div className="col-md-8">
+                <div className="col-12 col-md-8">
                   <label className="x-small fw-bold text-muted mb-0">Device Model *</label>
                   <input className="form-control form-control-sm border-2 text-primary fw-bold" required placeholder="Device Model" {...f('device_model')} />
                 </div>
-                <div className="col-md-4">
+                <div className="col-12 col-md-4">
                   <label className="x-small fw-bold text-muted mb-0">Est. Delivery</label>
                   <input type="date" className="form-control form-control-sm border-info" {...f('estimated_delivery_date')} />
                 </div>
@@ -244,49 +273,45 @@ export default function RepairForm() {
                 </div>
               </div>
 
-              {/* Forwarding Section (Collapsible Logic) */}
+              {/* Forwarding Section — always visible; leaving Shop Name blank
+                  simply means this repair stays in-house (not forwarded). */}
               <div className="mt-3 pt-2 border-top">
-                <div className="form-check form-switch mb-1">
-                  <input className="form-check-input" type="checkbox" id="isForwarded" {...f('is_forwarded')} checked={form.is_forwarded} />
-                  <label className="form-check-label x-small fw-bold text-primary" htmlFor="isForwarded">Forward to External Shop?</label>
-                </div>
-                {form.is_forwarded && (
-                  <div className="row g-2 p-2 bg-light rounded border border-warning shadow-sm">
-                    <div className="col-6 position-relative">
-                      <input className="form-control form-control-sm x-small" placeholder="Shop Name" {...f('forwarded_to')} onFocus={() => setShowShopList(true)} onBlur={() => setTimeout(() => setShowShopList(false), 200)} />
-                      {showShopList && externalShops.length > 0 && (
-                        <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 150, zIndex: 1000, left: 0 }}>
-                           {externalShops.filter(s => 
-                              s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase()) || 
-                              (s.forwarded_phone && s.forwarded_phone.includes(form.forwarded_to))
-                           ).map((shop, i) => (
-                             <div key={i} className="p-2 x-small cursor-pointer border-bottom hover-bg-light d-flex justify-content-between align-items-center" onMouseDown={() => selectShop(shop)}>
-                               <div className="fw-bold text-uppercase">{shop.forwarded_to}</div>
-                               <div className="text-muted small">{shop.forwarded_phone}</div>
-                             </div>
-                           ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="col-6">
-                      <input className="form-control form-control-sm x-small" placeholder="Phone" {...f('forwarded_phone')} />
-                    </div>
-                    <div className="col-6">
-                      <input type="date" className="form-control form-control-sm x-small" {...f('external_expected_delivery')} />
-                    </div>
-                    <div className="col-6">
-                      <div className="input-group input-group-sm">
-                        <span className="input-group-text bg-white x-small">₹</span>
-                        <input type="number" step="0.01" className="form-control x-small fw-bold text-danger" placeholder="Cost" {...f('service_center_cost')} />
+                <label className="x-small fw-bold text-primary mb-1 d-block">Forward to External Shop (Optional)</label>
+                <div className="row g-2 p-2 bg-light rounded border border-warning shadow-sm">
+                  <div className="col-6 position-relative">
+                    <input className="form-control form-control-sm x-small" placeholder="Shop Name" {...f('forwarded_to')} onFocus={() => setShowShopList(true)} onBlur={() => setTimeout(() => setShowShopList(false), 200)} />
+                    {showShopList && externalShops.length > 0 && (
+                      <div className="position-absolute w-100 bg-white shadow-sm border rounded mt-1 overflow-auto" style={{ maxHeight: 150, zIndex: 1000, left: 0 }}>
+                         {externalShops.filter(s =>
+                            s.forwarded_to.toUpperCase().includes((form.forwarded_to || '').toUpperCase()) ||
+                            (s.forwarded_phone && s.forwarded_phone.includes(form.forwarded_to))
+                         ).map((shop, i) => (
+                           <div key={i} className="p-2 x-small cursor-pointer border-bottom hover-bg-light d-flex justify-content-between align-items-center" onMouseDown={() => selectShop(shop)}>
+                             <div className="fw-bold text-uppercase">{shop.forwarded_to}</div>
+                             <div className="text-muted small">{shop.forwarded_phone}</div>
+                           </div>
+                         ))}
                       </div>
+                    )}
+                  </div>
+                  <div className="col-6">
+                    <input className="form-control form-control-sm x-small" placeholder="Phone" {...f('forwarded_phone')} />
+                  </div>
+                  <div className="col-6">
+                    <input type="date" className="form-control form-control-sm x-small" {...f('external_expected_delivery')} />
+                  </div>
+                  <div className="col-6">
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text bg-white x-small">₹</span>
+                      <input type="number" step="0.01" className="form-control x-small fw-bold text-danger" placeholder="Cost" {...f('service_center_cost')} />
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
             {/* Financial Tracking & Settlement */}
-            <div className="col-md-4 ps-3 bg-light-subtle rounded py-2 d-flex flex-column">
+            <div className="col-12 col-md-4 ps-3 bg-light-subtle rounded py-2 d-flex flex-column">
               <h6 className="x-small fw-bold text-uppercase text-muted mb-2 pb-1 border-bottom">💰 Financials</h6>
               
               <div className="row g-2 mb-2">
@@ -314,22 +339,13 @@ export default function RepairForm() {
               </div>
 
               <div className="mb-2">
-                <select className="form-select form-select-sm x-small py-0" style={{ height: '24px' }} {...f('advance_payment_mode')}>
-                  <option value="CASH">ADVANCE MODE: CASH</option>
-                  <option value="PHONEPE">ADVANCE MODE: PHONEPE</option>
-                  <option value="GPAY">ADVANCE MODE: GPAY</option>
-                  <option value="BANK/NEFT">ADVANCE MODE: BANK/NEFT</option>
-                  <option value="CARD">ADVANCE MODE: CARD</option>
-                  <option value="OTHER">ADVANCE MODE: OTHER</option>
-                </select>
-                {form.advance_payment_mode === 'OTHER' && (
-                    <input 
-                        className="form-control form-control-sm x-small mt-1 text-uppercase fw-bold border-primary" 
-                        placeholder="SPECIFY MODE (e.g. CHEQUE)" 
-                        value={form.other_advance_mode}
-                        onChange={e => setForm({...form, other_advance_mode: e.target.value.toUpperCase()})}
-                    />
-                )}
+                <PaymentSplitInput
+                  totalAmount={form.advance_amount}
+                  lines={advancePaymentLines}
+                  onChange={setAdvancePaymentLines}
+                  modeOptions={repairModeOptions}
+                  size="form-select-sm x-small"
+                />
               </div>
 
               <div className="bg-white p-2 rounded border border-info mb-3 shadow-sm">
@@ -355,21 +371,12 @@ export default function RepairForm() {
                     />
                   </div>
                   {!form.balance_received_at && (
-                    <select className="form-select form-select-sm x-small" {...f('balance_payment_mode')}>
-                        <option value="CASH">PAYMENT MODE: CASH</option>
-                        <option value="PHONEPE">PAYMENT MODE: PHONEPE</option>
-                        <option value="GPAY">PAYMENT MODE: GPAY</option>
-                        <option value="BANK/NEFT">PAYMENT MODE: BANK/NEFT</option>
-                        <option value="CARD">PAYMENT MODE: CARD</option>
-                        <option value="OTHER">PAYMENT MODE: OTHER</option>
-                    </select>
-                  )}
-                  {!form.balance_received_at && form.balance_payment_mode === 'OTHER' && (
-                    <input 
-                        className="form-control form-control-sm x-small mt-1 text-uppercase fw-bold border-primary" 
-                        placeholder="SPECIFY MODE (e.g. EXCHANGE)" 
-                        value={form.other_balance_mode}
-                        onChange={e => setForm({...form, other_balance_mode: e.target.value.toUpperCase()})}
+                    <PaymentSplitInput
+                      totalAmount={form.balance_amount_received}
+                      lines={balancePaymentLines}
+                      onChange={setBalancePaymentLines}
+                      modeOptions={repairModeOptions}
+                      size="form-select-sm x-small"
                     />
                   )}
                   {form.balance_received_at && (

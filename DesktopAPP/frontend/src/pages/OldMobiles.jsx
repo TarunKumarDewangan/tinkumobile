@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -40,13 +41,23 @@ export default function OldMobiles() {
     loadList();
   }, []);
 
-  const handleDelete = async (id) => {
-    const pin = window.prompt("Enter Admin PIN to Delete:");
-    if (pin !== '71727378') {
-      toast.error("Incorrect PIN");
-      return;
+  // Devices bought from the same customer in one visit (the bulk purchase
+  // form) all share a batch_id — group them here purely for display so the
+  // list shows one combined entry, while each row underneath still stays
+  // its own record for individual view/edit/delete.
+  const groups = [];
+  const batchIndex = new Map();
+  list.forEach(m => {
+    if (m.batch_id && batchIndex.has(m.batch_id)) {
+      groups[batchIndex.get(m.batch_id)].push(m);
+    } else {
+      if (m.batch_id) batchIndex.set(m.batch_id, groups.length);
+      groups.push([m]);
     }
-    if (!window.confirm("Are you sure you want to delete this purchase? Reverting stock & transaction...")) return;
+  });
+
+  const handleDelete = async (id) => {
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/old-mobiles/${id}`);
       toast.success("Old mobile purchase deleted successfully");
@@ -56,12 +67,8 @@ export default function OldMobiles() {
     }
   };
 
-  const handleEditClick = (item) => {
-    const pin = window.prompt("Enter Admin PIN to Edit:");
-    if (pin !== '71727378') {
-      toast.error("Incorrect PIN");
-      return;
-    }
+  const handleEditClick = async (item) => {
+    if (!await pinGate.confirm()) return;
     setEditingItem(item);
     setEditForm({
       customer_name: item.customer?.name || item.customer_name || '',
@@ -133,60 +140,74 @@ export default function OldMobiles() {
                 </tr>
               </thead>
               <tbody>
-                {list.map(m => (
-                  <tr key={m.id}>
-                    <td className="py-3 px-4 text-muted">{formatDate(m.purchase_date)}</td>
-                    <td className="py-3">
-                      <div className="fw-bold text-dark">{m.customer?.name}</div>
-                      <small className="text-muted">{m.customer?.phone}</small>
-                    </td>
-                    <td className="py-3">
-                      <span className="fw-semibold text-dark">{m.model_name}</span>
-                    </td>
-                    <td className="py-3">
-                      {m.imei ? (
-                        <code className="text-primary">
-                          <Link to={`/old-mobiles/sales/new?category=mobile-old&imei=${m.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{m.imei}</Link>
-                        </code>
-                      ) : '—'}
-                    </td>
-                    <td className="py-3 fw-bold text-success">
-                      ₹{parseFloat(m.purchase_price).toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-3">
-                      {m.is_exchange ? (
-                        <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">
-                          🔄 Exchange
-                        </span>
-                      ) : (
-                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
-                          💵 Cash Payout
-                        </span>
+                {groups.map(group => {
+                  const groupTotal = group.reduce((sum, m) => sum + parseFloat(m.purchase_price || 0), 0);
+                  return group.map((m, idx) => (
+                    <tr key={m.id} className={group.length > 1 ? 'border-top border-2 border-info-subtle' : ''} style={idx > 0 ? { borderTop: 'none' } : undefined}>
+                      {idx === 0 && (
+                        <>
+                          <td className="py-3 px-4 text-muted" rowSpan={group.length}>{formatDate(m.purchase_date)}</td>
+                          <td className="py-3" rowSpan={group.length}>
+                            <div className="fw-bold text-dark">{m.customer?.name}</div>
+                            <small className="text-muted">{m.customer?.phone}</small>
+                            {group.length > 1 && (
+                              <div className="mt-1">
+                                <span className="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-2 py-1">
+                                  {group.length} devices • Total ₹{groupTotal.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                        </>
                       )}
-                    </td>
-                    <td className="py-3">
-                      <div className="d-flex gap-1 flex-wrap mb-1">
-                        {m.ram && <span className="badge bg-secondary rounded-pill text-xs">{m.ram} RAM</span>}
-                        {m.storage && <span className="badge bg-secondary rounded-pill text-xs">{m.storage} ROM</span>}
-                        {m.color && <span className="badge bg-dark rounded-pill text-xs">{m.color}</span>}
-                      </div>
-                      <small className="text-muted text-truncate d-inline-block" style={{maxWidth: '150px'}} title={m.condition_note}>
-                        {m.condition_note || 'No notes'}
-                      </small>
-                    </td>
-                    <td className="py-3 fw-bold text-warning">
-                      {parseFloat(m.selling_price) > 0 ? `₹${parseFloat(m.selling_price).toLocaleString('en-IN')}` : '—'}
-                    </td>
-                    <td className="py-3 text-muted">{m.user?.name}</td>
-                    <td className="py-3 px-4 text-end">
-                      <div className="d-flex justify-content-end gap-3">
-                        <button onClick={() => setViewingItem(m)} className="btn btn-sm btn-link text-primary text-decoration-none fw-bold p-0">View</button>
-                        <button onClick={() => handleEditClick(m)} className="btn btn-sm btn-link text-secondary text-decoration-none fw-bold p-0">Edit</button>
-                        <button onClick={() => handleDelete(m.id)} className="btn btn-sm btn-link text-danger text-decoration-none fw-bold p-0">Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="py-3">
+                        <span className="fw-semibold text-dark">{m.model_name}</span>
+                      </td>
+                      <td className="py-3">
+                        {m.imei ? (
+                          <code className="text-primary">
+                            <Link to={`/old-mobiles/sales/new?category=mobile-old&imei=${m.imei}`} style={{color: 'inherit', textDecoration: 'underline'}} title="Click to create sale for this set">{m.imei}</Link>
+                          </code>
+                        ) : '—'}
+                      </td>
+                      <td className="py-3 fw-bold text-success">
+                        ₹{parseFloat(m.purchase_price).toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3">
+                        {m.is_exchange ? (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">
+                            🔄 Exchange
+                          </span>
+                        ) : (
+                          <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
+                            💵 Cash Payout
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        <div className="d-flex gap-1 flex-wrap mb-1">
+                          {m.ram && <span className="badge bg-secondary rounded-pill text-xs">{m.ram} RAM</span>}
+                          {m.storage && <span className="badge bg-secondary rounded-pill text-xs">{m.storage} ROM</span>}
+                          {m.color && <span className="badge bg-dark rounded-pill text-xs">{m.color}</span>}
+                        </div>
+                        <small className="text-muted text-truncate d-inline-block" style={{maxWidth: '150px'}} title={m.condition_note}>
+                          {m.condition_note || 'No notes'}
+                        </small>
+                      </td>
+                      <td className="py-3 fw-bold text-warning">
+                        {parseFloat(m.selling_price) > 0 ? `₹${parseFloat(m.selling_price).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="py-3 text-muted">{m.user?.name}</td>
+                      <td className="py-3 px-4 text-end">
+                        <div className="d-flex justify-content-end gap-3">
+                          <button onClick={() => setViewingItem(m)} className="btn btn-sm btn-link text-primary text-decoration-none fw-bold p-0">View</button>
+                          <button onClick={() => handleEditClick(m)} className="btn btn-sm btn-link text-secondary text-decoration-none fw-bold p-0">Edit</button>
+                          <button onClick={() => handleDelete(m.id)} className="btn btn-sm btn-link text-danger text-decoration-none fw-bold p-0">Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ));
+                })}
                 {list.length === 0 && (
                   <tr>
                     <td colSpan={10} className="text-center py-5 text-muted">
@@ -283,50 +304,50 @@ export default function OldMobiles() {
       <Modal show={!!editingItem} onClose={() => setEditingItem(null)} title="Edit Old Mobile Purchase">
         <form onSubmit={handleEditSubmit}>
           <div className="row g-3">
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Customer Name</label>
               <input type="text" className="form-control text-uppercase" required value={editForm.customer_name} onChange={e => setEditForm({ ...editForm, customer_name: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Customer Phone</label>
               <input type="text" className="form-control" required value={editForm.customer_phone} onChange={e => setEditForm({ ...editForm, customer_phone: e.target.value })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Model Name</label>
               <input type="text" className="form-control text-uppercase" required value={editForm.model_name} onChange={e => setEditForm({ ...editForm, model_name: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">IMEI / Serial</label>
               <input type="text" className="form-control" value={editForm.imei} onChange={e => setEditForm({ ...editForm, imei: e.target.value })} />
             </div>
-            <div className="col-md-4">
+            <div className="col-12 col-md-4">
               <label className="form-label small fw-bold text-muted">RAM</label>
               <input type="text" className="form-control text-uppercase" placeholder="e.g. 8GB" value={editForm.ram} onChange={e => setEditForm({ ...editForm, ram: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-4">
+            <div className="col-12 col-md-4">
               <label className="form-label small fw-bold text-muted">Storage</label>
               <input type="text" className="form-control text-uppercase" placeholder="e.g. 128GB" value={editForm.storage} onChange={e => setEditForm({ ...editForm, storage: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-4">
+            <div className="col-12 col-md-4">
               <label className="form-label small fw-bold text-muted">Color</label>
               <input type="text" className="form-control text-uppercase" placeholder="e.g. BLACK" value={editForm.color} onChange={e => setEditForm({ ...editForm, color: e.target.value.toUpperCase() })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Purchase Date</label>
               <input type="date" className="form-control" required value={editForm.purchase_date} onChange={e => setEditForm({ ...editForm, purchase_date: e.target.value })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Payout Type</label>
               <select className="form-select text-uppercase" value={editForm.is_exchange} onChange={e => setEditForm({ ...editForm, is_exchange: e.target.value === 'true' })}>
                 <option value="true">Exchange (Trade-in Credit)</option>
                 <option value="false">Cash Payout</option>
               </select>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Purchase Value (₹)</label>
               <input type="number" step="0.01" className="form-control fw-bold text-success" required value={editForm.purchase_price} onChange={e => setEditForm({ ...editForm, purchase_price: e.target.value })} />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Target Reselling Price (₹)</label>
               <input type="number" step="0.01" className="form-control fw-bold text-warning" value={editForm.selling_price} onChange={e => setEditForm({ ...editForm, selling_price: e.target.value })} />
             </div>

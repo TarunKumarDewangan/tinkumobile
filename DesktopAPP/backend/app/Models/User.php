@@ -27,7 +27,7 @@ class User extends Authenticatable
     }
 
     protected $fillable = [
-        'name', 'email', 'password', 'shop_id', 'is_owner',
+        'name', 'email', 'password', 'shop_id', 'is_owner', 'require_login_otp',
         'phone', 'address', 'designation', 'base_salary', 'joining_date', 'aadhaar_no', 'status', 'emp_id'
     ];
 
@@ -39,6 +39,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_owner' => 'boolean',
+            'require_login_otp' => 'boolean',
         ];
     }
 

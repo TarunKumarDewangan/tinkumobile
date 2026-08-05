@@ -199,11 +199,7 @@ class AirtelRetailerController extends Controller
                 return response()->json($recovery, 201);
             });
         } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Sync Error: ' . $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ], 500);
+            return $this->errorResponse($e, 'Sync error');
         }
     }
 
@@ -335,7 +331,7 @@ class AirtelRetailerController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints(); // Ensure it's re-enabled on failure
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 
@@ -455,7 +451,21 @@ class AirtelRetailerController extends Controller
 
         $retailer = Retailer::findOrFail($id);
         $name = $retailer->name;
-        $retailer->delete();
+
+        // A soft delete leaves retailers.msisdn permanently blocked from reuse. If this
+        // retailer genuinely has no drop/recovery history, hard-delete it outright so its
+        // MSISDN can be reused later. airtel_drops/airtel_recoveries cascade on delete, so
+        // we must never hard-delete a retailer that has real history behind it — fall back
+        // to the normal, safe soft delete in that case.
+        $hasHistory = AirtelDrop::where('retailer_id', $retailer->id)->exists()
+            || AirtelRecovery::where('retailer_id', $retailer->id)->exists();
+
+        if (!$hasHistory) {
+            $retailer->forceDelete();
+        } else {
+            $retailer->delete();
+        }
+
         ActivityLog::log('DELETE_RETAILER', null, 'Deleted retailer: ' . $name);
         return response()->json(null, 204);
     }

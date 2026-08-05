@@ -13,8 +13,15 @@ use App\Models\FollowUp;
 use App\Models\LoanPayment;
 use App\Models\GiftInventory;
 use App\Models\SaleInvoice as SaleInvoiceAlias;
+use App\Models\Transaction;
+use App\Models\Entity;
+use App\Models\Category;
+use App\Models\SaleFinancePlan;
+use App\Models\FinancePayment;
+use App\Services\EntityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class ReportController extends Controller
 {
@@ -67,7 +74,7 @@ class ReportController extends Controller
                 'invoice_no'      => $inv->invoice_no,
                 'sale_date'       => $inv->sale_date,
                 'customer_name'   => $inv->customer?->name ?? '—',
-                'grand_total'     => $grandTotal,
+                'grand_total'     => (float) $inv->grand_total,
                 'total_item_cost' => round($totalItemCost, 2),
                 'discount_given'  => round($discountGiven, 2),
                 'profit'          => round($profit, 2),
@@ -193,11 +200,8 @@ class ReportController extends Controller
     {
         $shopId = $this->shopFilter($request);
 
-        $newCat = \App\Models\Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
-        $oldCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-
-        $newCatId = $newCat ? $newCat->id : null;
-        $oldCatId = $oldCat ? $oldCat->id : null;
+        $newCatId = \App\Models\Category::mobileNewId();
+        $oldCatId = \App\Models\Category::mobileOldId();
         $catIds   = array_values(array_filter([$newCatId, $oldCatId]));
 
         /**
@@ -234,13 +238,30 @@ class ReportController extends Controller
             }
         }
 
-        // Helper closure: invoice filter
-        $invoiceFilter = function ($q) use ($shopId, $request) {
-            $q->where('is_cancelled', false);
-            if ($shopId)        $q->where('shop_id', $shopId);
-            if ($request->from) $q->where('sale_date', '>=', $request->from);
-            if ($request->to)   $q->where('sale_date', '<=', $request->to);
-        };
+        // Pre-aggregate sold quantity and stock PER PRODUCT in two grouped queries
+        // total, instead of the 2-4 queries per brand/product this used to run in
+        // the loop below (previously ~300 queries for a typical brand/product count).
+        $soldByProduct = SaleItem::query()
+            ->join('sale_invoices', 'sale_invoices.id', '=', 'sale_items.sale_invoice_id')
+            ->where('sale_invoices.is_cancelled', false)
+            ->whereNull('sale_invoices.deleted_at') // SaleInvoice uses SoftDeletes; whereHas() applied this implicitly, a raw join does not
+            ->when($shopId, fn($q) => $q->where('sale_invoices.shop_id', $shopId))
+            ->when($request->from, fn($q) => $q->where('sale_invoices.sale_date', '>=', $request->from))
+            ->when($request->to, fn($q) => $q->where('sale_invoices.sale_date', '<=', $request->to))
+            ->groupBy('sale_items.product_id')
+            ->select('sale_items.product_id', DB::raw('SUM(sale_items.quantity) as qty'))
+            ->get()
+            ->pluck('qty', 'product_id');
+
+        $stockByProduct = Inventory::query()
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->groupBy('product_id')
+            ->select('product_id', DB::raw('SUM(stock) as qty'))
+            ->get()
+            ->pluck('qty', 'product_id');
+
+        $soldFor  = fn($productId) => (int) ($soldByProduct[$productId] ?? 0);
+        $stockFor = fn($productId) => (int) ($stockByProduct[$productId] ?? 0);
 
         $reportData = [];
 
@@ -251,15 +272,10 @@ class ReportController extends Controller
                 $product = $group['product'];
                 $isOld   = ($oldCatId && $product->category_id == $oldCatId);
 
-                $sold  = (int) SaleItem::where('product_id', $product->id)
-                    ->whereHas('invoice', $invoiceFilter)
-                    ->sum('quantity');
+                $sold  = $soldFor($product->id);
+                $stock = $stockFor($product->id);
 
-                $stock = (int) Inventory::where('product_id', $product->id)
-                    ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
-                    ->sum('stock');
-
-                if ($sold === 0) continue;
+                if ($sold === 0 && $stock === 0) continue;
 
                 $reportData[] = [
                     'brand_id'    => 'product_' . $product->id,
@@ -285,35 +301,18 @@ class ReportController extends Controller
             $brandId   = $group['brand_id'];
             $brandName = $group['brand_name'];
 
-            $newSold = (int) SaleItem::whereHas('product', function ($q) use ($brandId, $newCatId) {
-                $q->where('brand_id', $brandId);
-                if ($newCatId) $q->where('category_id', $newCatId);
-            })->whereHas('invoice', $invoiceFilter)->sum('quantity');
-
-            $oldSold = (int) SaleItem::whereHas('product', function ($q) use ($brandId, $oldCatId) {
-                $q->where('brand_id', $brandId);
-                if ($oldCatId) $q->where('category_id', $oldCatId);
-            })->whereHas('invoice', $invoiceFilter)->sum('quantity');
-
-            $newStock = (int) Inventory::whereHas('product', function ($q) use ($brandId, $newCatId) {
-                $q->where('brand_id', $brandId);
-                if ($newCatId) $q->where('category_id', $newCatId);
-            })->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
-
-            $oldStock = (int) Inventory::whereHas('product', function ($q) use ($brandId, $oldCatId) {
-                $q->where('brand_id', $brandId);
-                if ($oldCatId) $q->where('category_id', $oldCatId);
-            })->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
-
-            if ($newSold === 0 && $oldSold === 0) continue;
-
-            // Per-product breakdown for this brand
+            $newSold = $oldSold = $newStock = $oldStock = 0;
             $productsData = [];
+
             foreach (\App\Models\Product::where('brand_id', $brandId)->whereIn('category_id', $catIds)->get() as $product) {
-                $sold  = (int) SaleItem::where('product_id', $product->id)->whereHas('invoice', $invoiceFilter)->sum('quantity');
-                $stock = (int) Inventory::where('product_id', $product->id)->when($shopId, fn($q) => $q->where('shop_id', $shopId))->sum('stock');
+                $sold  = $soldFor($product->id);
+                $stock = $stockFor($product->id);
+                $isOld = ($oldCatId && $product->category_id == $oldCatId);
+
+                if ($isOld) { $oldSold += $sold; $oldStock += $stock; }
+                else        { $newSold += $sold; $newStock += $stock; }
+
                 if ($sold > 0) {
-                    $isOld = ($oldCatId && $product->category_id == $oldCatId);
                     $productsData[] = [
                         'product_id'   => $product->id,
                         'product_name' => $product->name,
@@ -323,6 +322,9 @@ class ReportController extends Controller
                     ];
                 }
             }
+
+            if ($newSold === 0 && $oldSold === 0 && $newStock === 0 && $oldStock === 0) continue;
+
             usort($productsData, fn($a, $b) => $b['sold'] === $a['sold'] ? strcmp($a['product_name'], $b['product_name']) : $b['sold'] <=> $a['sold']);
 
             $reportData[] = [
@@ -349,9 +351,7 @@ class ReportController extends Controller
     /** 12. Set Sales Matrix Report (Daily Grid) */
     public function setSalesMatrix(Request $request)
     {
-        $newCat = \App\Models\Category::whereIn('slug', ['MOBILE-NEW', 'mobile-new'])->first();
-        $oldCat = \App\Models\Category::whereIn('slug', ['MOBILE-OLD', 'mobile-old'])->first();
-        $catIds = array_values(array_filter([$newCat?->id, $oldCat?->id]));
+        $catIds = array_values(array_filter([\App\Models\Category::mobileNewId(), \App\Models\Category::mobileOldId()]));
 
         if (empty($catIds)) {
             return response()->json([
@@ -385,7 +385,15 @@ class ReportController extends Controller
 
         $shopId = $this->shopFilter($request);
 
-        $salesQuery = SaleItem::select('sale_items.product_id', 'products.name as product_name', 'products.selling_price as mop_price', 'sale_invoices.sale_date', DB::raw('SUM(sale_items.quantity) as total_qty'))
+        // MOP (the actual ₹ a set sold for) must come from the real sale line
+        // (sale_items.total) — the product's own products.selling_price is a
+        // single, mutable master-data field that's the same for every sale
+        // regardless of what it actually sold for, so using it here flattened
+        // every real, differently-priced/discounted sale to one static number.
+        $salesQuery = SaleItem::select('sale_items.product_id', 'products.name as product_name', 'sale_invoices.sale_date',
+                DB::raw('SUM(sale_items.quantity) as total_qty'),
+                DB::raw('SUM(sale_items.total) as day_amount')
+            )
             ->join('sale_invoices', 'sale_items.sale_invoice_id', '=', 'sale_invoices.id')
             ->join('products', 'sale_items.product_id', '=', 'products.id')
             ->whereIn('products.category_id', $catIds)
@@ -403,7 +411,7 @@ class ReportController extends Controller
             $salesQuery->where('products.name', 'like', $searchTerm);
         }
 
-        $salesData = $salesQuery->groupBy('sale_items.product_id', 'products.name', 'products.selling_price', 'sale_invoices.sale_date')
+        $salesData = $salesQuery->groupBy('sale_items.product_id', 'products.name', 'sale_invoices.sale_date')
             ->get();
 
         $products = [];
@@ -411,23 +419,24 @@ class ReportController extends Controller
         $grandMopTotal = 0;
         foreach ($salesData as $row) {
             $pid = $row->product_id;
-            $mopPrice = (float) ($row->mop_price ?? 0);
+            $amount = (float) ($row->day_amount ?? 0);
             if (!isset($products[$pid])) {
                 $products[$pid] = [
                     'product_id' => $pid,
                     'product_name' => $row->product_name,
-                    'mop_price' => $mopPrice,
                     'sales' => [],
+                    'mop_sales' => [],
                     'total_sold' => 0,
                     'total_mop' => 0
                 ];
             }
             $qty = (int) $row->total_qty;
             $products[$pid]['sales'][$row->sale_date] = $qty;
+            $products[$pid]['mop_sales'][$row->sale_date] = $amount;
             $products[$pid]['total_sold'] += $qty;
-            $products[$pid]['total_mop'] += ($qty * $mopPrice);
+            $products[$pid]['total_mop'] += $amount;
             $grandTotal += $qty;
-            $grandMopTotal += ($qty * $mopPrice);
+            $grandMopTotal += $amount;
         }
 
         usort($products, fn($a, $b) => strcasecmp($a['product_name'], $b['product_name']));
@@ -437,6 +446,397 @@ class ReportController extends Controller
             'products' => array_values($products),
             'grand_total' => $grandTotal,
             'grand_mop_total' => $grandMopTotal
+        ]);
+    }
+
+    /** Financer Report — all financed sales with drill-down */
+    public function financerReport(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+
+        $query = SaleInvoice::with('customer', 'items.product.category', 'financer', 'shop', 'user')
+            ->where('is_cancelled', false)
+            ->where('finance_amount', '>', 0)
+            ->whereNotNull('financer_id');
+
+        if ($shopId)               $query->where('shop_id', $shopId);
+        if ($request->from)        $query->where('sale_date', '>=', $request->from);
+        if ($request->to)          $query->where('sale_date', '<=', $request->to);
+        if ($request->financer_id) $query->where('financer_id', $request->financer_id);
+        if ($request->bill_type)   $query->where('bill_type', $request->bill_type);
+        if ($request->finance_status) $query->where('finance_payment_status', $request->finance_status);
+
+        if ($request->sale_type) {
+            $type = $request->sale_type;
+            if ($type === 'new') {
+                $query->whereHas('items.product.category', fn($q) => $q->whereIn('slug', ['MOBILE-NEW', 'mobile-new']));
+            } elseif ($type === 'old') {
+                $query->whereHas('items.product.category', fn($q) => $q->whereIn('slug', ['MOBILE-OLD', 'mobile-old']));
+            } elseif ($type === 'other') {
+                $query->whereHas('items.product.category', fn($q) =>
+                    $q->whereNotIn('slug', ['MOBILE-NEW', 'mobile-new', 'MOBILE-OLD', 'mobile-old'])
+                );
+            }
+        }
+
+        $invoices = $query->latest('sale_date')->get();
+
+        // Per-invoice: determine sale type label from items
+        $rows = $invoices->map(function ($inv) {
+            $saleType = 'Other';
+            foreach ($inv->items as $item) {
+                $slug = strtolower($item->product?->category?->slug ?? '');
+                if (str_contains($slug, 'mobile-new')) { $saleType = 'New Mobile'; break; }
+                if (str_contains($slug, 'mobile-old')) { $saleType = '2nd Hand'; break; }
+            }
+            $firstItem  = $inv->items->first();
+            $productName = $firstItem?->product?->name ?? '—';
+            $specs = implode(' / ', array_filter([$firstItem?->ram, $firstItem?->storage, $firstItem?->color]));
+            $imei  = $firstItem?->imei ? explode(',', $firstItem->imei)[0] : null;
+            return [
+                'id'                     => $inv->id,
+                'invoice_no'             => $inv->invoice_no,
+                'sale_date'              => $inv->sale_date,
+                'bill_type'              => $inv->bill_type,
+                'sale_type'              => $saleType,
+                'customer_name'          => $inv->customer?->name ?? '—',
+                'customer_phone'         => $inv->customer?->phone ?? '',
+                'product_name'           => $productName,
+                'specs'                  => $specs,
+                'imei'                   => $imei,
+                'grand_total'            => $inv->grand_total,
+                'down_payment'           => $inv->down_payment,
+                'finance_amount'         => $inv->finance_amount,
+                'finance_payment_status' => $inv->finance_payment_status,
+                'financer_id'            => $inv->financer_id,
+                'financer_name'          => $inv->financer?->name ?? 'Unknown',
+                'shop_name'              => $inv->shop?->name ?? '—',
+                'staff_name'             => $inv->user?->name ?? '—',
+            ];
+        });
+
+        // Summary by financer
+        $byFinancer = $rows->groupBy('financer_id')->map(function ($group, $fId) {
+            return [
+                'financer_id'     => $fId,
+                'financer_name'   => $group->first()['financer_name'],
+                'count'           => $group->count(),
+                'total_financed'  => $group->sum('finance_amount'),
+                'total_received'  => $group->where('finance_payment_status', 'RECEIVED')->sum('finance_amount'),
+                'total_pending'   => $group->where('finance_payment_status', 'PENDING')->sum('finance_amount'),
+            ];
+        })->values();
+
+        // All distinct financers (for filter dropdown — all financed invoices regardless of current filters)
+        $allFinancers = SaleInvoice::with('financer')
+            ->where('is_cancelled', false)
+            ->where('finance_amount', '>', 0)
+            ->whereNotNull('financer_id')
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->select('financer_id')
+            ->distinct()
+            ->get()
+            ->map(fn($inv) => ['id' => $inv->financer_id, 'name' => $inv->financer?->name ?? 'Unknown'])
+            ->unique('id')
+            ->values();
+
+        return response()->json([
+            'invoices'     => $rows,
+            'by_financer'  => $byFinancer,
+            'financers'    => $allFinancers,
+            'summary' => [
+                'total_sales'    => $rows->count(),
+                'total_financed' => $rows->sum('finance_amount'),
+                'total_received' => $rows->where('finance_payment_status', 'RECEIVED')->sum('finance_amount'),
+                'total_pending'  => $rows->where('finance_payment_status', 'PENDING')->sum('finance_amount'),
+            ],
+        ]);
+    }
+
+    /**
+     * 14. Old Mobile Purchase / Exchange Report.
+     *
+     * Note on "credit used / pending": there is no direct database link
+     * between a specific old-mobile trade-in and the specific later sale it
+     * paid for — exchange credit is tracked only as an aggregate per-customer
+     * ledger balance (old_mobile_purchases.purchase_price when is_exchange,
+     * vs sale_invoices.exchange_paid on later sales). This report computes
+     * that aggregate per customer and lists their exchange-funded sales
+     * as a best-effort match, not a guaranteed one-to-one link.
+     */
+    public function oldMobileExchangeReport(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+
+        $query = \App\Models\OldMobilePurchase::with('customer', 'user', 'shop');
+        if ($shopId) $query->where('shop_id', $shopId);
+        if ($request->from) $query->where('purchase_date', '>=', $request->from);
+        if ($request->to)   $query->where('purchase_date', '<=', $request->to);
+        if ($request->type === 'exchange') $query->where('is_exchange', true);
+        elseif ($request->type === 'cash') $query->where('is_exchange', false);
+        if ($request->search) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('model_name', 'like', "%$s%")
+                  ->orWhere('imei', 'like', "%$s%")
+                  ->orWhereHas('customer', fn($cq) => $cq->where('name', 'like', "%$s%")->orWhere('phone', 'like', "%$s%"));
+            });
+        }
+
+        $purchases   = $query->latest('purchase_date')->get();
+        $customerIds = $purchases->pluck('customer_id')->filter()->unique()->values();
+
+        // All-time (not date-filtered) aggregates — credit is a running
+        // balance, not scoped to whatever date range is currently displayed.
+        $creditGivenByCustomer = \App\Models\OldMobilePurchase::whereIn('customer_id', $customerIds)
+            ->where('is_exchange', true)
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->groupBy('customer_id')
+            ->selectRaw('customer_id, SUM(purchase_price) as total')
+            ->pluck('total', 'customer_id');
+
+        $creditUsedByCustomer = SaleInvoice::whereIn('customer_id', $customerIds)
+            ->where('is_cancelled', false)
+            ->where('exchange_paid', '>', 0)
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->groupBy('customer_id')
+            ->selectRaw('customer_id, SUM(exchange_paid) as total')
+            ->pluck('total', 'customer_id');
+
+        // The actual sale invoices where exchange credit was applied — the
+        // best-effort "what did they buy with it" list per customer.
+        $fundedSales = SaleInvoice::with('items.product')
+            ->whereIn('customer_id', $customerIds)
+            ->where('is_cancelled', false)
+            ->where('exchange_paid', '>', 0)
+            ->when($shopId, fn($q) => $q->where('shop_id', $shopId))
+            ->orderBy('sale_date')
+            ->get()
+            ->groupBy('customer_id');
+
+        $rows = $purchases->map(function ($p) use ($creditGivenByCustomer, $creditUsedByCustomer, $fundedSales) {
+            $given   = (float) ($creditGivenByCustomer[$p->customer_id] ?? 0);
+            $used    = (float) ($creditUsedByCustomer[$p->customer_id] ?? 0);
+            $pending = max(0, $given - $used);
+
+            $funded = $p->is_exchange
+                ? ($fundedSales[$p->customer_id] ?? collect())->map(fn($inv) => [
+                    'invoice_id'   => $inv->id,
+                    'invoice_no'   => $inv->invoice_no,
+                    'sale_date'    => $inv->sale_date,
+                    'product_name' => $inv->items->first()?->product?->name ?? '—',
+                    'grand_total'  => (float) $inv->grand_total,
+                    'credit_used'  => (float) $inv->exchange_paid,
+                ])->values()
+                : collect();
+
+            return [
+                'id'               => $p->id,
+                'purchase_date'    => $p->purchase_date,
+                'customer_id'      => $p->customer_id,
+                'customer_name'    => $p->customer?->name ?? '—',
+                'customer_phone'   => $p->customer?->phone ?? '',
+                'model_name'       => $p->model_name,
+                'imei'             => $p->imei,
+                'specs'            => implode(' / ', array_filter([$p->ram, $p->storage, $p->color])),
+                'condition_note'   => $p->condition_note,
+                'purchase_price'   => (float) $p->purchase_price,
+                'selling_price'    => (float) $p->selling_price,
+                'is_exchange'      => (bool) $p->is_exchange,
+                'shop_name'        => $p->shop?->name ?? '—',
+                'staff_name'       => $p->user?->name ?? '—',
+                'credit_given'     => $p->is_exchange ? $given : null,
+                'credit_used'      => $p->is_exchange ? $used : null,
+                'credit_pending'   => $p->is_exchange ? $pending : null,
+                'funded_purchases' => $funded,
+            ];
+        });
+
+        if ($request->credit_status === 'pending') {
+            $rows = $rows->filter(fn($r) => $r['is_exchange'] && $r['credit_pending'] > 0)->values();
+        } elseif ($request->credit_status === 'used') {
+            $rows = $rows->filter(fn($r) => $r['is_exchange'] && $r['credit_pending'] <= 0)->values();
+        }
+
+        $exchangeRows = $rows->where('is_exchange', true);
+        $cashRows     = $rows->where('is_exchange', false);
+
+        $totalCreditPending = 0;
+        foreach ($creditGivenByCustomer as $custId => $given) {
+            $totalCreditPending += max(0, (float) $given - (float) ($creditUsedByCustomer[$custId] ?? 0));
+        }
+
+        return response()->json([
+            'rows' => $rows->values(),
+            'summary' => [
+                'total_count'          => $rows->count(),
+                'exchange_count'       => $exchangeRows->count(),
+                'cash_count'           => $cashRows->count(),
+                'total_exchange_value' => $exchangeRows->sum('purchase_price'),
+                'total_cash_value'     => $cashRows->sum('purchase_price'),
+                'total_credit_pending' => $totalCreditPending,
+            ],
+        ]);
+    }
+
+    /**
+     * One consolidated business summary across every module (sales, purchases,
+     * repairs, recharge, old mobile, airtel recovery, salary, expenses,
+     * cash/bank movement, finance EMI) for a date range, plus a day-wise
+     * breakdown and a live bank-balance snapshot — the single "give me
+     * everything" report.
+     */
+    public function businessSummary(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+        $start = $request->query('start_date', now()->startOfMonth()->toDateString());
+        $end = $request->query('end_date', now()->toDateString());
+
+        // ── Sales ──────────────────────────────────────────────────────────
+        $salesQuery = SaleInvoice::whereBetween('sale_date', [$start, $end])->where('is_cancelled', false);
+        if ($shopId) $salesQuery->where('shop_id', $shopId);
+        $saleInvoiceIds = (clone $salesQuery)->pluck('id');
+        $totalSaleInvoices = $saleInvoiceIds->count();
+        $totalSalesAmount = (clone $salesQuery)->sum('grand_total');
+        $totalSetsSold = (int) SaleItem::whereIn('sale_invoice_id', $saleInvoiceIds)->sum('quantity');
+
+        // ── Purchases ──────────────────────────────────────────────────────
+        $purchaseQuery = PurchaseInvoice::whereBetween('purchase_date', [$start, $end]);
+        if ($shopId) $purchaseQuery->where('shop_id', $shopId);
+        $totalPurchaseInvoices = (clone $purchaseQuery)->count();
+        $totalPurchaseAmount = (clone $purchaseQuery)->sum('grand_total');
+
+        // ── Repairs ────────────────────────────────────────────────────────
+        $repairQuery = RepairRequest::whereBetween('submitted_date', [$start, $end]);
+        if ($shopId) $repairQuery->where('shop_id', $shopId);
+        $repairCount = (clone $repairQuery)->count();
+
+        // ── Transactions: everything else funnels through here ───────────────
+        $txQuery = Transaction::whereBetween('transaction_date', [$start, $end])->where('is_internal_transfer', false);
+        if ($shopId) $txQuery->where('shop_id', $shopId);
+
+        // Same convention as the Daily Summary report: EXCHANGE (old-mobile
+        // trade-in credit) and FINANCE (generic, unmatched-to-a-bank EMI
+        // receivable) are accounting adjustments, not real cash/bank
+        // movement, so they're reported separately, not folded into Bank.
+        $nonCashModes = ['EXCHANGE', 'FINANCE'];
+        $cashIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'CASH')->sum('amount');
+        $bankIn = (clone $txQuery)->where('type', 'IN')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
+        $exchangeIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'EXCHANGE')->sum('amount');
+        $financeIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'FINANCE')->sum('amount');
+        $cashOut = (clone $txQuery)->where('type', 'OUT')->where('payment_mode', 'CASH')->sum('amount');
+        $bankOut = (clone $txQuery)->where('type', 'OUT')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
+
+        $repairIncome = (clone $txQuery)->whereIn('category', ['REPAIR_ADVANCE', 'REPAIR_SETTLEMENT'])->where('type', 'IN')->sum('amount');
+        $rechargeSale = (clone $txQuery)->where('category', 'RECHARGE_SALE')->sum('amount');
+        $rechargePurchase = (clone $txQuery)->where('category', 'RECHARGE_PURCHASE')->sum('amount');
+        $oldMobilePurchase = (clone $txQuery)->where('category', 'OLD_MOBILE_PURCHASE')->sum('amount');
+        $oldMobileExchange = (clone $txQuery)->where('category', 'OLD_MOBILE_EXCHANGE')->sum('amount');
+        $airtelRecovery = (clone $txQuery)->where('category', 'AIRTEL_RECOVERY')->sum('amount');
+        $salaryPaid = (clone $txQuery)->where('category', 'SALARY')->sum('amount');
+        $expenses = (clone $txQuery)->where('category', 'EXPENSE')->where('type', 'OUT')->sum('amount');
+        $otherIncome = (clone $txQuery)->where('category', 'OTHER_INCOME')->where('type', 'IN')->sum('amount');
+
+        $companyFinanceDone = (clone $txQuery)->where('category', 'FINANCE_INCOME')->sum('amount');
+        $shopFinanceDone = (clone $txQuery)->whereIn('category', ['SHOP_FINANCE_EMI_COLLECTION', 'SHOP_FINANCE_DOWN_PAYMENT'])->sum('amount');
+
+        // ── Cash in hand — a running (not period-limited) balance of every
+        // literal "CASH" transaction ever recorded, mirroring how a real
+        // cash drawer works. If the owner has also set up a dedicated Cash
+        // Counter entity, that shows up separately in bank_balances below —
+        // this is only the generic bucket for whichever transactions were
+        // never tagged to a specific account.
+        $allCashQuery = Transaction::where('payment_mode', 'CASH')->where('is_internal_transfer', false);
+        if ($shopId) $allCashQuery->where('shop_id', $shopId);
+        $cashInHand = (clone $allCashQuery)->where('type', 'IN')->sum('amount') - (clone $allCashQuery)->where('type', 'OUT')->sum('amount');
+
+        // ── Live bank/card/UPI/cash-counter balances (snapshot, not period-limited) ──
+        $assetEntities = Entity::whereIn('type', Entity::ASSET_ENTITY_TYPES)
+            ->orWhereRaw("UPPER(REPLACE(type, ' ', '_')) = 'CASH_COUNTER'")
+            ->get();
+        $bankBalances = app(EntityService::class)->calculateBalances($assetEntities)->map(fn ($e) => [
+            'id' => $e->id, 'name' => $e->name, 'type' => $e->type, 'net_balance' => (float) $e->net_balance,
+        ])->values();
+
+        // ── Day-wise breakdown ─────────────────────────────────────────────
+        $salesByDay = (clone $salesQuery)->selectRaw('DATE(sale_date) as d, COUNT(*) as invoices, SUM(grand_total) as amount')
+            ->groupBy('d')->get()->keyBy('d');
+        $setsByDay = SaleItem::whereIn('sale_invoice_id', $saleInvoiceIds)
+            ->join('sale_invoices', 'sale_invoices.id', '=', 'sale_items.sale_invoice_id')
+            ->selectRaw('DATE(sale_invoices.sale_date) as d, SUM(sale_items.quantity) as qty')
+            ->groupBy('d')->get()->keyBy('d');
+        $txByDay = (clone $txQuery)->selectRaw("
+                DATE(transaction_date) as d,
+                SUM(CASE WHEN type='IN' AND payment_mode='CASH' THEN amount ELSE 0 END) as cash_in,
+                SUM(CASE WHEN type='IN' AND payment_mode NOT IN ('CASH','EXCHANGE','FINANCE') THEN amount ELSE 0 END) as bank_in,
+                SUM(CASE WHEN type='OUT' AND payment_mode='CASH' THEN amount ELSE 0 END) as cash_out,
+                SUM(CASE WHEN type='OUT' AND payment_mode NOT IN ('CASH','EXCHANGE','FINANCE') THEN amount ELSE 0 END) as bank_out
+            ")->groupBy('d')->get()->keyBy('d');
+
+        $dayWise = [];
+        $cursor = Carbon::parse($start);
+        $endDate = Carbon::parse($end);
+        while ($cursor->lte($endDate)) {
+            $d = $cursor->toDateString();
+            $s = $salesByDay->get($d);
+            $sets = $setsByDay->get($d);
+            $t = $txByDay->get($d);
+            $dayWise[] = [
+                'date' => $d,
+                'sale_invoices' => (int) ($s->invoices ?? 0),
+                'sales_amount' => (float) ($s->amount ?? 0),
+                'sets_sold' => (int) ($sets->qty ?? 0),
+                'cash_in' => (float) ($t->cash_in ?? 0),
+                'bank_in' => (float) ($t->bank_in ?? 0),
+                'cash_out' => (float) ($t->cash_out ?? 0),
+                'bank_out' => (float) ($t->bank_out ?? 0),
+            ];
+            $cursor->addDay();
+        }
+
+        return response()->json([
+            'period' => ['start_date' => $start, 'end_date' => $end],
+            'sales' => [
+                'invoices' => $totalSaleInvoices,
+                'sets_sold' => $totalSetsSold,
+                'amount' => (float) $totalSalesAmount,
+            ],
+            'purchases' => [
+                'invoices' => $totalPurchaseInvoices,
+                'amount' => (float) $totalPurchaseAmount,
+            ],
+            'repairs' => [
+                'count' => $repairCount,
+                'income' => (float) $repairIncome,
+            ],
+            'recharge' => [
+                'sale' => (float) $rechargeSale,
+                'purchase' => (float) $rechargePurchase,
+            ],
+            'old_mobile' => [
+                'purchase' => (float) $oldMobilePurchase,
+                'exchange' => (float) $oldMobileExchange,
+            ],
+            'airtel_recovery' => (float) $airtelRecovery,
+            'salary_paid' => (float) $salaryPaid,
+            'expenses' => (float) $expenses,
+            'other_income' => (float) $otherIncome,
+            'payments' => [
+                'cash_in' => (float) $cashIn,
+                'bank_in' => (float) $bankIn,
+                'exchange_in' => (float) $exchangeIn,
+                'finance_in' => (float) $financeIn,
+                'cash_out' => (float) $cashOut,
+                'bank_out' => (float) $bankOut,
+                'net' => (float) ($cashIn + $bankIn - $cashOut - $bankOut),
+            ],
+            'finance' => [
+                'company_finance_done' => (float) $companyFinanceDone,
+                'shop_finance_done' => (float) $shopFinanceDone,
+            ],
+            'cash_in_hand' => (float) $cashInHand,
+            'bank_balances' => $bankBalances,
+            'day_wise' => $dayWise,
         ]);
     }
 }

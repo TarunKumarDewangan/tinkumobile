@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Transaction;
 use App\Traits\RecordsTransactions;
 use App\Services\EntityService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -45,6 +47,37 @@ class EntityLedgerController extends Controller
             'receivable' => (float)($totals->receivable ?? 0),
             'payable' => (float)($totals->payable ?? 0),
         ]);
+    }
+
+    /**
+     * Send a WhatsApp pending-balance reminder directly to a customer/party
+     * (not the owner) — used by the Pending Balance page's per-row action.
+     * The message is built server-side from a default template but the
+     * caller (frontend) may preview/edit it before sending.
+     */
+    public function sendPendingBalanceReminder(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string',
+            'phone' => 'required|string',
+            'message' => 'required|string|max:1000',
+        ]);
+
+        $waService = app(WhatsAppService::class);
+
+        if (!$waService->isConfigured()) {
+            return response()->json(['message' => 'WhatsApp is not configured (Settings > WhatsApp Config).'], 422);
+        }
+
+        $sent = $waService->sendMessage($data['phone'], $data['message']);
+
+        if (!$sent) {
+            return response()->json(['message' => "Failed to send WhatsApp message to {$data['name']}. Check the phone number and WhatsApp connection."], 500);
+        }
+
+        ActivityLog::log('PENDING_BALANCE_REMINDER_SENT', null, "WhatsApp pending-balance reminder sent to {$data['name']} ({$data['phone']})");
+
+        return response()->json(['message' => "Reminder sent to {$data['name']}"]);
     }
 
     /**
@@ -248,6 +281,13 @@ class EntityLedgerController extends Controller
         $entityId = $entity->id ?? 0;
         $ledgerItems = collect();
 
+        // Bank/Card/UPI entities are asset (cash-holding) accounts, not people/
+        // parties — money IN increases their balance instead of "what they owe
+        // us going down", and none of the virtual/unrealized charge sections
+        // below (sales, repairs, purchases, loans...) are ever posted against
+        // an asset account directly, so they're skipped entirely for these.
+        $isAssetAccount = \App\Models\Entity::isAssetType($entity->type);
+
         // 1. REAL TRANSACTIONS (Money In/Out) - match by BOTH entity_name AND accounting_entity_id
         $txQuery = Transaction::where(function($q) use ($entityName, $entityId) {
             $q->where('entity_name', $entityName);
@@ -281,7 +321,8 @@ class EntityLedgerController extends Controller
             ]);
         }
 
-        // 2. VIRTUAL CHARGES
+        // 2. VIRTUAL CHARGES — none of these apply to an asset account
+        if (!$isAssetAccount) {
         // Repairs
         $repQuery = \App\Models\RepairRequest::where('customer_name', $entityName)->where('is_pay_later', true);
         if ($startDate) $repQuery->where('submitted_date', '>=', $startDate);
@@ -508,6 +549,7 @@ class EntityLedgerController extends Controller
                 'created_at' => $i->created_at
             ]);
         });
+        } // end !$isAssetAccount virtual charges
 
         // Compute running totals directly from ledger items for accuracy
         $totalIn  = $ledgerItems->sum('in_worth');
@@ -517,8 +559,14 @@ class EntityLedgerController extends Controller
         $entity->setAttribute('in_worth', (float)$totalIn);
         $entity->setAttribute('out_worth', (float)$totalOut);
         $entity->setAttribute('opening_balance', $realOpeningBalance);
-        // net_balance = realOpeningBalance (what they owed before) + new drops (out) - payments received (in)
-        $liveNet = $realOpeningBalance + $totalOut - $totalIn;
+        $entity->setAttribute('is_asset_account', $isAssetAccount);
+        if ($isAssetAccount) {
+            // Asset account: deposits increase the balance, withdrawals decrease it.
+            $liveNet = $realOpeningBalance + $totalIn - $totalOut;
+        } else {
+            // net_balance = realOpeningBalance (what they owed before) + new drops (out) - payments received (in)
+            $liveNet = $realOpeningBalance + $totalOut - $totalIn;
+        }
         $entity->setAttribute('net_balance', $liveNet);
 
         return response()->json([
@@ -531,40 +579,144 @@ class EntityLedgerController extends Controller
 
     /**
      * Record a manual settlement for an entity.
+     *
+     * A settlement only ever touched the entity's aggregate ledger balance —
+     * it never updated any specific Sale/Purchase invoice's own total_paid,
+     * so a customer with several open invoices would keep showing as
+     * unpaid/partial on Pending Balance and the Sales list even after being
+     * settled here. Auto-apply the settled amount FIFO (oldest invoice
+     * first) against the entity's own open invoices so those pages catch up
+     * too — without creating a second Transaction, since the settlement
+     * Transaction above already accounts for this money in the ledger.
      */
     public function recordSettlement(Request $request)
     {
         $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $data = $request->validate([
             'entity_name' => 'required|string',
             'amount' => 'required|numeric|min:0',
             'type' => 'required|in:IN,OUT',
-            'payment_mode' => 'required|string',
+            'payment_mode' => 'required_without:payment_lines|string',
+            'payment_lines' => 'nullable|array|min:2',
+            'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
+            'payment_lines.*.amount' => 'required_with:payment_lines|numeric|min:0.01',
             'description' => 'nullable|string',
             'category' => 'required|string',
             'transaction_date' => 'nullable|date'
         ]);
 
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['amount'])) {
+            return response()->json(['message' => 'Split payment lines must add up to the total amount'], 422);
+        }
+
         $entity = \App\Models\Entity::where('name', $data['entity_name'])->first();
 
         $shopId = $user->hasFullAccess() ? ($request->shop_id ?? $user->shop_id ?? \App\Models\Shop::first()->id ?? 1) : $user->shop_id;
 
-        $transaction = $this->transactionService->recordSettlement([
-            'shop_id' => $shopId,
-            'user_id' => $user->id,
-            'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
-            'type' => $data['type'],
-            'amount' => $data['amount'],
-            'payment_mode' => $data['payment_mode'],
-            'category' => $data['category'],
-            'description' => $data['description'] ?? "Manual settlement for {$data['entity_name']}",
-            'entity_name' => $data['entity_name'],
-            'accounting_entity_id' => $entity ? $entity->id : null,
-        ]);
+        $modeLabel = !empty($data['payment_lines'])
+            ? collect($data['payment_lines'])->map(fn ($l) => "{$l['payment_mode']} (₹" . number_format($l['amount'], 2) . ')')->implode(' + ')
+            : $data['payment_mode'];
 
-        return response()->json([
-            'message' => 'Settlement recorded successfully',
-            'transaction' => $transaction
-        ], 201);
+        return DB::transaction(function () use ($data, $user, $entity, $shopId, $modeLabel) {
+            $transaction = $this->transactionService->recordSettlement([
+                'shop_id' => $shopId,
+                'user_id' => $user->id,
+                'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
+                'type' => $data['type'],
+                'amount' => $data['amount'],
+                'payment_mode' => $data['payment_mode'] ?? null,
+                'payment_lines' => $data['payment_lines'] ?? null,
+                'category' => $data['category'],
+                'description' => $data['description'] ?? "Manual settlement for {$data['entity_name']}",
+                'entity_name' => $data['entity_name'],
+                'accounting_entity_id' => $entity ? $entity->id : null,
+            ]);
+
+            $appliedTo = $this->applySettlementToInvoices($entity, $data['entity_name'], $data['type'], (float) $data['amount']);
+
+            $this->notifyOwner(
+                ($data['type'] === 'IN' ? "💰 *Cash IN — {$data['entity_name']}*\n" : "💸 *Cash OUT — {$data['entity_name']}*\n") .
+                "Amount: ₹" . number_format($data['amount'], 2) . "\n" .
+                "Mode: {$modeLabel}\n" .
+                "Category: {$data['category']}\n" .
+                ($data['description'] ?? '' ? "Note: {$data['description']}\n" : '') .
+                "By: {$user->name}"
+            );
+
+            return response()->json([
+                'message' => 'Settlement recorded successfully',
+                'transaction' => $transaction,
+                'applied_to_invoices' => $appliedTo,
+            ], 201);
+        });
+    }
+
+    /**
+     * FIFO-apply a settled amount onto the entity's own open invoices
+     * (Sales for a Customer-type entity when money came IN, Purchases for a
+     * Supplier-type entity when money went OUT). Matches by relation first,
+     * falling back to name — same pattern used throughout EntityService.
+     */
+    private function applySettlementToInvoices(?\App\Models\Entity $entity, string $entityName, string $type, float $remaining): array
+    {
+        $applied = [];
+        if ($remaining <= 0) return $applied;
+
+        if ($type === 'IN') {
+            $customerIds = \App\Models\Customer::where('name', $entityName)->pluck('id');
+            if ($entity && $entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+                $customerIds->push($entity->relation_id);
+            }
+            if ($customerIds->isEmpty()) return $applied;
+
+            $invoices = \App\Models\SaleInvoice::whereIn('customer_id', $customerIds->unique())
+                ->where('is_cancelled', false)
+                ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->orderBy('sale_date')->orderBy('id')
+                ->lockForUpdate()->get();
+
+            foreach ($invoices as $invoice) {
+                if ($remaining <= 0) break;
+                $alreadyCovered = (float) $invoice->total_paid + (float) $invoice->exchange_paid
+                    + ($invoice->finance_payment_status === 'RECEIVED' ? (float) $invoice->finance_amount : 0);
+                $outstanding = max(0, (float) $invoice->grand_total - $alreadyCovered);
+                if ($outstanding <= 0) continue;
+
+                $apply = min($outstanding, $remaining);
+                $invoice->total_paid += $apply;
+                $invoice->updatePaymentStatus();
+                $remaining -= $apply;
+                $applied[] = ['invoice_no' => $invoice->invoice_no, 'type' => 'sale', 'amount' => $apply];
+            }
+        } elseif ($type === 'OUT') {
+            $supplierIds = \App\Models\Supplier::where('name', $entityName)->pluck('id');
+            if ($entity && $entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
+                $supplierIds->push($entity->relation_id);
+            }
+            if ($supplierIds->isEmpty()) return $applied;
+
+            $invoices = \App\Models\PurchaseInvoice::whereIn('supplier_id', $supplierIds->unique())
+                ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->orderBy('purchase_date')->orderBy('id')
+                ->lockForUpdate()->get();
+
+            foreach ($invoices as $invoice) {
+                if ($remaining <= 0) break;
+                $outstanding = max(0, (float) $invoice->grand_total - (float) $invoice->total_paid);
+                if ($outstanding <= 0) continue;
+
+                $apply = min($outstanding, $remaining);
+                $invoice->total_paid += $apply;
+                $invoice->updatePaymentStatus();
+                $remaining -= $apply;
+                $applied[] = ['invoice_no' => $invoice->invoice_no, 'type' => 'purchase', 'amount' => $apply];
+            }
+        }
+
+        return $applied;
     }
 }

@@ -106,9 +106,9 @@ export default function SetSalesMatrix() {
     return reportData.products.reduce((sum, p) => sum + (p.sales[dateStr] || 0), 0);
   };
 
-  // Columns sum calculation (MOP Amount)
+  // Columns sum calculation (MOP Amount) — real sold amount for that day, not qty * master price
   const getColumnSumMop = (dateStr) => {
-    return reportData.products.reduce((sum, p) => sum + ((p.sales[dateStr] || 0) * (p.mop_price || 0)), 0);
+    return reportData.products.reduce((sum, p) => sum + (p.mop_sales?.[dateStr] || 0), 0);
   };
 
   return (
@@ -328,23 +328,24 @@ export default function SetSalesMatrix() {
                     </td>
                     {reportData.dates.map(dateStr => {
                       const qty = product.sales[dateStr];
+                      const dayAmount = product.mop_sales?.[dateStr] || 0;
                       let displayVal = '';
                       if (qty) {
-                        displayVal = viewMode === 'count' 
-                          ? qty 
-                          : `₹${(qty * product.mop_price).toLocaleString('en-IN')}`;
+                        displayVal = viewMode === 'count'
+                          ? qty
+                          : `₹${dayAmount.toLocaleString('en-IN')}`;
                       }
                       return (
-                        <td 
-                          key={dateStr} 
+                        <td
+                          key={dateStr}
                           className="text-center p-2 fw-bold"
-                          style={{ 
+                          style={{
                             backgroundColor: qty ? '#f0fdf4' : 'transparent',
                             color: qty ? '#15803d' : 'transparent',
                             fontSize: viewMode === 'mop' ? '0.75rem' : '0.82rem',
                             whiteSpace: 'nowrap'
                           }}
-                          title={`${product.product_name}: ${qty || 0} sold on ${getDayName(dateStr)} (MOP: ₹${(product.mop_price || 0).toLocaleString('en-IN')})`}
+                          title={`${product.product_name}: ${qty || 0} sold on ${getDayName(dateStr)}${qty ? ` (Sold for: ₹${dayAmount.toLocaleString('en-IN')})` : ''}`}
                         >
                           {displayVal}
                         </td>

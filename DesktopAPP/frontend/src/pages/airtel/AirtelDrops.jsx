@@ -6,6 +6,9 @@ import Modal from '../../components/Modal';
 // import { format } from 'date-fns'; // REMOVED dependency
 
 import { useAuth } from '../../contexts/AuthContext';
+import pinGate from '../../utils/pinGate';
+import { buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 export default function AirtelDrops() {
   const { can, isManager, hasFullAccess, isOwner } = useAuth();
   const navigate = useNavigate();
@@ -28,7 +31,9 @@ export default function AirtelDrops() {
    const [showImport, setShowImport] = useState(false);
   const [importMode, setImportMode] = useState('DROPS'); // 'DROPS' or 'UPI'
   const [importText, setImportText] = useState('');
-  
+  const [importPaymentMode, setImportPaymentMode] = useState('DIGITAL');
+  const [bankEntities, setBankEntities] = useState([]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const [summary, setSummary] = useState({ total_dropped: 0, total_recovered: 0, pending_recovery: 0, grand_total_pending: 0 });
@@ -39,17 +44,20 @@ export default function AirtelDrops() {
   const [historyData, setHistoryData] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const verifyPin = () => {
-    const pin = window.prompt('ENTER SECURITY PIN TO PROCEED:');
-    if (pin === '71727378') return true;
-    if (pin !== null) toast.error('INVALID PIN');
-    return false;
-  };
 
   useEffect(() => {
     fetchDrops();
     fetchSummary();
   }, [date, fromDate, toDate, useRange, retailerName, minAmount, maxAmount, status, followUpOnly, overpaidOnly, paymentMode, sortBy, order]);
+
+  useEffect(() => {
+    axios.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const importModeOptions = buildModeOptions(
+    [{ value: 'DIGITAL', label: 'DIGITAL (UPI to Airtel)' }, { value: 'CASH', label: 'CASH' }],
+    bankEntities
+  );
 
   const getParams = () => {
     let params = `?retailer_name=${retailerName}&min_amount=${minAmount}&max_amount=${maxAmount}&payment_mode=${paymentMode}&sort_by=${sortBy}&order=${order}`;
@@ -146,7 +154,7 @@ export default function AirtelDrops() {
 
     try {
       if (importMode === 'UPI') {
-          const { data } = await axios.post('/airtel-drops/import-upi', { payments: parsedData });
+          const { data } = await axios.post('/airtel-drops/import-upi', { payments: parsedData, payment_mode: importPaymentMode });
           const failures = data.errors ? data.errors.map(err => {
               const match = err.match(/MSISDN: (\d+)/);
               return match ? match[1] : err;
@@ -192,7 +200,7 @@ export default function AirtelDrops() {
 
 
   const handleDelete = async (id) => {
-    if (!window.confirm('DELETE THIS DROP?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await axios.delete(`/airtel-drops/${id}`);
       toast.success('Deleted');
@@ -257,8 +265,7 @@ export default function AirtelDrops() {
                         toast.error('Only the owner can clear drops');
                         return;
                       }
-                      if (window.confirm(`DELETE ALL DROPS FOR ${confirmDate}?`)) {
-                        if (!verifyPin()) return;
+                      if (await pinGate.confirm()) {
                         try {
                           const params = useRange ? { from_date: fromDate, to_date: toDate } : { date };
                           await axios.post('/airtel-drops/bulk-delete', params);
@@ -280,8 +287,7 @@ export default function AirtelDrops() {
                         toast.error('Only the owner can clear balances');
                         return;
                       }
-                      if (window.confirm('DELETE ALL OPENING BALANCES? This sets all retailer balances to 0.')) {
-                        if (!verifyPin()) return;
+                      if (await pinGate.confirm()) {
                         try {
                           await axios.post('/airtel-retailers/bulk-clear-opening-balances');
                           toast.success('All opening balances cleared');
@@ -302,8 +308,7 @@ export default function AirtelDrops() {
                         toast.error('Only the owner can clear payments');
                         return;
                       }
-                      if (window.confirm('WARNING: DELETE ALL RECOVERY PAYMENTS FROM THE ENTIRE SYSTEM? This cannot be undone.')) {
-                        if (!verifyPin()) return;
+                      if (await pinGate.confirm()) {
                         try {
                           await axios.post('/airtel-recoveries/bulk-delete');
                           toast.success('All system recoveries have been cleared');
@@ -324,8 +329,7 @@ export default function AirtelDrops() {
                         toast.error('Only the owner can perform a full reset');
                         return;
                       }
-                      if (window.confirm('CRITICAL WARNING: This will DELETE ALL DROPS, ALL PAYMENTS, and CLEAR ALL BALANCES. The system will be completely reset. Are you absolutely sure?')) {
-                        if (!verifyPin()) return;
+                      if (await pinGate.confirm()) {
                         try {
                           await axios.post('/airtel-retailers/bulk-full-reset');
                           toast.success('System fully reset');
@@ -361,7 +365,7 @@ export default function AirtelDrops() {
       <div className="card shadow-sm border-0 mb-4 bg-light">
           <div className="card-body py-3">
               <div className="row g-2 align-items-end">
-                  <div className="col-md-3">
+                  <div className="col-12 col-md-3">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Search Retailer Name / MSISDN</label>
                       <input 
                         type="text" 
@@ -371,7 +375,7 @@ export default function AirtelDrops() {
                         onChange={e => setRetailerName(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Min Amount</label>
                       <input 
                         type="number" 
@@ -381,7 +385,7 @@ export default function AirtelDrops() {
                         onChange={e => setMinAmount(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Max Amount</label>
                       <input 
                         type="number" 
@@ -391,7 +395,7 @@ export default function AirtelDrops() {
                         onChange={e => setMaxAmount(e.target.value)} 
                       />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <label className="x-small text-uppercase fw-bold mb-1 d-block">Payment Mode</label>
                       <select className="form-select form-select-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
                           <option value="">ALL MODES</option>
@@ -402,13 +406,13 @@ export default function AirtelDrops() {
                           <option value="OTHER">OTHER</option>
                       </select>
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <div className="form-check form-switch mt-2">
                           <input className="form-check-input" type="checkbox" id="followUpSwitch" checked={followUpOnly} onChange={e => setFollowUpOnly(e.target.checked)} />
                           <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="followUpSwitch">Follow-up Only</label>
                       </div>
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-12 col-md-2">
                       <div className="form-check form-switch mt-2">
                           <input className="form-check-input" type="checkbox" id="overpaidSwitch" checked={overpaidOnly} onChange={e => setOverpaidOnly(e.target.checked)} />
                           <label className="form-check-label x-small text-uppercase fw-bold" htmlFor="overpaidSwitch">Overpaid Only</label>
@@ -427,7 +431,7 @@ export default function AirtelDrops() {
                   </div>
               </div>
               <div className="row mt-2 g-2">
-                  <div className="col-md-12">
+                  <div className="col-12 col-md-12">
                       <div className="btn-group w-100 shadow-sm text-uppercase fw-bold">
                           <button className={`btn btn-sm ${status === 'all' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setStatus('all')}>All Accounts</button>
                           <button className={`btn btn-sm ${status === 'pending_only' ? 'btn-warning text-dark' : 'btn-outline-warning'}`} onClick={() => setStatus('pending_only')}>Pending</button>
@@ -589,6 +593,17 @@ export default function AirtelDrops() {
               Supports Space, Tab, or Underscore separation. Works with copy-paste directly from Excel.
             </div>
           </div>
+          {importMode === 'UPI' && (
+            <div className="mb-3">
+              <label className="form-label text-uppercase small fw-bold">Landed In</label>
+              <select className="form-select" value={importPaymentMode} onChange={e => setImportPaymentMode(e.target.value)}>
+                {importModeOptions.map((o, i) => (
+                  <option key={o.value || `sep-${i}`} value={o.value} disabled={o.disabled}>{o.label}</option>
+                ))}
+              </select>
+              <div className="form-text x-small">Applies to every payment in this paste — matches which account actually received the money.</div>
+            </div>
+          )}
           <div className="d-grid mt-4">
             <button type="submit" className="btn btn-primary text-uppercase fw-bold py-2" disabled={submitting}>
               {submitting ? 'Processing...' : 'Process Import'}

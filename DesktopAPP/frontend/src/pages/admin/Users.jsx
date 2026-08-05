@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../../utils/pinGate';
 import { toast } from 'react-toastify';
 import { Modal, Button } from 'react-bootstrap';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -30,6 +34,8 @@ export default function Users() {
   });
   const [history, setHistory]             = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
+  const [bankEntities, setBankEntities] = useState([]);
 
   const standardRoles = ['owner', 'manager', 'cashier', 'sales_person', 'computer_operator', 'stock_clerk', 'repair_tech', 'auditor', 'recovery_man'];
 
@@ -37,6 +43,15 @@ export default function Users() {
     setLoading(true);
     api.get('/users').then(r => setUsers(r.data)).finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const salaryModeOptions = buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]);
 
   // ── Payroll Handlers (Consolidated) ──
   const handleOpenPayment = (staff) => {
@@ -49,15 +64,21 @@ export default function Users() {
         payment_date: new Date().toISOString().slice(0, 10),
         notes: ''
     });
+    setPaymentLines(newSingleLine('CASH'));
     setShowPaymentModal(true);
   };
 
   const handleSavePayment = async (e) => {
     e.preventDefault();
+    if (!paymentLinesSumMatches(paymentLines, paymentData.amount)) {
+        return toast.error("Split doesn't add up to the amount");
+    }
     try {
-        await api.post('/salary-payments', paymentData);
+        const finalData = { ...paymentData, ...buildPaymentPayload(paymentLines) };
+        await api.post('/salary-payments', finalData);
         toast.success('✅ Payment recorded successfully');
         setShowPaymentModal(false);
+        load();
     } catch (e) {
         toast.error(e.response?.data?.message || 'Error recording payment');
     }
@@ -78,7 +99,7 @@ export default function Users() {
   };
 
   const handleDeleteHistory = async (id) => {
-    if (!window.confirm('Delete this payment record?')) return;
+    if (!await pinGate.confirm()) return;
     try {
         await api.delete(`/salary-payments/${id}`);
         toast.success('Record deleted');
@@ -147,10 +168,20 @@ export default function Users() {
   };
 
   const deleteUser = async (id) => {
-    if (!window.confirm('Delete this staff account?')) return;
+    if (!await pinGate.confirm()) return;
     await api.delete(`/users/${id}`);
     toast.success('Deleted');
     load();
+  };
+
+  const toggleLoginOtp = async (u) => {
+    try {
+      await api.put(`/users/${u.id}`, { require_login_otp: !u.require_login_otp });
+      toast.success(u.require_login_otp ? 'Login OTP disabled' : 'Login OTP enabled — code will be sent to Telegram on their next login');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Error updating OTP setting');
+    }
   };
 
   const roleColors = { 
@@ -184,25 +215,25 @@ export default function Users() {
           <form onSubmit={handleSubmit}>
             <div className="row g-3">
               {/* Basic Info */}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Full Name *</label>
                 <input className="form-control" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Email *</label>
                 <input type="email" className="form-control" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">{editId ? 'New Password (optional)' : 'Password *'}</label>
                 <input type="password" className="form-control" required={!editId} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Phone</label>
                 <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
               </div>
 
               {/* Assignment */}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Shop / Branch *</label>
                 <select className="form-select" required value={form.shop_id} onChange={e => setForm({ ...form, shop_id: e.target.value })}>
                   <option value="">— Select Shop —</option>
@@ -225,16 +256,16 @@ export default function Users() {
                 </select>
               </div>
               {form.role === 'other' && (
-                <div className="col-md-2">
+                <div className="col-12 col-md-2">
                   <label className="form-label fw-semibold">Type Role *</label>
                   <input className="form-control" required placeholder="Enter role" value={form.customRole} onChange={e => setForm({ ...form, customRole: e.target.value })} />
                 </div>
               )}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Designation</label>
                 <input className="form-control" placeholder="e.g. Senior Technician" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Status</label>
                 <select className="form-select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
                   <option value="active">🟢 Active</option>
@@ -243,22 +274,22 @@ export default function Users() {
               </div>
 
               {/* Salary & Personal */}
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Base Salary (Monthly)</label>
                 <div className="input-group">
                   <span className="input-group-text">₹</span>
                   <input type="number" className="form-control" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })} />
                 </div>
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Joining Date</label>
                 <input type="date" className="form-control" value={form.joining_date} onChange={e => setForm({ ...form, joining_date: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Aadhaar / ID No.</label>
                 <input className="form-control" value={form.aadhaar_no} onChange={e => setForm({ ...form, aadhaar_no: e.target.value })} />
               </div>
-              <div className="col-md-3">
+              <div className="col-12 col-md-3">
                 <label className="form-label fw-semibold">Address</label>
                 <input className="form-control" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
               </div>
@@ -293,6 +324,7 @@ export default function Users() {
                   <th>Salary</th>
                   <th>Joined</th>
                   <th>Status</th>
+                  <th>Login OTP</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -328,6 +360,18 @@ export default function Users() {
                       </span>
                     </td>
                     <td>
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          checked={!!u.require_login_otp}
+                          onChange={() => toggleLoginOtp(u)}
+                          title="Require a Telegram OTP for this user to log in"
+                        />
+                      </div>
+                    </td>
+                    <td>
                       <div className="d-flex gap-1 justify-content-end">
                         <button className="btn btn-xs btn-success fw-bold" onClick={() => handleOpenPayment(u)}>PAY</button>
                         <button className="btn btn-xs btn-info text-white fw-bold" onClick={() => handleViewHistory(u)}>HISTORY</button>
@@ -339,7 +383,7 @@ export default function Users() {
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-5 text-muted">
+                    <td colSpan={8} className="text-center py-5 text-muted">
                       No staff members found. Add your first employee above!
                     </td>
                   </tr>
@@ -381,9 +425,18 @@ export default function Users() {
                             <input type="month" className="form-control" required value={paymentData.for_month} onChange={e => setPaymentData({...paymentData, for_month: e.target.value})} />
                       </div>
                   )}
+                  <div className="mb-3">
+                      <label className="form-label small fw-bold">Payment Mode</label>
+                      <PaymentSplitInput
+                        totalAmount={paymentData.amount}
+                        lines={paymentLines}
+                        onChange={setPaymentLines}
+                        modeOptions={salaryModeOptions}
+                      />
+                  </div>
                   <div className="mb-0">
                       <label className="form-label small fw-bold">Notes / Reference</label>
-                      <textarea className="form-control text-uppercase" rows={2} placeholder="e.g. Paid via Cash, PhonePe, etc..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
+                      <textarea className="form-control text-uppercase" rows={2} placeholder="e.g. Cheque no, remarks, etc..." value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value.toUpperCase()})} />
                   </div>
               </Modal.Body>
               <Modal.Footer>

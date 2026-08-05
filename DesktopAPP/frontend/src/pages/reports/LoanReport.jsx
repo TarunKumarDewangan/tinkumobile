@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 
 export default function LoanReport() {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => { api.get('/reports/loans').then(r => setData(r.data)).finally(() => setLoading(false)); }, []);
 
   return (
     <div>
-      <div className="page-header">
-        <h2>💰 Loan Outstanding</h2>
+      <div className="page-header d-flex align-items-center gap-2">
+        <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => navigate('/reports')}>← Back</button>
+        <h2 className="mb-0">💰 Loan Outstanding</h2>
         <span className="text-danger fw-semibold">{data.length} pending payments</span>
       </div>
       <div className="table-card">

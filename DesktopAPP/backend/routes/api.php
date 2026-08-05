@@ -14,9 +14,11 @@ use App\Http\Controllers\Api\LoanController;
 use App\Http\Controllers\Api\LoanPayment;
 use App\Http\Controllers\Api\RechargeController;
 use App\Http\Controllers\Api\SimCardController;
+use App\Http\Controllers\Api\SimStockController;
 use App\Http\Controllers\Api\OldMobileController;
 use App\Http\Controllers\Api\GiftController;
 use App\Http\Controllers\Api\FollowUpController;
+use App\Http\Controllers\Api\EntityNoteController;
 use App\Http\Controllers\Api\IncentiveController;
 use App\Http\Controllers\Api\CompanyOfferController;
 use App\Http\Controllers\Api\ReportController;
@@ -33,15 +35,19 @@ use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\EntityLedgerController;
 use App\Http\Controllers\Api\EntityController;
 use App\Http\Controllers\Api\SystemBackupController;
+use App\Http\Controllers\Api\FinancePlanController;
+use App\Http\Controllers\Api\RolePermissionController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public Routes ──────────────────────────────────────────────────────────
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/login/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:5,1');
+Route::post('/login/resend-otp', [AuthController::class, 'resendOtp'])->middleware('throttle:3,1');
 Route::post('/repair-request', [RepairController::class, 'publicStore'])->middleware('throttle:10,1'); // Customer submits repair
 Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile'])->middleware('throttle:30,1');
 
 // Customer Portal
-Route::post('/customer/login', [CustomerController::class, 'portalLogin']);
+Route::post('/customer/login', [CustomerController::class, 'portalLogin'])->middleware('throttle:5,1');
 
 // ── Authenticated Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->group(function () {
@@ -50,18 +56,23 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
+
+    // Universal search
+    Route::get('/search', [\App\Http\Controllers\Api\SearchController::class, 'index']);
 
     // Master data (shared / global – no shop filter needed)
-    Route::apiResource('categories', CategoryController::class);
+    Route::apiResource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::apiResource('suppliers', SupplierController::class);
     Route::post('customers/send-offer', [CustomerController::class, 'sendOffer']);
     Route::apiResource('customers', CustomerController::class);
-    Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class);
+    Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class)->only(['index', 'store']);
     Route::apiResource('subcategories', \App\Http\Controllers\Api\SubcategoryController::class)->only(['index', 'store']);
 
     // Products
     Route::delete('/products/stock/{id}', [ProductController::class, 'deleteStock']);
     Route::put('/products/stock/{id}', [ProductController::class, 'updateStock']);
+    Route::get('/products/sticker-list', [ProductController::class, 'stickerList']);
     Route::apiResource('products', ProductController::class);
 
     // Stock Adjustments (opening stock, corrections, backdated purchases)
@@ -75,9 +86,20 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/stock-adjustments/clear-all', [StockAdjustmentController::class, 'clearAllStocks']);
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
     Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
+    Route::get('/stocks/daily-ledger', [StockController::class, 'dailyLedger']);
+    Route::get('/stocks/closing-stock-detail', [StockController::class, 'closingStockDetail']);
     Route::get('/stocks/backup', [StockController::class, 'backup']);
     Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup']);
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);
+
+    // Stock Transfers (between shops)
+    Route::get('/stock-transfers/shops', [\App\Http\Controllers\Api\StockTransferController::class, 'shopsList']);
+    Route::get('/stock-transfers/products-at', [\App\Http\Controllers\Api\StockTransferController::class, 'productsAt']);
+    Route::get('/stock-transfers/stock-at', [\App\Http\Controllers\Api\StockTransferController::class, 'stockAt']);
+    Route::get('/stock-transfers', [\App\Http\Controllers\Api\StockTransferController::class, 'index']);
+    Route::post('/stock-transfers', [\App\Http\Controllers\Api\StockTransferController::class, 'store']);
+    Route::post('/stock-transfers/{stockTransfer}/receive', [\App\Http\Controllers\Api\StockTransferController::class, 'receive']);
+    Route::post('/stock-transfers/{stockTransfer}/cancel', [\App\Http\Controllers\Api\StockTransferController::class, 'cancel']);
 
     // Shops – owner only
     Route::apiResource('shops', ShopController::class);
@@ -85,9 +107,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Users & role management
     Route::apiResource('users', UserController::class);
 
+    // Role permission management (owner only)
+    Route::get('role-permissions', [RolePermissionController::class, 'index']);
+    Route::post('role-permissions/{roleName}/sync', [RolePermissionController::class, 'sync']);
+
     // Employees
     Route::apiResource('employees', EmployeeController::class);
-    Route::apiResource('salary-payments', SalaryPaymentController::class);
+    Route::apiResource('salary-payments', SalaryPaymentController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Purchases
     Route::get('purchase-invoices/backup', [PurchaseInvoiceController::class, 'backup']);
@@ -109,6 +135,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/sale-invoices/{saleInvoice}/convert-to-pakka', [SaleInvoiceController::class, 'convertToPakka']);
     Route::post('/sale-invoices/{saleInvoice}/cancel', [SaleInvoiceController::class, 'cancel']);
     Route::post('/sale-invoices/{saleInvoice}/convert-to-new-sale', [SaleInvoiceController::class, 'convertToNewSale']);
+    Route::post('/sale-invoices/{saleInvoice}/convert-to-old-sale', [SaleInvoiceController::class, 'convertToOldSale']);
 
 
     // Repairs
@@ -119,7 +146,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::apiResource('repairs', RepairController::class);
 
     // Follow-ups
-    Route::apiResource('follow-ups', FollowUpController::class);
+    Route::apiResource('follow-ups', FollowUpController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::apiResource('entity-notes', EntityNoteController::class)->only(['index', 'store', 'destroy']);
 
     // Users
     Route::get('/users', [UserController::class, 'index']);
@@ -129,10 +157,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+    Route::delete('/activity-logs/clear', [ActivityLogController::class, 'clear']);
+    Route::delete('/activity-logs/{activityLog}', [ActivityLogController::class, 'destroy']);
 
     // Trash Management
     Route::get('/trash', [TrashController::class, 'index']);
     Route::post('/trash/restore', [TrashController::class, 'restore']);
+    Route::post('/trash/force-delete', [TrashController::class, 'forceDelete']);
 
     // Loans
     Route::get('/loans', [LoanController::class, 'index']);
@@ -151,9 +182,16 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('/sim-cards', [SimCardController::class, 'purchase']);
     Route::post('/sim-cards/{simCard}/sell', [SimCardController::class, 'sell']);
 
+    // SIM Stock (simple bulk count ledger, distinct from per-serial SimCard above)
+    Route::get('/sim-stock/summary', [SimStockController::class, 'summary']);
+    Route::get('/sim-stock', [SimStockController::class, 'index']);
+    Route::post('/sim-stock', [SimStockController::class, 'store']);
+    Route::post('/sim-stock/sell', [SimStockController::class, 'sell']);
+
     // Old Mobiles
     Route::get('/old-mobiles', [OldMobileController::class, 'index']);
     Route::post('/old-mobiles', [OldMobileController::class, 'store']);
+    Route::post('/old-mobiles/bulk', [OldMobileController::class, 'bulkStore']);
     Route::get('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'show']);
     Route::put('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'update']);
     Route::delete('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'destroy']);
@@ -187,6 +225,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         Route::get('/gift-stock', [ReportController::class, 'giftStock']);
         Route::get('/bill-conversion', [ReportController::class, 'billConversion']);
         Route::get('/dashboard', [ReportController::class, 'dashboard']);
+        Route::get('/financer', [ReportController::class, 'financerReport']);
+        Route::get('/old-mobile-exchange', [ReportController::class, 'oldMobileExchangeReport']);
+        Route::get('/business-summary', [ReportController::class, 'businessSummary']);
     });
 
     // Airtel Recovery System
@@ -217,6 +258,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('entities/customer-ledger', [EntityLedgerController::class, 'showForCustomer']);
     Route::get('entities/{name}/ledger', [EntityLedgerController::class, 'show']);
     Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
+    Route::post('pending-balance/send-reminder', [EntityLedgerController::class, 'sendPendingBalanceReminder']);
 
     Route::apiResource('entities', EntityController::class);
     Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory']);
@@ -233,13 +275,20 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     });
 
     Route::get('/transactions/categories', [TransactionController::class, 'categories']);
-    Route::apiResource('transactions', TransactionController::class);
-    Route::apiResource('expense-categories', ExpenseCategoryController::class);
+    Route::apiResource('transactions', TransactionController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
+    Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'update', 'destroy']);
 
     Route::post('entities/sync-all-balances', function() {
         app(\App\Services\EntityService::class)->syncAll();
         return response()->json(['message' => 'All balances synced successfully']);
     });
+
+    // Shop Finance Plans (Personal EMI & Favor)
+    Route::get('finance-plans', [FinancePlanController::class, 'index']);
+    Route::post('finance-plans', [FinancePlanController::class, 'store']);
+    Route::get('finance-plans/{financePlan}', [FinancePlanController::class, 'show']);
+    Route::post('finance-plans/{financePlan}/add-payment', [FinancePlanController::class, 'addPayment']);
+    Route::post('finance-plans/{financePlan}/settle', [FinancePlanController::class, 'settle']);
 
     // Full System Sync — throttled to prevent abuse
     Route::get('system/backup', [SystemBackupController::class, 'backup'])->middleware('throttle:60,1');
@@ -248,6 +297,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
     Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
+    Route::post('settings/test-telegram', [\App\Http\Controllers\Api\SettingsController::class, 'testTelegram']);
+
+    // Manual "Send Now" report triggers (Settings > Notifications)
+    Route::post('notifications/send-daily-summary', [\App\Http\Controllers\Api\NotificationController::class, 'sendDailySummary']);
+    Route::post('notifications/send-emi-reminder', [\App\Http\Controllers\Api\NotificationController::class, 'sendEmiDueReminder']);
+    Route::post('notifications/send-repair-reminder', [\App\Http\Controllers\Api\NotificationController::class, 'sendRepairStatusReminder']);
+    Route::post('settings/verify-pin', [\App\Http\Controllers\Api\SettingsController::class, 'verifyPin'])->middleware('throttle:10,1');
+    Route::post('settings/change-pin', [\App\Http\Controllers\Api\SettingsController::class, 'changePin'])->middleware('throttle:5,1');
 
     // Tasks
     Route::get('tasks', [\App\Http\Controllers\Api\TaskController::class, 'index'])->middleware('permission:view_tasks');

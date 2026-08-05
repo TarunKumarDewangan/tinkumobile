@@ -1,14 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function LoanForm() {
   const [customers, setCustomers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
   const [form, setForm] = useState({ customer_id:'', principal:'', interest_rate:'', total_months:'', start_date: new Date().toISOString().slice(0,10), interest_type:'simple', notes:'' });
   const navigate = useNavigate();
 
-  useEffect(() => { api.get('/customers').then(r => setCustomers(r.data)); }, []);
+  useEffect(() => {
+    api.get('/customers').then(r => setCustomers(r.data));
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const modeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
 
   const calcEMI = () => {
     const p = parseFloat(form.principal) || 0;
@@ -20,8 +33,11 @@ export default function LoanForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!paymentLinesSumMatches(paymentLines, form.principal)) {
+      return toast.error("Split doesn't add up to the principal");
+    }
     try {
-      await api.post('/loans', form);
+      await api.post('/loans', { ...form, ...buildPaymentPayload(paymentLines) });
       toast.success('Loan created with payment schedule!');
       navigate('/loans');
     } catch(e) { toast.error(e.response?.data?.message || 'Error'); }
@@ -45,41 +61,52 @@ export default function LoanForm() {
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
               </select>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Principal ₹ *</label>
-              <input type="number" className="form-control" required min="1" 
-                  value={form.principal === 0 || form.principal === '' ? '' : form.principal} 
+              <input type="number" className="form-control" required min="1"
+                  value={form.principal === 0 || form.principal === '' ? '' : form.principal}
                   onFocus={e => e.target.select()}
-                  onChange={e => setForm({ ...form, principal: e.target.value })} 
+                  onChange={e => setForm({ ...form, principal: e.target.value })}
               />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Interest Rate % / month *</label>
-              <input type="number" className="form-control" step="0.01" required 
-                  value={form.interest_rate === 0 || form.interest_rate === '' ? '' : form.interest_rate} 
+              <input type="number" className="form-control" step="0.01" required
+                  value={form.interest_rate === 0 || form.interest_rate === '' ? '' : form.interest_rate}
                   onFocus={e => e.target.select()}
-                  onChange={e => setForm({ ...form, interest_rate: e.target.value })} 
+                  onChange={e => setForm({ ...form, interest_rate: e.target.value })}
               />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Total Months *</label>
-              <input type="number" className="form-control" min="1" required 
-                  value={form.total_months === 0 || form.total_months === '' ? '' : form.total_months} 
+              <input type="number" className="form-control" min="1" required
+                  value={form.total_months === 0 || form.total_months === '' ? '' : form.total_months}
                   onFocus={e => e.target.select()}
-                  onChange={e => setForm({ ...form, total_months: e.target.value })} 
+                  onChange={e => setForm({ ...form, total_months: e.target.value })}
               />
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Interest Type</label>
               <select className="form-select" {...f('interest_type')}>
                 <option value="simple">Simple Interest</option>
                 <option value="compound">Compound Interest</option>
               </select>
             </div>
-            <div className="col-md-6">
+            <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Start Date</label>
               <input type="date" className="form-control" {...f('start_date')} />
             </div>
+            {parseFloat(form.principal) > 0 && (
+              <div className="col-12">
+                <label className="form-label fw-semibold">Disbursed Via</label>
+                <PaymentSplitInput
+                  totalAmount={form.principal}
+                  lines={paymentLines}
+                  onChange={setPaymentLines}
+                  modeOptions={modeOptions}
+                />
+              </div>
+            )}
             <div className="col-12">
               <label className="form-label fw-semibold">Notes</label>
               <input className="form-control" {...f('notes')} />

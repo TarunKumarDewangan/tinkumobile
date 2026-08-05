@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import { Modal, Button, Tabs, Tab } from 'react-bootstrap';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../contexts/AuthContext';
+import PaymentSplitInput from '../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../utils/paymentSplit';
+import { isAssetEntityType } from '../utils/assetEntityTypes';
 
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
@@ -23,13 +27,15 @@ export default function Employees() {
   // Payment Modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentData, setPaymentData] = useState({
-    employee_id: '', amount: '', type: 'salary', 
+    user_id: '', amount: '', type: 'salary',
     for_month: new Date().toISOString().slice(0, 7), 
     payment_date: new Date().toISOString().slice(0, 10), 
     payment_mode: 'CASH',
     other_mode: '',
     notes: ''
   });
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
+  const [bankEntities, setBankEntities] = useState([]);
 
   // History Modal
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -46,6 +52,15 @@ export default function Employees() {
         api.get('/shops').then(r => setShops(r.data));
     }
   }, [filters]);
+
+  useEffect(() => {
+    api.get('/entities').then(r => setBankEntities((r.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  const salaryModeOptions = buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]);
 
   const loadEmployees = async () => {
     setLoading(true);
@@ -98,7 +113,7 @@ export default function Employees() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this employee?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/employees/${id}`);
       toast.success('Employee deleted');
@@ -112,7 +127,7 @@ export default function Employees() {
   const handleOpenPayment = (emp) => {
       setCurrentEmployee(emp);
       setPaymentData({
-          employee_id: emp.id,
+          user_id: emp.id,
           amount: emp.base_salary || '',
           type: 'salary',
           for_month: new Date().toISOString().slice(0, 7),
@@ -121,16 +136,17 @@ export default function Employees() {
           other_mode: '',
           notes: ''
       });
+      setPaymentLines(newSingleLine('CASH'));
       setShowPaymentModal(true);
   };
 
   const handleSavePayment = async (e) => {
       e.preventDefault();
+      if (!paymentLinesSumMatches(paymentLines, paymentData.amount)) {
+          return toast.error("Split doesn't add up to the amount");
+      }
       try {
-          let finalData = { ...paymentData };
-          if (paymentData.payment_mode === 'OTHER' && paymentData.other_mode) {
-              finalData.payment_mode = paymentData.other_mode;
-          }
+          const finalData = { ...paymentData, ...buildPaymentPayload(paymentLines) };
           await api.post('/salary-payments', finalData);
           toast.success('✅ Payment recorded successfully');
           setShowPaymentModal(false);
@@ -145,7 +161,7 @@ export default function Employees() {
       setShowHistoryModal(true);
       setHistoryLoading(true);
       try {
-          const { data } = await api.get('/salary-payments', { params: { employee_id: emp.id } });
+          const { data } = await api.get('/salary-payments', { params: { user_id: emp.id } });
           setHistory(data);
       } catch (e) {
           toast.error('Failed to load history');
@@ -155,7 +171,7 @@ export default function Employees() {
   };
 
   const handleDeleteHistory = async (id) => {
-      if (!window.confirm('Delete this payment record?')) return;
+      if (!await pinGate.confirm()) return;
       try {
           await api.delete(`/salary-payments/${id}`);
           toast.success('Record deleted');
@@ -347,21 +363,12 @@ export default function Employees() {
                   )}
                   <div className="mb-3">
                       <label className="form-label small fw-bold">Payment Mode</label>
-                      <select className="form-select border-success fw-bold" value={paymentData.payment_mode} onChange={e => setPaymentData({...paymentData, payment_mode: e.target.value})}>
-                          <option value="CASH">CASH</option>
-                          <option value="PHONEPE">PHONEPE</option>
-                          <option value="GPAY">GPAY</option>
-                          <option value="BANK / NEFT">BANK / NEFT</option>
-                          <option value="OTHER">OTHER</option>
-                      </select>
-                      {paymentData.payment_mode === 'OTHER' && (
-                          <input 
-                              className="form-control form-control-sm mt-1 text-uppercase fw-bold border-success" 
-                              placeholder="SPECIFY MODE..." 
-                              value={paymentData.other_mode}
-                              onChange={e => setPaymentData({...paymentData, other_mode: e.target.value.toUpperCase()})}
-                          />
-                      )}
+                      <PaymentSplitInput
+                        totalAmount={paymentData.amount}
+                        lines={paymentLines}
+                        onChange={setPaymentLines}
+                        modeOptions={salaryModeOptions}
+                      />
                   </div>
                   <div className="mb-0">
                       <label className="form-label small fw-bold">Notes / Reference</label>

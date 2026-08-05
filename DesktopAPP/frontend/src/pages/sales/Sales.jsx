@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
@@ -10,15 +11,22 @@ export default function Sales() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [shops, setShops]       = useState([]);
-  const { hasFullAccess } = useAuth();
+  const { hasFullAccess, can } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const category_group = searchParams.get('category_group') || 'new_mobile';
   const [showBackupModal, setShowBackupModal] = useState(false);
 
-  const [filters, setFilters] = useState({ 
-    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false 
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [filters, setFilters] = useState({
+    from: today, to: today, bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: '',
+    model: '', color: '', imei: ''
   });
+  const [sortMode, setSortMode] = useState('date'); // 'date' | 'entry'
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
 
   useEffect(() => {
     const q = searchParams.get('search') || '';
@@ -26,18 +34,25 @@ export default function Sales() {
   }, [searchParams]);
 
   useEffect(() => {
+    setPage(1);
+  }, [filters, perPage]);
+
+  useEffect(() => {
     loadInvoices();
     if (hasFullAccess()) {
         api.get('/shops').then(r => setShops(r.data));
     }
-  }, [filters]);
+  }, [filters, page, perPage]);
 
   const loadInvoices = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/sale-invoices', { params: { ...filters, category_group } });
+      const { data } = await api.get('/sale-invoices', {
+        params: { ...filters, category_group, page, per_page: perPage === 'all' ? 1000000 : perPage }
+      });
       // If data.data exists (pagination), use it; otherwise use data
       setInvoices(data.data || data);
+      if (data.meta) setMeta(data.meta);
     } catch (e) {
       toast.error('Failed to load sales');
     } finally {
@@ -46,7 +61,7 @@ export default function Sales() {
   };
 
   const handleCancel = async (id) => {
-    if (!window.confirm('Cancel this sale? Stock will be restored.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/sale-invoices/${id}/cancel`);
       toast.success('Sale cancelled successfully');
@@ -55,7 +70,7 @@ export default function Sales() {
   };
 
   const handleReceiveFinance = async (id) => {
-    if (!window.confirm('Mark this finance payment as RECEIVED?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.post(`/sale-invoices/${id}/receive-finance`);
       toast.success('Finance payment marked as received');
@@ -66,7 +81,7 @@ export default function Sales() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('PERMANENTLY DELETE this invoice? Stock will be restored.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await api.delete(`/sale-invoices/${id}`);
       toast.success('Invoice deleted');
@@ -75,13 +90,23 @@ export default function Sales() {
   };
 
   const convertToPakka = async (id) => {
-    if (!window.confirm('Convert this Kaccha bill to Pakka?')) return;
+    if (!await pinGate.confirm()) return;
     try {
       const res = await api.post(`/sale-invoices/${id}/convert-to-pakka`);
       toast.success(`Pakka bill created: ${res.data.invoice_no}`);
       loadInvoices();
     } catch (e) { toast.error('Conversion failed'); }
   };
+
+  const sortedInvoices = useMemo(() => {
+    const arr = [...invoices];
+    if (sortMode === 'entry') {
+      arr.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+    } else {
+      arr.sort((a, b) => new Date(b.sale_date) - new Date(a.sale_date));
+    }
+    return arr;
+  }, [invoices, sortMode]);
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -115,7 +140,7 @@ export default function Sales() {
       />
 
       {/* Filters Card */}
-      <div className="card sales-card shadow-sm mb-4 p-3 bg-white">
+      <div className="card sales-card shadow-sm mb-3 p-3 bg-white">
         <div className="row g-2 text-uppercase">
             <div className="col-12 col-md-3">
                 <label className="small text-muted mb-1 fw-bold">Date Range</label>
@@ -133,6 +158,15 @@ export default function Sales() {
                     <option value="pakka">PAKKA</option>
                 </select>
             </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">Customer Type</label>
+                <select className="form-select form-select-sm" value={filters.customer_category} onChange={e => setFilters({...filters, customer_category: e.target.value})}>
+                    <option value="">ALL CUSTOMERS</option>
+                    <option value="REGULAR">REGULAR</option>
+                    <option value="SHOP">SHOP / DEALER</option>
+                    <option value="WALK_IN">WALK-IN (NO ACCOUNT)</option>
+                </select>
+            </div>
             {hasFullAccess() && (
                 <div className="col-12 col-md-2">
                     <label className="small text-muted mb-1 fw-bold">Shop Branch</label>
@@ -146,9 +180,53 @@ export default function Sales() {
                 <label className="small text-muted mb-1 fw-bold">Search Invoice / Customer</label>
                 <input type="text" className="form-control form-control-sm text-uppercase" placeholder="SEARCH..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
             </div>
-            <div className="col-12 col-md-2 d-flex align-items-end">
-                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: false})}>RESET</button>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">Model</label>
+                <input type="text" className="form-control form-control-sm text-uppercase" placeholder="E.G. VIVO Y11" value={filters.model} onChange={e => setFilters({...filters, model: e.target.value})} />
             </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">Color</label>
+                <input type="text" className="form-control form-control-sm text-uppercase" placeholder="E.G. BLACK" value={filters.color} onChange={e => setFilters({...filters, color: e.target.value})} />
+            </div>
+            <div className="col-12 col-md-2">
+                <label className="small text-muted mb-1 fw-bold">IMEI</label>
+                <input type="text" className="form-control form-control-sm" placeholder="E.G. 3546..." value={filters.imei} onChange={e => setFilters({...filters, imei: e.target.value})} />
+            </div>
+            <div className="col-12 col-md-2 d-flex align-items-end">
+                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from: today, to: today, bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: '', model: '', color: '', imei: ''})}>RESET</button>
+            </div>
+        </div>
+
+        {/* Sort toggle */}
+        <div className="d-flex align-items-center gap-2 mt-3 pt-2" style={{ borderTop: '1px solid #e2e8f0' }}>
+          <span className="x-small text-muted fw-bold text-uppercase" style={{ whiteSpace: 'nowrap' }}>View By:</span>
+          <button
+            className={`sort-toggle-btn ${sortMode === 'date' ? 'active' : ''}`}
+            onClick={() => setSortMode('date')}
+          >
+            📅 Sale Date
+          </button>
+          <button
+            className={`sort-toggle-btn ${sortMode === 'entry' ? 'active' : ''}`}
+            onClick={() => setSortMode('entry')}
+          >
+            🕒 Last Modified
+          </button>
+          <span className="x-small text-muted ms-1">
+            {sortMode === 'entry' ? '— showing most recently added / edited entries first' : '— showing newest sale date first'}
+          </span>
+          <div className="ms-auto d-flex align-items-center gap-2">
+            <span className="x-small text-muted fw-bold text-uppercase" style={{ whiteSpace: 'nowrap' }}>Show:</span>
+            <select
+              className="form-select form-select-sm"
+              style={{ width: 'auto', fontSize: '.7rem', fontWeight: 700 }}
+              value={perPage}
+              onChange={e => setPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            >
+              {[25, 50, 100, 200, 500, 1000].map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="all">ALL</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -158,98 +236,128 @@ export default function Sales() {
           <table className="sales-table mb-0 text-uppercase">
             <thead>
               <tr>
-                <th className="ps-4">Customer Name</th>
-                <th>Products & Description</th>
                 <th>Date / Shop</th>
+                <th className="ps-3">Customer Name</th>
+                <th>Products & Description</th>
                 <th className="text-end">Grand Total</th>
                 <th className="text-end" style={{color:'#475569'}}>Discount</th>
+                <th className="text-end" style={{color:'#0891b2'}}>Exchange Credit</th>
                 <th className="text-end">Paid</th>
+                <th className="text-end">Total Paid</th>
                 <th className="text-end">Balance</th>
-                <th className="text-center" style={{width: '230px'}}>Actions</th>
-                <th>Invoice #</th>
                 <th className="text-center">Status</th>
+                <th>Invoice #</th>
+                <th className="text-center" style={{width: '230px'}}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : invoices.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
-              ) : invoices.map(inv => {
+                <tr><td colSpan={12} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
+              ) : sortedInvoices.length === 0 ? (
+                <tr><td colSpan={12} className="text-center py-5 text-muted fw-bold">NO SALES FOUND.</td></tr>
+              ) : sortedInvoices.map(inv => {
+                const fp = inv.finance_plan; // SaleFinancePlan (Personal EMI / Favor)
                 const financePaid = inv.finance_payment_status === 'RECEIVED' ? parseFloat(inv.finance_amount || 0) : 0;
-                const totalPaid = parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
-                const balance = Math.max(0, parseFloat(inv.grand_total) - totalPaid);
+
+                // For personal/favor finance: paid = down_payment + installments collected so far
+                // For normal/financer sales: paid = total_paid + exchange_paid + finance_received
+                const displayPaid = fp
+                  ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0)
+                  : parseFloat(inv.total_paid || 0) + parseFloat(inv.exchange_paid || 0) + financePaid;
+
+                // Balance: for personal/favor = remaining total payable (principal + interest,
+                // matching what Finance Tracker shows as Due) minus EMIs paid so far; for
+                // Favor plans total_payable === principal, so this covers both cleanly.
+                const balance = fp
+                  ? Math.max(0, parseFloat(fp.total_payable || fp.principal || 0) - parseFloat(fp.total_paid || 0))
+                  : Math.max(0, parseFloat(inv.grand_total) - displayPaid);
+                const navTo = (path) => navigate(category_group ? `${path}?category_group=${category_group}` : path);
                 return (
                   <tr key={inv.id} className={inv.is_cancelled ? 'opacity-50 text-decoration-line-through' : ''}>
-                    {/* 1. Customer Name (clickable) */}
-                    <td className="ps-4 cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
-                        <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.customer?.name}</span>
-                        <div className="x-small text-muted" style={{ textDecoration: 'none' }}>📞 {inv.customer?.phone}</div>
+
+                    {/* 1. Date / Shop */}
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <div className="fw-bold">{formatDate(inv.sale_date)}</div>
+                      <div className="x-small text-muted">{inv.shop?.name}</div>
+                      {sortMode === 'entry' && inv.updated_at && (
+                        <div className="x-small" style={{ color: '#94a3b8', marginTop: '2px' }}>
+                          edited {formatDate(inv.updated_at)}
+                        </div>
+                      )}
                     </td>
 
-                    {/* Products & Description */}
+                    {/* 2. Customer Name */}
+                    <td className="ps-3 cursor-pointer" onClick={() => navTo(`/sales/${inv.id}`)}>
+                      <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.customer?.name}</span>
+                      <div className="x-small text-muted" style={{ textDecoration: 'none' }}>📞 {inv.customer?.phone}</div>
+                    </td>
+
+                    {/* 3. Products & Description (with specs) */}
                     <td>
                       {inv.items?.map((item, idx) => {
                         const brandStr = item.product?.brand?.name || item.product?.attributes?.brand || '';
                         const fullName = `${brandStr ? brandStr + ' ' : ''}${item.product?.name || 'UNKNOWN PRODUCT'}`.toUpperCase();
+                        const specs = [item.ram, item.storage, item.color].filter(Boolean).join(' / ');
+                        const imei = item.imei ? item.imei.split(',')[0] : '';
                         return (
-                          <div key={idx} className="mb-2" style={{ borderBottom: idx < inv.items.length - 1 ? '1px dashed #cbd5e1' : 'none', paddingBottom: idx < inv.items.length - 1 ? '6px' : '0' }}>
-                            <div className="fw-bold" style={{ fontSize: '.75rem', color: '#1e293b' }}>
-                              {fullName}
-                            </div>
+                          <div key={idx} style={{ borderBottom: idx < inv.items.length - 1 ? '1px dashed #cbd5e1' : 'none', paddingBottom: idx < inv.items.length - 1 ? '6px' : '0', marginBottom: idx < inv.items.length - 1 ? '6px' : '0' }}>
+                            <div className="fw-bold" style={{ fontSize: '.75rem', color: '#1e293b' }}>{fullName}</div>
+                            {specs && (
+                              <div className="x-small fw-semibold" style={{ color: '#475569', marginTop: '2px' }}>{specs}</div>
+                            )}
+                            {imei && (
+                              <div className="x-small" style={{ color: '#94a3b8', marginTop: '1px' }}>IMEI: {imei}</div>
+                            )}
                             {item.description && (
-                              <div className="x-small text-muted fw-semibold" style={{ marginTop: '2px' }}>
-                                DESCRIPTION: {item.description}
-                              </div>
+                              <div className="x-small text-muted" style={{ marginTop: '2px' }}>{item.description}</div>
                             )}
                           </div>
                         );
                       })}
                     </td>
 
-                    {/* 2. Date / Shop */}
-                    <td>
-                        <div className="fw-bold">{formatDate(inv.sale_date)}</div>
-                        <div className="x-small text-muted">{inv.shop?.name}</div>
+                    {/* 4. Grand Total (full bill amount, before discount) */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
+                      ₹{(parseFloat(inv.grand_total) + parseFloat(inv.discount || 0) + (inv.is_cash_discount_on_bill ? parseFloat(inv.cash_discount || 0) : 0)).toLocaleString('en-IN')}
                     </td>
 
-                    {/* 3. Grand Total */}
-                    <td className="text-end fw-bold">₹{parseFloat(inv.grand_total).toLocaleString('en-IN')}</td>
+                    {/* 5. Discount */}
+                    <td className="text-end fw-bold" style={{ color: '#475569', whiteSpace: 'nowrap' }}>
+                      {(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0 ? (
+                        <>
+                          <div>- ₹{(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)).toLocaleString('en-IN')}</div>
+                          <div className="x-small fw-semibold" style={{ color: '#94a3b8' }}>
+                            ₹{parseFloat(inv.grand_total).toLocaleString('en-IN')} after
+                          </div>
+                        </>
+                      ) : '—'}
+                    </td>
 
-                    {/* 4. Discount */}
-                    <td className="text-end fw-bold" style={{color: '#475569'}}>
-                      {(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0
-                        ? `- ₹${(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)).toLocaleString('en-IN')}`
+                    {/* 5b. Exchange Credit — old phone traded in as part payment */}
+                    <td className="text-end fw-bold" style={{ color: '#0891b2', whiteSpace: 'nowrap' }}>
+                      {parseFloat(inv.exchange_paid || 0) > 0
+                        ? `₹${parseFloat(inv.exchange_paid).toLocaleString('en-IN')}`
                         : '—'}
                     </td>
 
-                    {/* 5. Paid */}
-                    <td className="text-end fw-bold" style={{color: '#1e293b'}}>₹{parseFloat(inv.total_paid).toLocaleString('en-IN')}</td>
-
-                    {/* 5b. Balance */}
-                    <td className="text-end fw-bold" style={{color: balance > 0 ? '#1e293b' : '#64748b'}}>₹{balance.toLocaleString('en-IN')}</td>
-
-                    {/* 6. Actions */}
-                    <td className="text-center">
-                        <div className="d-flex justify-content-center gap-1">
-                            {!inv.is_cancelled && (
-                                <>
-                                    <button onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
-                                    <button onClick={() => navigate(category_group === 'master' ? `/sales/${inv.id}/edit-master` : (category_group ? `/sales/${inv.id}/edit?category_group=${category_group}` : `/sales/${inv.id}/edit`))} className="pm-act-btn btn-xs">EDIT</button>
-                                    {inv.bill_type === 'kaccha' && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
-                                    <button onClick={() => handleCancel(inv.id)} className="pm-act-btn btn-xs">CANCEL</button>
-                                </>
-                            )}
-                            <button onClick={() => handleDelete(inv.id)} className="pm-act-btn btn-xs" style={{color:'#b91c1c',borderColor:'#fca5a5'}}>DEL</button>
-                        </div>
+                    {/* 6a. Paid — actual cash/card handed over, NOT including exchange credit or finance */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
+                      ₹{(fp ? parseFloat(fp.down_payment || 0) + parseFloat(fp.total_paid || 0) : parseFloat(inv.total_paid || 0)).toLocaleString('en-IN')}
                     </td>
 
-                    {/* 7. Invoice # (clickable) */}
-                    <td className="cursor-pointer" onClick={() => navigate(category_group ? `/sales/${inv.id}?category_group=${category_group}` : `/sales/${inv.id}`)}>
-                        <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.invoice_no}</span>
-                        <div className="d-flex flex-wrap gap-1 mt-1">
-                          <span className="badge-received" style={{ fontSize: '0.6rem', padding: '2px 6px' }}>{inv.bill_type.toUpperCase()}</span>
+                    {/* 6b. Total Paid — cash + exchange credit + finance received (equals Grand Total when fully settled) */}
+                    <td className="text-end fw-bold" style={{ whiteSpace: 'nowrap' }}>
+                      ₹{displayPaid.toLocaleString('en-IN')}
+                      {fp && parseFloat(fp.down_payment || 0) > 0 && parseFloat(fp.total_paid || 0) === 0 && (
+                        <div style={{ fontSize: '.58rem', color: '#94a3b8', fontWeight: 400 }}>
+                          ↓ DOWN PMT
                         </div>
+                      )}
+                    </td>
+
+                    {/* 7. Balance */}
+                    <td className="text-end fw-bold" style={{ color: balance > 0 ? '#b91c1c' : '#16a34a', whiteSpace: 'nowrap' }}>
+                      ₹{balance.toLocaleString('en-IN')}
                     </td>
 
                     {/* 8. Status */}
@@ -258,25 +366,72 @@ export default function Sales() {
                         <span className="badge-ordered">CANCELLED</span>
                       ) : (
                         <div className="d-flex flex-column align-items-center gap-1">
-                          {getStatusBadge(inv.payment_status)}
-                          {parseFloat(inv.finance_amount || 0) > 0 && (
-                            inv.finance_payment_status === 'RECEIVED' ? (
-                              <span className="badge-paid" style={{ fontSize: '0.6rem', marginTop: '2px' }}>
-                                EMI PAID: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')})
+                          {/* Personal / Favor Finance badge — replaces generic payment_status */}
+                          {fp ? (
+                            <>
+                              <span style={{
+                                background: fp.type === 'PERSONAL' ? '#eff6ff' : '#ecfeff',
+                                color:      fp.type === 'PERSONAL' ? '#1d4ed8' : '#0891b2',
+                                fontSize: '.6rem', fontWeight: 800,
+                                padding: '2px 7px', borderRadius: 20, display: 'inline-block',
+                              }}>
+                                {fp.type === 'PERSONAL' ? '📅 PERSONAL FINANCE' : '🤝 FAVOR FINANCE'}
                               </span>
-                            ) : (
-                              <span 
-                                className="badge-unpaid cursor-pointer" 
-                                style={{ fontSize: '0.6rem', marginTop: '2px', cursor: 'pointer' }}
-                                title="Click to mark finance payment as received"
-                                onClick={() => handleReceiveFinance(inv.id)}
-                              >
-                                EMI PEND: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')}) ⏳
+                              <span style={{
+                                background: fp.status === 'SETTLED' ? '#f1f5f9' : fp.status === 'OVERDUE' ? '#fef2f2' : '#f0fdf4',
+                                color:      fp.status === 'SETTLED' ? '#64748b' : fp.status === 'OVERDUE' ? '#dc2626' : '#16a34a',
+                                fontSize: '.58rem', fontWeight: 700,
+                                padding: '1px 6px', borderRadius: 20, display: 'inline-block',
+                              }}>
+                                {fp.status}
                               </span>
-                            )
+                            </>
+                          ) : (
+                            <>
+                              {getStatusBadge(inv.payment_status)}
+                              {parseFloat(inv.finance_amount || 0) > 0 && (
+                                inv.finance_payment_status === 'RECEIVED' ? (
+                                  <span className="badge-paid" style={{ fontSize: '0.6rem', marginTop: '2px' }}>
+                                    EMI PAID: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')})
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="badge-unpaid cursor-pointer"
+                                    style={{ fontSize: '0.6rem', marginTop: '2px', cursor: 'pointer' }}
+                                    title="Click to mark finance payment as received"
+                                    onClick={() => handleReceiveFinance(inv.id)}
+                                  >
+                                    EMI PEND: {inv.financer?.name || 'FINANCER'} (₹{parseFloat(inv.finance_amount).toLocaleString('en-IN')}) ⏳
+                                  </span>
+                                )
+                              )}
+                            </>
                           )}
                         </div>
                       )}
+                    </td>
+
+                    {/* 9. Invoice # */}
+                    <td className="cursor-pointer" onClick={() => navTo(`/sales/${inv.id}`)}>
+                      <span className="fw-bold text-decoration-underline" style={{ color: '#1e293b' }}>{inv.invoice_no}</span>
+                      <div className="d-flex flex-wrap gap-1 mt-1">
+                        <span className="badge-received" style={{ fontSize: '0.6rem', padding: '2px 6px' }}>{inv.bill_type.toUpperCase()}</span>
+                      </div>
+                    </td>
+
+                    {/* 10. Actions */}
+                    <td className="text-center">
+                      <div className="d-flex justify-content-center gap-1 flex-wrap">
+                        {!inv.is_cancelled && (
+                          <>
+                            <button onClick={() => navTo(`/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
+                            <button onClick={() => navigate(category_group === 'master' ? `/sales/${inv.id}/edit-master` : `/sales/${inv.id}/edit${category_group ? `?category_group=${category_group}` : ''}`)} className="pm-act-btn btn-xs">EDIT</button>
+                            {inv.bill_type === 'kaccha' && can('convert_kaccha_to_pakka') && <button onClick={() => convertToPakka(inv.id)} className="pm-act-btn btn-xs">PAKKA</button>}
+                            <button onClick={() => handleCancel(inv.id)} className="pm-act-btn btn-xs">CANCEL</button>
+                          </>
+                        )}
+                        <button onClick={() => handleDelete(inv.id)} className="pm-act-btn btn-xs" style={{color:'#b91c1c',borderColor:'#fca5a5'}}>DEL</button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -286,9 +441,63 @@ export default function Sales() {
         </div>
       </div>
 
+      {/* Pagination */}
+      {meta.total > 0 && (
+        <div className="d-flex justify-content-between align-items-center mt-3 px-1 flex-wrap gap-2">
+          <div className="text-muted small text-uppercase fw-bold">
+            Showing <span className="text-dark">{invoices.length}</span> of <span className="text-dark">{meta.total}</span> entries
+            {meta.last_page > 1 && <> — page <span className="text-dark">{meta.current_page}</span> of <span className="text-dark">{meta.last_page}</span></>}
+          </div>
+          {meta.last_page > 1 && (
+            <div className="d-flex align-items-center gap-1">
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === 1} onClick={() => setPage(1)}>First</button>
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Prev</button>
+              {(() => {
+                const pages = [];
+                let start = Math.max(1, page - 2);
+                let end = Math.min(meta.last_page, start + 4);
+                if (end - start + 1 < 5) start = Math.max(1, end - 4);
+                for (let i = start; i <= end; i++) pages.push(i);
+                return pages.map(p => (
+                  <button
+                    key={p}
+                    className={`btn btn-sm rounded-circle d-flex align-items-center justify-content-center fw-bold ${page === p ? 'btn-primary text-white' : 'btn-outline-secondary'}`}
+                    style={{ width: 32, height: 32, fontSize: '.72rem' }}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                ));
+              })()}
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === meta.last_page} onClick={() => setPage(p => Math.min(meta.last_page, p + 1))}>Next</button>
+              <button className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" style={{fontSize:'.72rem'}} disabled={page === meta.last_page} onClick={() => setPage(meta.last_page)}>Last</button>
+            </div>
+          )}
+        </div>
+      )}
+
       <style>{`
           .x-small { font-size: 0.65rem; }
           .btn-xs { padding: 2px 6px; font-size: 0.7rem; font-weight: bold; }
+          .sort-toggle-btn {
+              padding: 3px 12px;
+              font-size: 0.68rem;
+              font-weight: 700;
+              border-radius: 20px;
+              border: 1.5px solid #cbd5e1;
+              background: #f8fafc;
+              color: #64748b;
+              cursor: pointer;
+              letter-spacing: 0.3px;
+              transition: all 0.15s;
+              text-transform: uppercase;
+          }
+          .sort-toggle-btn:hover { border-color: #94a3b8; color: #1e293b; }
+          .sort-toggle-btn.active {
+              background: #1e293b;
+              color: #fff;
+              border-color: #1e293b;
+          }
           .sales-card {
               border: 1px solid #cbd5e1 !important;
               box-shadow: none !important;

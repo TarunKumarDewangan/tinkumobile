@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import pinGate from '../../utils/pinGate';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { formatDate } from '../../utils/formatters';
@@ -16,9 +17,12 @@ export default function GroupDetails() {
   const [searchTerm, setSearchTerm] = useState('');
   const [deleting, setDeleting] = useState(null);
   const [deletingHistory, setDeletingHistory] = useState(null);
+  // Simple view: show only Name / Contact / Net Balance / Actions, hiding the
+  // breakdown columns (Trade Type, Opening, Sales/Repairs/Works Bal). On by default.
+  const [simpleView, setSimpleView] = useState(true);
 
   const handleDelete = async (ent) => {
-    if (!window.confirm(`Delete "${ent.name}" from accounts?\n\nThis removes the entity record but KEEPS transaction history.`)) return;
+    if (!await pinGate.confirm()) return;
     setDeleting(ent.id);
     try {
       await api.delete(`/entities/${ent.id}`);
@@ -32,12 +36,7 @@ export default function GroupDetails() {
   };
 
   const handleDeleteWithHistory = async (ent) => {
-    const first = window.confirm(
-      `⚠️ DELETE "${ent.name}" WITH ALL TRANSACTION HISTORY?\n\nThis will permanently erase:\n• The account record\n• ALL ledger transactions for this account\n• Balance history\n\nThis CANNOT be undone. Confirm?`
-    );
-    if (!first) return;
-    const second = window.confirm(`FINAL WARNING: Completely erase "${ent.name}" and every transaction linked to it?`);
-    if (!second) return;
+    if (!await pinGate.confirm()) return;
 
     setDeletingHistory(ent.id);
     try {
@@ -86,10 +85,11 @@ export default function GroupDetails() {
   const filteredData = useMemo(() => {
     let result = data;
     if (type === 'CUSTOMER' || type === 'SHOP_CUSTOMER') {
-      result = data.filter(e => {
-        const custBal = (e.sales_balance || 0) + (e.works_balance || 0);
-        return Math.abs(custBal) >= 0.01;
-      });
+      // Use the backend's real net_balance (sales + purchases + repairs +
+      // works, matching the Entity Ledger exactly) — not just sales+works,
+      // which silently dropped any purchase activity recorded against a
+      // customer/shop-customer (e.g. buying stock back from a dealer).
+      result = data.filter(e => Math.abs(parseFloat(e.net_balance || 0)) >= 0.01);
     }
 
     if (!searchTerm) return result;
@@ -122,10 +122,7 @@ export default function GroupDetails() {
       }, { debit: 0, credit: 0 });
     } else {
       return filteredData.reduce((acc, e) => {
-        const isCustomer = type === 'CUSTOMER' || type === 'SHOP_CUSTOMER';
-        const bal = isCustomer 
-          ? (parseFloat(e.sales_balance || 0) + parseFloat(e.works_balance || 0))
-          : parseFloat(e.net_balance || 0);
+        const bal = parseFloat(e.net_balance || 0);
 
         if (bal > 0) acc.debit += bal;
         else if (bal < 0) acc.credit += Math.abs(bal);
@@ -244,6 +241,22 @@ export default function GroupDetails() {
           <p className="text-muted small mb-0">Detailed view and management for {getPageTitle()}</p>
         </div>
         <div className="d-flex gap-2 align-items-center">
+          {type !== 'REPAIR' && (
+            <div className="form-check form-switch d-flex align-items-center gap-2 mb-0 bg-white border rounded-pill px-3 py-1">
+              <input
+                className="form-check-input mt-0"
+                type="checkbox"
+                role="switch"
+                id="simpleViewToggle"
+                checked={simpleView}
+                onChange={e => setSimpleView(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <label className="form-check-label small fw-semibold text-muted mb-0" htmlFor="simpleViewToggle" style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                Simple View
+              </label>
+            </div>
+          )}
           <input
             type="text"
             className="form-control form-control-sm"
@@ -319,11 +332,15 @@ export default function GroupDetails() {
                   <>
                     <th className="ps-3">Name</th>
                     <th>Contact Info</th>
-                    <th>Trade Type</th>
-                    <th className="text-end">Opening Balance</th>
-                    <th className="text-end">Sales Bal</th>
-                    <th className="text-end">Repairs Bal</th>
-                    <th className="text-end">Works Bal</th>
+                    {!simpleView && (
+                      <>
+                        <th>Trade Type</th>
+                        <th className="text-end">Opening Balance</th>
+                        <th className="text-end">Sales Bal</th>
+                        <th className="text-end">Repairs Bal</th>
+                        <th className="text-end">Works Bal</th>
+                      </>
+                    )}
                     <th className="text-end">Net Balance</th>
                     <th className="text-end pe-3" style={{ width: '280px' }}>Actions</th>
                   </>
@@ -333,13 +350,13 @@ export default function GroupDetails() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={type === 'REPAIR' ? 9 : 9} className="text-center py-5">
+                  <td colSpan={type === 'REPAIR' ? 9 : (simpleView ? 4 : 9)} className="text-center py-5">
                     <div className="spinner-border text-primary opacity-50"></div>
                   </td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={type === 'REPAIR' ? 9 : 9} className="text-center py-5 text-muted italic">
+                  <td colSpan={type === 'REPAIR' ? 9 : (simpleView ? 4 : 9)} className="text-center py-5 text-muted italic">
                     No accounts found matching this criteria.
                   </td>
                 </tr>
@@ -377,10 +394,7 @@ export default function GroupDetails() {
                   const salesBal = parseFloat(e.sales_balance || 0);
                   const repairsBal = parseFloat(e.repairs_balance || 0);
                   const worksBal = parseFloat(e.works_balance || 0);
-                  const isCustomer = type === 'CUSTOMER' || type === 'SHOP_CUSTOMER';
-                  const bal = isCustomer 
-                    ? (salesBal + worksBal)
-                    : parseFloat(e.net_balance || 0);
+                  const bal = parseFloat(e.net_balance || 0);
                   return (
                     <tr key={e.id} className="tally-row">
                       <td className="ps-3">
@@ -394,21 +408,25 @@ export default function GroupDetails() {
                         <div>{e.phone || '—'}</div>
                         <div className="opacity-50">{e.email || ''}</div>
                       </td>
-                      <td>
-                        {renderTradeTypeBadges(e)}
-                      </td>
-                      <td className="small text-muted text-end">
-                        ₹{Number(e.opening_balance).toLocaleString()} {e.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
-                      </td>
-                      <td className={`text-end fw-semibold ${salesBal > 0 ? 'text-success' : salesBal < 0 ? 'text-danger' : 'text-muted'}`}>
-                        {salesBal !== 0 ? `₹${Math.abs(salesBal).toLocaleString()} ${salesBal >= 0 ? 'Dr' : 'Cr'}` : '—'}
-                      </td>
-                      <td className={`text-end fw-semibold ${repairsBal > 0 ? 'text-success' : repairsBal < 0 ? 'text-danger' : 'text-muted'}`}>
-                        {repairsBal !== 0 ? `₹${Math.abs(repairsBal).toLocaleString()} ${repairsBal >= 0 ? 'Dr' : 'Cr'}` : '—'}
-                      </td>
-                      <td className={`text-end fw-semibold ${worksBal > 0 ? 'text-success' : worksBal < 0 ? 'text-danger' : 'text-muted'}`}>
-                        {worksBal !== 0 ? `₹${Math.abs(worksBal).toLocaleString()} ${worksBal >= 0 ? 'Dr' : 'Cr'}` : '—'}
-                      </td>
+                      {!simpleView && (
+                        <>
+                          <td>
+                            {renderTradeTypeBadges(e)}
+                          </td>
+                          <td className="small text-muted text-end">
+                            ₹{Number(e.opening_balance).toLocaleString()} {e.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
+                          </td>
+                          <td className={`text-end fw-semibold ${salesBal > 0 ? 'text-success' : salesBal < 0 ? 'text-danger' : 'text-muted'}`}>
+                            {salesBal !== 0 ? `₹${Math.abs(salesBal).toLocaleString()} ${salesBal >= 0 ? 'Dr' : 'Cr'}` : '—'}
+                          </td>
+                          <td className={`text-end fw-semibold ${repairsBal > 0 ? 'text-success' : repairsBal < 0 ? 'text-danger' : 'text-muted'}`}>
+                            {repairsBal !== 0 ? `₹${Math.abs(repairsBal).toLocaleString()} ${repairsBal >= 0 ? 'Dr' : 'Cr'}` : '—'}
+                          </td>
+                          <td className={`text-end fw-semibold ${worksBal > 0 ? 'text-success' : worksBal < 0 ? 'text-danger' : 'text-muted'}`}>
+                            {worksBal !== 0 ? `₹${Math.abs(worksBal).toLocaleString()} ${worksBal >= 0 ? 'Dr' : 'Cr'}` : '—'}
+                          </td>
+                        </>
+                      )}
                       <td className={`text-end fw-bold ${bal >= 0 ? 'text-success' : 'text-danger'}`}>
                         ₹{Math.abs(bal).toLocaleString()} {bal >= 0 ? 'Dr' : 'Cr'}
                       </td>
@@ -471,19 +489,23 @@ export default function GroupDetails() {
                 ) : (
                   <>
                     <td className="ps-3" colSpan="2">Totals</td>
-                    <td></td>
-                    <td className={`text-end ${(totals.opening) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
-                      ₹{Math.abs(totals.opening).toLocaleString()} {totals.opening >= 0 ? 'Dr' : 'Cr'}
-                    </td>
-                    <td className={`text-end ${(totals.sales) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
-                      ₹{Math.abs(totals.sales).toLocaleString()} {totals.sales >= 0 ? 'Dr' : 'Cr'}
-                    </td>
-                    <td className={`text-end ${(totals.repairs) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
-                      ₹{Math.abs(totals.repairs).toLocaleString()} {totals.repairs >= 0 ? 'Dr' : 'Cr'}
-                    </td>
-                    <td className={`text-end ${(totals.works) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
-                      ₹{Math.abs(totals.works).toLocaleString()} {totals.works >= 0 ? 'Dr' : 'Cr'}
-                    </td>
+                    {!simpleView && (
+                      <>
+                        <td></td>
+                        <td className={`text-end ${(totals.opening) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
+                          ₹{Math.abs(totals.opening).toLocaleString()} {totals.opening >= 0 ? 'Dr' : 'Cr'}
+                        </td>
+                        <td className={`text-end ${(totals.sales) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
+                          ₹{Math.abs(totals.sales).toLocaleString()} {totals.sales >= 0 ? 'Dr' : 'Cr'}
+                        </td>
+                        <td className={`text-end ${(totals.repairs) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
+                          ₹{Math.abs(totals.repairs).toLocaleString()} {totals.repairs >= 0 ? 'Dr' : 'Cr'}
+                        </td>
+                        <td className={`text-end ${(totals.works) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.9rem' }}>
+                          ₹{Math.abs(totals.works).toLocaleString()} {totals.works >= 0 ? 'Dr' : 'Cr'}
+                        </td>
+                      </>
+                    )}
                     <td className={`text-end ${totals.net >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.95rem' }}>
                       ₹{Math.abs(totals.net).toLocaleString()} {totals.net >= 0 ? 'Dr' : 'Cr'}
                     </td>

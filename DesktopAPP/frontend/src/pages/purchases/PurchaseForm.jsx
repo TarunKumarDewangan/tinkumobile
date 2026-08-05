@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api/axios';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import BulkScanModal from '../../components/BulkScanModal';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
 
 export default function PurchaseForm() {
   const [searchParams] = useSearchParams();
@@ -15,6 +18,8 @@ export default function PurchaseForm() {
   const defaultCategoryId = category_group === 'other' ? 3 : 1;
   const [suppliers, setSuppliers] = useState([]);
   const [entitySuppliers, setEntitySuppliers] = useState([]);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [paymentLines, setPaymentLines] = useState(newSingleLine('CASH'));
   const [products, setProducts]   = useState([]);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands]         = useState([]);
@@ -54,6 +59,11 @@ export default function PurchaseForm() {
   const [submitting, setSubmitting] = useState(false);
   const enableBulkAdd = true; // Set to true to show "+ Bulk Add" button later
 
+  const purchaseModeOptions = useMemo(() => buildModeOptions(
+    [{ value: 'CASH', label: 'CASH' }, { value: 'PHONEPE', label: 'PHONEPE' }, { value: 'GPAY', label: 'GPAY' }, { value: 'BANK / NEFT', label: 'BANK / NEFT' }],
+    bankEntities
+  ).concat([{ value: 'OTHER', label: 'OTHER' }]), [bankEntities]);
+
   const supplierOptions = useMemo(() => {
     const opts = [];
     if (suppliers.length > 0) {
@@ -86,6 +96,7 @@ export default function PurchaseForm() {
     name: '',
     type: '',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -137,17 +148,26 @@ export default function PurchaseForm() {
           payment_method: p.payment_method || 'CASH',
           other_payment_mode: p.other_payment_mode || ''
         });
+        setPaymentLines(newSingleLine(p.payment_method && p.payment_method !== 'SPLIT' ? p.payment_method : 'CASH'));
         if (p.rounding_mode === 'manual') setIsManualRound(true);
         if (p.is_gst_manual) setIsManualGst(true);
-        setItems(p.items.map(i => {
+        const rawRows = p.items.map(i => {
           const unit_price = parseFloat(i.unit_price) || 0;
           const gst = parseFloat(i.calc_gst_rate ?? 18) || 0;
           const tDisc = parseFloat(i.trade_disc_pct ?? 3.85) || 0;
           const cDisc = parseFloat(i.cash_disc_pct ?? 2) || 0;
-          
+          // apply_gst governs whether THIS line item is included in the invoice's GST-taxable
+          // base (see InvoiceService::calculateTotals()). It must default to the invoice's own
+          // GST setting when not yet explicitly recorded — gating on whether the product record
+          // happens to have a gst_rate attribute was wrong and silently zeroed out GST on any
+          // GST-applicable purchase whose product was never given that attribute.
+          const applyGst = i.apply_gst !== null
+            ? !!i.apply_gst
+            : (p.calculate_gst ?? true);
+
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
           const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
-          const dp_inc_gst = parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2));
+          const dp_inc_gst = applyGst ? parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2)) : rate_ex_gst;
 
           return {
             product_id: i.product_id,
@@ -166,13 +186,29 @@ export default function PurchaseForm() {
             calc_gst_rate: gst,
             trade_disc_pct: tDisc,
             cash_disc_pct: cDisc,
+            apply_gst: applyGst,
             selling_price: i.selling_price || '',
             wholeseller_price: i.wholeseller_price || '',
             min_selling_price: i.min_selling_price || '',
             max_selling_price: i.max_selling_price || '',
             incentive_amount: i.incentive_amount || ''
           };
-        }));
+        });
+        // Merge rows with same product+specs+price (old purchases saved one-row-per-IMEI)
+        const grouped = [];
+        const seenKeys = {};
+        rawRows.forEach(row => {
+          const key = `${row.product_id}|${(row.ram||'').toLowerCase()}|${(row.storage||'').toLowerCase()}|${(row.color||'').toLowerCase()}|${String(row.unit_price)}`;
+          const idx = seenKeys[key];
+          if (idx !== undefined) {
+            grouped[idx].imei_list.push(...row.imei_list);
+            grouped[idx].quantity = grouped[idx].imei_list.filter(Boolean).length || grouped[idx].quantity + row.quantity;
+          } else {
+            seenKeys[key] = grouped.length;
+            grouped.push({ ...row, imei_list: [...row.imei_list] });
+          }
+        });
+        setItems(grouped);
       }).finally(() => setLoading(false));
     }
   }, [isOwner, id]);
@@ -188,11 +224,12 @@ export default function PurchaseForm() {
       ['SUPPLIER', 'DISTRIBUTOR', 'SHOP_CUSTOMER'].includes((e.type || '').toUpperCase())
     );
     setEntitySuppliers(entityList);
+    setBankEntities((entRes.data || []).filter(e => isAssetEntityType(e.type)));
 
     // Extract custom types from loaded entities
     const types = (entRes.data || []).map(e => e.type).filter(Boolean);
     const uniqueCustomTypes = Array.from(new Set(types)).filter(
-      t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+      t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
     );
     setCustomTypes(uniqueCustomTypes);
   };
@@ -211,6 +248,7 @@ export default function PurchaseForm() {
         name: '',
         type: '',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -478,9 +516,13 @@ export default function PurchaseForm() {
   };
 
   const total      = items.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)), 0);
-  
-  let rawCgstAmount = form.calculate_gst ? (total * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
-  let rawSgstAmount = form.calculate_gst ? (total * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
+  // Mirrors InvoiceService::calculateTotals() on the backend: an item explicitly marked
+  // apply_gst=false is excluded from the GST-taxable base, so the preview shown here matches
+  // what actually gets saved instead of always taxing the full total.
+  const gstTaxableTotal = items.reduce((s, i) => s + (i.apply_gst !== false ? (parseFloat(i.quantity || 0) * parseFloat(i.unit_price || 0)) : 0), 0);
+
+  let rawCgstAmount = form.calculate_gst ? (gstTaxableTotal * (parseFloat(form.cgst_rate) || 0)) / 100 : 0;
+  let rawSgstAmount = form.calculate_gst ? (gstTaxableTotal * (parseFloat(form.sgst_rate) || 0)) / 100 : 0;
 
   if (form.gst_rounding_mode === '2pt') {
     rawCgstAmount = parseFloat(rawCgstAmount.toFixed(2));
@@ -580,39 +622,42 @@ export default function PurchaseForm() {
       return;
     }
 
+    if (!paymentLinesSumMatches(paymentLines, form.total_paid)) {
+      toast.error("Split doesn't add up to the amount paid");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       setLoading(true);
+      // PurchaseInvoiceController's field is historically named
+      // payment_method (not payment_mode like most other flows) — map it
+      // explicitly rather than spreading buildPaymentPayload's payment_mode
+      // key, which the backend would silently ignore.
+      const paymentPayload = buildPaymentPayload(paymentLines);
       let finalForm = {
         ...form,
+        payment_method: paymentPayload.payment_mode,
+        payment_lines: paymentPayload.payment_lines,
         cgst_amount: cgstAmount,
         sgst_amount: sgstAmount,
         round_off: parseFloat(roundOff),
         is_gst_manual: isManualGst
       };
-      
-      // Flatten grouped items so backend receives exactly 1 item per IMEI as expected (only for mobiles)
+
       let flatItems = [];
       items.forEach(it => {
         const { imei_list, ...rest } = it;
         if (category_group === 'other') {
           flatItems.push({ ...rest, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
         } else {
+          // Store all IMEIs as comma-separated in one row so edit loads as one row
           const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
-          if (imeiArr.length > 0) {
-            imeiArr.forEach(imei => {
-              flatItems.push({ ...rest, imei: imei, quantity: 1 });
-            });
-          } else {
-            flatItems.push({ ...rest, imei: '', quantity: rest.quantity || 1 });
-          }
+          flatItems.push({ ...rest, imei: imeiArr.join(','), quantity: imeiArr.length || rest.quantity || 1 });
         }
       });
       
       finalForm.items = flatItems;
-
-      if (form.payment_method === 'OTHER' && form.other_payment_mode) {
-        finalForm.payment_method = form.other_payment_mode;
-      }
 
       if (id) {
         await api.put(`/purchase-invoices/${id}`, finalForm);
@@ -667,7 +712,7 @@ export default function PurchaseForm() {
   `;
 
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(newSupplier.type);
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(newSupplier.type);
   const isCustomType = customTypes.includes(newSupplier.type);
   const showCustomInput = newSupplier.type === 'OTHER' || (!isDefaultType && !isCustomType && newSupplier.type !== '');
 
@@ -678,7 +723,7 @@ export default function PurchaseForm() {
       <div className="pf-hero">
         <div>
           <h2>{id ? '✍️ Edit Purchase' : '🛒 New Purchase'}</h2>
-          <p>Manage purchase record and supplier details</p>
+          <p>Manage purchase record and supplier details <span style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + P</span></p>
         </div>
         <button type="button" className="pf-back" onClick={() => navigate(category_group ? `/purchases?category_group=${category_group}` : '/purchases')}>← Back</button>
       </div>
@@ -1175,24 +1220,15 @@ export default function PurchaseForm() {
                         placeholder="0.00" value={form.total_paid===0?'':form.total_paid} onFocus={e=>e.target.select()} onChange={e=>setForm({...form,total_paid:parseFloat(e.target.value)||0})}/>
                     </div>
                     {parseFloat(form.total_paid) > 0 && (
-                      <>
-                        <select className="pf-inp mt-1" style={{fontSize:'.7rem',height:'28px',padding:'2px 8px'}} value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}>
-                          <option value="CASH">CASH</option>
-                          <option value="PHONEPE">PHONEPE</option>
-                          <option value="GPAY">GPAY</option>
-                          <option value="BANK / NEFT">BANK / NEFT</option>
-                          <option value="OTHER">OTHER</option>
-                        </select>
-                        {form.payment_method === 'OTHER' && (
-                          <input 
-                            className="pf-inp mt-1" 
-                            style={{fontSize:'.7rem',height:'28px',padding:'2px 8px',borderColor:'#6366f1',color:'#6366f1',fontWeight:700}}
-                            placeholder="SPECIFY MODE..."
-                            value={form.other_payment_mode}
-                            onChange={e=>setForm({...form,other_payment_mode:e.target.value.toUpperCase()})}
-                          />
-                        )}
-                      </>
+                      <div className="mt-1">
+                        <PaymentSplitInput
+                          totalAmount={form.total_paid}
+                          lines={paymentLines}
+                          onChange={setPaymentLines}
+                          modeOptions={purchaseModeOptions}
+                          size="pf-inp"
+                        />
+                      </div>
                     )}
                   </div>
                   <div className="col-12 col-md-3">
@@ -1233,7 +1269,7 @@ export default function PurchaseForm() {
                   onChange={e => setNewSupplier({...newSupplier, name: e.target.value.toUpperCase()})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Category *</label>
                 <select 
                   className="form-select fw-semibold text-uppercase"
@@ -1251,6 +1287,9 @@ export default function PurchaseForm() {
                   <option value="SHOP">SHOP</option>
                   <option value="SUPPLIER">SUPPLIER</option>
                   <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                  <option value="BANK">BANK</option>
+                  <option value="CARD">CARD</option>
+                  <option value="UPI">UPI</option>
                   {customTypes.map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
@@ -1271,16 +1310,26 @@ export default function PurchaseForm() {
                   />
                 </div>
               )}
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   value={newSupplier.phone}
                   onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
+                <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Address"
+                  value={newSupplier.address}
+                  onChange={e => setNewSupplier({...newSupplier, address: e.target.value})}
+                />
+              </div>
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
                 <input 
                   type="text" 
@@ -1290,7 +1339,7 @@ export default function PurchaseForm() {
                   onChange={e => setNewSupplier({...newSupplier, gst_number: e.target.value.toUpperCase()})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Opening Balance</label>
                 <input 
                   type="number" 
@@ -1299,7 +1348,7 @@ export default function PurchaseForm() {
                   onChange={e => setNewSupplier({...newSupplier, opening_balance: e.target.value})}
                 />
               </div>
-              <div className="col-md-6">
+              <div className="col-12 col-md-6">
                 <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
                 <select 
                   className="form-select text-uppercase"
@@ -1313,7 +1362,7 @@ export default function PurchaseForm() {
 
               {['CUSTOMER', 'SHOP_CUSTOMER'].includes(newSupplier.type) && (
                 <>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <label className="form-label fw-bold small text-muted text-uppercase">Email</label>
                     <input 
                       type="email" 
@@ -1323,7 +1372,7 @@ export default function PurchaseForm() {
                       onChange={e => setNewSupplier({...newSupplier, email: e.target.value})}
                     />
                   </div>
-                  <div className="col-md-6">
+                  <div className="col-12 col-md-6">
                     <label className="form-label fw-bold small text-muted text-uppercase">Voucher Code</label>
                     <input 
                       type="text" 
@@ -1356,7 +1405,7 @@ export default function PurchaseForm() {
                         <div key={idx} className="col-12 p-3 bg-light rounded border mb-2">
                           <div className="row g-2 align-items-center">
                             
-                            <div className="col-md-4">
+                            <div className="col-12 col-md-4">
                               <select 
                                 className="form-select form-select-sm fw-semibold text-uppercase" 
                                 value={ev.type} 
@@ -1374,7 +1423,7 @@ export default function PurchaseForm() {
                             </div>
 
                             {ev.type === 'other' && (
-                              <div className="col-md-3">
+                              <div className="col-12 col-md-3">
                                 <input 
                                   className="form-control form-control-sm fw-semibold text-uppercase" 
                                   placeholder="Event Name" 
@@ -1401,7 +1450,7 @@ export default function PurchaseForm() {
                               />
                             </div>
 
-                            <div className="col-md-1 text-end">
+                            <div className="col-12 col-md-1 text-end">
                               <button 
                                 type="button" 
                                 className="btn btn-sm btn-link text-danger p-0 border-0 bg-transparent" 

@@ -102,22 +102,36 @@ class EntityService
             ->get()->keyBy('entity_id') : collect();
 
         // 5. Purchase Charges
-        $purchaseCharges = !empty($entityIds) ? DB::table('purchase_invoices')
+        // A purchase's supplier_id only links to an entity here if that entity
+        // is formally typed as a Supplier — but a purchase can also be recorded
+        // against a Customer/Shop-Customer entity (buying stock back from a
+        // dealer). Without a name-based fallback (same pattern as $realized and
+        // $repairCharges above), that purchase silently never nets against the
+        // entity's balance here, even though it correctly shows up in their
+        // live Entity Ledger — causing the two views to permanently disagree.
+        $purchaseCharges = (!empty($entityIds) || !empty($allSearchNames)) ? DB::table('purchase_invoices')
+            ->join('suppliers', 'suppliers.id', '=', 'purchase_invoices.supplier_id')
             ->leftJoin('entities', function($join) {
                 $join->on('entities.relation_id', '=', 'purchase_invoices.supplier_id')
                      ->where('entities.relation_type', '=', 'App\Models\Supplier');
             })
             ->whereNull('purchase_invoices.deleted_at')
-            ->where(function($q) use ($entityIds) {
-                $q->whereIn('purchase_invoices.accounting_entity_id', $entityIds)
-                  ->orWhereIn('entities.id', $entityIds);
+            ->where(function($q) use ($entityIds, $allSearchNames) {
+                if (!empty($entityIds)) {
+                    $q->whereIn('purchase_invoices.accounting_entity_id', $entityIds)
+                      ->orWhereIn('entities.id', $entityIds);
+                }
+                if (!empty($allSearchNames)) {
+                    $q->orWhereIn('suppliers.name', $allSearchNames);
+                }
             })
             ->select(
                 DB::raw('COALESCE(purchase_invoices.accounting_entity_id, entities.id) as entity_id'),
+                'suppliers.name as supplier_name',
                 DB::raw('SUM(purchase_invoices.grand_total) as total_charge')
             )
-            ->groupBy('entity_id')
-            ->get()->keyBy('entity_id') : collect();
+            ->groupBy('entity_id', 'supplier_name')
+            ->get() : collect();
         // 5b. Old Mobile Purchase Charges (only where is_exchange is false/0)
         $oldMobileCharges = !empty($entityIds) ? DB::table('old_mobile_purchases')
             ->join('entities', function($join) {
@@ -151,11 +165,12 @@ class EntityService
 
             $repCharge = $repairCharges->filter(fn($r) => ($id && $r->entity_id == $id) || ($name && $r->customer_name == $name))->sum('total_charge');
             $oldMobCharge = $oldMobileCharges[$id]->total_charge ?? 0;
-            
+            $purchCharge = $purchaseCharges->filter(fn($r) => ($id && $r->entity_id == $id) || ($name && $r->supplier_name == $name))->sum('total_charge');
+
             $unrealized = $repCharge
                         - ($forwardingDues[$name]->total_due ?? 0)
                         + ($salesCharges[$id]->total_charge ?? 0)
-                        - ($purchaseCharges[$id]->total_charge ?? 0)
+                        - $purchCharge
                         - $oldMobCharge
                         + ($loanCharges[$id]->total_charge ?? 0)
                         + ($financeCharges[$id]->total_charge ?? 0);
@@ -163,10 +178,17 @@ class EntityService
             $entity->setAttribute('in_worth', (float)$inWorth);
             $entity->setAttribute('out_worth', (float)$outWorth);
             $entity->setAttribute('unrealized', (float)$unrealized);
-            
-            $net = (float)($opening + $unrealized - $inWorth + $outWorth);
+
+            $isAssetAccount = Entity::isAssetType($entity->type);
+            if ($isAssetAccount) {
+                // Asset account: deposits increase the balance, withdrawals decrease it.
+                $net = (float)((float)$entity->opening_balance + $inWorth - $outWorth);
+            } else {
+                $net = (float)($opening + $unrealized - $inWorth + $outWorth);
+            }
             $entity->setAttribute('net_balance', $net);
             $entity->setAttribute('repair_dues', (float)$repCharge);
+            $entity->setAttribute('is_asset_account', $isAssetAccount);
 
             return $entity;
         });

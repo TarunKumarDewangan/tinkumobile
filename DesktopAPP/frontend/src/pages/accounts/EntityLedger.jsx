@@ -1,19 +1,34 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
+import pinGate from '../../utils/pinGate';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { formatDate } from '../../utils/formatters';
 import _ from 'lodash'; // Using lodash for debounce
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
+import PaymentSplitInput from '../../components/PaymentSplitInput';
+import { newSingleLine, buildPaymentPayload, paymentLinesSumMatches, buildModeOptions } from '../../utils/paymentSplit';
 
 const getVoucherBadgeClass = (type) => {
   return 'bg-light text-dark border border-secondary border-opacity-25 xx-small';
 };
 
+// Asset accounts (Bank/Card/UPI/Cash Counter) have no Dr/Cr framing, so a
+// negative balance needs its own signal — a plain "₹2,297" looks identical
+// to a healthy positive balance otherwise, silently hiding an overdrawn
+// account.
+const AssetBalance = ({ amount }) => {
+  const n = parseFloat(amount) || 0;
+  return (
+    <span className={n < 0 ? 'text-danger' : undefined}>
+      {n < 0 ? '−' : ''}₹{Math.abs(n).toLocaleString()}
+    </span>
+  );
+};
+
 export default function EntityLedger() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [isPinVerified, setIsPinVerified] = useState(false);
-  const [pinModal, setPinModal] = useState({ show: false, action: null, value: '', error: false, shake: false });
   const [viewTxModal, setViewTxModal] = useState({ show: false, transaction: null });
   const [editTxModal, setEditTxModal] = useState({ 
     show: false, 
@@ -60,119 +75,104 @@ export default function EntityLedger() {
     transaction_date: new Date().toISOString().split('T')[0]
   });
   const [categories, setCategories] = useState(['ENTITY_SETTLEMENT', 'SHOP_EXPENSE', 'PERSONAL', 'LOAN_PAYMENT']);
+  const [bankEntities, setBankEntities] = useState([]);
+  const [settlePaymentLines, setSettlePaymentLines] = useState(newSingleLine('CASH'));
 
-  const handlePinRequiredAction = (action) => {
-    if (isPinVerified) {
-      action();
+  const settleModeOptions = buildModeOptions(
+    [{ value: 'CASH', label: 'Cash' }, { value: 'UPI', label: 'UPI / Digital' }, { value: 'BANK_TRANSFER', label: 'Bank Transfer' }],
+    bankEntities
+  ).concat([{ value: 'ADJUSTMENT', label: 'Discount / Adjustment' }, { value: 'OTHER', label: 'Other Mode' }]);
+
+  useEffect(() => {
+    api.get('/entities')
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setBankEntities(list.filter(e => isAssetEntityType(e.type)));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleViewEntry = async (item) => {
+    if (!await pinGate.confirm()) return;
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      try {
+        const { data } = await api.get(`/transactions/${item.voucher_id}`);
+        setViewTxModal({ show: true, transaction: data });
+      } catch (err) {
+        toast.error('Failed to fetch transaction details');
+      }
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      navigate(`/sales/${item.voucher_id}`);
+    } else if (item.voucher_type === 'REPAIR') {
+      navigate(`/repairs/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'PURCHASE') {
+      navigate(`/purchases/${item.voucher_id}`);
     } else {
-      setPinModal({ show: true, action, value: '', error: false, shake: false });
+      toast.info(`View details of ${item.voucher_type} is not supported directly.`);
     }
   };
 
-  const handlePinSubmit = (e) => {
-    e.preventDefault();
-    if (pinModal.value === '71727378') {
-      setIsPinVerified(true);
-      const actionToRun = pinModal.action;
-      setPinModal({ show: false, action: null, value: '', error: false, shake: false });
-      if (actionToRun) actionToRun();
-    } else {
-      setPinModal(prev => ({ ...prev, error: true, shake: true }));
-      toast.error('Invalid security PIN!');
-      setTimeout(() => {
-        setPinModal(prev => ({ ...prev, shake: false }));
-      }, 500);
-    }
-  };
-
-  const handleViewEntry = (item) => {
-    handlePinRequiredAction(async () => {
-      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-        try {
-          const { data } = await api.get(`/transactions/${item.voucher_id}`);
-          setViewTxModal({ show: true, transaction: data });
-        } catch (err) {
-          toast.error('Failed to fetch transaction details');
-        }
-      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-        navigate(`/sales/${item.voucher_id}`);
-      } else if (item.voucher_type === 'REPAIR') {
-        navigate(`/repairs/${item.voucher_id}/edit`);
-      } else if (item.voucher_type === 'PURCHASE') {
-        navigate(`/purchases/${item.voucher_id}`);
-      } else {
-        toast.info(`View details of ${item.voucher_type} is not supported directly.`);
-      }
-    });
-  };
-
-  const handleEditEntry = (item) => {
-    handlePinRequiredAction(async () => {
-      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-        try {
-          const { data } = await api.get(`/transactions/${item.voucher_id}`);
-          setEditTxModal({
-            show: true,
-            transaction: data,
-            loading: false,
-            formData: {
-              amount: data.amount,
-              category: data.category,
-              payment_mode: data.payment_mode,
-              description: data.description || '',
-              transaction_date: data.transaction_date.split('T')[0]
-            }
-          });
-        } catch (err) {
-          toast.error('Failed to fetch transaction details for editing');
-        }
-      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-        navigate(`/sales/${item.voucher_id}/edit`);
-      } else if (item.voucher_type === 'REPAIR') {
-        navigate(`/repairs/${item.voucher_id}/edit`);
-      } else if (item.voucher_type === 'PURCHASE') {
-        navigate(`/purchases/${item.voucher_id}/edit`);
-      } else {
-        toast.info(`Editing of ${item.voucher_type} is not supported directly.`);
-      }
-    });
-  };
-
-  const handleDeleteEntry = (item) => {
-    handlePinRequiredAction(() => {
-      if (!window.confirm(`Are you sure you want to permanently delete this ${item.voucher_type} entry? This action is irreversible.`)) {
-        return;
-      }
-      
-      let deleteUrl = '';
-      if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
-        deleteUrl = `/transactions/${item.voucher_id}`;
-      } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
-        deleteUrl = `/sale-invoices/${item.voucher_id}`;
-      } else if (item.voucher_type === 'REPAIR') {
-        deleteUrl = `/repairs/${item.voucher_id}`;
-      } else if (item.voucher_type === 'PURCHASE') {
-        deleteUrl = `/purchase-invoices/${item.voucher_id}`;
-      } else if (item.voucher_type === 'AIRTEL_DROP') {
-        deleteUrl = `/airtel-drops/${item.voucher_id}`;
-      } else if (item.voucher_type === 'AIRTEL_RECOVERY') {
-        deleteUrl = `/airtel-recoveries/${item.voucher_id}`;
-      } else {
-        toast.error(`Deletion of ${item.voucher_type} is not supported.`);
-        return;
-      }
-
-      api.delete(deleteUrl)
-        .then(() => {
-          toast.success(`${item.voucher_type} deleted successfully`);
-          loadLedger(selectedEntityId, selectedEntityName);
-          fetchSummary();
-          if (searchTerm) loadEntities(searchTerm, filterType);
-        })
-        .catch(err => {
-          toast.error(err.response?.data?.message || `Failed to delete ${item.voucher_type}`);
+  const handleEditEntry = async (item) => {
+    if (!await pinGate.confirm()) return;
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      try {
+        const { data } = await api.get(`/transactions/${item.voucher_id}`);
+        setEditTxModal({
+          show: true,
+          transaction: data,
+          loading: false,
+          formData: {
+            amount: data.amount,
+            category: data.category,
+            payment_mode: data.payment_mode,
+            description: data.description || '',
+            transaction_date: data.transaction_date.split('T')[0]
+          }
         });
-    });
+      } catch (err) {
+        toast.error('Failed to fetch transaction details for editing');
+      }
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      navigate(`/sales/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'REPAIR') {
+      navigate(`/repairs/${item.voucher_id}/edit`);
+    } else if (item.voucher_type === 'PURCHASE') {
+      navigate(`/purchases/${item.voucher_id}/edit`);
+    } else {
+      toast.info(`Editing of ${item.voucher_type} is not supported directly.`);
+    }
+  };
+
+  const handleDeleteEntry = async (item) => {
+    if (!await pinGate.confirm()) return;
+
+    let deleteUrl = '';
+    if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
+      deleteUrl = `/transactions/${item.voucher_id}`;
+    } else if (['SALE', 'SALE_FINANCE', 'FINANCE_PENDING'].includes(item.voucher_type)) {
+      deleteUrl = `/sale-invoices/${item.voucher_id}`;
+    } else if (item.voucher_type === 'REPAIR') {
+      deleteUrl = `/repairs/${item.voucher_id}`;
+    } else if (item.voucher_type === 'PURCHASE') {
+      deleteUrl = `/purchase-invoices/${item.voucher_id}`;
+    } else if (item.voucher_type === 'AIRTEL_DROP') {
+      deleteUrl = `/airtel-drops/${item.voucher_id}`;
+    } else if (item.voucher_type === 'AIRTEL_RECOVERY') {
+      deleteUrl = `/airtel-recoveries/${item.voucher_id}`;
+    } else {
+      toast.error(`Deletion of ${item.voucher_type} is not supported.`);
+      return;
+    }
+
+    try {
+      await api.delete(deleteUrl);
+      toast.success(`${item.voucher_type} deleted successfully`);
+      loadLedger(selectedEntityId, selectedEntityName);
+      fetchSummary();
+      if (searchTerm) loadEntities(searchTerm, filterType);
+    } catch (err) {
+      toast.error(err.response?.data?.message || `Failed to delete ${item.voucher_type}`);
+    }
   };
 
   const handleUpdateTx = async (e) => {
@@ -273,18 +273,25 @@ export default function EntityLedger() {
   const handleSettle = async (e) => {
     e.preventDefault();
     if (!settleData.amount || settleData.amount <= 0) return toast.error('Enter valid amount');
+    if (!paymentLinesSumMatches(settlePaymentLines, settleData.amount)) {
+      return toast.error("Split doesn't add up to the total amount");
+    }
     try {
-      let finalData = { ...settleData };
-      if (settleData.payment_mode === 'OTHER' && settleData.other_mode) {
-        finalData.payment_mode = settleData.other_mode;
-      }
-      await api.post('/entities/settle', {
+      const finalData = { ...settleData, ...buildPaymentPayload(settlePaymentLines) };
+      const { data } = await api.post('/entities/settle', {
         ...finalData,
         entity_name: selectedEntityName
       });
-      toast.success('Settlement recorded');
+      const applied = data.applied_to_invoices || [];
+      if (applied.length > 0) {
+        const summary = applied.map(a => `#${a.invoice_no} (+₹${Number(a.amount).toLocaleString('en-IN')})`).join(', ');
+        toast.success(`Settlement recorded — applied to: ${summary}`);
+      } else {
+        toast.success('Settlement recorded');
+      }
       setShowSettleModal(false);
       setSettleData({ ...settleData, amount: '', description: '', transaction_date: new Date().toISOString().split('T')[0] });
+      setSettlePaymentLines(newSingleLine('CASH'));
       loadLedger(selectedEntityId, selectedEntityName);
       fetchSummary();
       if (searchTerm) loadEntities(searchTerm, filterType);
@@ -323,12 +330,17 @@ export default function EntityLedger() {
       {/* Compact Premium Header with Integrated Search */}
       <div className="page-header-glass compact mb-3 p-3 rounded-4 shadow-sm border border-white border-opacity-20 animate-slideDown">
         <div className="row g-3 align-items-center">
+          <div className="col-auto">
+            <button className="btn btn-glass-secondary btn-sm rounded-pill" onClick={() => navigate(-1)} title="Go back">
+              <i className="bi bi-arrow-left me-1"></i> Back
+            </button>
+          </div>
           <div className="col-auto border-end pe-4">
             <h1 className="h4 mb-0 fw-bold tracking-tight">Entity Ledger</h1>
             <p className="xx-small text-muted mb-0 text-uppercase letter-spacing-1">Management Portal</p>
           </div>
-          
-          <div className="col-md-4">
+
+          <div className="col-12 col-md-4">
              <div className="search-box position-relative">
                 <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted x-small"></i>
                 <input 
@@ -352,7 +364,7 @@ export default function EntityLedger() {
 
       <div className="row g-3 flex-grow-1 overflow-hidden">
         {/* Modern Sidebar / Master View */}
-        <div className="col-lg-2 col-md-3 d-flex flex-column overflow-hidden h-100 animate-slideRight">
+        <div className="col-12 col-lg-2 col-md-3 d-flex flex-column overflow-hidden h-100 animate-slideRight">
           <div className="glass-card flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0">
             <div className="flex-grow-1 overflow-auto entity-list p-2">
               {loading ? (
@@ -400,7 +412,7 @@ export default function EntityLedger() {
         </div>
 
         {/* Detailed Ledger Area */}
-        <div className="col-lg-10 col-md-9 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
+        <div className="col-12 col-lg-10 col-md-9 d-flex flex-column overflow-hidden h-100 animate-slideLeft">
           {selectedEntityId ? (
             <div className="glass-card-main flex-grow-1 d-flex flex-column overflow-hidden shadow-sm p-0 animate-fadeIn">
               {/* Detail Header */}
@@ -410,7 +422,7 @@ export default function EntityLedger() {
                    <div className="d-flex gap-2 align-items-center mt-1">
                       <span className="badge bg-light text-muted fw-normal rounded-pill px-2 xx-small">{targetEntity?.type || 'Entity'}</span>
                       <span className={`xx-small fw-bold text-uppercase ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                          {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable' : 'Payable'}
+                          {targetEntity?.is_asset_account ? '🏦 Balance' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable' : 'Payable')}
                       </span>
                    </div>
                 </div>
@@ -472,9 +484,11 @@ export default function EntityLedger() {
               {/* Ledger Stats Summary Bar */}
               <div className="bg-light bg-opacity-25 p-2 px-3 d-flex gap-4 border-bottom flex-wrap">
                   <div className="stat-item">
-                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">Closing Bal</div>
+                    <div className="xx-small text-muted fw-bold text-uppercase opacity-50">{targetEntity?.is_asset_account ? 'Balance' : 'Closing Bal'}</div>
                     <div className="fw-bold x-small text-dark">
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}
+                        {targetEntity?.is_asset_account
+                          ? <AssetBalance amount={targetEntity?.net_balance} />
+                          : <>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</>}
                     </div>
                   </div>
                   <div className="stat-item border-start ps-3">
@@ -528,7 +542,9 @@ export default function EntityLedger() {
                             <td className="text-end text-muted">—</td>
                             <td className="text-end text-muted">—</td>
                             <td className="text-end fw-bold x-small text-dark">
-                               ₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}
+                               {targetEntity?.is_asset_account
+                                 ? <AssetBalance amount={targetEntity?.opening_balance} />
+                                 : <>₹{Math.abs(targetEntity?.opening_balance || 0).toLocaleString()} {targetEntity?.balance_type === 'RECEIVABLE' ? 'Dr' : 'Cr'}</>}
                             </td>
                             <td className="xx-small italic text-muted fw-bold">Opening Balance</td>
                             <td></td>
@@ -552,7 +568,9 @@ export default function EntityLedger() {
                                   {item.credit > 0 ? `₹${Number(item.credit).toLocaleString()}` : '—'}
                               </td>
                               <td className="text-end fw-bold x-small text-dark">
-                                  ₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}
+                                  {targetEntity?.is_asset_account
+                                    ? <AssetBalance amount={item.running_balance} />
+                                    : <>₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}</>}
                               </td>
                               <td>
                                   <div className="fw-semibold text-dark x-small">{item.particulars}</div>
@@ -606,8 +624,12 @@ export default function EntityLedger() {
                             <span style={{ fontSize: '0.95rem' }}>₹{totalCredit.toLocaleString()}</span>
                           </td>
                           <td className="text-end text-dark align-middle">
-                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">Closing Bal</span>
-                            <span style={{ fontSize: '0.95rem' }}>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</span>
+                            <span className="xx-small text-muted text-uppercase fw-bold opacity-75 d-block mb-1">{targetEntity?.is_asset_account ? 'Balance' : 'Closing Bal'}</span>
+                            <span style={{ fontSize: '0.95rem' }}>
+                              {targetEntity?.is_asset_account
+                                ? <AssetBalance amount={targetEntity?.net_balance} />
+                                : <>₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Dr' : 'Cr'}</>}
+                            </span>
                           </td>
                           <td colSpan="2"></td>
                         </tr>
@@ -655,9 +677,9 @@ export default function EntityLedger() {
                 <div className="modal-body p-4">
                   {/* Current Balance Hint */}
                   <div className="d-flex justify-content-between align-items-center bg-light p-3 rounded-3 mb-4 border">
-                     <span className="x-small text-muted fw-bold">Current Outstanding:</span>
+                     <span className="x-small text-muted fw-bold">{targetEntity?.is_asset_account ? 'Current Balance:' : 'Current Outstanding:'}</span>
                      <span className={`fw-bold x-small ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-                        ₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)'}
+                        {targetEntity?.is_asset_account && parseFloat(targetEntity?.net_balance || 0) < 0 ? '−' : ''}₹{Math.abs(parseFloat(targetEntity?.net_balance || 0)).toLocaleString()} {targetEntity?.is_asset_account ? '' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable (Dr)' : 'Payable (Cr)')}
                      </span>
                   </div>
 
@@ -690,7 +712,7 @@ export default function EntityLedger() {
                       </div>
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">AMOUNT (₹) <span className="text-danger">*</span></label>
                       <input 
                         type="number" 
@@ -704,35 +726,18 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12">
                       <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
-                      <select 
-                        className="form-select x-small"
-                        value={settleData.payment_mode}
-                        onChange={e => setSettleData({...settleData, payment_mode: e.target.value})}
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="UPI">UPI / Digital</option>
-                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                        <option value="ADJUSTMENT">Discount / Adjustment</option>
-                        <option value="OTHER">Other Mode</option>
-                      </select>
+                      <PaymentSplitInput
+                        totalAmount={settleData.amount}
+                        lines={settlePaymentLines}
+                        onChange={setSettlePaymentLines}
+                        modeOptions={settleModeOptions}
+                        size="x-small"
+                      />
                     </div>
 
-                    {settleData.payment_mode === 'OTHER' && (
-                      <div className="col-12 animate-fadeIn">
-                         <input 
-                           type="text" 
-                           className="form-control form-control-sm x-small" 
-                           placeholder="Specify custom payment mode..." 
-                           required 
-                           value={settleData.other_mode || ''}
-                           onChange={e => setSettleData({...settleData, other_mode: e.target.value})}
-                         />
-                      </div>
-                    )}
-
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">SETTLEMENT DATE</label>
                       <input 
                         type="date" 
@@ -743,7 +748,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">CATEGORY</label>
                       <select 
                         className="form-select x-small text-uppercase"
@@ -854,52 +859,6 @@ export default function EntityLedger() {
         </div>
       )}
 
-      {/* PIN PROMPT MODAL */}
-      {pinModal.show && (
-        <div className="modal show d-block animate-fadeIn" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1070 }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-              <div className="modal-header bg-danger text-white border-0 p-4">
-                <div className="d-flex align-items-center">
-                  <div className="bg-white bg-opacity-20 rounded-circle p-2 me-3">
-                    <i className="bi bi-shield-lock-fill h4 mb-0 text-white"></i>
-                  </div>
-                  <div>
-                    <h5 className="modal-title fw-bold mb-0">Security Authorization</h5>
-                    <p className="xx-small text-white-50 mb-0 mt-1">This operation requires authorization PIN</p>
-                  </div>
-                </div>
-                <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPinModal({ show: false, action: null, value: '', error: false, shake: false })}></button>
-              </div>
-              
-              <form onSubmit={handlePinSubmit}>
-                <div className={`modal-body p-4 bg-light text-center ${pinModal.shake ? 'shake-animation' : ''}`}>
-                  <p className="small text-muted mb-3 fw-bold">Enter authorization PIN to proceed:</p>
-                  <div className="mb-3">
-                    <input 
-                      type="password" 
-                      className={`form-control form-control-lg text-center fw-bold text-danger ${pinModal.error ? 'border-danger bg-danger-subtle' : 'border-secondary'} shadow-sm`} 
-                      placeholder="• • • • • • • •" 
-                      maxLength="8"
-                      value={pinModal.value}
-                      onChange={(e) => setPinModal({ ...pinModal, value: e.target.value, error: false })}
-                      autoFocus
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="modal-footer border-0 p-3 bg-white justify-content-end gap-2">
-                  <button type="button" className="btn btn-light fw-bold px-4 rounded-pill" onClick={() => setPinModal({ show: false, action: null, value: '', error: false, shake: false })}>Cancel</button>
-                  <button type="submit" className="btn btn-danger fw-bold px-4 rounded-pill shadow-sm" disabled={pinModal.value.length < 8}>
-                    Verify & Proceed
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* VIEW TRANSACTION MODAL */}
       {viewTxModal.show && viewTxModal.transaction && (
@@ -977,7 +936,7 @@ export default function EntityLedger() {
               <form onSubmit={handleUpdateTx}>
                 <div className="modal-body p-4 bg-light">
                   <div className="row g-3">
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">AMOUNT (₹) <span className="text-danger">*</span></label>
                       <input 
                         type="number" 
@@ -993,7 +952,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">PAYMENT MODE</label>
                       <select 
                         className="form-select form-select-sm x-small"
@@ -1006,12 +965,16 @@ export default function EntityLedger() {
                         <option value="CASH">Cash</option>
                         <option value="UPI">UPI / Digital</option>
                         <option value="BANK_TRANSFER">Bank Transfer</option>
+                        {bankEntities.length > 0 && <option disabled>── My Banks/Cards ──</option>}
+                        {bankEntities.map(b => (
+                          <option key={b.id} value={b.name}>🏦 {b.name}</option>
+                        ))}
                         <option value="ADJUSTMENT">Discount / Adjustment</option>
                         <option value="OTHER">Other Mode</option>
                       </select>
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">TRANSACTION DATE</label>
                       <input 
                         type="date" 
@@ -1025,7 +988,7 @@ export default function EntityLedger() {
                       />
                     </div>
 
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label x-small fw-bold text-dark">CATEGORY</label>
                       <select 
                         className="form-select form-select-sm x-small text-uppercase"

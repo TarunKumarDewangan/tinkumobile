@@ -119,7 +119,7 @@ const EntityReport = () => {
       {/* Filter Bar */}
       <div className="glass-card mb-3 p-3 shadow-sm border-0 animate-fadeInUp">
         <div className="row g-3 align-items-center">
-          <div className="col-md-3">
+          <div className="col-12 col-md-3">
              <div className="search-box position-relative">
                 <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted x-small"></i>
                 <input 
@@ -132,7 +132,7 @@ const EntityReport = () => {
               </div>
           </div>
 
-          <div className="col-md-2">
+          <div className="col-12 col-md-2">
             <div className="input-group input-group-sm">
                 <span className="input-group-text bg-transparent border-0 x-small text-muted">From:</span>
                 <input 
@@ -144,7 +144,7 @@ const EntityReport = () => {
             </div>
           </div>
 
-          <div className="col-md-2">
+          <div className="col-12 col-md-2">
             <div className="input-group input-group-sm">
                 <span className="input-group-text bg-transparent border-0 x-small text-muted">To:</span>
                 <input 

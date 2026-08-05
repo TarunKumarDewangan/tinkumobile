@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
+import pinGate from '../../utils/pinGate';
 import { Link } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
 import _ from 'lodash';
+import { isAssetEntityType } from '../../utils/assetEntityTypes';
 
 export default function EntityManager() {
   const [entities, setEntities] = useState([]);
@@ -11,10 +13,13 @@ export default function EntityManager() {
   const [showModal, setShowModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState(null);
   const [customTypes, setCustomTypes] = useState([]);
+  const [sortBy, setSortBy] = useState(null); // null = API's natural order
+  const [sortDir, setSortDir] = useState('asc');
   const [formData, setFormData] = useState({
     name: '',
     type: '',
     phone: '',
+    address: '',
     email: '',
     gst_number: '',
     opening_balance: 0,
@@ -41,7 +46,7 @@ export default function EntityManager() {
       // Extract custom types from loaded entities
       const types = data.map(e => e.type).filter(Boolean);
       const uniqueCustomTypes = Array.from(new Set(types)).filter(
-        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'OTHER'].includes(t)
+        t => !['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI', 'OTHER'].includes(t)
       );
       setCustomTypes(uniqueCustomTypes);
     } catch (error) {
@@ -89,6 +94,7 @@ export default function EntityManager() {
           name: data.name,
           type: data.type,
           phone: data.phone || '',
+          address: data.address || '',
           email: data.email || '',
           gst_number: data.gst_number || '',
           opening_balance: data.opening_balance || 0,
@@ -106,6 +112,7 @@ export default function EntityManager() {
         name: '',
         type: '',
         phone: '',
+        address: '',
         email: '',
         gst_number: '',
         opening_balance: 0,
@@ -119,7 +126,7 @@ export default function EntityManager() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this entity? It will not delete transactions, but the ledger link will be lost.')) return;
+    if (!await pinGate.confirm()) return;
     try {
       await axios.delete(`/entities/${id}`);
       toast.success('Deleted');
@@ -130,7 +137,31 @@ export default function EntityManager() {
   };
 
 
-  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR'].includes(formData.type);
+  const toggleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedEntities = sortBy
+    ? [...entities].sort((a, b) => {
+        const av = (a[sortBy] ?? '').toString().toUpperCase();
+        const bv = (b[sortBy] ?? '').toString().toUpperCase();
+        if (av < bv) return sortDir === 'asc' ? -1 : 1;
+        if (av > bv) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      })
+    : entities;
+
+  const sortIcon = (column) => {
+    if (sortBy !== column) return <i className="bi bi-arrow-down-up opacity-25 ms-1" />;
+    return sortDir === 'asc' ? <i className="bi bi-sort-alpha-down ms-1" /> : <i className="bi bi-sort-alpha-up ms-1" />;
+  };
+
+  const isDefaultType = ['CUSTOMER', 'SHOP_CUSTOMER', 'SHOP', 'SUPPLIER', 'DISTRIBUTOR', 'BANK', 'CARD', 'UPI'].includes(formData.type);
   const isCustomType = customTypes.includes(formData.type);
   const showCustomInput = formData.type === 'OTHER' || (!isDefaultType && !isCustomType && formData.type !== '');
 
@@ -139,7 +170,7 @@ export default function EntityManager() {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="h4 mb-0 text-uppercase fw-bold text-primary">Master Entity Manager</h2>
-          <p className="text-muted small mb-0">Manage opening balances and contact info for all parties</p>
+          <p className="text-muted small mb-0">Manage opening balances and contact info for all parties <span style={{fontSize:'.65rem', fontWeight:700, letterSpacing:1}}>· SHORTCUT: ALT + E</span></p>
         </div>
         <div className="d-flex gap-2">
           <div className="input-group" style={{ width: '300px' }}>
@@ -166,7 +197,9 @@ export default function EntityManager() {
             <thead className="table-light text-uppercase">
               <tr>
                 <th className="ps-4">Entity Name</th>
-                <th>Type</th>
+                <th role="button" onClick={() => toggleSort('type')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Type{sortIcon('type')}
+                </th>
                 <th>Contact</th>
                 <th>Opening</th>
                 <th>Net Balance</th>
@@ -176,9 +209,9 @@ export default function EntityManager() {
             <tbody>
               {loading ? (
                 <tr><td colSpan="6" className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
-              ) : entities.length === 0 ? (
+              ) : sortedEntities.length === 0 ? (
                 <tr><td colSpan="6" className="text-center py-5 text-muted">No entities found. {searchTerm ? 'Try a different search term.' : 'Use Auto-Sync or Create New.'}</td></tr>
-              ) : entities.map(e => (
+              ) : sortedEntities.map(e => (
                 <tr key={e.id}>
                   <td className="ps-4">
                     <div className="fw-bold">{e.name} <span className="small text-muted fw-normal">({e.type})</span></div>
@@ -200,13 +233,15 @@ export default function EntityManager() {
                   </td>
                   <td className={`small ${e.balance_type === 'RECEIVABLE' ? 'text-success' : 'text-danger'}`}>
                     ₹{Number(e.opening_balance).toLocaleString()}
-                    <div className="x-small opacity-50">{e.balance_type}</div>
+                    <div className="x-small opacity-50">{e.is_asset_account ? 'OPENING BALANCE' : e.balance_type}</div>
                   </td>
                   <td>
                     <div className={`fw-bold ${e.net_balance >= 0 ? 'text-success' : 'text-danger'}`}>
-                      ₹{Math.abs(Number(e.net_balance)).toLocaleString()}
+                      {e.net_balance < 0 ? '−' : ''}₹{Math.abs(Number(e.net_balance)).toLocaleString()}
                     </div>
-                    <div className="x-small opacity-50">{e.net_balance >= 0 ? 'RECEIVABLE' : 'PAYABLE'}</div>
+                    <div className="x-small opacity-50">
+                      {e.is_asset_account ? '🏦 BALANCE' : (e.net_balance >= 0 ? 'RECEIVABLE' : 'PAYABLE')}
+                    </div>
                   </td>
                   <td className="text-end pe-4">
                      <Link 
@@ -246,7 +281,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, name: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Category *</label>
                       <select 
                         className="form-select fw-semibold"
@@ -264,6 +299,9 @@ export default function EntityManager() {
                         <option value="SHOP">SHOP</option>
                         <option value="SUPPLIER">SUPPLIER</option>
                         <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                        <option value="BANK">BANK</option>
+                        <option value="CARD">CARD</option>
+                        <option value="UPI">UPI</option>
                         {customTypes.map(t => (
                           <option key={t} value={t}>{t}</option>
                         ))}
@@ -284,18 +322,28 @@ export default function EntityManager() {
                         />
                       </div>
                     )}
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Phone</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         className="form-control"
                         value={formData.phone}
                         onChange={e => setFormData({...formData, phone: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
+                      <label className="form-label fw-bold small text-muted text-uppercase">Address</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Address"
+                        value={formData.address}
+                        onChange={e => setFormData({...formData, address: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">GST Number</label>
-                      <input 
+                      <input
                         type="text" 
                         className="form-control"
                         placeholder="Optional"
@@ -303,7 +351,7 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, gst_number: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-12 col-md-6">
                       <label className="form-label fw-bold small text-muted text-uppercase">Opening Balance</label>
                       <input 
                         type="number" 
@@ -312,21 +360,29 @@ export default function EntityManager() {
                         onChange={e => setFormData({...formData, opening_balance: e.target.value})}
                       />
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
-                      <select 
-                        className="form-select"
-                        value={formData.balance_type}
-                        onChange={e => setFormData({...formData, balance_type: e.target.value})}
-                      >
-                        <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
-                        <option value="PAYABLE">I OWE THEM (Payable)</option>
-                      </select>
-                    </div>
+                    {isAssetEntityType(formData.type) ? (
+                      <div className="col-12 col-md-6 d-flex align-items-end">
+                        <div className="small text-muted fst-italic">
+                          This is just the current balance in the account — no owe-direction needed.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="col-12 col-md-6">
+                        <label className="form-label fw-bold small text-muted text-uppercase">Balance Type</label>
+                        <select
+                          className="form-select"
+                          value={formData.balance_type}
+                          onChange={e => setFormData({...formData, balance_type: e.target.value})}
+                        >
+                          <option value="RECEIVABLE">THEY OWE ME (Receivable)</option>
+                          <option value="PAYABLE">I OWE THEM (Payable)</option>
+                        </select>
+                      </div>
+                    )}
 
                     {['CUSTOMER', 'SHOP_CUSTOMER'].includes(formData.type) && (
                       <>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                           <label className="form-label fw-bold small text-muted text-uppercase">Email</label>
                           <input 
                             type="email" 
@@ -336,7 +392,7 @@ export default function EntityManager() {
                             onChange={e => setFormData({...formData, email: e.target.value})}
                           />
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-12 col-md-6">
                           <label className="form-label fw-bold small text-muted text-uppercase">Voucher Code</label>
                           <input 
                             type="text" 
@@ -369,7 +425,7 @@ export default function EntityManager() {
                               <div key={idx} className="col-12 p-3 bg-light rounded border mb-2">
                                 <div className="row g-2 align-items-center">
                                   
-                                  <div className="col-md-4">
+                                  <div className="col-12 col-md-4">
                                     <select 
                                       className="form-select form-select-sm fw-semibold" 
                                       value={ev.type} 
@@ -387,7 +443,7 @@ export default function EntityManager() {
                                   </div>
 
                                   {ev.type === 'other' && (
-                                    <div className="col-md-3">
+                                    <div className="col-12 col-md-3">
                                       <input 
                                         className="form-control form-control-sm fw-semibold" 
                                         placeholder="Event Name" 
@@ -414,7 +470,7 @@ export default function EntityManager() {
                                     />
                                   </div>
 
-                                  <div className="col-md-1 text-end">
+                                  <div className="col-12 col-md-1 text-end">
                                     <button 
                                       type="button" 
                                       className="btn btn-sm btn-link text-danger p-0 border-0 bg-transparent" 

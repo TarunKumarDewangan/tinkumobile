@@ -8,6 +8,7 @@ use App\Models\ActivityLog;
 use App\Traits\RecordsTransactions;
 use App\Traits\SyncsWithCustomer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RepairController extends Controller
 {
@@ -150,31 +151,68 @@ class RepairController extends Controller
             'forwarded_phone'           => 'nullable|string|max:20',
             'external_expected_delivery'=> 'nullable|date',
             'advance_payment_mode'      => 'nullable|string|max:50',
+            'advance_payment_lines'     => 'nullable|array|min:2',
+            'advance_payment_lines.*.payment_mode' => 'required_with:advance_payment_lines|string',
+            'advance_payment_lines.*.amount'       => 'required_with:advance_payment_lines|numeric|min:0.01',
             'balance_amount_received'   => 'nullable|numeric',
             'balance_payment_mode'      => 'nullable|string|max:50',
             'balance_received_at'       => 'nullable|date',
         ]);
 
-        $customerId = $this->syncCustomer($data, 'REPAIR');
-        $repair = RepairRequest::create(array_merge($data, [
-            'customer_id' => $customerId,
-            'shop_id'    => $shopId,
-            'created_by' => 'staff',
-            'staff_id'   => $user->id,
-        ]));
-
-        // Record Advance Payment if any
-        if (isset($data['advance_amount']) && $data['advance_amount'] > 0) {
-            $this->transactionService->recordForModel($repair, [
-                'type' => 'IN',
-                'category' => 'REPAIR_ADVANCE',
-                'amount' => $data['advance_amount'],
-                'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
-                'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
-            ]);
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['advance_payment_lines'] ?? null, (float) ($data['advance_amount'] ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the advance amount'], 422);
         }
 
+        $repair = DB::transaction(function () use ($data, $shopId, $user) {
+            $customerId = $this->syncCustomer($data, 'REPAIR');
+            $repair = RepairRequest::create(array_merge($data, [
+                'customer_id' => $customerId,
+                'shop_id'    => $shopId,
+                'created_by' => 'staff',
+                'staff_id'   => $user->id,
+            ]));
+
+            // Record Advance Payment if any
+            if (isset($data['advance_amount']) && $data['advance_amount'] > 0) {
+                $this->transactionService->recordForModel($repair, [
+                    'type' => 'IN',
+                    'category' => 'REPAIR_ADVANCE',
+                    'amount' => $data['advance_amount'],
+                    'payment_mode' => $data['advance_payment_mode'] ?? 'CASH',
+                    'payment_lines' => $data['advance_payment_lines'] ?? null,
+                    'description' => "Advance for repair: {$repair->device_model} (Inv: #{$repair->id}) - Customer: {$repair->customer_name}",
+                ]);
+            }
+
+            return $repair;
+        });
+
+        ActivityLog::log('REPAIR_CREATED', $repair, "Repair created: {$repair->device_model} for {$repair->customer_name} (#{$repair->id})");
+
+        $this->notifyOwner(
+            "🔧 *New Repair Entry #{$repair->id}*\n" .
+            "Device: {$repair->device_model}\n" .
+            "Customer: {$repair->customer_name} ({$repair->customer_phone})\n" .
+            "Problem: " . (is_array($repair->issue_description) ? implode(', ', $repair->issue_description) : $repair->issue_description) . "\n" .
+            "Quoted: ₹" . number_format($repair->quoted_amount, 2) . "\n" .
+            $this->forwardedLine($repair) .
+            "By: {$user->name}"
+        );
+
         return response()->json($repair, 201);
+    }
+
+    /**
+     * "Forwarded To: ShopName (Phone)\n" when a repair was sent to an external
+     * shop, else empty — shared by both the create and status-update
+     * notifications so staff/owner always know which external shop is
+     * involved, not just that it was forwarded.
+     */
+    private function forwardedLine(RepairRequest $repair): string
+    {
+        if (!$repair->is_forwarded || !$repair->forwarded_to) return '';
+        $phone = $repair->forwarded_phone ? " ({$repair->forwarded_phone})" : '';
+        return "Forwarded To: {$repair->forwarded_to}{$phone}\n";
     }
 
     public function update(Request $request, RepairRequest $repair)
@@ -183,10 +221,14 @@ class RepairController extends Controller
         if (! $user->hasFullAccess() && $repair->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+        if (($request->has('staff_id') || $request->has('assigned_to')) && ! $user->hasFullAccess() && ! $user->can('assign_repair')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
         $data = $request->validate([
             'status'                    => 'in:pending,assigned,in_progress,completed,delivered',
             'assigned_to'               => 'nullable|exists:users,id',
+            'staff_id'                  => 'nullable|exists:users,id',
             'estimated_delivery_date'   => 'nullable|date',
             'actual_delivery_date'      => 'nullable|date',
             'customer_name'             => 'sometimes|string',
@@ -206,8 +248,15 @@ class RepairController extends Controller
             'external_expected_delivery'=> 'nullable|date',
             'balance_amount_received'   => 'nullable|numeric',
             'balance_payment_mode'      => 'nullable|string|max:50',
+            'balance_payment_lines'     => 'nullable|array|min:2',
+            'balance_payment_lines.*.payment_mode' => 'required_with:balance_payment_lines|string',
+            'balance_payment_lines.*.amount'       => 'required_with:balance_payment_lines|numeric|min:0.01',
             'balance_received_at'       => 'nullable|date',
         ]);
+
+        if (!\App\Services\TransactionService::paymentLinesSumMatches($data['balance_payment_lines'] ?? null, (float) ($data['balance_amount_received'] ?? $request->balance_amount_received ?? 0))) {
+            return response()->json(['message' => 'Split payment lines must add up to the balance amount'], 422);
+        }
 
         if ($request->hasAny(['customer_name', 'customer_phone', 'customer_email', 'customer_address'])) {
             $data['customer_id'] = $this->syncCustomer(array_merge($repair->toArray(), $data), 'REPAIR');
@@ -249,6 +298,7 @@ class RepairController extends Controller
                     'category' => 'REPAIR_SETTLEMENT',
                     'amount' => $request->balance_amount_received,
                     'payment_mode' => $request->balance_payment_mode ?? $repair->balance_payment_mode ?? 'CASH',
+                    'payment_lines' => $data['balance_payment_lines'] ?? null,
                     'description' => "Balance collected for repair: {$repair->device_model} (Inv: #{$repair->id})",
                 ]);
             }
@@ -257,9 +307,18 @@ class RepairController extends Controller
         // Audit log — log status changes
         if ($repair->wasChanged('status')) {
             ActivityLog::log('REPAIR_STATUS_CHANGED', $user, "Repair #{$repair->id} status updated to {$repair->status}");
+
+            $this->notifyOwner(
+                "🔧 *Repair #{$repair->id} Status Updated*\n" .
+                "Device: {$repair->device_model}\n" .
+                "Customer: {$repair->customer_name}\n" .
+                "New Status: " . strtoupper($repair->status) . "\n" .
+                $this->forwardedLine($repair) .
+                "By: {$user->name}"
+            );
         }
 
-        return response()->json($repair->fresh()->load('assignedTo'));
+        return response()->json($repair->fresh()->load('assignedTo', 'staff'));
     }
 
     public function show(Request $request, RepairRequest $repair)
@@ -277,6 +336,7 @@ class RepairController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Owners/Admins can delete repairs.'], 403);
         }
 
+        ActivityLog::log('REPAIR_DELETED', $repair, "Repair deleted: {$repair->device_model} for {$repair->customer_name} (#{$repair->id})");
         $repair->delete();
         return response()->json(['message' => 'Repair request deleted']);
     }
@@ -403,7 +463,7 @@ class RepairController extends Controller
             return response()->json(['message' => 'Backup restored successfully (Upserted ' . count($data['repairs']) . ' records)']);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\DB::rollBack();
-            return response()->json(['message' => 'Restore failed: ' . $e->getMessage()], 500);
+            return $this->errorResponse($e, 'Restore failed');
         }
     }
 }

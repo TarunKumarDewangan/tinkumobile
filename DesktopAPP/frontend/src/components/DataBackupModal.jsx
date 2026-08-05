@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
+import pinGate from '../utils/pinGate';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import Modal from './Modal';

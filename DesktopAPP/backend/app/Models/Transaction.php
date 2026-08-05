@@ -104,13 +104,16 @@ class Transaction extends Model
         'accounting_entity_id',
         'description', 
         'entity_name',
-        'ref_id', 
-        'transaction_date'
+        'ref_id',
+        'transaction_date',
+        'is_internal_transfer',
+        'mirror_of_transaction_id',
     ];
 
     protected $casts = [
         'transaction_date' => 'date',
         'amount' => 'float',
+        'is_internal_transfer' => 'boolean',
     ];
 
     public function user()
