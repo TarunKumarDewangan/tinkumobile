@@ -104,24 +104,26 @@ export default function PendingBalance() {
     }))
     .filter(r => r.balance > 0.01);
 
-  // 3: Personal Finance (Shop Finance/EMI) — the customer's own EMI plan
-  // balance, separate from their regular invoice balance above.
+  // 3: Personal Finance (Shop Finance/EMI) — a fallback only. A shop-financed
+  // sale posts its full amount (plus interest, minus EMI collections) to the
+  // customer's own Entity ledger, so whenever that entity exists it's already
+  // counted once in customerRows above — adding this on top would double-count
+  // the exact same debt. This only fills the balance in for the rare case
+  // where the customer has no resolvable Entity (so customerRows misses them).
   const personalFinanceByCustomer = new Map();
   invoices.forEach(inv => {
     if (!inv.finance_plan) return;
+    const name = inv.customer?.name || 'UNKNOWN';
+    if (entityByName[name.toUpperCase()]) return; // already counted via customerRows
     const bal = invoiceBalance(inv);
     if (bal <= 0.01) return;
-    const name = inv.customer?.name || 'UNKNOWN';
     const key = name.toUpperCase();
     if (!personalFinanceByCustomer.has(key)) {
       personalFinanceByCustomer.set(key, { name, phone: inv.customer?.phone || '', balance: 0 });
     }
     personalFinanceByCustomer.get(key).balance += bal;
   });
-  const personalFinanceRows = Array.from(personalFinanceByCustomer.values()).map(r => {
-    const entity = entityByName[r.name.toUpperCase()];
-    return { category: 'PERSONAL_FINANCE', ...r, entityId: entity?.id || null };
-  });
+  const personalFinanceRows = Array.from(personalFinanceByCustomer.values()).map(r => ({ category: 'PERSONAL_FINANCE', ...r, entityId: null }));
 
   // 4: Other Company Finance — the financer company's own pending
   // receivable (what they still owe the shop for financed sales).
