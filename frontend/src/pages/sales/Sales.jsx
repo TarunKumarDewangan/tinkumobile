@@ -323,9 +323,14 @@ export default function Sales() {
 
                     {/* 5. Discount */}
                     <td className="text-end fw-bold" style={{ color: '#475569', whiteSpace: 'nowrap' }}>
-                      {(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0
-                        ? `- ₹${(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)).toLocaleString('en-IN')}`
-                        : '—'}
+                      {(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)) > 0 ? (
+                        <>
+                          <div>- ₹{(parseFloat(inv.discount||0)+parseFloat(inv.cash_discount||0)).toLocaleString('en-IN')}</div>
+                          <div className="x-small fw-semibold" style={{ color: '#94a3b8' }}>
+                            ₹{parseFloat(inv.grand_total).toLocaleString('en-IN')} after
+                          </div>
+                        </>
+                      ) : '—'}
                     </td>
 
                     {/* 5b. Exchange Credit — old phone traded in as part payment */}

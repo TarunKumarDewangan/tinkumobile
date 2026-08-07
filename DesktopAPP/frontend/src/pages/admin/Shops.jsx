@@ -6,7 +6,7 @@ export default function Shops() {
   const [shops, setShops] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name:'', address:'', phone:'', email:'', gstin:'' });
+  const [form, setForm] = useState({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' });
 
   const load = () => api.get('/shops').then(r => setShops(r.data));
   useEffect(() => { load(); }, []);
@@ -23,14 +23,14 @@ export default function Shops() {
       }
       setShowForm(false); 
       setEditingId(null);
-      setForm({ name:'', address:'', phone:'', email:'', gstin:'' });
+      setForm({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' });
       load(); 
     }
     catch(e) { toast.error(e.response?.data?.message || 'Error'); }
   };
 
   const handleEdit = (shop) => {
-    setForm({ name: shop.name, address: shop.address, phone: shop.phone, email: shop.email || '', gstin: shop.gstin || '' });
+    setForm({ name: shop.name, address: shop.address, phone: shop.phone, alt_phone: shop.alt_phone || '', email: shop.email || '', gstin: shop.gstin || '' });
     setEditingId(shop.id);
     setShowForm(true);
   };
@@ -39,7 +39,7 @@ export default function Shops() {
     <div>
       <div className="page-header d-flex justify-content-between align-items-center">
         <h2>🏪 Shops</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => { setEditingId(null); setForm({ name:'', address:'', phone:'', email:'', gstin:'' }); setShowForm(true); }}>+ Add Shop</button>
+        <button className="btn btn-primary btn-sm" onClick={() => { setEditingId(null); setForm({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' }); setShowForm(true); }}>+ Add Shop</button>
       </div>
       {showForm && (
         <div className="table-card p-4 mb-3">
@@ -47,13 +47,14 @@ export default function Shops() {
             <div className="row g-3">
               <div className="col-12 col-md-4"><input className="form-control" placeholder="Shop Name *" required value={form.name} onChange={e => setForm({...form, name:e.target.value})} /></div>
               <div className="col-12 col-md-4"><input className="form-control" placeholder="Phone *" required value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} /></div>
+              <div className="col-12 col-md-4"><input className="form-control" placeholder="Alternative Mobile No" value={form.alt_phone} onChange={e => setForm({...form, alt_phone:e.target.value})} /></div>
               <div className="col-12 col-md-4"><input className="form-control" placeholder="Email" value={form.email} onChange={e => setForm({...form, email:e.target.value})} /></div>
               <div className="col-12 col-md-8"><input className="form-control" placeholder="Address *" required value={form.address} onChange={e => setForm({...form, address:e.target.value})} /></div>
               <div className="col-12 col-md-4"><input className="form-control" placeholder="GSTIN" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} /></div>
             </div>
             <div className="mt-3 d-flex gap-2">
               <button type="submit" className="btn btn-primary btn-sm">{editingId ? 'Update Shop' : 'Create Shop'}</button>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => { setShowForm(false); setEditingId(null); setForm({ name:'', address:'', phone:'', email:'', gstin:'' }); }}>Cancel</button>
+              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => { setShowForm(false); setEditingId(null); setForm({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' }); }}>Cancel</button>
             </div>
           </form>
         </div>
@@ -70,7 +71,7 @@ export default function Shops() {
                 </div>
               </div>
               <div className="text-muted" style={{ fontSize:'0.85rem' }}>
-                <div>📞 {s.phone}</div>
+                <div>📞 {s.phone}{s.alt_phone && ` / ${s.alt_phone}`}</div>
                 <div>📧 {s.email || '—'}</div>
                 <div>📍 {s.address}</div>
                 <div>🏢 GSTIN: <span className="fw-bold">{s.gstin || '—'}</span></div>

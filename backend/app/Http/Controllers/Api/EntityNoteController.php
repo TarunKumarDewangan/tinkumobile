@@ -20,6 +20,7 @@ class EntityNoteController extends Controller
         }
 
         if ($request->category) $query->where('category', $request->category);
+        if ($request->status)   $query->where('status', $request->status);
         if ($request->date)     $query->where('promise_date', $request->date);
         if ($request->from)     $query->where('promise_date', '>=', $request->from);
         if ($request->to)       $query->where('promise_date', '<=', $request->to);
@@ -39,6 +40,7 @@ class EntityNoteController extends Controller
         $user = $request->user();
         $data = $request->validate([
             'entity_id'       => 'nullable|exists:entities,id',
+            'sale_invoice_id' => 'nullable|exists:sale_invoices,id',
             'name'            => 'required|string|max:150',
             'phone'           => 'nullable|string|max:20',
             'category'        => 'nullable|string|max:50',
@@ -49,6 +51,15 @@ class EntityNoteController extends Controller
 
         $data['shop_id']    = $user->hasFullAccess() ? ($request->shop_id ?? $user->shop_id) : $user->shop_id;
         $data['created_by'] = $user->id;
+        $data['status']     = 'PENDING';
+
+        // A new promise supersedes whatever open promise already exists on the
+        // same invoice, so an invoice never has more than one PENDING note.
+        if (! empty($data['sale_invoice_id'])) {
+            EntityNote::where('sale_invoice_id', $data['sale_invoice_id'])
+                ->where('status', 'PENDING')
+                ->update(['status' => 'FULFILLED', 'resolved_at' => now()]);
+        }
 
         return response()->json(EntityNote::create($data)->load('entity', 'createdBy'), 201);
     }

@@ -17,7 +17,7 @@ export default function PromiseToPay() {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [quickFilter, setQuickFilter] = useState('ALL'); // ALL | TODAY | OVERDUE | UPCOMING
+  const [quickFilter, setQuickFilter] = useState('ALL'); // ALL | TODAY | OVERDUE | UPCOMING | FULFILLED
   const [category, setCategory] = useState('ALL');
 
   const load = async () => {
@@ -47,7 +47,7 @@ export default function PromiseToPay() {
 
   const filtered = useMemo(() => {
     const t = today();
-    let rows = notes;
+    let rows = quickFilter === 'FULFILLED' ? notes.filter(n => n.status === 'FULFILLED') : notes.filter(n => n.status === 'PENDING');
     if (quickFilter === 'TODAY') rows = rows.filter(n => n.promise_date === t);
     else if (quickFilter === 'OVERDUE') rows = rows.filter(n => n.promise_date < t);
     else if (quickFilter === 'UPCOMING') rows = rows.filter(n => n.promise_date > t);
@@ -62,15 +62,19 @@ export default function PromiseToPay() {
   }, [notes, quickFilter, category, search]);
 
   const t = today();
+  const pending = useMemo(() => notes.filter(n => n.status === 'PENDING'), [notes]);
   const counts = useMemo(() => ({
-    today: notes.filter(n => n.promise_date === t).length,
-    overdue: notes.filter(n => n.promise_date < t).length,
-    upcoming: notes.filter(n => n.promise_date > t).length,
-  }), [notes, t]);
+    all: pending.length,
+    today: pending.filter(n => n.promise_date === t).length,
+    overdue: pending.filter(n => n.promise_date < t).length,
+    upcoming: pending.filter(n => n.promise_date > t).length,
+    fulfilled: notes.filter(n => n.status === 'FULFILLED').length,
+  }), [notes, pending, t]);
 
-  const badgeFor = (date) => {
-    if (date < t) return <span className="badge bg-danger">OVERDUE</span>;
-    if (date === t) return <span className="badge bg-warning text-dark">TODAY</span>;
+  const badgeFor = (n) => {
+    if (n.status === 'FULFILLED') return <span className="badge bg-success">✅ FULFILLED</span>;
+    if (n.promise_date < t) return <span className="badge bg-danger">OVERDUE</span>;
+    if (n.promise_date === t) return <span className="badge bg-warning text-dark">TODAY</span>;
     return <span className="badge bg-light text-dark border">UPCOMING</span>;
   };
 
@@ -83,10 +87,11 @@ export default function PromiseToPay() {
 
       <div className="d-flex flex-wrap gap-2 mb-3">
         {[
-          { id: 'ALL', label: `📋 All (${notes.length})` },
+          { id: 'ALL', label: `📋 Open (${counts.all})` },
           { id: 'OVERDUE', label: `🔴 Overdue (${counts.overdue})` },
           { id: 'TODAY', label: `🟡 Today (${counts.today})` },
           { id: 'UPCOMING', label: `⚪ Upcoming (${counts.upcoming})` },
+          { id: 'FULFILLED', label: `✅ Fulfilled (${counts.fulfilled})` },
         ].map(f => (
           <button
             key={f.id}
@@ -138,7 +143,7 @@ export default function PromiseToPay() {
               ) : filtered.map(n => (
                 <tr key={n.id}>
                   <td className="fw-bold">{n.promise_date}</td>
-                  <td>{badgeFor(n.promise_date)}</td>
+                  <td>{badgeFor(n)}</td>
                   <td>
                     {n.entity_id ? (
                       <Link to={`/accounts/entity-ledger?id=${n.entity_id}&name=${encodeURIComponent(n.name)}`} className="fw-bold text-decoration-underline">
@@ -154,7 +159,11 @@ export default function PromiseToPay() {
                   <td className="small" style={{ maxWidth: 260 }}>{n.note || <span className="text-muted">—</span>}</td>
                   <td className="small text-muted">{n.created_by?.name || '—'}</td>
                   <td className="text-center">
-                    <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(n)}>Remove</button>
+                    {n.status === 'PENDING' ? (
+                      <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(n)}>Remove</button>
+                    ) : (
+                      <span className="text-muted x-small">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -62,8 +62,10 @@ export default function PendingBalance() {
   // Personal Finance rows).
   const latestNoteForRow = (r) => {
     const candidates = notes.filter(n =>
-      (r.entityId && n.entity_id === r.entityId) ||
-      (!n.entity_id && (n.name || '').toUpperCase() === (r.name || '').toUpperCase() && (n.phone || '') === (r.phone || ''))
+      n.status === 'PENDING' && (
+        (r.entityId && n.entity_id === r.entityId) ||
+        (!n.entity_id && (n.name || '').toUpperCase() === (r.name || '').toUpperCase() && (n.phone || '') === (r.phone || ''))
+      )
     );
     if (candidates.length === 0) return null;
     return candidates.reduce((latest, n) => (!latest || n.created_at > latest.created_at ? n : latest), null);
@@ -144,6 +146,27 @@ export default function PendingBalance() {
   const allRows = [...customerRows, ...personalFinanceRows, ...companyFinanceRows];
 
   let rows = category === 'ALL' ? allRows : allRows.filter(r => r.category === category);
+
+  // Same person can carry a regular Customer balance and a separate Personal
+  // Finance/EMI balance — genuinely different relationships (see comment
+  // above), but showing them as two rows for the same name/phone reads as a
+  // confusing duplicate. When viewing "All", merge them into one row with
+  // a combined total and a badge per category instead.
+  if (category === 'ALL') {
+    const merged = new Map();
+    rows.forEach(r => {
+      const key = r.entityId ? `e${r.entityId}` : `${r.name.toUpperCase()}|${r.phone}`;
+      if (!merged.has(key)) {
+        merged.set(key, { ...r, categories: [r.category], balance: 0, entityId: r.entityId || null });
+      }
+      const m = merged.get(key);
+      m.balance += r.balance;
+      if (!m.entityId && r.entityId) m.entityId = r.entityId;
+      if (!m.categories.includes(r.category)) m.categories.push(r.category);
+    });
+    rows = Array.from(merged.values());
+  }
+
   rows = rows.map(r => {
     const latest = latestNoteForRow(r);
     return { ...r, noteDate: latest?.promise_date || null };
@@ -271,7 +294,7 @@ export default function PendingBalance() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={category === 'ALL' ? 6 : 5} className="text-center py-5 text-muted fw-bold">🎉 No pending balances found</td></tr>
               ) : rows.map((r, idx) => (
-                <tr key={r.category + '-' + r.name}>
+                <tr key={(r.entityId || r.name) + '-' + idx}>
                   <td className="fw-bold text-muted">{idx + 1}</td>
                   <td>
                     <span className="fw-bold text-decoration-underline cursor-pointer" style={{ color: '#1e293b' }} onClick={() => goToAccount(r)}>
@@ -281,7 +304,9 @@ export default function PendingBalance() {
                   </td>
                   {category === 'ALL' && (
                     <td>
-                      <span className="badge bg-light text-dark border">{categoryLabel(r.category)}</span>
+                      {(r.categories || [r.category]).map(c => (
+                        <span key={c} className="badge bg-light text-dark border me-1">{categoryLabel(c)}</span>
+                      ))}
                     </td>
                   )}
                   <td className="text-center">

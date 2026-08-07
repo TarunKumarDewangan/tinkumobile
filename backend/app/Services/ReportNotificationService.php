@@ -10,6 +10,7 @@ use App\Models\SaleFinancePlan;
 use App\Models\FinancePayment;
 use App\Models\Transaction;
 use App\Models\Category;
+use App\Models\EntityNote;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -373,6 +374,53 @@ class ReportNotificationService
         }
 
         $msg .= "---------------------------\n";
+        $msg .= "_Tinku Mobiles Management System_";
+
+        return $msg;
+    }
+
+    /**
+     * Every open "promise to pay" note, split into today's and overdue —
+     * fulfilled/superseded notes are excluded since they no longer need chasing.
+     */
+    public function buildPromiseToPayReminderMessage(): string
+    {
+        $today = Carbon::today();
+
+        $notes = EntityNote::where('status', 'PENDING')
+            ->where('promise_date', '<=', $today)
+            ->orderBy('promise_date')
+            ->get();
+
+        $dueToday = $notes->filter(fn ($n) => $n->promise_date->isSameDay($today));
+        $overdue = $notes->filter(fn ($n) => $n->promise_date->lt($today));
+
+        $msg = "🤝 *Promise to Pay Reminder ({$today->format('d M Y')})*\n";
+        $msg .= "---------------------------\n";
+
+        if ($notes->isEmpty()) {
+            $msg .= "✅ No promises due today or overdue.";
+        } else {
+            $render = function ($rows) use (&$msg, $today) {
+                foreach ($rows as $n) {
+                    $daysOverdue = $n->promise_date->lt($today) ? $n->promise_date->diffInDays($today) : 0;
+                    $amount = $n->balance_at_time !== null ? '₹' . number_format($n->balance_at_time, 0) : '—';
+                    $phone = $n->phone ? " ({$n->phone})" : '';
+                    $msg .= "• {$n->name}{$phone} — {$amount}" . ($daysOverdue > 0 ? " — {$daysOverdue}d overdue" : '') . "\n";
+                }
+            };
+
+            if ($dueToday->isNotEmpty()) {
+                $msg .= "\n📌 *Due Today ({$dueToday->count()}):*\n";
+                $render($dueToday);
+            }
+            if ($overdue->isNotEmpty()) {
+                $msg .= "\n🔴 *Overdue ({$overdue->count()}):*\n";
+                $render($overdue);
+            }
+        }
+
+        $msg .= "\n---------------------------\n";
         $msg .= "_Tinku Mobiles Management System_";
 
         return $msg;

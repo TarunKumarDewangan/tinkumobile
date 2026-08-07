@@ -43,6 +43,7 @@ export default function SaleDetails() {
   // Payment Modal
   const [showPayModal, setShowPayModal] = useState(false);
   const [payAmount, setPayAmount] = useState('');
+  const [nextPromiseDate, setNextPromiseDate] = useState('');
 
   useEffect(() => { loadInvoice(); }, [id]);
 
@@ -63,8 +64,26 @@ export default function SaleDetails() {
       try {
           await api.post(`/sale-invoices/${id}/add-payment`, { amount: payAmount });
           toast.success('✅ Payment recorded');
+
+          const remaining = balance - parseFloat(payAmount || 0);
+          if (remaining > 0 && nextPromiseDate) {
+              try {
+                  await api.post('/entity-notes', {
+                      entity_id: invoice.customer?.entity?.id || null,
+                      sale_invoice_id: invoice.id,
+                      name: invoice.customer?.name,
+                      phone: invoice.customer?.phone || null,
+                      category: 'CUSTOMER',
+                      promise_date: nextPromiseDate,
+                      balance_at_time: remaining,
+                  });
+                  toast.success('📝 Next payment date noted');
+              } catch (e) { toast.error('Payment saved, but noting the next date failed'); }
+          }
+
           setShowPayModal(false);
           setPayAmount('');
+          setNextPromiseDate('');
           loadInvoice();
       } catch (e) { toast.error('Payment failed'); }
   };
@@ -345,7 +364,9 @@ export default function SaleDetails() {
                                       <div>
                                           <h1 className="h2 fw-black mb-0 text-uppercase tracking-tighter">{(invoice.shop?.name || 'TINKU MOBILE DHAMTARI').toUpperCase()}</h1>
                                           <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">{invoice.shop?.address || 'NEHRU GARDAN COMPLEX, DHAMTARI'}</p>
-                                          <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">📞 MOBILE: {invoice.shop?.phone || '9098795200'}</p>
+                                          <p className="mb-0 x-small fw-bold opacity-75 text-uppercase">
+                                              📞 MOBILE: {invoice.shop?.phone || '9098795200'}{invoice.shop?.alt_phone && `, ${invoice.shop.alt_phone}`}
+                                          </p>
                                           <p className="mb-0 x-small fw-black text-primary text-uppercase">GSTIN: {invoice.shop?.gstin || '22CHZPD5946A1ZC'}</p>
                                           <p className="mb-0 x-small fw-bold text-secondary text-uppercase">State Name: Chhattisgarh, Code: 22</p>
                                       </div>
@@ -691,6 +712,12 @@ export default function SaleDetails() {
                       <input type="number" step="0.01" className="form-control fs-3 fw-black text-success border-success bg-success bg-opacity-10" placeholder="0.00" required autoFocus value={payAmount} onChange={e => setPayAmount(e.target.value)} max={balance} />
                       <div className="small text-muted mt-2 fw-bold italicized">Max allowed: ₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   </div>
+                  {(balance - parseFloat(payAmount || 0)) > 0 && (
+                      <div className="mt-3 pt-3 border-top">
+                          <label className="form-label small fw-bold text-warning-emphasis">🤝 Next Payment Date <span className="text-muted normal-case">(optional — for the remaining ₹{(balance - parseFloat(payAmount || 0)).toLocaleString('en-IN')})</span></label>
+                          <input type="date" className="form-control" value={nextPromiseDate} onChange={e => setNextPromiseDate(e.target.value)} />
+                      </div>
+                  )}
               </Modal.Body>
               <Modal.Footer>
                   <Button variant="secondary" className="fw-bold" onClick={() => setShowPayModal(false)}>CANCEL</Button>

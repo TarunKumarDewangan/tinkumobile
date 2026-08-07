@@ -112,6 +112,7 @@ export default function MasterSaleForm() {
     []
   );
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [promiseDate, setPromiseDate] = useState('');
   const [priceMode, setPriceMode] = useState('RETAIL');
   const [showCustModal, setShowCustModal] = useState(false);
   const [newEntity, setNewEntity] = useState({
@@ -816,8 +817,24 @@ export default function MasterSaleForm() {
         await api.put(`/sale-invoices/${id}`, finalForm);
         toast.success('✅ Sale updated successfully');
       } else {
-        await api.post('/sale-invoices', finalForm);
+        const { data: created } = await api.post('/sale-invoices', finalForm);
         toast.success('✅ Sale recorded successfully');
+
+        const financePaid = useFinance && form.finance_payment_status === 'RECEIVED' ? parseFloat(form.finance_amount || 0) : 0;
+        const pending = grandTotal - parseFloat(form.total_paid || 0) - parseFloat(form.exchange_paid || 0) - financePaid;
+        if (pending > 0.01 && promiseDate && created?.id) {
+          try {
+            await api.post('/entity-notes', {
+              entity_id: selectedCustomer?.entity?.id || null,
+              sale_invoice_id: created.id,
+              name: selectedCustomer?.name,
+              phone: selectedCustomer?.phone || null,
+              category: 'CUSTOMER',
+              promise_date: promiseDate,
+              balance_at_time: pending,
+            });
+          } catch (e) { toast.error('Sale saved, but noting the payment date failed'); }
+        }
       }
       navigate('/sales?category_group=master');
     } catch (e) { 
@@ -1622,7 +1639,13 @@ export default function MasterSaleForm() {
                             const financePaid = useFinance && form.finance_payment_status === 'RECEIVED' ? parseFloat(form.finance_amount || 0) : 0;
                             const pending = grandTotal - parseFloat(form.total_paid||0) - parseFloat(form.exchange_paid||0) - financePaid;
                             return pending > 0.01 ? (
-                                <div style={{fontSize:'.72rem', color:'#dc2626', fontWeight:700, marginTop:4}}>PENDING BALANCE: ₹{pending.toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+                                <>
+                                    <div style={{fontSize:'.72rem', color:'#dc2626', fontWeight:700, marginTop:4}}>PENDING BALANCE: ₹{pending.toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+                                    <div className="mt-2">
+                                        <label style={{fontSize:'.65rem', fontWeight:700, color:'#b45309', display:'block', marginBottom:3}}>🤝 EXPECTED PAYMENT DATE <span style={{fontWeight:400, textTransform:'none'}}>(optional)</span></label>
+                                        <input type="date" className="form-control form-control-sm" style={{maxWidth:220}} value={promiseDate} onChange={e => setPromiseDate(e.target.value)} />
+                                    </div>
+                                </>
                             ) : null;
                         })()}
                     </div>

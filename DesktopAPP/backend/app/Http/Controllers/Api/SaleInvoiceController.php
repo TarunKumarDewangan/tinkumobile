@@ -512,7 +512,7 @@ class SaleInvoiceController extends Controller
         if (! $user->hasFullAccess() && $saleInvoice->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return new SaleInvoiceResource($saleInvoice->load('customer', 'user', 'soldBy', 'items.product.category', 'items.product.brand', 'giftItems.giftProduct', 'shop', 'financer', 'financePlan.payments'));
+        return new SaleInvoiceResource($saleInvoice->load('customer.entity', 'user', 'soldBy', 'items.product.category', 'items.product.brand', 'giftItems.giftProduct', 'shop', 'financer', 'financePlan.payments'));
     }
 
     public function addPayment(Request $request, SaleInvoice $saleInvoice)
@@ -527,6 +527,14 @@ class SaleInvoiceController extends Controller
 
             $invoice->total_paid += $data['amount'];
             $invoice->updatePaymentStatus();
+
+            // Balance cleared — any open promise-to-pay note tied to this invoice
+            // is resolved automatically, no manual cleanup needed.
+            if ($invoice->payment_status === 'paid') {
+                \App\Models\EntityNote::where('sale_invoice_id', $invoice->id)
+                    ->where('status', 'PENDING')
+                    ->update(['status' => 'FULFILLED', 'resolved_at' => now()]);
+            }
 
             // Record Transaction using Service
             $itemNames = $invoice->items()->with('product')->get()
