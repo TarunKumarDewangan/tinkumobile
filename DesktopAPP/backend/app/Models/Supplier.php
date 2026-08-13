@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Supplier extends Model
 {
-    use SoftDeletes, UppercaseStrings, SyncsWithMasterEntity;
+    use SoftDeletes, UppercaseStrings, SyncsWithMasterEntity, \App\Traits\MirrorsToSupabase;
 
     protected $fillable = ['name', 'phone', 'gst_no', 'address', 'is_online_shop'];
     protected $casts = ['is_online_shop' => 'boolean'];

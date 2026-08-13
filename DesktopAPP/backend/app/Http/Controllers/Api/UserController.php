@@ -11,6 +11,19 @@ use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
+    /**
+     * Roles a non-full-access manager is allowed to grant. Deliberately
+     * excludes Admin (and anything not already in this list) — granting
+     * elevated access is reserved for the owner/existing admins, checked
+     * again below regardless of what the validation rule alone would allow.
+     */
+    private function assertCanGrantRole(\App\Models\User $authUser, string $roleName): void
+    {
+        if (! $authUser->hasFullAccess() && strcasecmp($roleName, 'Admin') === 0) {
+            abort(403, 'Only the owner or an existing admin can grant the Admin role.');
+        }
+    }
+
     /** List users scoped to the requesting user's shop (or all for owner) */
     public function index(Request $request)
     {
@@ -41,7 +54,7 @@ class UserController extends Controller
             'email'         => 'required|email|unique:users,email',
             'password'      => 'required|min:6',
             'shop_id'       => 'required|exists:shops,id',
-            'role'          => 'required|string',
+            'role'          => 'required|string|exists:roles,name',
             'phone'         => 'nullable|string|max:20',
             'address'       => 'nullable|string',
             'designation'   => 'nullable|string|max:100',
@@ -55,6 +68,8 @@ class UserController extends Controller
         if (! $authUser->hasFullAccess() && $data['shop_id'] != $authUser->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $this->assertCanGrantRole($authUser, $data['role']);
 
         $user = User::create([
             'name'          => $data['name'],
@@ -106,7 +121,7 @@ class UserController extends Controller
             'email'         => 'sometimes|email|unique:users,email,' . $user->id,
             'password'      => 'sometimes|min:6',
             'shop_id'       => 'sometimes|exists:shops,id',
-            'role'          => 'sometimes|string',
+            'role'          => 'sometimes|string|exists:roles,name',
             'phone'         => 'nullable|string|max:20',
             'address'       => 'nullable|string',
             'designation'   => 'nullable|string|max:100',
@@ -120,6 +135,10 @@ class UserController extends Controller
         // Only owner/full-access admins can toggle another user's OTP requirement.
         if (isset($data['require_login_otp']) && ! $authUser->hasFullAccess()) {
             unset($data['require_login_otp']);
+        }
+
+        if (isset($data['role'])) {
+            $this->assertCanGrantRole($authUser, $data['role']);
         }
 
         if (isset($data['password'])) {

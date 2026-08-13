@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class SettingsController extends Controller
 {
@@ -47,7 +49,16 @@ class SettingsController extends Controller
         if (!$stored || !\Illuminate\Support\Facades\Hash::check($request->pin, $stored)) {
             return response()->json(['message' => 'Incorrect PIN'], 403);
         }
-        return response()->json(['message' => 'ok']);
+
+        // Issue a short-lived, one-time token proving this specific user just
+        // verified the PIN. Destructive routes (see RequireActionPin
+        // middleware) require this token — previously a verified PIN in the
+        // UI wasn't actually checked by the action endpoint itself, so
+        // anyone calling the API directly could skip the PIN entirely.
+        $token = Str::random(40);
+        Cache::put("pin_token:{$token}", $request->user()->id, now()->addSeconds(60));
+
+        return response()->json(['message' => 'ok', 'pin_token' => $token]);
     }
 
     public function changePin(Request $request)

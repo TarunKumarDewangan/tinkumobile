@@ -10,11 +10,95 @@ use App\Models\AirtelDrop;
 use App\Models\AirtelRecovery;
 use App\Models\User;
 use App\Models\ActivityLog;
+use App\Services\WhatsAppService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class AirtelRetailerController extends Controller
 {
+    private function publicOtpCacheKey(int $retailerId): string
+    {
+        return "retailer_public_otp_{$retailerId}";
+    }
+
+    /**
+     * Shared payload builder for both the staff (authenticated) lookup and
+     * the retailer's own (OTP-verified) public profile — same data, two
+     * different ways of proving you're allowed to see it.
+     */
+    private function buildProfilePayload(Retailer $retailer): array
+    {
+        $drops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
+            ->orderByDesc('refill_date')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $recoveries = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)
+            ->orderByDesc('recovered_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $totalDropAmt = (float)$retailer->drops()->sum('amount');
+        $totalRecAmt = (float)$retailer->recoveries()->sum('amount');
+        $openingBalance = (float)$retailer->balance;
+
+        $stats = [
+            'opening_balance' => $openingBalance,
+            'total_dropped' => $totalDropAmt,
+            'total_recovered' => $totalRecAmt,
+            'total_pending' => ($openingBalance + $totalDropAmt) - $totalRecAmt,
+        ];
+
+        return [
+            'retailer' => [
+                'id' => $retailer->id,
+                'name' => $retailer->name,
+                'msisdn' => $retailer->msisdn,
+                'address' => $retailer->address,
+            ],
+            'drops' => $drops,
+            'recoveries' => $recoveries,
+            'stats' => $stats,
+        ];
+    }
+
+    /**
+     * Authenticated staff lookup by phone number — used by internal tools
+     * like Quick Recovery, where the caller is already logged in and
+     * doesn't need to prove anything further.
+     */
+    public function lookupByMsisdn($msisdn)
+    {
+        $retailer = Retailer::where('msisdn', $msisdn)->firstOrFail();
+        return response()->json($this->buildProfilePayload($retailer));
+    }
+
+    /**
+     * Step 1 of the public (unauthenticated) profile flow: send a one-time
+     * code to the retailer's own WhatsApp number. Previously this profile
+     * — including their full financial history and balance — was reachable
+     * by anyone who just knew or guessed the phone number; this makes the
+     * phone number's *owner* the only one who can actually see it.
+     */
+    public function requestPublicOtp($msisdn)
+    {
+        $retailer = Retailer::where('msisdn', $msisdn)->firstOrFail();
+
+        $otp = (string) random_int(100000, 999999);
+        Cache::put($this->publicOtpCacheKey($retailer->id), $otp, now()->addMinutes(5));
+
+        $sent = app(WhatsAppService::class)->sendMessage(
+            $retailer->msisdn,
+            "🔐 *Tinku Mobiles Retailer Portal*\nYour code: *{$otp}*\nValid for 5 minutes."
+        );
+
+        if (!$sent) {
+            return response()->json(['message' => 'Could not send the code. Please try again shortly.'], 502);
+        }
+
+        return response()->json(['message' => 'A code has been sent to your WhatsApp number.']);
+    }
 
     public function index(Request $request)
     {
@@ -470,41 +554,18 @@ class AirtelRetailerController extends Controller
         return response()->json(null, 204);
     }
 
-    public function publicProfile($msisdn)
+    public function publicProfile(Request $request, $msisdn)
     {
+        $request->validate(['otp' => 'required|string|size:6']);
+
         $retailer = Retailer::where('msisdn', $msisdn)->firstOrFail();
 
-        $drops = \App\Models\AirtelDrop::where('retailer_id', $retailer->id)
-            ->orderByDesc('refill_date')
-            ->orderByDesc('created_at')
-            ->get();
+        $cached = Cache::get($this->publicOtpCacheKey($retailer->id));
+        if (!$cached || $cached !== $request->otp) {
+            return response()->json(['message' => 'Invalid or expired code'], 401);
+        }
+        Cache::forget($this->publicOtpCacheKey($retailer->id));
 
-        $recoveries = \App\Models\AirtelRecovery::where('retailer_id', $retailer->id)
-            ->orderByDesc('recovered_at')
-            ->orderByDesc('created_at')
-            ->get();
-
-        $totalDropAmt = (float)$retailer->drops()->sum('amount');
-        $totalRecAmt = (float)$retailer->recoveries()->sum('amount');
-        $openingBalance = (float)$retailer->balance;
-
-        $stats = [
-            'opening_balance' => $openingBalance,
-            'total_dropped' => $totalDropAmt,
-            'total_recovered' => $totalRecAmt,
-            'total_pending' => ($openingBalance + $totalDropAmt) - $totalRecAmt,
-        ];
-
-        return response()->json([
-            'retailer' => [
-                'id' => $retailer->id,
-                'name' => $retailer->name,
-                'msisdn' => $retailer->msisdn,
-                'address' => $retailer->address,
-            ],
-            'drops' => $drops,
-            'recoveries' => $recoveries,
-            'stats' => $stats
-        ]);
+        return response()->json($this->buildProfilePayload($retailer));
     }
 }

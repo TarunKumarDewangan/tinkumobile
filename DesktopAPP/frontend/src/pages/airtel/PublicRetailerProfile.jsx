@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from '../../api/axios';
 import { toast } from 'react-toastify';
@@ -7,29 +7,78 @@ import RetailerReceipt from './RetailerReceipt';
 const PublicRetailerProfile = () => {
     const { msisdn } = useParams();
     const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('recoveries');
     const [selectedRecovery, setSelectedRecovery] = useState(null);
     const [showReceipt, setShowReceipt] = useState(false);
 
-    useEffect(() => {
-        fetchProfile();
-    }, [msisdn]);
+    // This page shows a retailer's full balance and payment history — it
+    // used to be reachable by anyone who just knew the phone number in the
+    // URL. Now they have to prove they own that number via a WhatsApp code
+    // first.
+    const [otpSent, setOtpSent] = useState(false);
+    const [otp, setOtp] = useState('');
+    const [sendingOtp, setSendingOtp] = useState(false);
 
-    const fetchProfile = async () => {
+    const requestOtp = async () => {
+        setSendingOtp(true);
+        try {
+            await axios.post(`/public/retailer/${msisdn}/request-otp`);
+            toast.success('A code has been sent to your WhatsApp number.');
+            setOtpSent(true);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Could not send code');
+        } finally {
+            setSendingOtp(false);
+        }
+    };
+
+    const fetchProfile = async (e) => {
+        e.preventDefault();
         setLoading(true);
         try {
-            const res = await axios.get(`/public/retailer/${msisdn}`);
+            const res = await axios.get(`/public/retailer/${msisdn}`, { params: { otp } });
             setData(res.data);
         } catch (error) {
-            toast.error('Retailer not found');
+            toast.error(error.response?.data?.message || 'Invalid or expired code');
         } finally {
             setLoading(false);
         }
     };
 
-    if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary"></div></div>;
-    if (!data) return <div className="text-center py-5"><h4>Retailer not found</h4></div>;
+    if (!data) {
+        return (
+            <div className="container-fluid py-4 bg-light min-vh-100 d-flex align-items-center justify-content-center">
+                <div className="card shadow-lg border-0 rounded-4" style={{ maxWidth: 380, width: '100%' }}>
+                    <div className="card-body p-4 text-center">
+                        <h4 className="fw-bold mb-1">Verify your number</h4>
+                        <p className="text-muted small mb-4">{msisdn}</p>
+                        {!otpSent ? (
+                            <button className="btn btn-primary w-100 fw-bold" disabled={sendingOtp} onClick={requestOtp}>
+                                {sendingOtp ? 'Sending...' : 'Send code on WhatsApp'}
+                            </button>
+                        ) : (
+                            <form onSubmit={fetchProfile}>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength="6"
+                                    className="form-control form-control-lg text-center fw-bold mb-3"
+                                    placeholder="••••••"
+                                    required
+                                    value={otp}
+                                    onChange={e => setOtp(e.target.value)}
+                                />
+                                <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={loading}>
+                                    {loading ? 'Verifying...' : 'View my balance'}
+                                </button>
+                            </form>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const { retailer, stats, drops, recoveries } = data;
 

@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
-    use SoftDeletes, UppercaseStrings;
+    use SoftDeletes, UppercaseStrings, \App\Traits\MirrorsToSupabase;
 
     protected $fillable = [
         'category_id', 'brand_id', 'name', 'sku', 'imei', 'purchase_price', 'selling_price', 'wholeseller_price', 'min_selling_price', 'max_selling_price', 'incentive_amount', 'condition', 'attributes', 'location', 'subcategory'

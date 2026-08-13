@@ -5,10 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CustomerController extends Controller
 {
+    private function portalOtpCacheKey(int $customerId): string
+    {
+        return "customer_portal_otp_{$customerId}";
+    }
+
     public function index(Request $request) {
         $query = Customer::with(['events', 'entity']);
         if ($request->search) $query->where('name','like',"%{$request->search}%")->orWhere('phone','like',"%{$request->search}%");
@@ -125,19 +132,48 @@ class CustomerController extends Controller
         ]);
     }
 
+    /**
+     * Step 1 of portal login: send a one-time code to the customer's own
+     * WhatsApp number. Replaces the old "PIN = last 4 digits of your own
+     * phone number" scheme, which wasn't a secret at all — anyone who had
+     * the customer's number (e.g. from an invoice) could log in as them.
+     */
+    public function requestPortalOtp(Request $request)
+    {
+        $data = $request->validate(['phone' => 'required|string']);
+
+        $customer = Customer::where('phone', $data['phone'])->first();
+        if (!$customer) return response()->json(['message' => 'Customer not found'], 404);
+
+        $otp = (string) random_int(100000, 999999);
+        Cache::put($this->portalOtpCacheKey($customer->id), $otp, now()->addMinutes(5));
+
+        $sent = app(WhatsAppService::class)->sendMessage(
+            $customer->phone,
+            "🔐 *Tinku Mobiles Portal Login*\nYour code: *{$otp}*\nValid for 5 minutes."
+        );
+
+        if (!$sent) {
+            return response()->json(['message' => 'Could not send the login code. Please try again shortly.'], 502);
+        }
+
+        return response()->json(['message' => 'A login code has been sent to your WhatsApp number.']);
+    }
+
     public function portalLogin(Request $request) {
         $data = $request->validate([
             'phone' => 'required|string',
-            'pin'   => 'required|string|size:4'
+            'otp'   => 'required|string|size:6',
         ]);
 
         $customer = Customer::where('phone', $data['phone'])->first();
         if (!$customer) return response()->json(['message' => 'Customer not found'], 404);
 
-        $last4 = substr($customer->phone, -4);
-        if ($data['pin'] !== $last4) {
-            return response()->json(['message' => 'Invalid PIN'], 401);
+        $cached = Cache::get($this->portalOtpCacheKey($customer->id));
+        if (!$cached || $cached !== $data['otp']) {
+            return response()->json(['message' => 'Invalid or expired code'], 401);
         }
+        Cache::forget($this->portalOtpCacheKey($customer->id));
 
         return response()->json([
             'message'  => 'Login successful',

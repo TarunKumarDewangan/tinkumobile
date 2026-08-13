@@ -12,7 +12,7 @@ use App\Traits\PostsToLedger;
 
 class PurchaseInvoice extends Model
 {
-    use PostsToLedger;
+    use PostsToLedger, \App\Traits\MirrorsToSupabase;
     use SoftDeletes, RecordsTransactions;
 
     public static function boot()

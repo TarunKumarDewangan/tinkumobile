@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class RepairRequest extends Model
 {
-    use PostsToLedger;
+    use PostsToLedger, \App\Traits\MirrorsToSupabase;
     use UppercaseStrings, RecordsTransactions, SoftDeletes;
 
     public static function boot()

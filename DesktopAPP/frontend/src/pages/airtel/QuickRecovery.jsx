@@ -105,7 +105,7 @@ export default function QuickRecovery() {
     const fetchDirectRetailer = async (num) => {
         setLoading(true);
         try {
-            const { data } = await axios.get(`/public/retailer/${num}`);
+            const { data } = await axios.get(`/airtel-retailers/lookup/${num}`);
             setData(data);
         } catch (error) {
             setData(null);

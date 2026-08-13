@@ -12,7 +12,7 @@ use App\Traits\SyncsBalances;
 
 class Loan extends Model
 {
-    use SyncsBalances;
+    use SyncsBalances, \App\Traits\MirrorsToSupabase;
     use RecordsTransactions;
     use SoftDeletes;
     protected $fillable = [

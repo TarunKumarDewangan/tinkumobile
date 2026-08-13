@@ -10,7 +10,7 @@ use App\Traits\PostsToLedger;
 
 class RechargeSale extends Model
 {
-    use RecordsTransactions, PostsToLedger;
+    use RecordsTransactions, PostsToLedger, \App\Traits\MirrorsToSupabase;
     protected $fillable = ['shop_id', 'customer_id', 'mobile_number', 'operator', 'amount', 'selling_price', 'sale_date', 'user_id'];
 
     public function shop(): BelongsTo { return $this->belongsTo(Shop::class); }

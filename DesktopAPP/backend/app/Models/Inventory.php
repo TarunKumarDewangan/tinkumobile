@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 
 class Inventory extends Model
 {
+    use \App\Traits\MirrorsToSupabase;
+
     protected $table = 'inventory';
     protected $fillable = ['shop_id', 'product_id', 'stock'];
 
