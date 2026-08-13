@@ -25,12 +25,5 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Support\Facades\Gate::before(function ($user, $ability) {
             return $user->isOwner() ? true : null;
         });
-
-        \Illuminate\Database\Eloquent\Relations\Relation::morphMap([
-            'repair'          => \App\Models\RepairRequest::class,
-            'sale'            => \App\Models\SaleInvoice::class,
-            'customer'        => \App\Models\Customer::class,
-            'airtel_retailer' => \App\Models\AirtelRetailer::class,
-        ]);
     }
 }

@@ -79,11 +79,18 @@ class Transaction extends Model
         // Transaction IN (Receipt) = Credit the entity (decreases what they owe us)
         $isReceipt = $this->type === 'IN';
 
+        // PAYABLE is a bookkeeping-only direction flag (e.g. a pay-later old mobile
+        // purchase) — no cash actually moved, so it shouldn't be labeled as one.
+        // voucher_type stays RECEIPT/PAYMENT (not a made-up type) so View/Edit/Delete
+        // on this ledger row keep correctly targeting this Transaction record —
+        // 'PURCHASE' is already a reserved voucher_type for real Purchase Invoices.
+        $isPayableEntry = $this->payment_mode === 'PAYABLE';
+
         return [
             'entity_id' => $entityId,
             'date' => $this->transaction_date,
             'voucher_type' => $isReceipt ? 'RECEIPT' : 'PAYMENT',
-            'particulars' => ($isReceipt ? 'Cash Received' : 'Cash Paid') . ($this->description ? ' - ' . $this->description : ''),
+            'particulars' => ($isPayableEntry ? 'Purchase Recorded (Payable)' : ($isReceipt ? 'Cash Received' : 'Cash Paid')) . ($this->description ? ' - ' . $this->description : ''),
             'debit' => $isReceipt ? 0 : $this->amount,
             'credit' => $isReceipt ? $this->amount : 0,
             'user_id' => $this->user_id,

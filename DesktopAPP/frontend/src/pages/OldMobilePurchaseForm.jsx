@@ -26,6 +26,7 @@ export default function OldMobilePurchaseForm() {
     customer_phone: '',
     customer_address: '',
     is_exchange: true,
+    pay_later: false,
     purchase_date: new Date().toISOString().split('T')[0],
     payment_mode: 'CASH',
   });
@@ -170,7 +171,8 @@ export default function OldMobilePurchaseForm() {
       await api.post('/old-mobiles/bulk', {
         ...form,
         is_exchange: form.is_exchange ? 1 : 0,
-        payment_mode: form.is_exchange ? undefined : (form.payment_mode || 'CASH'),
+        pay_later: (!form.is_exchange && form.pay_later) ? 1 : 0,
+        payment_mode: (form.is_exchange || form.pay_later) ? undefined : (form.payment_mode || 'CASH'),
         items: devices.map(d => ({
           ...d,
           purchase_price: parseFloat(d.purchase_price),
@@ -232,12 +234,12 @@ export default function OldMobilePurchaseForm() {
               <div className="col-12 mt-4">
                 <div className="p-3 bg-white rounded-3 border border-secondary-subtle">
                   <div className="form-check form-switch d-flex align-items-center gap-3">
-                    <input 
-                      className="form-check-input custom-switch-lg" 
-                      type="checkbox" 
+                    <input
+                      className="form-check-input custom-switch-lg"
+                      type="checkbox"
                       id="isExchangeSwitch"
                       checked={form.is_exchange}
-                      onChange={e => setForm({...form, is_exchange: e.target.checked})}
+                      onChange={e => setForm({...form, is_exchange: e.target.checked, pay_later: e.target.checked ? false : form.pay_later})}
                     />
                     <div>
                       <label className="form-check-label text-dark fw-bold d-block" htmlFor="isExchangeSwitch">
@@ -251,7 +253,31 @@ export default function OldMobilePurchaseForm() {
                 </div>
               </div>
 
-              {!form.is_exchange && totalPurchasePrice > 0 && (
+              {!form.is_exchange && (
+                <div className="col-12">
+                  <div className="p-3 bg-white rounded-3 border border-secondary-subtle">
+                    <div className="form-check form-switch d-flex align-items-center gap-3">
+                      <input
+                        className="form-check-input custom-switch-lg"
+                        type="checkbox"
+                        id="payLaterSwitch"
+                        checked={form.pay_later}
+                        onChange={e => setForm({...form, pay_later: e.target.checked})}
+                      />
+                      <div>
+                        <label className="form-check-label text-dark fw-bold d-block" htmlFor="payLaterSwitch">
+                          🕒 Pay Later
+                        </label>
+                        <small className="text-muted">
+                          No cash paid now — records this as an amount the shop owes the seller (Payable), settle it later from the seller's Entity Ledger.
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!form.is_exchange && !form.pay_later && totalPurchasePrice > 0 && (
                 <div className="col-12">
                   <label className="form-label text-muted small fw-bold">PAID VIA</label>
                   <select className="form-select bg-white text-dark border-secondary-subtle fw-semibold"
@@ -480,7 +506,7 @@ export default function OldMobilePurchaseForm() {
           <div className="card border-0 bg-white border border-secondary-subtle-subtle shadow-sm rounded-4 p-4">
             <div className="d-flex justify-content-between align-items-center mb-3">
               <span className="text-muted small fw-bold text-uppercase">
-                {devices.length} device{devices.length > 1 ? 's' : ''} — Total Payout
+                {devices.length} device{devices.length > 1 ? 's' : ''} — Total {form.pay_later ? 'Payable (Pay Later)' : 'Payout'}
               </span>
               <span className="fs-4 fw-bold text-success">₹{totalPurchasePrice.toLocaleString('en-IN')}</span>
             </div>

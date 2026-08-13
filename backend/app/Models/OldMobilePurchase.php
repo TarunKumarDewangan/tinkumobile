@@ -9,13 +9,14 @@ use App\Traits\RecordsTransactions;
 
 class OldMobilePurchase extends Model
 {
-    use RecordsTransactions;
+    use RecordsTransactions, \App\Traits\MirrorsToSupabase;
     protected $fillable = [
-        'shop_id', 'customer_id', 'product_id', 'model_name', 'imei', 'ram', 'storage', 'color', 'purchase_price', 'selling_price', 'is_exchange', 'condition_note', 'purchase_date', 'user_id', 'batch_id'
+        'shop_id', 'customer_id', 'product_id', 'model_name', 'imei', 'ram', 'storage', 'color', 'purchase_price', 'selling_price', 'is_exchange', 'pay_later', 'condition_note', 'purchase_date', 'user_id', 'batch_id'
     ];
 
     protected $casts = [
         'is_exchange' => 'boolean',
+        'pay_later' => 'boolean',
         'purchase_price' => 'decimal:2',
         'selling_price' => 'decimal:2',
     ];

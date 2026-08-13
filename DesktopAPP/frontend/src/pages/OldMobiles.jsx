@@ -22,6 +22,8 @@ export default function OldMobiles() {
     purchase_price: '',
     selling_price: '',
     is_exchange: true,
+    pay_later: false,
+    payment_mode: 'CASH',
     ram: '',
     storage: '',
     color: '',
@@ -78,6 +80,8 @@ export default function OldMobiles() {
       purchase_price: item.purchase_price || '',
       selling_price: item.selling_price || '',
       is_exchange: item.is_exchange ?? true,
+      pay_later: item.pay_later ?? false,
+      payment_mode: 'CASH',
       ram: item.ram || '',
       storage: item.storage || '',
       color: item.color || '',
@@ -177,6 +181,10 @@ export default function OldMobiles() {
                         {m.is_exchange ? (
                           <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">
                             🔄 Exchange
+                          </span>
+                        ) : m.pay_later ? (
+                          <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-3 py-1">
+                            🕒 Pay Later
                           </span>
                         ) : (
                           <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">
@@ -278,6 +286,8 @@ export default function OldMobiles() {
                   <td>
                     {viewingItem.is_exchange ? (
                       <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">🔄 Exchange</span>
+                    ) : viewingItem.pay_later ? (
+                      <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-3 py-1">🕒 Pay Later</span>
                     ) : (
                       <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">💵 Cash Payout</span>
                     )}
@@ -338,9 +348,17 @@ export default function OldMobiles() {
             </div>
             <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Payout Type</label>
-              <select className="form-select text-uppercase" value={editForm.is_exchange} onChange={e => setEditForm({ ...editForm, is_exchange: e.target.value === 'true' })}>
-                <option value="true">Exchange (Trade-in Credit)</option>
-                <option value="false">Cash Payout</option>
+              <select
+                className="form-select text-uppercase"
+                value={editForm.is_exchange ? 'exchange' : editForm.pay_later ? 'pay_later' : 'cash'}
+                onChange={e => {
+                  const v = e.target.value;
+                  setEditForm({ ...editForm, is_exchange: v === 'exchange', pay_later: v === 'pay_later' });
+                }}
+              >
+                <option value="exchange">Exchange (Trade-in Credit)</option>
+                <option value="cash">Cash Payout (Now)</option>
+                <option value="pay_later">Pay Later (Payable)</option>
               </select>
             </div>
             <div className="col-12 col-md-6">

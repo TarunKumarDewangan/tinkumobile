@@ -69,7 +69,7 @@ class ReportNotificationService
         // EXCHANGE (old-mobile trade-in credit) and FINANCE (EMI/financer receivable)
         // are accounting adjustments, not real cash/bank movement — they must not be
         // counted as "collections" or the owner would think money hit the bank that didn't.
-        $nonCashModes = ['EXCHANGE', 'FINANCE'];
+        $nonCashModes = ['EXCHANGE', 'FINANCE', 'PAYABLE'];
 
         // is_internal_transfer rows are the mirrored bank-side postings of a payment
         // already counted once against the customer/supplier/party — excluding them

@@ -18,6 +18,58 @@ class OldMobileController extends Controller
         $this->transactionService = $transactionService;
     }
 
+    /**
+     * Post the ledger transaction(s) for a non-exchange purchase. Always posts
+     * a "payable" leg for the full purchase price (Credit — this is what the
+     * shop now owes the seller), and, unless pay_later is set, an immediate
+     * "payment" leg (Debit, dual-posts to Cash/Bank) for the same amount that
+     * nets it straight back to zero. This mirrors how a Sale posts the full
+     * grand_total as a Debit and any payment received as a separate Credit —
+     * so a paid-in-full purchase leaves a clean two-line audit trail with no
+     * residual balance, and a pay-later purchase leaves the seller correctly
+     * showing as PAYABLE until settled (via the normal Entity Ledger Settle).
+     */
+    private function recordPurchaseTransactions(OldMobilePurchase $purchase, array $data): void
+    {
+        if ($purchase->purchase_price <= 0) return;
+
+        if ($purchase->is_exchange) {
+            $this->transactionService->recordForModel($purchase, [
+                'type'             => 'IN',
+                'category'         => 'OLD_MOBILE_EXCHANGE',
+                'amount'           => $purchase->purchase_price,
+                'payment_mode'     => 'EXCHANGE',
+                'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                'transaction_date' => $purchase->purchase_date,
+                'shop_id'          => $purchase->shop_id,
+            ]);
+            return;
+        }
+
+        $this->transactionService->recordForModel($purchase, [
+            'type'             => 'IN',
+            'category'         => 'OLD_MOBILE_PURCHASE',
+            'amount'           => $purchase->purchase_price,
+            'payment_mode'     => 'PAYABLE',
+            'description'      => "Old mobile purchase (payable): {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+            'transaction_date' => $purchase->purchase_date,
+            'shop_id'          => $purchase->shop_id,
+        ]);
+
+        if (!$purchase->pay_later) {
+            $this->transactionService->recordForModel($purchase, [
+                'type'             => 'OUT',
+                'category'         => 'OLD_MOBILE_PURCHASE_PAYMENT',
+                'amount'           => $purchase->purchase_price,
+                'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+                'payment_lines'    => $data['payment_lines'] ?? null,
+                'description'      => "Cash paid for old mobile purchase: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                'transaction_date' => $purchase->purchase_date,
+                'shop_id'          => $purchase->shop_id,
+            ]);
+        }
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -38,6 +90,7 @@ class OldMobileController extends Controller
             'purchase_price' => 'required|numeric|min:0',
             'selling_price'  => 'nullable|numeric|min:0',
             'is_exchange'    => 'nullable|boolean',
+            'pay_later'      => 'nullable|boolean',
             'ram'            => 'nullable|string|max:50',
             'storage'        => 'nullable|string|max:50',
             'color'          => 'nullable|string|max:100',
@@ -53,9 +106,14 @@ class OldMobileController extends Controller
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
         }
 
-        // The split only makes sense for real cash paid out — trade-in exchange
-        // credit isn't a cash account movement, so it never gets a mode/split.
-        if (!($data['is_exchange'] ?? false) && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
+        if (($data['is_exchange'] ?? false) && ($data['pay_later'] ?? false)) {
+            return response()->json(['message' => 'Choose either Exchange Credit or Pay Later, not both.'], 422);
+        }
+
+        // The split only makes sense for real cash paid out now — trade-in exchange
+        // credit and a deferred (pay-later) purchase aren't a cash account movement yet.
+        $paysNow = !($data['is_exchange'] ?? false) && !($data['pay_later'] ?? false);
+        if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
             return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
         }
 
@@ -95,31 +153,8 @@ class OldMobileController extends Controller
 
             $purchase->load('customer');
 
-            // 2. Record Transaction
-            if ($purchase->purchase_price > 0) {
-                if ($purchase->is_exchange) {
-                    $this->transactionService->recordForModel($purchase, [
-                        'type'             => 'IN',
-                        'category'         => 'OLD_MOBILE_EXCHANGE',
-                        'amount'           => $purchase->purchase_price,
-                        'payment_mode'     => 'EXCHANGE',
-                        'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                        'transaction_date' => $purchase->purchase_date,
-                        'shop_id'          => $purchase->shop_id,
-                    ]);
-                } else {
-                    $this->transactionService->recordForModel($purchase, [
-                        'type'             => 'OUT',
-                        'category'         => 'OLD_MOBILE_PURCHASE',
-                        'amount'           => $purchase->purchase_price,
-                        'payment_mode'     => $data['payment_mode'] ?? 'CASH',
-                        'payment_lines'    => $data['payment_lines'] ?? null,
-                        'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                        'transaction_date' => $purchase->purchase_date,
-                        'shop_id'          => $purchase->shop_id,
-                    ]);
-                }
-            }
+            // 2. Record Transaction(s)
+            $this->recordPurchaseTransactions($purchase, $data);
 
             ActivityLog::log('OLD_MOBILE_PURCHASED', $purchase,
                 "Old mobile purchased: {$purchase->model_name} from " . ($purchase->customer?->name ?? $purchase->customer_name) . " ₹{$purchase->purchase_price}"
@@ -154,6 +189,7 @@ class OldMobileController extends Controller
             'customer_address' => 'nullable|string|max:255',
             'purchase_date'  => 'required|date',
             'is_exchange'    => 'nullable|boolean',
+            'pay_later'      => 'nullable|boolean',
             'items'          => 'required|array|min:1',
             'items.*.model_name'     => 'required|string|max:150',
             'items.*.imei'           => 'nullable|string|max:20',
@@ -170,9 +206,14 @@ class OldMobileController extends Controller
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
         }
 
+        if (($data['is_exchange'] ?? false) && ($data['pay_later'] ?? false)) {
+            return response()->json(['message' => 'Choose either Exchange Credit or Pay Later, not both.'], 422);
+        }
+
         $customerId = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE (BULK)');
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $isExchange = (bool) ($data['is_exchange'] ?? false);
+        $payLater = (bool) ($data['pay_later'] ?? false);
         $categoryId = \App\Models\Category::mobileOldId();
 
         // Only tag a batch_id when there's actually more than one device —
@@ -180,7 +221,7 @@ class OldMobileController extends Controller
         // original single-purchase flow, so leave it ungrouped like those.
         $batchId = count($data['items']) > 1 ? (string) \Illuminate\Support\Str::uuid() : null;
 
-        return DB::transaction(function () use ($data, $user, $customerId, $shopId, $isExchange, $categoryId, $batchId) {
+        return DB::transaction(function () use ($data, $user, $customerId, $shopId, $isExchange, $payLater, $categoryId, $batchId) {
             $created = [];
             $totalAmount = 0;
 
@@ -195,6 +236,7 @@ class OldMobileController extends Controller
                     'purchase_price' => $item['purchase_price'],
                     'selling_price'  => $item['selling_price'] ?? 0,
                     'is_exchange'    => $isExchange,
+                    'pay_later'      => $payLater,
                     'ram'            => $item['ram'] ?? null,
                     'storage'        => $item['storage'] ?? null,
                     'color'          => $item['color'] ?? null,
@@ -220,29 +262,7 @@ class OldMobileController extends Controller
                 \App\Models\Inventory::addStock($shopId, $product->id, 1);
                 $purchase->load('customer');
 
-                if ($purchase->purchase_price > 0) {
-                    if ($isExchange) {
-                        $this->transactionService->recordForModel($purchase, [
-                            'type'             => 'IN',
-                            'category'         => 'OLD_MOBILE_EXCHANGE',
-                            'amount'           => $purchase->purchase_price,
-                            'payment_mode'     => 'EXCHANGE',
-                            'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                            'transaction_date' => $purchase->purchase_date,
-                            'shop_id'          => $shopId,
-                        ]);
-                    } else {
-                        $this->transactionService->recordForModel($purchase, [
-                            'type'             => 'OUT',
-                            'category'         => 'OLD_MOBILE_PURCHASE',
-                            'amount'           => $purchase->purchase_price,
-                            'payment_mode'     => $data['payment_mode'] ?? 'CASH',
-                            'description'      => "Purchased old mobile: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                            'transaction_date' => $purchase->purchase_date,
-                            'shop_id'          => $shopId,
-                        ]);
-                    }
-                }
+                $this->recordPurchaseTransactions($purchase, $data);
 
                 $totalAmount += (float) $purchase->purchase_price;
                 $created[] = $purchase;
@@ -291,6 +311,7 @@ class OldMobileController extends Controller
             'purchase_price' => 'required|numeric|min:0',
             'selling_price'  => 'nullable|numeric|min:0',
             'is_exchange'    => 'nullable|boolean',
+            'pay_later'      => 'nullable|boolean',
             'ram'            => 'nullable|string|max:50',
             'storage'        => 'nullable|string|max:50',
             'color'          => 'nullable|string|max:100',
@@ -306,7 +327,12 @@ class OldMobileController extends Controller
             return response()->json(['message' => 'Customer selection or phone number is required.'], 422);
         }
 
-        if (!($data['is_exchange'] ?? false) && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
+        if (($data['is_exchange'] ?? false) && ($data['pay_later'] ?? false)) {
+            return response()->json(['message' => 'Choose either Exchange Credit or Pay Later, not both.'], 422);
+        }
+
+        $paysNow = !($data['is_exchange'] ?? false) && !($data['pay_later'] ?? false);
+        if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
             return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
         }
 
@@ -351,69 +377,15 @@ class OldMobileController extends Controller
             }
         }
 
-        // Sync associated Transaction record(s) — a split payment turns one row
-        // into several, which a plain ->update() can't do, so any existing
-        // rows are replaced wholesale via recordForModel whenever a split is
-        // requested; a non-split edit keeps the cheaper single-row update.
-        $existingTransactions = \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
+        // Sync associated Transaction record(s) — the number of legs can change
+        // between edits (e.g. switching Pay Later on/off), so it's simplest and
+        // safest to always wipe and re-record rather than try to patch rows in place.
+        \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
             ->where('entity_id', $oldMobilePurchase->id)
-            ->get();
-        $transaction = $existingTransactions->first();
-        $wantsSplit = !empty($data['payment_lines']) && !($oldMobilePurchase->is_exchange);
+            ->get()
+            ->each(fn ($tx) => $tx->delete());
 
-        if ($transaction && !$wantsSplit) {
-            if ($oldMobilePurchase->purchase_price > 0) {
-                if ($oldMobilePurchase->is_exchange) {
-                    $transaction->update([
-                        'type'             => 'IN',
-                        'category'         => 'OLD_MOBILE_EXCHANGE',
-                        'amount'           => $oldMobilePurchase->purchase_price,
-                        'payment_mode'     => 'EXCHANGE',
-                        'description'      => "Old mobile trade-in exchange credit: {$oldMobilePurchase->model_name} from " . ($oldMobilePurchase->customer->name ?? 'Customer'),
-                        'transaction_date' => $oldMobilePurchase->purchase_date,
-                    ]);
-                } else {
-                    $transaction->update([
-                        'type'             => 'OUT',
-                        'category'         => 'OLD_MOBILE_PURCHASE',
-                        'amount'           => $oldMobilePurchase->purchase_price,
-                        'payment_mode'     => $data['payment_mode'] ?? 'CASH',
-                        'description'      => "Purchased old mobile: {$oldMobilePurchase->model_name} from " . ($oldMobilePurchase->customer->name ?? 'Customer'),
-                        'transaction_date' => $oldMobilePurchase->purchase_date,
-                    ]);
-                }
-            } else {
-                $transaction->delete();
-            }
-        } else if ($oldMobilePurchase->purchase_price > 0 && (!$transaction || $wantsSplit)) {
-            if ($transaction) {
-                foreach ($existingTransactions as $tx) {
-                    $tx->delete();
-                }
-            }
-            if ($oldMobilePurchase->is_exchange) {
-                $this->transactionService->recordForModel($oldMobilePurchase, [
-                    'type'             => 'IN',
-                    'category'         => 'OLD_MOBILE_EXCHANGE',
-                    'amount'           => $oldMobilePurchase->purchase_price,
-                    'payment_mode'     => 'EXCHANGE',
-                    'description'      => "Old mobile trade-in exchange credit: {$oldMobilePurchase->model_name} from " . ($oldMobilePurchase->customer->name ?? 'Customer'),
-                    'transaction_date' => $oldMobilePurchase->purchase_date,
-                    'shop_id'          => $oldMobilePurchase->shop_id,
-                ]);
-            } else {
-                $this->transactionService->recordForModel($oldMobilePurchase, [
-                    'type'             => 'OUT',
-                    'category'         => 'OLD_MOBILE_PURCHASE',
-                    'amount'           => $oldMobilePurchase->purchase_price,
-                    'payment_mode'     => $data['payment_mode'] ?? 'CASH',
-                    'payment_lines'    => $data['payment_lines'] ?? null,
-                    'description'      => "Purchased old mobile: {$oldMobilePurchase->model_name} from " . ($oldMobilePurchase->customer->name ?? 'Customer'),
-                    'transaction_date' => $oldMobilePurchase->purchase_date,
-                    'shop_id'          => $oldMobilePurchase->shop_id,
-                ]);
-            }
-        }
+        $this->recordPurchaseTransactions($oldMobilePurchase, $data);
 
         ActivityLog::log('OLD_MOBILE_UPDATED', $oldMobilePurchase,
             "Old mobile updated: {$oldMobilePurchase->model_name} — ₹{$oldMobilePurchase->purchase_price}"

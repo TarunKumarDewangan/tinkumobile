@@ -719,7 +719,7 @@ class ReportController extends Controller
         // trade-in credit) and FINANCE (generic, unmatched-to-a-bank EMI
         // receivable) are accounting adjustments, not real cash/bank
         // movement, so they're reported separately, not folded into Bank.
-        $nonCashModes = ['EXCHANGE', 'FINANCE'];
+        $nonCashModes = ['EXCHANGE', 'FINANCE', 'PAYABLE'];
         $cashIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'CASH')->sum('amount');
         $bankIn = (clone $txQuery)->where('type', 'IN')->whereNotIn('payment_mode', array_merge(['CASH'], $nonCashModes))->sum('amount');
         $exchangeIn = (clone $txQuery)->where('type', 'IN')->where('payment_mode', 'EXCHANGE')->sum('amount');
