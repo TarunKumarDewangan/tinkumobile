@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    // Mirror for the Next.js app (/webapp) — this app stays the only source
+    // of truth for writes; Supabase just gets a copy of what we already saved.
+    // No-ops safely when unset, so this is inert until the project exists.
+    'supabase' => [
+        'url' => env('SUPABASE_URL'),
+        'service_key' => env('SUPABASE_SERVICE_KEY'),
+    ],
+
 ];
