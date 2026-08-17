@@ -259,16 +259,10 @@ export default function SaleForm() {
       const { data } = await api.get(`/products?imei=${imei}&group_by_config=false`);
       if (data && data.length > 0) {
         const p = data[0];
-        // Find best matching product variation in frontend products list
-        let matchedProduct = products.find(px => 
-          px.name.toUpperCase() === p.name.toUpperCase() &&
-          String(px.attributes?.ram || '') === String(p.attributes?.ram || '') &&
-          String(px.attributes?.storage || '') === String(p.attributes?.storage || '') &&
-          String(px.attributes?.color || '').toUpperCase() === String(p.attributes?.color || '').toUpperCase()
-        );
-        
-        const selId = matchedProduct ? matchedProduct.id : (p.product_id || p.id);
-        const prodId = matchedProduct ? (matchedProduct.product_id || matchedProduct.id) : (p.product_id || p.id);
+        // Trust the product the backend resolved for this exact IMEI (see
+        // addScannedItem for why re-matching locally is unsafe).
+        const selId = p.product_id || p.id;
+        const prodId = p.product_id || p.id;
 
         setItems([{
           selection_id: selId,
@@ -462,16 +456,13 @@ export default function SaleForm() {
     const p = existing || scanResult;
     if (!p) return;
 
-    // Find best matching product variation in frontend products list
-    let matchedProduct = products.find(px => 
-      px.name.toUpperCase() === p.name.toUpperCase() &&
-      String(px.attributes?.ram || '') === String(p.attributes?.ram || '') &&
-      String(px.attributes?.storage || '') === String(p.attributes?.storage || '') &&
-      String(px.attributes?.color || '').toUpperCase() === String(p.attributes?.color || '').toUpperCase()
-    );
-    
-    const selId = matchedProduct ? matchedProduct.id : (p.product_id || p.id);
-    const prodId = matchedProduct ? (matchedProduct.product_id || matchedProduct.id) : (p.product_id || p.id);
+    // Trust the product the backend resolved for this exact IMEI — re-matching
+    // locally by name/ram/storage/color (instead of using p.product_id/p.id
+    // directly) previously let a scanned IMEI attach to the wrong product row
+    // whenever two color/config variants shared identical-looking attributes,
+    // silently corrupting both products' stock counts.
+    const selId = p.product_id || p.id;
+    const prodId = p.product_id || p.id;
 
     const firstImei = p.imei || p.attributes?.imei || p.attributes?.imeis?.[0] || '';
     const allImeis = p.attributes?.imeis?.filter(Boolean).length

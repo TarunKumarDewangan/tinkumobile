@@ -84,6 +84,29 @@ class SaleInvoiceControllerTest extends TestCase
         Inventory::create(['shop_id' => $shop->id, 'product_id' => $newProduct->id, 'stock' => 10]);
         Inventory::create(['shop_id' => $shop->id, 'product_id' => $oldProduct->id, 'stock' => 10]);
 
+        // The sale below claims IMEI 123456789012345 for $newProduct — the sale
+        // creation guard now verifies that IMEI was actually purchased under
+        // this exact product, so a matching PurchaseItem is required here.
+        $supplier = \App\Models\Supplier::create(['name' => 'Test Supplier', 'phone' => '0987654321', 'address' => 'Test Address']);
+        $purchaseInvoice = \App\Models\PurchaseInvoice::create([
+            'invoice_no' => 'PUR-TEST-IMEI-1',
+            'shop_id' => $shop->id,
+            'supplier_id' => $supplier->id,
+            'user_id' => $user->id,
+            'purchase_date' => now(),
+            'total_amount' => 800,
+            'grand_total' => 800,
+            'status' => 'ordered',
+        ]);
+        \App\Models\PurchaseItem::create([
+            'purchase_invoice_id' => $purchaseInvoice->id,
+            'product_id' => $newProduct->id,
+            'imei' => '123456789012345',
+            'quantity' => 1,
+            'unit_price' => 800,
+            'total' => 800,
+        ]);
+
         // Create new mobile sale
         $payloadNew = [
             'sale_date' => now()->toDateString(),

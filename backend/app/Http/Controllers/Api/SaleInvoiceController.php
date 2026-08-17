@@ -197,7 +197,7 @@ class SaleInvoiceController extends Controller
             return $priceError;
         }
 
-        if ($imeiError = $this->validateNewMobileImeiRequired($data['items'], $user)) {
+        if ($imeiError = $this->validateNewMobileImei($data['items'], $user, $shopId)) {
             return $imeiError;
         }
 
@@ -622,7 +622,7 @@ class SaleInvoiceController extends Controller
             return $priceError;
         }
 
-        if ($imeiError = $this->validateNewMobileImeiRequired($data['items'], $user)) {
+        if ($imeiError = $this->validateNewMobileImei($data['items'], $user, $saleInvoice->shop_id, $saleInvoice->id)) {
             return $imeiError;
         }
 
@@ -1382,10 +1382,22 @@ class SaleInvoiceController extends Controller
         return null;
     }
 
-    private function validateNewMobileImeiRequired(array $items, $user): ?\Illuminate\Http\JsonResponse
+    /**
+     * For New Mobile items: enforce IMEI is present (unless the user has full
+     * access, matching the previous behaviour), AND — regardless of access
+     * level — that any IMEI given actually belongs to an unsold purchase of
+     * this exact product, and isn't already sold on another active invoice.
+     *
+     * This exists because the product picker and the IMEI field on the sale
+     * form are independent inputs that nothing used to cross-check: picking
+     * one product then scanning a different unit's IMEI silently shipped a
+     * sale that decremented the wrong product's stock while leaving the
+     * actually-sold product's stock never decremented. See the incident where
+     * IMEI 863359085783518 (purchased under product 292) was sold against
+     * product 278, corrupting both products' Inventory.stock counters.
+     */
+    private function validateNewMobileImei(array $items, $user, $shopId, ?int $excludeSaleInvoiceId = null): ?\Illuminate\Http\JsonResponse
     {
-        if ($user->hasFullAccess()) return null;
-
         $productIds = collect($items)->pluck('product_id')->filter()->unique();
         if ($productIds->isEmpty()) return null;
 
@@ -1396,13 +1408,59 @@ class SaleInvoiceController extends Controller
             ->get(['id', 'name', 'category_id'])
             ->keyBy('id');
 
+        $matchesImei = function (?string $stored, string $imei): bool {
+            if (!$stored) return false;
+            return in_array($imei, array_map('trim', explode(',', $stored)), true);
+        };
+
         foreach ($items as $item) {
             $product = $products[$item['product_id']] ?? null;
             if (!$product || (string) $product->category_id !== (string) $newMobileCatId) continue;
 
-            if (trim((string) ($item['imei'] ?? '')) === '') {
+            $imei = trim((string) ($item['imei'] ?? ''));
+
+            if ($imei === '') {
+                if ($user->hasFullAccess()) continue;
                 return response()->json([
                     'message' => "IMEI is required for {$product->name}. Please scan or enter the IMEI of the unit being sold.",
+                ], 422);
+            }
+
+            // The IMEI must belong to an actual purchase of THIS product — not
+            // just any product with matching stock count.
+            $purchasedHere = \App\Models\PurchaseItem::where('product_id', $item['product_id'])
+                ->where('imei', 'LIKE', "%{$imei}%")
+                ->get(['imei'])
+                ->contains(fn ($pi) => $matchesImei($pi->imei, $imei));
+
+            if (!$purchasedHere) {
+                $actual = \App\Models\PurchaseItem::where('imei', 'LIKE', "%{$imei}%")
+                    ->with('product:id,name')
+                    ->get()
+                    ->first(fn ($pi) => $matchesImei($pi->imei, $imei));
+
+                $hint = $actual?->product
+                    ? "This IMEI belongs to \"{$actual->product->name}\" instead — the product and IMEI don't match."
+                    : "This IMEI was never recorded as purchased — check for a typo or select the correct unit.";
+
+                return response()->json([
+                    'message' => "IMEI {$imei} doesn't match the selected product \"{$product->name}\". {$hint}",
+                ], 422);
+            }
+
+            // The IMEI must not already be sold on another active invoice.
+            $alreadySold = \App\Models\SaleItem::where('imei', $imei)
+                ->whereHas('invoice', function ($q) use ($excludeSaleInvoiceId) {
+                    $q->where('is_cancelled', false);
+                    if ($excludeSaleInvoiceId) {
+                        $q->where('id', '!=', $excludeSaleInvoiceId);
+                    }
+                })
+                ->exists();
+
+            if ($alreadySold) {
+                return response()->json([
+                    'message' => "IMEI {$imei} has already been sold on another invoice.",
                 ], 422);
             }
         }
