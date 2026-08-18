@@ -125,6 +125,16 @@ export default function PendingBalance() {
   });
   const personalFinanceRows = Array.from(personalFinanceByCustomer.values()).map(r => ({ category: 'PERSONAL_FINANCE', ...r, entityId: null }));
 
+  // Names with an active Shop Finance/EMI balance — used only to FILTER which
+  // customerRows to show under the "Personal Finance" category, not to source
+  // the amount (that stays the correct, non-doubled entity balance above).
+  const personalFinanceNames = new Set();
+  invoices.forEach(inv => {
+    if (!inv.finance_plan) return;
+    if (invoiceBalance(inv) <= 0.01) return;
+    personalFinanceNames.add((inv.customer?.name || '').toUpperCase());
+  });
+
   // 4: Other Company Finance — the financer company's own pending
   // receivable (what they still owe the shop for financed sales).
   const companyFinanceByFinancer = new Map();
@@ -147,7 +157,20 @@ export default function PendingBalance() {
 
   const allRows = [...customerRows, ...personalFinanceRows, ...companyFinanceRows];
 
-  let rows = category === 'ALL' ? allRows : allRows.filter(r => r.category === category);
+  let rows;
+  if (category === 'ALL') {
+    rows = allRows;
+  } else if (category === 'PERSONAL_FINANCE') {
+    // Most customers with an EMI balance already have a resolvable entity, so
+    // their balance lives in customerRows (correct, non-doubled) rather than
+    // the personalFinanceRows fallback — filter to those names here instead.
+    rows = [
+      ...customerRows.filter(r => personalFinanceNames.has(r.name.toUpperCase())),
+      ...personalFinanceRows,
+    ];
+  } else {
+    rows = allRows.filter(r => r.category === category);
+  }
 
   // Same person can carry a regular Customer balance and a separate Personal
   // Finance/EMI balance — genuinely different relationships (see comment
