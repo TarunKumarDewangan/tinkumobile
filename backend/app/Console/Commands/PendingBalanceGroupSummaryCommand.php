@@ -20,9 +20,13 @@ class PendingBalanceGroupSummaryCommand extends Command
         }
 
         // Sent as three separate messages (not one combined one) so any one
-        // can be read/forwarded on its own.
+        // can be read/forwarded on its own. A short gap between each avoids
+        // Telegram's brief rate-limiting of rapid back-to-back sends from the
+        // same bot to the same chat.
         $pendingSent = $telegram->sendToPendingGroup($service->buildPendingBalanceListMessage());
+        sleep(1);
         $promiseSent = $telegram->sendToPendingGroup($service->buildPromiseListMessage());
+        sleep(1);
         $financeSent = $telegram->sendToPendingGroup($service->buildPersonalFinanceDueListMessage());
 
         if ($pendingSent && $promiseSent && $financeSent) {
