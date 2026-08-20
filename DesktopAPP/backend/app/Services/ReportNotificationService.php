@@ -438,7 +438,7 @@ class ReportNotificationService
      * the dedicated Pending Balance group (a separate chat from the other
      * owner alerts).
      */
-    public function buildPendingBalanceAndPromiseListMessage(): string
+    public function buildPendingBalanceAndPromiseListMessage(int $pendingLimit = 35, int $promiseLimit = 25): string
     {
         $today = Carbon::today();
 
@@ -460,15 +460,22 @@ class ReportNotificationService
         $msg = "📋 *Daily Balance Report ({$today->format('d M Y')})*\n";
         $msg .= "---------------------------\n\n";
 
+        // Telegram caps messages at ~4096 characters — with a shop this size
+        // routinely having 50+ pending entries, an unbounded list silently
+        // fails to send at all. Cap the DISPLAYED rows (highest balances /
+        // earliest promises first, so what's cut is the least urgent), but
+        // keep the *Total* accurate across every entry, not just the shown ones.
         $msg .= "💰 *PENDING BALANCE ({$pending->count()})*\n";
         if ($pending->isEmpty()) {
             $msg .= "✅ Nothing pending.\n";
         } else {
-            $total = 0;
-            foreach ($pending as $i => $e) {
-                $total += (float) $e['net_balance'];
+            $total = $pending->sum(fn ($e) => (float) $e['net_balance']);
+            foreach ($pending->take($pendingLimit) as $i => $e) {
                 $phone = $e['phone'] ? " - {$e['phone']}" : '';
                 $msg .= ($i + 1) . ". {$e['name']}{$phone} - ₹" . number_format($e['net_balance'], 0) . "\n";
+            }
+            if ($pending->count() > $pendingLimit) {
+                $msg .= "... +" . ($pending->count() - $pendingLimit) . " more\n";
             }
             $msg .= "*Total: ₹" . number_format($total, 0) . "*\n";
         }
@@ -477,13 +484,15 @@ class ReportNotificationService
         if ($promises->isEmpty()) {
             $msg .= "✅ Nothing pending.\n";
         } else {
-            $promiseTotal = 0;
-            foreach ($promises as $i => $n) {
-                $promiseTotal += (float) ($n->balance_at_time ?? 0);
+            $promiseTotal = $promises->sum(fn ($n) => (float) ($n->balance_at_time ?? 0));
+            foreach ($promises->take($promiseLimit) as $i => $n) {
                 $phone = $n->phone ? " - {$n->phone}" : '';
                 $amount = $n->balance_at_time !== null ? '₹' . number_format($n->balance_at_time, 0) : '—';
                 $overdueTag = $n->promise_date->lt($today) ? ' (OVERDUE)' : '';
                 $msg .= ($i + 1) . ". {$n->name}{$phone} - {$amount} - Promised: " . $n->promise_date->format('d M') . "{$overdueTag}\n";
+            }
+            if ($promises->count() > $promiseLimit) {
+                $msg .= "... +" . ($promises->count() - $promiseLimit) . " more\n";
             }
             $msg .= "*Total: ₹" . number_format($promiseTotal, 0) . "*\n";
         }
