@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class SettingsController extends Controller
 {
@@ -47,7 +49,16 @@ class SettingsController extends Controller
         if (!$stored || !\Illuminate\Support\Facades\Hash::check($request->pin, $stored)) {
             return response()->json(['message' => 'Incorrect PIN'], 403);
         }
-        return response()->json(['message' => 'ok']);
+
+        // Issue a short-lived, one-time token proving this specific user just
+        // verified the PIN. Destructive routes (see RequireActionPin
+        // middleware) require this token — previously a verified PIN in the
+        // UI wasn't actually checked by the action endpoint itself, so
+        // anyone calling the API directly could skip the PIN entirely.
+        $token = Str::random(40);
+        Cache::put("pin_token:{$token}", $request->user()->id, now()->addSeconds(60));
+
+        return response()->json(['message' => 'ok', 'pin_token' => $token]);
     }
 
     public function changePin(Request $request)
@@ -86,6 +97,17 @@ class SettingsController extends Controller
     public function testTelegram()
     {
         $res = app(\App\Services\TelegramService::class)->sendToOwner("🧪 *Telegram Test Message*\nYour Tinku Mobiles configuration is working perfectly!\n\n_System Date: " . now()->format('d M Y H:i') . "_");
+
+        if ($res) {
+            return response()->json(['message' => 'Test message sent successfully']);
+        }
+
+        return response()->json(['message' => 'Failed to send test message. Check logs.'], 500);
+    }
+
+    public function testPendingGroup()
+    {
+        $res = app(\App\Services\TelegramService::class)->sendToPendingGroup("🧪 *Pending Balance Group Test*\nThis group will receive the daily Pending Balance + Promise to Pay list at 9 AM.\n\n_System Date: " . now()->format('d M Y H:i') . "_");
 
         if ($res) {
             return response()->json(['message' => 'Test message sent successfully']);

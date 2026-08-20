@@ -20,5 +20,7 @@ Schedule::command('report:repair-status-reminder')->everyTwoHours()->timezone('A
 
 Schedule::command('report:promise-to-pay-reminder')->dailyAt('10:00')->timezone('Asia/Kolkata');
 
+Schedule::command('report:pending-balance-group-summary')->dailyAt('09:00')->timezone('Asia/Kolkata');
+
 // Activity logs are only kept for a rolling 7-day window.
 Schedule::command('activitylogs:prune')->dailyAt('03:00')->timezone('Asia/Kolkata');

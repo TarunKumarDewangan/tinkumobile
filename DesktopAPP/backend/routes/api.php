@@ -301,6 +301,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
     Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
     Route::post('settings/test-telegram', [\App\Http\Controllers\Api\SettingsController::class, 'testTelegram']);
+    Route::post('settings/test-pending-group', [\App\Http\Controllers\Api\SettingsController::class, 'testPendingGroup']);
 
     // Manual "Send Now" report triggers (Settings > Notifications)
     Route::post('notifications/send-daily-summary', [\App\Http\Controllers\Api\NotificationController::class, 'sendDailySummary']);

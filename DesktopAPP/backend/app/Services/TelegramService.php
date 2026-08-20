@@ -10,14 +10,16 @@ class TelegramService
     protected $botToken;
     protected $chatId;
     protected $channelId;
+    protected $pendingGroupId;
 
     public function __construct()
     {
-        $settings = \App\Models\Setting::whereIn('key', ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_CHANNEL_ID'])->pluck('value', 'key');
+        $settings = \App\Models\Setting::whereIn('key', ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_CHANNEL_ID', 'TELEGRAM_PENDING_GROUP_ID'])->pluck('value', 'key');
 
-        $this->botToken  = $settings['TELEGRAM_BOT_TOKEN'] ?? env('TELEGRAM_BOT_TOKEN');
-        $this->chatId    = $settings['TELEGRAM_CHAT_ID'] ?? env('TELEGRAM_CHAT_ID');
-        $this->channelId = $settings['TELEGRAM_CHANNEL_ID'] ?? env('TELEGRAM_CHANNEL_ID');
+        $this->botToken       = $settings['TELEGRAM_BOT_TOKEN'] ?? env('TELEGRAM_BOT_TOKEN');
+        $this->chatId         = $settings['TELEGRAM_CHAT_ID'] ?? env('TELEGRAM_CHAT_ID');
+        $this->channelId      = $settings['TELEGRAM_CHANNEL_ID'] ?? env('TELEGRAM_CHANNEL_ID');
+        $this->pendingGroupId = $settings['TELEGRAM_PENDING_GROUP_ID'] ?? env('TELEGRAM_PENDING_GROUP_ID');
     }
 
     public function isConfigured()
@@ -79,5 +81,25 @@ class TelegramService
         }
 
         return $sent;
+    }
+
+    /**
+     * Send a message to the dedicated Pending Balance / Promise to Pay group —
+     * a separate chat from sendToOwner's targets, so this daily list doesn't
+     * mix in with the other owner alerts.
+     */
+    public function sendToPendingGroup($message)
+    {
+        if (empty($this->botToken) || empty($this->pendingGroupId)) {
+            Log::warning('Telegram Pending Balance group not configured. Message not sent.');
+            return false;
+        }
+
+        return $this->sendMessage($this->pendingGroupId, $message);
+    }
+
+    public function isPendingGroupConfigured()
+    {
+        return !empty($this->botToken) && !empty($this->pendingGroupId);
     }
 }

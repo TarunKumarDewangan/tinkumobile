@@ -44,9 +44,11 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,
 Route::post('/login/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:5,1');
 Route::post('/login/resend-otp', [AuthController::class, 'resendOtp'])->middleware('throttle:3,1');
 Route::post('/repair-request', [RepairController::class, 'publicStore'])->middleware('throttle:10,1'); // Customer submits repair
+Route::post('/public/retailer/{msisdn}/request-otp', [AirtelRetailerController::class, 'requestPublicOtp'])->middleware('throttle:5,1');
 Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile'])->middleware('throttle:30,1');
 
 // Customer Portal
+Route::post('/customer/login/request-otp', [CustomerController::class, 'requestPortalOtp'])->middleware('throttle:5,1');
 Route::post('/customer/login', [CustomerController::class, 'portalLogin'])->middleware('throttle:5,1');
 
 // ── Authenticated Routes (Sanctum) ──────────────────────────────────────────
@@ -80,16 +82,16 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/stock-adjustments', [StockAdjustmentController::class, 'index']);
     Route::post('/stock-adjustments', [StockAdjustmentController::class, 'store']);
     Route::post('/stock-adjustments/bulk', [StockAdjustmentController::class, 'bulkStore']);
-    Route::post('/stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDestroy']);
+    Route::post('/stock-adjustments/bulk-delete', [StockAdjustmentController::class, 'bulkDestroy'])->middleware('pin');
     Route::get('/stock-adjustments/duplicates', [StockAdjustmentController::class, 'duplicatesReport']);
-    Route::post('/stock-adjustments/clear-duplicates', [StockAdjustmentController::class, 'clearDuplicates']);
-    Route::post('/stock-adjustments/clear-all', [StockAdjustmentController::class, 'clearAllStocks']);
+    Route::post('/stock-adjustments/clear-duplicates', [StockAdjustmentController::class, 'clearDuplicates'])->middleware('pin');
+    Route::post('/stock-adjustments/clear-all', [StockAdjustmentController::class, 'clearAllStocks'])->middleware('pin');
     Route::put('/stock-adjustments/{id}', [StockAdjustmentController::class, 'update']);
-    Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy']);
+    Route::delete('/stock-adjustments/{id}', [StockAdjustmentController::class, 'destroy'])->middleware('pin');
     Route::get('/stocks/daily-ledger', [StockController::class, 'dailyLedger']);
     Route::get('/stocks/closing-stock-detail', [StockController::class, 'closingStockDetail']);
     Route::get('/stocks/backup', [StockController::class, 'backup']);
-    Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup']);
+    Route::post('/stocks/restore-backup', [StockController::class, 'restoreBackup'])->middleware('pin');
     Route::patch('/stocks/{id}/location', [StockController::class, 'updateLocation']);
 
     // Stock Transfers (between shops)
@@ -117,7 +119,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Purchases
     Route::get('purchase-invoices/backup', [PurchaseInvoiceController::class, 'backup']);
-    Route::post('purchase-invoices/restore-backup', [PurchaseInvoiceController::class, 'restoreBackup']);
+    Route::post('purchase-invoices/restore-backup', [PurchaseInvoiceController::class, 'restoreBackup'])->middleware('pin');
     Route::get('purchase-invoices/unique-imeis', [PurchaseInvoiceController::class, 'getUniqueImeis']);
     Route::get('purchase-invoices/pending-stocks', [PurchaseInvoiceController::class, 'pendingStocks']);
     Route::apiResource('purchase-invoices', PurchaseInvoiceController::class)->parameters([
@@ -128,19 +130,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Sales
     Route::get('sale-invoices/backup', [SaleInvoiceController::class, 'backup']);
-    Route::post('sale-invoices/restore-backup', [SaleInvoiceController::class, 'restoreBackup']);
+    Route::post('sale-invoices/restore-backup', [SaleInvoiceController::class, 'restoreBackup'])->middleware('pin');
     Route::apiResource('sale-invoices', SaleInvoiceController::class);
     Route::post('sale-invoices/{sale_invoice}/add-payment', [SaleInvoiceController::class, 'addPayment']);
     Route::post('sale-invoices/{sale_invoice}/receive-finance', [SaleInvoiceController::class, 'receiveFinancePayment']);
     Route::post('/sale-invoices/{saleInvoice}/convert-to-pakka', [SaleInvoiceController::class, 'convertToPakka']);
-    Route::post('/sale-invoices/{saleInvoice}/cancel', [SaleInvoiceController::class, 'cancel']);
+    Route::post('/sale-invoices/{saleInvoice}/cancel', [SaleInvoiceController::class, 'cancel'])->middleware('pin');
     Route::post('/sale-invoices/{saleInvoice}/convert-to-new-sale', [SaleInvoiceController::class, 'convertToNewSale']);
     Route::post('/sale-invoices/{saleInvoice}/convert-to-old-sale', [SaleInvoiceController::class, 'convertToOldSale']);
 
 
     // Repairs
     Route::get('/repairs/backup', [RepairController::class, 'backup']);
-    Route::post('/repairs/restore-backup', [RepairController::class, 'restoreBackup']);
+    Route::post('/repairs/restore-backup', [RepairController::class, 'restoreBackup'])->middleware('pin');
     Route::get('/repairs/external-shops', [RepairController::class, 'getExternalShops']);
     Route::post('/repairs/{repair}/pay-cost', [RepairController::class, 'payForwardCost']);
     Route::apiResource('repairs', RepairController::class);
@@ -153,17 +155,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
     Route::put('/users/{id}', [UserController::class, 'update']);
-    Route::delete('/users/{id}', [UserController::class, 'destroy']);
+    Route::delete('/users/{id}', [UserController::class, 'destroy'])->middleware('pin');
 
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
-    Route::delete('/activity-logs/clear', [ActivityLogController::class, 'clear']);
-    Route::delete('/activity-logs/{activityLog}', [ActivityLogController::class, 'destroy']);
+    Route::delete('/activity-logs/clear', [ActivityLogController::class, 'clear'])->middleware('pin');
+    Route::delete('/activity-logs/{activityLog}', [ActivityLogController::class, 'destroy'])->middleware('pin');
 
     // Trash Management
     Route::get('/trash', [TrashController::class, 'index']);
-    Route::post('/trash/restore', [TrashController::class, 'restore']);
-    Route::post('/trash/force-delete', [TrashController::class, 'forceDelete']);
+    Route::post('/trash/restore', [TrashController::class, 'restore'])->middleware('pin');
+    Route::post('/trash/force-delete', [TrashController::class, 'forceDelete'])->middleware('pin');
 
     // Loans
     Route::get('/loans', [LoanController::class, 'index']);
@@ -232,24 +234,25 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Airtel Recovery System
     Route::get('airtel-retailers/backup', [AirtelRetailerController::class, 'backup']);
-    Route::post('airtel-retailers/restore-backup', [AirtelRetailerController::class, 'restoreBackup']);
+    Route::post('airtel-retailers/restore-backup', [AirtelRetailerController::class, 'restoreBackup'])->middleware('pin');
     Route::get('airtel-retailers/export', [AirtelRetailerController::class, 'export']);
+    Route::get('airtel-retailers/lookup/{msisdn}', [AirtelRetailerController::class, 'lookupByMsisdn']);
     Route::apiResource('airtel-retailers', AirtelRetailerController::class);
     Route::get('airtel-drops', [AirtelDropController::class, 'index']);
     Route::post('airtel-drops/import', [AirtelDropController::class, 'import']);
     Route::post('airtel-drops/import-upi', [AirtelDropController::class, 'importUpi']);
-    Route::post('airtel-drops/bulk-delete', [AirtelDropController::class, 'bulkDeleteByDate']);
+    Route::post('airtel-drops/bulk-delete', [AirtelDropController::class, 'bulkDeleteByDate'])->middleware('pin');
     Route::post('airtel-drops/mark-recovered', [AirtelDropController::class, 'markAsRecovered']);
-    Route::post('airtel-recoveries/bulk-delete', [AirtelRetailerController::class, 'bulkDeleteRecoveries']);
-    Route::post('airtel-retailers/bulk-clear-opening-balances', [AirtelRetailerController::class, 'bulkClearOpeningBalances']);
-    Route::post('airtel-retailers/bulk-full-reset', [AirtelRetailerController::class, 'bulkFullReset']);
+    Route::post('airtel-recoveries/bulk-delete', [AirtelRetailerController::class, 'bulkDeleteRecoveries'])->middleware('pin');
+    Route::post('airtel-retailers/bulk-clear-opening-balances', [AirtelRetailerController::class, 'bulkClearOpeningBalances'])->middleware('pin');
+    Route::post('airtel-retailers/bulk-full-reset', [AirtelRetailerController::class, 'bulkFullReset'])->middleware('pin');
     Route::post('airtel-retailers/{id}/record-recovery', [AirtelRetailerController::class, 'recordRecovery']);
-    Route::delete('airtel-recoveries/{id}', [AirtelRetailerController::class, 'deleteRecovery']);
+    Route::delete('airtel-recoveries/{id}', [AirtelRetailerController::class, 'deleteRecovery'])->middleware('pin');
     Route::post('airtel-drops/update-follow-up', [AirtelDropController::class, 'updateFollowUp']);
     Route::get('airtel-drops/summary', [AirtelDropController::class, 'summary']);
     Route::get('airtel-drops/report', [AirtelDropController::class, 'report']);
     Route::get('airtel-drops/export-recovery-log', [AirtelDropController::class, 'exportRecoveryLog']);
-    Route::delete('airtel-drops/{drop}', [AirtelDropController::class, 'destroy']);
+    Route::delete('airtel-drops/{drop}', [AirtelDropController::class, 'destroy'])->middleware('pin');
 
     // Accounting & Transactions
     Route::get('entities/summary', [EntityLedgerController::class, 'summary']);
@@ -261,9 +264,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('pending-balance/send-reminder', [EntityLedgerController::class, 'sendPendingBalanceReminder']);
 
     Route::apiResource('entities', EntityController::class);
-    Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory']);
+    Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory'])->middleware('pin');
     Route::post('entities-sync', [EntityController::class, 'autoSync']);
-    Route::post('/entities-hard-reset', [\App\Http\Controllers\Api\EntityController::class, 'hardReset']);
+    Route::post('/entities-hard-reset', [\App\Http\Controllers\Api\EntityController::class, 'hardReset'])->middleware('pin');
     
     // Accounting Ledger System
     Route::prefix('ledgers')->group(function () {
@@ -292,12 +295,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     // Full System Sync — throttled to prevent abuse
     Route::get('system/backup', [SystemBackupController::class, 'backup'])->middleware('throttle:60,1');
-    Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup'])->middleware('throttle:60,1');
+    Route::post('system/restore-backup', [SystemBackupController::class, 'restoreBackup'])->middleware(['throttle:60,1', 'pin']);
     // Settings
     Route::get('settings', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
     Route::post('settings', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
     Route::post('settings/test-whatsapp', [\App\Http\Controllers\Api\SettingsController::class, 'testWhatsApp']);
     Route::post('settings/test-telegram', [\App\Http\Controllers\Api\SettingsController::class, 'testTelegram']);
+    Route::post('settings/test-pending-group', [\App\Http\Controllers\Api\SettingsController::class, 'testPendingGroup']);
 
     // Manual "Send Now" report triggers (Settings > Notifications)
     Route::post('notifications/send-daily-summary', [\App\Http\Controllers\Api\NotificationController::class, 'sendDailySummary']);

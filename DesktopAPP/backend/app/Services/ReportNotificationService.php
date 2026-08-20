@@ -387,6 +387,11 @@ class ReportNotificationService
     {
         $today = Carbon::today();
 
+        // Re-verify against live balances first — otherwise a customer who
+        // already paid (through any route other than the one specific invoice
+        // the note was linked to) keeps getting chased for a debt that's gone.
+        EntityNote::reconcilePending();
+
         $notes = EntityNote::where('status', 'PENDING')
             ->where('promise_date', '<=', $today)
             ->orderBy('promise_date')
@@ -418,6 +423,69 @@ class ReportNotificationService
                 $msg .= "\n🔴 *Overdue ({$overdue->count()}):*\n";
                 $render($overdue);
             }
+        }
+
+        $msg .= "\n---------------------------\n";
+        $msg .= "_Tinku Mobiles Management System_";
+
+        return $msg;
+    }
+
+    /**
+     * Plain Name - Mobile - Balance list of every Customer/Shop Customer with
+     * a pending balance, plus the open Promise to Pay list — same shape as
+     * the "Copy List" buttons on those pages, sent as one Telegram message to
+     * the dedicated Pending Balance group (a separate chat from the other
+     * owner alerts).
+     */
+    public function buildPendingBalanceAndPromiseListMessage(): string
+    {
+        $today = Carbon::today();
+
+        $allEntities = collect(
+            app(\App\Http\Controllers\Api\LedgerController::class)
+                ->entityBalances(new \Illuminate\Http\Request())
+                ->getData(true)
+        );
+
+        $pending = $allEntities
+            ->filter(fn ($e) => in_array($e['type'], ['CUSTOMER', 'SHOP_CUSTOMER']))
+            ->filter(fn ($e) => (float) $e['net_balance'] > 0.01)
+            ->sortByDesc('net_balance')
+            ->values();
+
+        EntityNote::reconcilePending();
+        $promises = EntityNote::where('status', 'PENDING')->orderBy('promise_date')->get();
+
+        $msg = "📋 *Daily Balance Report ({$today->format('d M Y')})*\n";
+        $msg .= "---------------------------\n\n";
+
+        $msg .= "💰 *PENDING BALANCE ({$pending->count()})*\n";
+        if ($pending->isEmpty()) {
+            $msg .= "✅ Nothing pending.\n";
+        } else {
+            $total = 0;
+            foreach ($pending as $i => $e) {
+                $total += (float) $e['net_balance'];
+                $phone = $e['phone'] ? " - {$e['phone']}" : '';
+                $msg .= ($i + 1) . ". {$e['name']}{$phone} - ₹" . number_format($e['net_balance'], 0) . "\n";
+            }
+            $msg .= "*Total: ₹" . number_format($total, 0) . "*\n";
+        }
+
+        $msg .= "\n🤝 *PROMISE TO PAY ({$promises->count()})*\n";
+        if ($promises->isEmpty()) {
+            $msg .= "✅ Nothing pending.\n";
+        } else {
+            $promiseTotal = 0;
+            foreach ($promises as $i => $n) {
+                $promiseTotal += (float) ($n->balance_at_time ?? 0);
+                $phone = $n->phone ? " - {$n->phone}" : '';
+                $amount = $n->balance_at_time !== null ? '₹' . number_format($n->balance_at_time, 0) : '—';
+                $overdueTag = $n->promise_date->lt($today) ? ' (OVERDUE)' : '';
+                $msg .= ($i + 1) . ". {$n->name}{$phone} - {$amount} - Promised: " . $n->promise_date->format('d M') . "{$overdueTag}\n";
+            }
+            $msg .= "*Total: ₹" . number_format($promiseTotal, 0) . "*\n";
         }
 
         $msg .= "\n---------------------------\n";

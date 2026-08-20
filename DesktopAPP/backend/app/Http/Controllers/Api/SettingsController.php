@@ -104,4 +104,15 @@ class SettingsController extends Controller
 
         return response()->json(['message' => 'Failed to send test message. Check logs.'], 500);
     }
+
+    public function testPendingGroup()
+    {
+        $res = app(\App\Services\TelegramService::class)->sendToPendingGroup("🧪 *Pending Balance Group Test*\nThis group will receive the daily Pending Balance + Promise to Pay list at 9 AM.\n\n_System Date: " . now()->format('d M Y H:i') . "_");
+
+        if ($res) {
+            return response()->json(['message' => 'Test message sent successfully']);
+        }
+
+        return response()->json(['message' => 'Failed to send test message. Check logs.'], 500);
+    }
 }

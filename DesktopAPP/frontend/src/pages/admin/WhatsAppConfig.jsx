@@ -10,6 +10,7 @@ export default function WhatsAppConfig() {
         TELEGRAM_BOT_TOKEN: '',
         TELEGRAM_CHAT_ID: '',
         TELEGRAM_CHANNEL_ID: '',
+        TELEGRAM_PENDING_GROUP_ID: '',
         WHATSAPP_AUTO_ENABLED: '0'
     });
     const [autoSaving, setAutoSaving] = useState(false);
@@ -17,6 +18,8 @@ export default function WhatsAppConfig() {
     const [testLoading, setTestLoading] = useState(false);
     const [telegramSaving, setTelegramSaving] = useState(false);
     const [telegramTestLoading, setTelegramTestLoading] = useState(false);
+    const [pendingGroupSaving, setPendingGroupSaving] = useState(false);
+    const [pendingGroupTestLoading, setPendingGroupTestLoading] = useState(false);
 
     useEffect(() => {
         loadSettings();
@@ -34,6 +37,7 @@ export default function WhatsAppConfig() {
                 TELEGRAM_BOT_TOKEN: data.TELEGRAM_BOT_TOKEN || '',
                 TELEGRAM_CHAT_ID: data.TELEGRAM_CHAT_ID || '',
                 TELEGRAM_CHANNEL_ID: data.TELEGRAM_CHANNEL_ID || '',
+                TELEGRAM_PENDING_GROUP_ID: data.TELEGRAM_PENDING_GROUP_ID || '',
                 WHATSAPP_AUTO_ENABLED: data.WHATSAPP_AUTO_ENABLED || '0'
             });
         } catch (error) {
@@ -120,6 +124,37 @@ export default function WhatsAppConfig() {
             toast.error('Test message failed. Check your configuration.');
         } finally {
             setTelegramTestLoading(false);
+        }
+    };
+
+    const handleSavePendingGroup = async (e) => {
+        e.preventDefault();
+        setPendingGroupSaving(true);
+        try {
+            await api.post('/settings', {
+                TELEGRAM_PENDING_GROUP_ID: settings.TELEGRAM_PENDING_GROUP_ID
+            });
+            toast.success('Pending Balance group saved successfully!');
+        } catch (error) {
+            toast.error('Failed to save Pending Balance group');
+        } finally {
+            setPendingGroupSaving(false);
+        }
+    };
+
+    const handleSendPendingGroupTest = async () => {
+        if (!settings.TELEGRAM_BOT_TOKEN || !settings.TELEGRAM_PENDING_GROUP_ID) {
+            toast.warning('Please enter the Bot Token above and this group\'s Chat ID first');
+            return;
+        }
+        setPendingGroupTestLoading(true);
+        try {
+            await api.post('/settings/test-pending-group');
+            toast.success('Test message sent to the Pending Balance group');
+        } catch (error) {
+            toast.error('Test message failed. Check your configuration.');
+        } finally {
+            setPendingGroupTestLoading(false);
         }
     };
 
@@ -295,6 +330,57 @@ export default function WhatsAppConfig() {
                                         disabled={telegramTestLoading || telegramSaving}
                                     >
                                         {telegramTestLoading ? <span className="spinner-border spinner-border-sm me-2"/> : '📲 '}
+                                        Send Test Message
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div className="card shadow-sm border-0 mt-4">
+                        <div className="card-header bg-success text-white py-3">
+                            <h5 className="card-title mb-0">
+                                <span className="me-2">📋</span>
+                                Pending Balance Group
+                            </h5>
+                        </div>
+                        <div className="card-body p-4">
+                            <p className="text-muted small mb-4">
+                                A daily list of every Pending Balance and Promise to Pay entry (Name - Mobile - Balance),
+                                sent at 9 AM to this separate Telegram group — kept apart from the alerts above.
+                                Uses the same Bot Token configured in Telegram Bot Configuration.
+                            </p>
+
+                            <form onSubmit={handleSavePendingGroup}>
+                                <div className="mb-4">
+                                    <label className="form-label fw-bold small text-uppercase">Group Chat ID</label>
+                                    <input
+                                        type="text"
+                                        className="form-control font-monospace"
+                                        placeholder="e.g. -1001234567890"
+                                        value={settings.TELEGRAM_PENDING_GROUP_ID}
+                                        onChange={e => setSettings({...settings, TELEGRAM_PENDING_GROUP_ID: e.target.value})}
+                                    />
+                                    <div className="form-text">Add the bot to your new group, send it any message once, then use the bot's getUpdates API to find this group's Chat ID.</div>
+                                </div>
+
+                                <div className="d-grid gap-2">
+                                    <button
+                                        type="submit"
+                                        className="btn btn-success fw-bold py-2"
+                                        disabled={pendingGroupSaving}
+                                    >
+                                        {pendingGroupSaving ? <span className="spinner-border spinner-border-sm me-2"/> : '💾 '}
+                                        Save Configuration
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline-success fw-bold py-2"
+                                        onClick={handleSendPendingGroupTest}
+                                        disabled={pendingGroupTestLoading || pendingGroupSaving}
+                                    >
+                                        {pendingGroupTestLoading ? <span className="spinner-border spinner-border-sm me-2"/> : '📲 '}
                                         Send Test Message
                                     </button>
                                 </div>
