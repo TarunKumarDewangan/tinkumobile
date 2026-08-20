@@ -34,6 +34,30 @@ export default function ManualNotifications() {
   const [results, setResults] = useState({});
   const [slot, setSlot] = useState('night');
 
+  const [pbChannels, setPbChannels] = useState({ pending_group: true, owner: false });
+  const [pbSending, setPbSending] = useState(false);
+  const [pbResult, setPbResult] = useState(null);
+
+  const togglePbChannel = (key) => setPbChannels(c => ({ ...c, [key]: !c[key] }));
+
+  const sendPendingBalanceNow = async () => {
+    const channels = Object.entries(pbChannels).filter(([, v]) => v).map(([k]) => k);
+    if (channels.length === 0) {
+      toast.warning('Select at least one group to send to');
+      return;
+    }
+    setPbSending(true);
+    try {
+      const { data } = await api.post('/notifications/send-pending-balance-summary', { channels });
+      setPbResult(data);
+      toast.success(`Pending Balance summary sent (Pending Group: ${data.pending_group ? 'yes' : 'no'}, Owner: ${data.owner ? 'yes' : 'no'})`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send Pending Balance summary');
+    } finally {
+      setPbSending(false);
+    }
+  };
+
   const sendNow = async (report) => {
     setSending(s => ({ ...s, [report.key]: true }));
     try {
@@ -113,6 +137,72 @@ export default function ManualNotifications() {
             </div>
           );
         })}
+
+        <div className="col-12 col-lg-6">
+          <div className="card shadow-sm border-0 h-100">
+            <div className="card-header bg-dark text-white py-3">
+              <h5 className="card-title mb-0">📋 Pending Balance + Promise to Pay</h5>
+            </div>
+            <div className="card-body p-4">
+              <p className="text-muted small">
+                Name - Mobile - Balance list of every Pending Balance and Promise to Pay entry — normally sent automatically at 9 AM to the Pending Balance group.
+              </p>
+
+              <div className="mb-3">
+                <label className="form-label fw-bold small text-uppercase">Send To</label>
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="pbChannelGroup"
+                    checked={pbChannels.pending_group}
+                    onChange={() => togglePbChannel('pending_group')}
+                  />
+                  <label className="form-check-label small" htmlFor="pbChannelGroup">Pending Balance Group</label>
+                </div>
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="pbChannelOwner"
+                    checked={pbChannels.owner}
+                    onChange={() => togglePbChannel('owner')}
+                  />
+                  <label className="form-check-label small" htmlFor="pbChannelOwner">Main Telegram (Owner Chat/Channel)</label>
+                </div>
+              </div>
+
+              <button
+                className="btn btn-primary fw-bold w-100"
+                disabled={pbSending}
+                onClick={sendPendingBalanceNow}
+              >
+                {pbSending ? <span className="spinner-border spinner-border-sm me-2" /> : '🚀 '}
+                Send Now
+              </button>
+
+              {pbResult && (
+                <div className="mt-3">
+                  <div className="d-flex gap-2 mb-2">
+                    <span className={`badge ${pbResult.pending_group ? 'bg-success' : 'bg-secondary'}`}>
+                      Pending Group: {pbResult.pending_group ? 'Sent' : 'Not sent'}
+                    </span>
+                    <span className={`badge ${pbResult.owner ? 'bg-success' : 'bg-secondary'}`}>
+                      Owner: {pbResult.owner ? 'Sent' : 'Not sent'}
+                    </span>
+                  </div>
+                  <label className="form-label fw-bold small text-uppercase text-muted">Message Sent</label>
+                  <pre
+                    className="bg-light border rounded p-3 small"
+                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 400, overflowY: 'auto' }}
+                  >
+                    {pbResult.message}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

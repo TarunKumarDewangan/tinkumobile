@@ -74,4 +74,41 @@ class NotificationController extends Controller
             'telegram' => $result['telegram'],
         ]);
     }
+
+    /**
+     * Same list the 9 AM scheduled command sends, but lets the caller pick
+     * which Telegram target(s) to actually deliver to right now — the
+     * dedicated Pending Balance group, the main owner chat/channel, or both.
+     */
+    public function sendPendingBalanceSummary(Request $request, ReportNotificationService $service, \App\Services\TelegramService $telegram)
+    {
+        $user = $request->user();
+        if (!($user->is_owner || $user->hasRole('Admin'))) {
+            return response()->json(['message' => 'Only owner or admin can send reports manually'], 403);
+        }
+
+        $data = $request->validate([
+            'channels' => 'required|array|min:1',
+            'channels.*' => 'in:pending_group,owner',
+        ]);
+
+        $msg = $service->buildPendingBalanceAndPromiseListMessage();
+
+        $pendingGroupSent = false;
+        $ownerSent = false;
+        if (in_array('pending_group', $data['channels'])) {
+            $pendingGroupSent = $telegram->sendToPendingGroup($msg);
+        }
+        if (in_array('owner', $data['channels'])) {
+            $ownerSent = $telegram->sendToOwner($msg);
+        }
+
+        ActivityLog::log('MANUAL_PENDING_BALANCE_SUMMARY_SENT', $user, "Pending Balance summary manually sent by {$user->name}");
+
+        return response()->json([
+            'message' => $msg,
+            'pending_group' => $pendingGroupSent,
+            'owner' => $ownerSent,
+        ]);
+    }
 }
