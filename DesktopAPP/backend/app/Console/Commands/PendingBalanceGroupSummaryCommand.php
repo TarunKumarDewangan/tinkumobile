@@ -10,7 +10,7 @@ class PendingBalanceGroupSummaryCommand extends Command
 {
     protected $signature = 'report:pending-balance-group-summary';
 
-    protected $description = 'Send the daily Pending Balance + Promise to Pay list to the dedicated Telegram group';
+    protected $description = 'Send the daily Pending Balance + Promise to Pay + Personal Finance Due lists to the dedicated Telegram group';
 
     public function handle(ReportNotificationService $service, TelegramService $telegram)
     {
@@ -19,15 +19,16 @@ class PendingBalanceGroupSummaryCommand extends Command
             return;
         }
 
-        // Sent as two separate messages (not one combined one) so either can
-        // be read/forwarded on its own.
+        // Sent as three separate messages (not one combined one) so any one
+        // can be read/forwarded on its own.
         $pendingSent = $telegram->sendToPendingGroup($service->buildPendingBalanceListMessage());
         $promiseSent = $telegram->sendToPendingGroup($service->buildPromiseListMessage());
+        $financeSent = $telegram->sendToPendingGroup($service->buildPersonalFinanceDueListMessage());
 
-        if ($pendingSent && $promiseSent) {
+        if ($pendingSent && $promiseSent && $financeSent) {
             $this->info('Pending Balance group summary sent successfully.');
         } else {
-            $this->error('Failed to send one or both Pending Balance group messages.');
+            $this->error('Failed to send one or more Pending Balance group messages.');
         }
     }
 }

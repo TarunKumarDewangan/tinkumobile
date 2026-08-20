@@ -92,24 +92,29 @@ class NotificationController extends Controller
             'channels.*' => 'in:pending_group,owner',
         ]);
 
-        // Sent as two separate messages (not one combined one) so either can
-        // be read/forwarded on its own.
+        // Sent as three separate messages (not one combined one) so any one
+        // can be read/forwarded on its own.
         $pendingMsg = $service->buildPendingBalanceListMessage();
         $promiseMsg = $service->buildPromiseListMessage();
+        $financeMsg = $service->buildPersonalFinanceDueListMessage();
 
         $pendingGroupSent = false;
         $ownerSent = false;
         if (in_array('pending_group', $data['channels'])) {
-            $pendingGroupSent = $telegram->sendToPendingGroup($pendingMsg) && $telegram->sendToPendingGroup($promiseMsg);
+            $pendingGroupSent = $telegram->sendToPendingGroup($pendingMsg)
+                && $telegram->sendToPendingGroup($promiseMsg)
+                && $telegram->sendToPendingGroup($financeMsg);
         }
         if (in_array('owner', $data['channels'])) {
-            $ownerSent = $telegram->sendToOwner($pendingMsg) && $telegram->sendToOwner($promiseMsg);
+            $ownerSent = $telegram->sendToOwner($pendingMsg)
+                && $telegram->sendToOwner($promiseMsg)
+                && $telegram->sendToOwner($financeMsg);
         }
 
         ActivityLog::log('MANUAL_PENDING_BALANCE_SUMMARY_SENT', $user, "Pending Balance summary manually sent by {$user->name}");
 
         return response()->json([
-            'message' => $pendingMsg . "\n\n" . $promiseMsg,
+            'message' => $pendingMsg . "\n\n" . $promiseMsg . "\n\n" . $financeMsg,
             'pending_group' => $pendingGroupSent,
             'owner' => $ownerSent,
         ]);

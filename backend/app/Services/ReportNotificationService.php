@@ -547,6 +547,66 @@ class ReportNotificationService
     }
 
     /**
+     * Plain Name - Mobile - Installment Amount - Due Date list of every
+     * overdue or soon-due Personal EMI installment — same data as
+     * buildEmiDueReminderMessage's Overdue/Due-in-2-days sections, just
+     * flattened into the simple list shape used by the Pending Balance and
+     * Promise to Pay messages, sent as its own Telegram message.
+     */
+    public function buildPersonalFinanceDueListMessage(int $limit = 30): string
+    {
+        $today = Carbon::today();
+        $cutoff = $today->copy()->addDays(2);
+
+        $plans = SaleFinancePlan::with(['customer'])
+            ->where('type', 'PERSONAL')
+            ->where('status', '!=', 'SETTLED')
+            ->get();
+
+        $rows = collect();
+        foreach ($plans as $plan) {
+            foreach ($plan->buildSchedule() as $emi) {
+                if ($emi['status'] === 'PAID') continue;
+
+                $dueDate = Carbon::parse($emi['due_date']);
+                if ($emi['status'] !== 'OVERDUE' && !$dueDate->between($today, $cutoff)) continue;
+
+                $rows->push([
+                    'name' => $plan->customer?->name ?? 'Unknown',
+                    'phone' => $plan->customer?->phone,
+                    'amount' => (float) $emi['amount'],
+                    'due_date' => $dueDate,
+                    'overdue' => $emi['status'] === 'OVERDUE',
+                ]);
+            }
+        }
+        $rows = $rows->sortBy('due_date')->values();
+
+        $msg = "📅 *Personal Finance Due ({$today->format('d M Y')}) — {$rows->count()}*\n";
+        $msg .= "---------------------------\n";
+
+        if ($rows->isEmpty()) {
+            $msg .= "✅ Nothing due.\n";
+        } else {
+            $total = $rows->sum('amount');
+            foreach ($rows->take($limit) as $i => $r) {
+                $overdueTag = $r['overdue'] ? ' (OVERDUE)' : '';
+                $msg .= ($i + 1) . ". " . $this->escapeTelegramMarkdown($r['name']) . $this->telegramPhoneLink($r['phone'])
+                    . " - ₹" . number_format($r['amount'], 0) . " - Due: " . $r['due_date']->format('d M') . "{$overdueTag}\n";
+            }
+            if ($rows->count() > $limit) {
+                $msg .= "... +" . ($rows->count() - $limit) . " more\n";
+            }
+            $msg .= "*Total: ₹" . number_format($total, 0) . "*\n";
+        }
+
+        $msg .= "---------------------------\n";
+        $msg .= "_Tinku Mobiles Management System_";
+
+        return $msg;
+    }
+
+    /**
      * Renders a numbered, column-aligned table of out-of-stock items inside a
      * Telegram/WhatsApp monospace code block. Capped defensively — Telegram messages
      * have a ~4096 character limit, so a shop with a huge out-of-stock list would

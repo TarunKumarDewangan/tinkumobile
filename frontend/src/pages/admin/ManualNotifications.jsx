@@ -141,11 +141,11 @@ export default function ManualNotifications() {
         <div className="col-12 col-lg-6">
           <div className="card shadow-sm border-0 h-100">
             <div className="card-header bg-dark text-white py-3">
-              <h5 className="card-title mb-0">📋 Pending Balance + Promise to Pay</h5>
+              <h5 className="card-title mb-0">📋 Pending Balance + Promise to Pay + Personal Finance</h5>
             </div>
             <div className="card-body p-4">
               <p className="text-muted small">
-                Name - Mobile - Balance list of every Pending Balance and Promise to Pay entry — normally sent automatically at 9 AM to the Pending Balance group.
+                Name - Mobile - Amount list, sent as three separate messages: Pending Balance, Promise to Pay, and Personal Finance Due — normally sent automatically at 9 AM to the Pending Balance group.
               </p>
 
               <div className="mb-3">
