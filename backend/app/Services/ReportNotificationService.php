@@ -434,13 +434,30 @@ class ReportNotificationService
     /**
      * A phone number rendered as an explicit tel: link, so it's reliably
      * clickable in Telegram regardless of the client's own (inconsistent)
-     * auto-detection of bare digit strings as phone numbers.
+     * auto-detection of bare digit strings as phone numbers. Uses only the
+     * digits (never the raw, uncleaned phone field) for both the display
+     * text and the URL — Telegram rejects the ENTIRE message if any [ ] ( )
+     * character sneaks into a Markdown link's text, which real phone data
+     * (extra spaces, dashes, a stray bracket) can easily contain.
      */
     private function telegramPhoneLink(?string $phone): string
     {
         if (!$phone) return '';
         $digits = preg_replace('/[^0-9+]/', '', $phone);
-        return " - [{$phone}](tel:{$digits})";
+        if ($digits === '') return '';
+        return " - [{$digits}](tel:{$digits})";
+    }
+
+    /**
+     * Legacy Telegram Markdown treats _ * ` [ as formatting characters —
+     * escape them in any user-entered text (customer/entity names) before
+     * inserting it into a Markdown-formatted message, otherwise a single
+     * name containing one of these breaks parsing for the WHOLE message,
+     * not just that row (confirmed live: "Can't find end of the entity").
+     */
+    private function escapeTelegramMarkdown(string $text): string
+    {
+        return str_replace(['_', '*', '`', '['], ['\\_', '\\*', '\\`', '\\['], $text);
     }
 
     /**
@@ -479,7 +496,7 @@ class ReportNotificationService
             // accurate across every entry, not just the shown ones.
             $total = $pending->sum(fn ($e) => (float) $e['net_balance']);
             foreach ($pending->take($limit) as $i => $e) {
-                $msg .= ($i + 1) . ". {$e['name']}" . $this->telegramPhoneLink($e['phone']) . " - ₹" . number_format($e['net_balance'], 0) . "\n";
+                $msg .= ($i + 1) . ". " . $this->escapeTelegramMarkdown($e['name']) . $this->telegramPhoneLink($e['phone']) . " - ₹" . number_format($e['net_balance'], 0) . "\n";
             }
             if ($pending->count() > $limit) {
                 $msg .= "... +" . ($pending->count() - $limit) . " more\n";
@@ -515,7 +532,7 @@ class ReportNotificationService
             foreach ($promises->take($limit) as $i => $n) {
                 $amount = $n->balance_at_time !== null ? '₹' . number_format($n->balance_at_time, 0) : '—';
                 $overdueTag = $n->promise_date->lt($today) ? ' (OVERDUE)' : '';
-                $msg .= ($i + 1) . ". {$n->name}" . $this->telegramPhoneLink($n->phone) . " - {$amount} - Promised: " . $n->promise_date->format('d M') . "{$overdueTag}\n";
+                $msg .= ($i + 1) . ". " . $this->escapeTelegramMarkdown($n->name) . $this->telegramPhoneLink($n->phone) . " - {$amount} - Promised: " . $n->promise_date->format('d M') . "{$overdueTag}\n";
             }
             if ($promises->count() > $limit) {
                 $msg .= "... +" . ($promises->count() - $limit) . " more\n";
