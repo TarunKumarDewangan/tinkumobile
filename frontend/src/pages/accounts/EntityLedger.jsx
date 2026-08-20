@@ -424,6 +424,11 @@ export default function EntityLedger() {
                       <span className={`xx-small fw-bold text-uppercase ${parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
                           {targetEntity?.is_asset_account ? '🏦 Balance' : (parseFloat(targetEntity?.net_balance || 0) >= 0 ? 'Receivable' : 'Payable')}
                       </span>
+                      {parseFloat(targetEntity?.exchange_credit_balance || 0) > 0 && (
+                          <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 xx-small">
+                              🔒 Reserved Exchange Credit: ₹{parseFloat(targetEntity.exchange_credit_balance).toLocaleString('en-IN')}
+                          </span>
+                      )}
                    </div>
                 </div>
 

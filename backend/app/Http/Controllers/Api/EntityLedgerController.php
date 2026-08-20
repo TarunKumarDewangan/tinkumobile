@@ -569,6 +569,14 @@ class EntityLedgerController extends Controller
         }
         $entity->setAttribute('net_balance', $liveNet);
 
+        // Reserved exchange credit lives on the Customer record itself, not the
+        // ledger — surface it here so pages showing this entity's balance (Sale
+        // form, Entity Ledger) can also show what's separately reserved.
+        if ($entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+            $customer = \App\Models\Customer::find($entity->relation_id);
+            $entity->setAttribute('exchange_credit_balance', (float) ($customer->exchange_credit_balance ?? 0));
+        }
+
         return response()->json([
             'entity' => $entity,
             'transactions' => $ledgerItems->sortByDesc(function($item) {

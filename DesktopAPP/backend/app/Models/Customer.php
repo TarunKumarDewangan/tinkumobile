@@ -11,7 +11,9 @@ class Customer extends Model
 {
     use SoftDeletes, UppercaseStrings, \App\Traits\SyncsWithMasterEntity, \App\Traits\MirrorsToSupabase;
 
-    protected $fillable = ['name', 'phone', 'email', 'gst_no', 'address', 'voucher_code', 'category'];
+    protected $fillable = ['name', 'phone', 'email', 'gst_no', 'address', 'voucher_code', 'category', 'exchange_credit_balance'];
+
+    protected $casts = ['exchange_credit_balance' => 'decimal:2'];
 
     public function events(): HasMany { return $this->hasMany(CustomerEvent::class); }
     public function entity() { return $this->morphOne(Entity::class, 'relation'); }

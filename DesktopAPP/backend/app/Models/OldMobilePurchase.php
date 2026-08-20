@@ -11,7 +11,7 @@ class OldMobilePurchase extends Model
 {
     use RecordsTransactions, \App\Traits\MirrorsToSupabase;
     protected $fillable = [
-        'shop_id', 'customer_id', 'product_id', 'model_name', 'imei', 'ram', 'storage', 'color', 'purchase_price', 'selling_price', 'is_exchange', 'pay_later', 'condition_note', 'purchase_date', 'user_id', 'batch_id'
+        'shop_id', 'customer_id', 'product_id', 'model_name', 'imei', 'ram', 'storage', 'color', 'purchase_price', 'selling_price', 'is_exchange', 'exchange_credit_mode', 'pay_later', 'condition_note', 'purchase_date', 'user_id', 'batch_id'
     ];
 
     protected $casts = [

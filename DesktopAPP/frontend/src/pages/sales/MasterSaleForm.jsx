@@ -329,12 +329,10 @@ export default function MasterSaleForm() {
         api.get(url)
           .then(res => {
             const bal = parseFloat(res.data.entity?.net_balance || 0);
+            const ledgerCredit = bal < 0 ? Math.abs(bal) : 0;
+            const walletCredit = parseFloat(res.data.entity?.exchange_credit_balance || 0) + parseFloat(data.wallet_credit_used || 0);
             const initialCreditUsed = parseFloat(data.exchange_paid || 0);
-            if (bal < 0) {
-              setCustomerCredit(Math.abs(bal));
-            } else {
-              setCustomerCredit(initialCreditUsed);
-            }
+            setCustomerCredit(Math.max(ledgerCredit + walletCredit, initialCreditUsed));
           })
           .catch(() => {});
       }
@@ -635,11 +633,9 @@ export default function MasterSaleForm() {
       api.get(url)
         .then(res => {
           const bal = parseFloat(res.data.entity?.net_balance || 0);
-          if (bal < 0) {
-            setCustomerCredit(Math.abs(bal));
-          } else {
-            setCustomerCredit(0);
-          }
+          const ledgerCredit = bal < 0 ? Math.abs(bal) : 0;
+          const walletCredit = parseFloat(res.data.entity?.exchange_credit_balance || 0);
+          setCustomerCredit(ledgerCredit + walletCredit);
         })
         .catch(() => setCustomerCredit(0));
     } else {

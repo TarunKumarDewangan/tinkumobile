@@ -111,7 +111,7 @@ class SaleInvoice extends Model
 
     protected $fillable = [
         'invoice_no', 'shop_id', 'customer_id', 'user_id', 'sold_by_id', 'sale_date',
-        'total_amount', 'discount', 'grand_total', 'total_paid', 'exchange_paid', 'payment_status',
+        'total_amount', 'discount', 'grand_total', 'total_paid', 'exchange_paid', 'wallet_credit_used', 'payment_status',
         'cgst_rate', 'sgst_rate', 'cgst_amount', 'sgst_amount', 'rounding_mode', 'round_off',
         'calculate_gst', 'cash_discount', 'is_cash_discount_on_bill',
         'payment_method', 'bill_type', 'parent_bill_id', 'is_cancelled', 'notes', 'accounting_entity_id',
@@ -129,6 +129,7 @@ class SaleInvoice extends Model
         'is_cash_discount_on_bill' => 'boolean',
         'total_paid'   => 'decimal:2',
         'exchange_paid'=> 'decimal:2',
+        'wallet_credit_used' => 'decimal:2',
         'grand_total'  => 'decimal:2',
         'round_off'    => 'decimal:2',
     ];

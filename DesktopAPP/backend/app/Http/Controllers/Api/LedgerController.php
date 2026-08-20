@@ -237,6 +237,15 @@ class LedgerController extends Controller
 
         $entity->setAttribute('is_asset_account', $isAssetAccount);
 
+        // Reserved exchange credit lives on the Customer record itself, not the
+        // ledger — surface it here so the Entity Ledger page can show what's
+        // separately reserved (see also EntityLedgerController::show, used by
+        // the Sale form's own credit lookup).
+        if ($entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+            $customer = \App\Models\Customer::find($entity->relation_id);
+            $entity->setAttribute('exchange_credit_balance', (float) ($customer->exchange_credit_balance ?? 0));
+        }
+
         return response()->json([
             'entity' => $entity,
             'opening_balance' => $openingBalance,

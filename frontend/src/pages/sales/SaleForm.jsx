@@ -371,12 +371,13 @@ export default function SaleForm() {
         api.get(`/entities/customer-ledger?${params}`)
           .then(res => {
             const bal = parseFloat(res.data.entity?.net_balance || 0);
+            const ledgerCredit = bal < 0 ? Math.abs(bal) : 0;
+            // Add back what THIS invoice already drew from the wallet, so
+            // editing shows the full amount available as if not yet used —
+            // matching how exclude_sale_invoice_id already does this for the ledger side.
+            const walletCredit = parseFloat(res.data.entity?.exchange_credit_balance || 0) + parseFloat(data.wallet_credit_used || 0);
             const initialCreditUsed = parseFloat(data.exchange_paid || 0);
-            if (bal < 0) {
-              setCustomerCredit(Math.abs(bal));
-            } else {
-              setCustomerCredit(initialCreditUsed);
-            }
+            setCustomerCredit(Math.max(ledgerCredit + walletCredit, initialCreditUsed));
           })
           .catch(() => {});
       }
@@ -749,7 +750,9 @@ export default function SaleForm() {
     api.get(`/entities/customer-ledger?${params}`)
       .then(res => {
         const bal = parseFloat(res.data.entity?.net_balance || 0);
-        setCustomerCredit(bal < 0 ? Math.abs(bal) : 0);
+        const ledgerCredit = bal < 0 ? Math.abs(bal) : 0;
+        const walletCredit = parseFloat(res.data.entity?.exchange_credit_balance || 0);
+        setCustomerCredit(ledgerCredit + walletCredit);
       })
       .catch(() => setCustomerCredit(0));
   };

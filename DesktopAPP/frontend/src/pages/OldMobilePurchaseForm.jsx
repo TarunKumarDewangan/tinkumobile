@@ -148,29 +148,15 @@ export default function OldMobilePurchaseForm() {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (saving) return; // Prevent double-submit
-    
-    if (!form.shop_id) {
-      toast.error('Please select a branch/shop');
-      return;
-    }
-    if (!form.customer_id && (!form.customer_name || !form.customer_phone)) {
-      toast.error('Please select an existing customer or enter new customer details');
-      return;
-    }
-    const invalidDevice = devices.findIndex(d => !d.model_name.trim() || d.purchase_price === '' || parseFloat(d.purchase_price) < 0);
-    if (invalidDevice !== -1) {
-      toast.error(`Device ${invalidDevice + 1}: Model Name and Purchase Price are required`);
-      return;
-    }
+  const [exchangeModePrompt, setExchangeModePrompt] = useState(null); // { customerBalance }
 
+  const submitPurchase = async (exchangeCreditMode) => {
     setSaving(true);
     try {
       await api.post('/old-mobiles/bulk', {
         ...form,
         is_exchange: form.is_exchange ? 1 : 0,
+        exchange_credit_mode: form.is_exchange ? exchangeCreditMode : undefined,
         pay_later: (!form.is_exchange && form.pay_later) ? 1 : 0,
         payment_mode: (form.is_exchange || form.pay_later) ? undefined : (form.payment_mode || 'CASH'),
         items: devices.map(d => ({
@@ -185,7 +171,48 @@ export default function OldMobilePurchaseForm() {
       toast.error(err.response?.data?.message || 'Error recording old mobile purchase');
     } finally {
       setSaving(false);
+      setExchangeModePrompt(null);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (saving) return; // Prevent double-submit
+
+    if (!form.shop_id) {
+      toast.error('Please select a branch/shop');
+      return;
+    }
+    if (!form.customer_id && (!form.customer_name || !form.customer_phone)) {
+      toast.error('Please select an existing customer or enter new customer details');
+      return;
+    }
+    const invalidDevice = devices.findIndex(d => !d.model_name.trim() || d.purchase_price === '' || parseFloat(d.purchase_price) < 0);
+    if (invalidDevice !== -1) {
+      toast.error(`Device ${invalidDevice + 1}: Model Name and Purchase Price are required`);
+      return;
+    }
+
+    if (!form.is_exchange) {
+      submitPurchase(null);
+      return;
+    }
+
+    // Exchange Credit: if this customer currently owes the shop money, ask
+    // whether the credit should pay that down now, or be reserved untouched
+    // for their next purchase — otherwise it silently nets against their
+    // existing dues with no choice offered.
+    if (form.customer_id) {
+      try {
+        const { data } = await api.get(`/entities/customer-ledger?customer_id=${form.customer_id}`);
+        const bal = parseFloat(data.entity?.net_balance || 0);
+        if (bal > 0.01) {
+          setExchangeModePrompt({ customerBalance: bal });
+          return;
+        }
+      } catch (e) {}
+    }
+    submitPurchase('reserve');
   };
 
   return (
@@ -630,6 +657,33 @@ export default function OldMobilePurchaseForm() {
                   <Button type="submit" variant="primary" className="fw-bold px-4">CREATE CUSTOMER</Button>
               </Modal.Footer>
           </form>
+      </Modal>
+
+      {/* Exchange Credit: Adjust vs Reserve */}
+      <Modal show={!!exchangeModePrompt} onHide={() => !saving && setExchangeModePrompt(null)} centered className="text-uppercase border-warning">
+          <Modal.Header closeButton className="bg-warning text-dark">
+              <Modal.Title className="fw-bold small">🤝 Apply Exchange Credit</Modal.Title>
+          </Modal.Header>
+          <Modal.Body className="p-4">
+              <p className="mb-3">
+                  <strong>{form.customer_name || customerInputText}</strong> currently owes
+                  {' '}<strong className="text-danger">₹{exchangeModePrompt?.customerBalance.toLocaleString('en-IN')}</strong>.
+                  This purchase gives <strong className="text-success">₹{totalPurchasePrice.toLocaleString('en-IN')}</strong> exchange credit — how should it be applied?
+              </p>
+              <div className="d-grid gap-2">
+                  <Button variant="outline-primary" className="fw-bold text-start py-3" disabled={saving} onClick={() => submitPurchase('adjust')}>
+                      💳 Adjust against existing balance
+                      <div className="x-small fw-normal text-muted mt-1" style={{ textTransform: 'none' }}>Reduces what they owe right now.</div>
+                  </Button>
+                  <Button variant="outline-success" className="fw-bold text-start py-3" disabled={saving} onClick={() => submitPurchase('reserve')}>
+                      🔒 Reserve for their next purchase
+                      <div className="x-small fw-normal text-muted mt-1" style={{ textTransform: 'none' }}>Doesn't touch their current balance — stays guaranteed available for a future sale.</div>
+                  </Button>
+              </div>
+          </Modal.Body>
+          <Modal.Footer>
+              <Button variant="secondary" className="fw-bold" disabled={saving} onClick={() => setExchangeModePrompt(null)}>CANCEL</Button>
+          </Modal.Footer>
       </Modal>
 
       <style>{`

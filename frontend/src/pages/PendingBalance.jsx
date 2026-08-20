@@ -26,6 +26,7 @@ export default function PendingBalance() {
   const [noteModal, setNoteModal] = useState(null); // { row, promise_date, note, saving }
   const [notes, setNotes] = useState([]);
   const [notesOnly, setNotesOnly] = useState(false);
+  const [ledgerModal, setLedgerModal] = useState(null); // { row, loading, data }
 
   useEffect(() => {
     load();
@@ -264,6 +265,18 @@ export default function PendingBalance() {
     }
   };
 
+  const openLedgerModal = async (r) => {
+    if (!r.entityId) { goToAccount(r); return; }
+    setLedgerModal({ row: r, loading: true, data: null });
+    try {
+      const { data } = await api.get(`/ledgers/statement/${r.entityId}`);
+      setLedgerModal({ row: r, loading: false, data });
+    } catch (e) {
+      toast.error('Failed to load ledger');
+      setLedgerModal(null);
+    }
+  };
+
   const categoryLabel = (cat) => CATEGORIES.find(c => c.id === cat)?.label || cat;
 
   return (
@@ -346,7 +359,7 @@ export default function PendingBalance() {
                   <td className="text-end fw-bold text-danger" style={{ whiteSpace: 'nowrap' }}>₹{r.balance.toLocaleString('en-IN')}</td>
                   <td className="text-center">
                     <div className="d-flex gap-1 justify-content-center">
-                      <button className="btn btn-sm btn-outline-primary" onClick={() => goToAccount(r)}>VIEW</button>
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => openLedgerModal(r)}>VIEW</button>
                       <button
                         className="btn btn-sm btn-outline-success"
                         title={r.phone ? 'Send WhatsApp reminder' : 'No phone number on file'}
@@ -452,6 +465,79 @@ export default function PendingBalance() {
                 </button>
                 <button type="button" className="btn btn-warning fw-bold px-4" onClick={saveNote} disabled={noteModal.saving || !noteModal.promise_date}>
                   {noteModal.saving ? <><span className="spinner-border spinner-border-sm me-2"></span>Saving...</> : '📝 Save Note'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {ledgerModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1055 }}>
+          <div className="modal-dialog modal-dialog-centered modal-xl">
+            <div className="modal-content border-0 shadow-lg rounded-4">
+              <div className="modal-header border-0 bg-dark text-white rounded-top-4 px-4 pt-4 pb-3">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0 text-uppercase">{ledgerModal.row.name}</h5>
+                  <div className="small opacity-75 d-flex gap-2 align-items-center mt-1">
+                    <span className="badge bg-light text-dark">{ledgerModal.data?.entity?.type || 'Entity'}</span>
+                    {ledgerModal.data && (
+                      <span className={`fw-bold text-uppercase ${parseFloat(ledgerModal.data.closing_balance) >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {ledgerModal.data.entity?.is_asset_account ? 'Balance' : (parseFloat(ledgerModal.data.closing_balance) >= 0 ? 'Receivable' : 'Payable')}
+                      </span>
+                    )}
+                    {parseFloat(ledgerModal.data?.entity?.exchange_credit_balance || 0) > 0 && (
+                      <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle">
+                        🔒 Reserved Exchange Credit: ₹{parseFloat(ledgerModal.data.entity.exchange_credit_balance).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button className="btn-close btn-close-white" onClick={() => setLedgerModal(null)}></button>
+              </div>
+              <div className="modal-body p-0" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+                {ledgerModal.loading ? (
+                  <div className="text-center py-5"><div className="spinner-border text-primary" /></div>
+                ) : (
+                  <>
+                    <div className="d-flex gap-4 px-4 py-3 border-bottom bg-light">
+                      <div><span className="x-small text-muted d-block">DEBIT TOTAL</span><span className="fw-bold">₹{(ledgerModal.data?.entries || []).reduce((s, e) => s + parseFloat(e.debit || 0), 0).toLocaleString('en-IN')}</span></div>
+                      <div><span className="x-small text-muted d-block">CREDIT TOTAL</span><span className="fw-bold">₹{(ledgerModal.data?.entries || []).reduce((s, e) => s + parseFloat(e.credit || 0), 0).toLocaleString('en-IN')}</span></div>
+                      <div><span className="x-small text-muted d-block">CLOSING BALANCE</span><span className="fw-bold">₹{Math.abs(parseFloat(ledgerModal.data?.closing_balance || 0)).toLocaleString('en-IN')} {parseFloat(ledgerModal.data?.closing_balance || 0) >= 0 ? 'Dr' : 'Cr'}</span></div>
+                    </div>
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead className="table-dark text-uppercase">
+                          <tr>
+                            <th>Date</th><th>Type</th><th>Mode</th>
+                            <th className="text-end">Debit (Dr)</th><th className="text-end">Credit (Cr)</th>
+                            <th className="text-end">Balance</th><th>Narration</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(ledgerModal.data?.entries || []).length === 0 ? (
+                            <tr><td colSpan={7} className="text-center py-4 text-muted fw-bold">No ledger entries</td></tr>
+                          ) : ledgerModal.data.entries.map((item, idx) => (
+                            <tr key={idx}>
+                              <td className="text-nowrap">{new Date(item.date).toLocaleDateString('en-GB')}</td>
+                              <td><span className="badge bg-secondary">{item.voucher_type}</span></td>
+                              <td>—</td>
+                              <td className="text-end">{parseFloat(item.debit || 0) > 0 ? `₹${parseFloat(item.debit).toLocaleString('en-IN')}` : '—'}</td>
+                              <td className="text-end">{parseFloat(item.credit || 0) > 0 ? `₹${parseFloat(item.credit).toLocaleString('en-IN')}` : '—'}</td>
+                              <td className="text-end fw-bold text-nowrap">₹{Math.abs(parseFloat(item.running_balance || 0)).toLocaleString('en-IN')} {parseFloat(item.running_balance || 0) >= 0 ? 'Dr' : 'Cr'}</td>
+                              <td className="small">{item.particulars}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="modal-footer border-0 px-4 pb-4 pt-2 gap-2">
+                <button type="button" className="btn btn-light fw-bold px-4" onClick={() => setLedgerModal(null)}>Close</button>
+                <button type="button" className="btn btn-primary fw-bold px-4" onClick={() => goToAccount(ledgerModal.row)}>
+                  Open Full Ledger ↗
                 </button>
               </div>
             </div>

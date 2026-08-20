@@ -284,6 +284,8 @@ class SaleInvoiceController extends Controller
                 ]);
             }
 
+            $this->applyExchangeCreditWallet($invoice, $customerId, (float) ($data['exchange_paid'] ?? 0));
+
             // Record Finance Company transaction if applicable
             $financeAmt = (float) ($data['finance_amount'] ?? 0);
             $financerId = $data['financer_id'] ?? null;
@@ -669,6 +671,13 @@ class SaleInvoiceController extends Controller
 
             $oldFinancerId = $saleInvoice->financer_id;
 
+            // Refund whatever wallet credit this invoice previously drew, before
+            // recomputing fresh below with the (possibly changed) exchange_paid.
+            if ($saleInvoice->wallet_credit_used > 0 && $saleInvoice->customer_id) {
+                \App\Models\Customer::where('id', $saleInvoice->customer_id)
+                    ->increment('exchange_credit_balance', $saleInvoice->wallet_credit_used);
+            }
+
             $saleInvoice->update([
                 'customer_id'    => $data['customer_id'],
                 'sold_by_id'     => $data['sold_by_id'] ?? $saleInvoice->sold_by_id,
@@ -754,6 +763,15 @@ class SaleInvoiceController extends Controller
                     'description' => "Sale income recorded for Invoice #{$saleInvoice->invoice_no} ({$saleInvoice->customer_name})" . ($itemNames ? " [{$itemNames}]" : ''),
                 ]);
             }
+
+            // Delete the old wallet-credit transaction (if any) and re-draw fresh
+            // from the wallet with the current exchange_paid value.
+            \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                ->where('entity_id', $saleInvoice->id)
+                ->where('category', 'EXCHANGE_CREDIT_APPLIED')
+                ->get()
+                ->each(fn ($tx) => $tx->delete());
+            $this->applyExchangeCreditWallet($saleInvoice, $saleInvoice->customer_id, (float) ($data['exchange_paid'] ?? 0));
 
             $financeAmt = (float) ($data['finance_amount'] ?? 0);
             $financerId = $data['financer_id'] ?? null;
@@ -953,7 +971,13 @@ class SaleInvoiceController extends Controller
                 foreach ($saleInvoice->items as $item) {
                     Inventory::addStock($saleInvoice->shop_id, $item->product_id, $item->quantity);
                 }
-                $saleInvoice->update(['is_cancelled' => true]);
+
+                if ($saleInvoice->wallet_credit_used > 0 && $saleInvoice->customer_id) {
+                    \App\Models\Customer::where('id', $saleInvoice->customer_id)
+                        ->increment('exchange_credit_balance', $saleInvoice->wallet_credit_used);
+                }
+
+                $saleInvoice->update(['is_cancelled' => true, 'wallet_credit_used' => 0]);
 
                 // Delete associated transactions in a loop so Eloquent events fire
                 $transactions = \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
@@ -999,6 +1023,10 @@ class SaleInvoiceController extends Controller
                 foreach ($saleInvoice->items as $item) {
                     Inventory::addStock($saleInvoice->shop_id, $item->product_id, $item->quantity);
                 }
+            }
+            if ($saleInvoice->wallet_credit_used > 0 && $saleInvoice->customer_id) {
+                \App\Models\Customer::where('id', $saleInvoice->customer_id)
+                    ->increment('exchange_credit_balance', $saleInvoice->wallet_credit_used);
             }
             // Deleting the invoice is a real SQL DELETE for financePlan's sake, but
             // SaleInvoice itself uses SoftDeletes — a soft delete never fires the DB's
@@ -1380,6 +1408,47 @@ class SaleInvoiceController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Draw exchange_paid from the customer's reserved exchange_credit_balance
+     * wallet first. Only the wallet-sourced portion needs a fresh ledger
+     * Credit posted here — any remaining exchange_paid is already reflected
+     * in the customer's pre-existing negative ledger balance (from an
+     * "adjust"-mode exchange credit), which this invoice's own SALE debit
+     * naturally nets against without any extra posting.
+     */
+    private function applyExchangeCreditWallet(SaleInvoice $invoice, $customerId, float $exchangePaid): void
+    {
+        if ($exchangePaid <= 0 || !$customerId) {
+            if ($invoice->wallet_credit_used > 0) {
+                $invoice->wallet_credit_used = 0;
+                $invoice->saveQuietly();
+            }
+            return;
+        }
+
+        $customer = \App\Models\Customer::find($customerId);
+        if (!$customer) return;
+
+        $walletAvailable = (float) $customer->exchange_credit_balance;
+        $walletUsed = min($exchangePaid, $walletAvailable);
+
+        if ($walletUsed > 0) {
+            $customer->decrement('exchange_credit_balance', $walletUsed);
+            $this->transactionService->recordForModel($invoice, [
+                'type'         => 'IN',
+                'category'     => 'EXCHANGE_CREDIT_APPLIED',
+                'amount'       => $walletUsed,
+                'payment_mode' => 'EXCHANGE',
+                'description'  => "Reserved exchange credit applied to Invoice #{$invoice->invoice_no} ({$invoice->customer_name})",
+                'transaction_date' => $invoice->sale_date,
+                'shop_id'      => $invoice->shop_id,
+            ]);
+        }
+
+        $invoice->wallet_credit_used = $walletUsed;
+        $invoice->saveQuietly();
     }
 
     /**

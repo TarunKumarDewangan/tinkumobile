@@ -34,6 +34,18 @@ class OldMobileController extends Controller
         if ($purchase->purchase_price <= 0) return;
 
         if ($purchase->is_exchange) {
+            if ($purchase->exchange_credit_mode === 'reserve') {
+                // Held in the customer's wallet, not posted to the ledger yet —
+                // it only becomes a real ledger entry when actually applied to
+                // a future sale (see SaleInvoiceController), so it can't be
+                // silently absorbed by unrelated dues in the meantime.
+                if ($purchase->customer_id) {
+                    \App\Models\Customer::where('id', $purchase->customer_id)
+                        ->increment('exchange_credit_balance', $purchase->purchase_price);
+                }
+                return;
+            }
+
             $this->transactionService->recordForModel($purchase, [
                 'type'             => 'IN',
                 'category'         => 'OLD_MOBILE_EXCHANGE',
@@ -100,6 +112,7 @@ class OldMobileController extends Controller
             'payment_lines'  => 'nullable|array|min:2',
             'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
             'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
+            'exchange_credit_mode' => 'nullable|in:adjust,reserve',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -124,6 +137,7 @@ class OldMobileController extends Controller
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
+        $data['exchange_credit_mode'] = ($data['is_exchange'] ?? false) ? ($data['exchange_credit_mode'] ?? 'adjust') : null;
 
         return DB::transaction(function () use ($data, $user) {
             $purchase = OldMobilePurchase::create($data);
@@ -190,6 +204,7 @@ class OldMobileController extends Controller
             'purchase_date'  => 'required|date',
             'is_exchange'    => 'nullable|boolean',
             'pay_later'      => 'nullable|boolean',
+            'exchange_credit_mode' => 'nullable|in:adjust,reserve',
             'items'          => 'required|array|min:1',
             'items.*.model_name'     => 'required|string|max:150',
             'items.*.imei'           => 'nullable|string|max:20',
@@ -214,6 +229,7 @@ class OldMobileController extends Controller
         $shopId = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $isExchange = (bool) ($data['is_exchange'] ?? false);
         $payLater = (bool) ($data['pay_later'] ?? false);
+        $exchangeCreditMode = $isExchange ? ($data['exchange_credit_mode'] ?? 'adjust') : null;
         $categoryId = \App\Models\Category::mobileOldId();
 
         // Only tag a batch_id when there's actually more than one device —
@@ -221,7 +237,7 @@ class OldMobileController extends Controller
         // original single-purchase flow, so leave it ungrouped like those.
         $batchId = count($data['items']) > 1 ? (string) \Illuminate\Support\Str::uuid() : null;
 
-        return DB::transaction(function () use ($data, $user, $customerId, $shopId, $isExchange, $payLater, $categoryId, $batchId) {
+        return DB::transaction(function () use ($data, $user, $customerId, $shopId, $isExchange, $payLater, $exchangeCreditMode, $categoryId, $batchId) {
             $created = [];
             $totalAmount = 0;
 
@@ -236,6 +252,7 @@ class OldMobileController extends Controller
                     'purchase_price' => $item['purchase_price'],
                     'selling_price'  => $item['selling_price'] ?? 0,
                     'is_exchange'    => $isExchange,
+                    'exchange_credit_mode' => $exchangeCreditMode,
                     'pay_later'      => $payLater,
                     'ram'            => $item['ram'] ?? null,
                     'storage'        => $item['storage'] ?? null,
@@ -312,6 +329,7 @@ class OldMobileController extends Controller
             'selling_price'  => 'nullable|numeric|min:0',
             'is_exchange'    => 'nullable|boolean',
             'pay_later'      => 'nullable|boolean',
+            'exchange_credit_mode' => 'nullable|in:adjust,reserve',
             'ram'            => 'nullable|string|max:50',
             'storage'        => 'nullable|string|max:50',
             'color'          => 'nullable|string|max:100',
@@ -349,6 +367,16 @@ class OldMobileController extends Controller
         }
 
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
+        $data['exchange_credit_mode'] = ($data['is_exchange'] ?? false) ? ($data['exchange_credit_mode'] ?? 'adjust') : null;
+
+        // If the previous version of this purchase reserved wallet credit,
+        // reverse that first — otherwise editing it (e.g. changing the price,
+        // or switching modes) would leave the wallet holding a stale amount
+        // instead of reflecting only what this purchase currently represents.
+        if ($oldMobilePurchase->is_exchange && $oldMobilePurchase->exchange_credit_mode === 'reserve' && $oldMobilePurchase->customer_id) {
+            \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)
+                ->decrement('exchange_credit_balance', $oldMobilePurchase->purchase_price);
+        }
 
         // Update purchase record
         $oldMobilePurchase->update($data);
@@ -410,6 +438,14 @@ class OldMobileController extends Controller
             if ($isSold) {
                 return response()->json(['message' => 'Cannot delete this purchase because the device has already been sold.'], 422);
             }
+        }
+
+        // A reserved-mode purchase never posted to the ledger — it only lives in
+        // the customer's wallet, so reverse that here (never below 0, in case
+        // some of it was already spent on a sale in the meantime).
+        if ($oldMobilePurchase->is_exchange && $oldMobilePurchase->exchange_credit_mode === 'reserve' && $oldMobilePurchase->customer_id) {
+            \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)
+                ->update(['exchange_credit_balance' => DB::raw('GREATEST(0, exchange_credit_balance - ' . (float) $oldMobilePurchase->purchase_price . ')')]);
         }
 
         // Delete associated transaction records (individual deletes fire model events → cleans ledger table)
