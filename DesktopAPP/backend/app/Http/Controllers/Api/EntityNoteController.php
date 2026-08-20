@@ -10,6 +10,11 @@ class EntityNoteController extends Controller
 {
     public function index(Request $request)
     {
+        // Catches every way a balance can clear that isn't the one specific
+        // "payment on this exact invoice" hook — a Settle, a different
+        // invoice, a repair/EMI payment, or a note with no sale_invoice_id.
+        EntityNote::reconcilePending();
+
         $user = $request->user();
         $query = EntityNote::with('entity', 'createdBy');
 
