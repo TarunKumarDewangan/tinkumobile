@@ -19,13 +19,15 @@ class PendingBalanceGroupSummaryCommand extends Command
             return;
         }
 
-        $msg = $service->buildPendingBalanceAndPromiseListMessage();
-        $sent = $telegram->sendToPendingGroup($msg);
+        // Sent as two separate messages (not one combined one) so either can
+        // be read/forwarded on its own.
+        $pendingSent = $telegram->sendToPendingGroup($service->buildPendingBalanceListMessage());
+        $promiseSent = $telegram->sendToPendingGroup($service->buildPromiseListMessage());
 
-        if ($sent) {
+        if ($pendingSent && $promiseSent) {
             $this->info('Pending Balance group summary sent successfully.');
         } else {
-            $this->error('Failed to send Pending Balance group summary.');
+            $this->error('Failed to send one or both Pending Balance group messages.');
         }
     }
 }

@@ -92,21 +92,24 @@ class NotificationController extends Controller
             'channels.*' => 'in:pending_group,owner',
         ]);
 
-        $msg = $service->buildPendingBalanceAndPromiseListMessage();
+        // Sent as two separate messages (not one combined one) so either can
+        // be read/forwarded on its own.
+        $pendingMsg = $service->buildPendingBalanceListMessage();
+        $promiseMsg = $service->buildPromiseListMessage();
 
         $pendingGroupSent = false;
         $ownerSent = false;
         if (in_array('pending_group', $data['channels'])) {
-            $pendingGroupSent = $telegram->sendToPendingGroup($msg);
+            $pendingGroupSent = $telegram->sendToPendingGroup($pendingMsg) && $telegram->sendToPendingGroup($promiseMsg);
         }
         if (in_array('owner', $data['channels'])) {
-            $ownerSent = $telegram->sendToOwner($msg);
+            $ownerSent = $telegram->sendToOwner($pendingMsg) && $telegram->sendToOwner($promiseMsg);
         }
 
         ActivityLog::log('MANUAL_PENDING_BALANCE_SUMMARY_SENT', $user, "Pending Balance summary manually sent by {$user->name}");
 
         return response()->json([
-            'message' => $msg,
+            'message' => $pendingMsg . "\n\n" . $promiseMsg,
             'pending_group' => $pendingGroupSent,
             'owner' => $ownerSent,
         ]);
