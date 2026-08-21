@@ -525,7 +525,15 @@ export default function PendingBalance() {
                               <td className="text-end">{parseFloat(item.debit || 0) > 0 ? `₹${parseFloat(item.debit).toLocaleString('en-IN')}` : '—'}</td>
                               <td className="text-end">{parseFloat(item.credit || 0) > 0 ? `₹${parseFloat(item.credit).toLocaleString('en-IN')}` : '—'}</td>
                               <td className="text-end fw-bold text-nowrap">₹{Math.abs(parseFloat(item.running_balance || 0)).toLocaleString('en-IN')} {parseFloat(item.running_balance || 0) >= 0 ? 'Dr' : 'Cr'}</td>
-                              <td className="small">{item.particulars}</td>
+                              <td className="small">
+                                {item.particulars}
+                                {item.product_names && (
+                                  <>
+                                    {' '}
+                                    <mark className="px-1">{item.product_names}</mark>
+                                  </>
+                                )}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

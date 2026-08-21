@@ -155,7 +155,8 @@ class LedgerController extends Controller
             $ledger->running_balance = $runningBalance;
 
             $isNonMobile = false;
-            
+            $productNames = null;
+
             if ($vType === 'SALE' || $vType === 'SALE_FINANCE') {
                 $invoice = $saleInvoices[$vId] ?? null;
                 if ($invoice) {
@@ -170,6 +171,9 @@ class LedgerController extends Controller
                     if (!$hasMobileItem) {
                         $isNonMobile = true;
                     }
+                    $productNames = $invoice->items
+                        ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+                        ->implode(', ');
                 }
             } elseif ($vType === 'PURCHASE') {
                 $invoice = $purchaseInvoices[$vId] ?? null;
@@ -185,6 +189,9 @@ class LedgerController extends Controller
                     if (!$hasMobileItem) {
                         $isNonMobile = true;
                     }
+                    $productNames = $invoice->items
+                        ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+                        ->implode(', ');
                 }
             } elseif ($vType === 'REPAIR') {
                 $isNonMobile = true;
@@ -194,7 +201,7 @@ class LedgerController extends Controller
                     $txCategory = $tx->category;
                     $txType = $tx->entity_type;
                     $txRefId = $tx->entity_id;
-                    
+
                     $nonMobileCategories = ['RECHARGE_SALE', 'RECHARGE_PURCHASE', 'ACCESSORY_SALE', 'ACCESSORY_PURCHASE', 'SIM_SALE', 'SIM_PURCHASE', 'REPAIR'];
                     if (in_array($txCategory, $nonMobileCategories)) {
                         $isNonMobile = true;
@@ -212,6 +219,9 @@ class LedgerController extends Controller
                             if (!$hasMobileItem) {
                                 $isNonMobile = true;
                             }
+                            $productNames = $invoice->items
+                                ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+                                ->implode(', ');
                         }
                     } elseif (($txType === 'App\Models\PurchaseInvoice' || $txType === 'purchase') && $txRefId) {
                         $invoice = \App\Models\PurchaseInvoice::with('items.product.category')->find($txRefId);
@@ -227,11 +237,15 @@ class LedgerController extends Controller
                             if (!$hasMobileItem) {
                                 $isNonMobile = true;
                             }
+                            $productNames = $invoice->items
+                                ->map(fn($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " (x{$it->quantity})" : ''))
+                                ->implode(', ');
                         }
                     }
                 }
             }
             $ledger->is_non_mobile = $isNonMobile;
+            $ledger->product_names = $productNames ?: null;
             $statement[] = $ledger;
         }
 
