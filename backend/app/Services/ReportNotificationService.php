@@ -461,13 +461,57 @@ class ReportNotificationService
     }
 
     /**
+     * Splits a long list into several full Telegram messages (each with its
+     * own header/footer/Total) instead of one message with a "+N more"
+     * trailer — Telegram caps messages at ~4096 characters, and a shop this
+     * size routinely has 50+ pending entries, so a single unbounded message
+     * would silently fail to send. Each chunk is its own complete message so
+     * every entry is actually visible, just spread across multiple sends.
+     *
+     * @param \Illuminate\Support\Collection $items
+     * @param callable $formatRow fn($row): string — one already-formatted row line
+     */
+    private function chunkListMessages(string $emoji, string $title, string $todayLabel, $items, callable $formatRow, float $total, string $emptyLine, int $chunkSize = 25): array
+    {
+        $header = "{$emoji} *{$title} ({$todayLabel}) — {$items->count()}*\n---------------------------\n";
+        $footer = "---------------------------\n_Tinku Mobiles Management System_";
+
+        if ($items->isEmpty()) {
+            return [$header . $emptyLine . "\n" . $footer];
+        }
+
+        $chunks = $items->chunk($chunkSize)->values();
+        $totalChunks = $chunks->count();
+        $messages = [];
+
+        foreach ($chunks as $idx => $chunk) {
+            $page = $totalChunks > 1 ? ' (Part ' . ($idx + 1) . "/{$totalChunks})" : '';
+            $msg = "{$emoji} *{$title}{$page} ({$todayLabel}) — {$items->count()}*\n---------------------------\n";
+            $startNum = $idx * $chunkSize;
+            foreach ($chunk->values() as $i => $row) {
+                $msg .= ($startNum + $i + 1) . '. ' . $formatRow($row) . "\n";
+            }
+            if ($idx === $totalChunks - 1) {
+                $msg .= '*Total: ₹' . number_format($total, 0) . "*\n";
+            }
+            $msg .= $footer;
+            $messages[] = $msg;
+        }
+
+        return $messages;
+    }
+
+    /**
      * Plain Name - Mobile - Balance list of every Customer (not Shop Customer
      * — a separate relationship) with a pending balance — same shape as the
-     * "Copy List" button on that page. Sent as its own Telegram message
-     * (see buildPromiseListMessage for the companion Promise to Pay one) so
+     * "Copy List" button on that page. Sent as its own set of Telegram
+     * messages, split into chunks so nothing is silently cut off (see
+     * buildPromiseListMessages for the companion Promise to Pay one) so
      * either can be read/forwarded independently.
+     *
+     * @return string[]
      */
-    public function buildPendingBalanceListMessage(int $limit = 40): string
+    public function buildPendingBalanceListMessages(int $chunkSize = 25): array
     {
         $today = Carbon::today();
 
@@ -483,67 +527,50 @@ class ReportNotificationService
             ->sortByDesc('net_balance')
             ->values();
 
-        $msg = "💰 *Pending Balance ({$today->format('d M Y')}) — {$pending->count()}*\n";
-        $msg .= "---------------------------\n";
+        $total = $pending->sum(fn ($e) => (float) $e['net_balance']);
 
-        if ($pending->isEmpty()) {
-            $msg .= "✅ Nothing pending.\n";
-        } else {
-            // Telegram caps messages at ~4096 characters — with a shop this
-            // size routinely having 50+ entries, an unbounded list silently
-            // fails to send at all. Cap the DISPLAYED rows (highest balances
-            // first, so what's cut is the least urgent), but keep the Total
-            // accurate across every entry, not just the shown ones.
-            $total = $pending->sum(fn ($e) => (float) $e['net_balance']);
-            foreach ($pending->take($limit) as $i => $e) {
-                $msg .= ($i + 1) . ". " . $this->escapeTelegramMarkdown($e['name']) . $this->telegramPhoneLink($e['phone']) . " - ₹" . number_format($e['net_balance'], 0) . "\n";
-            }
-            if ($pending->count() > $limit) {
-                $msg .= "... +" . ($pending->count() - $limit) . " more\n";
-            }
-            $msg .= "*Total: ₹" . number_format($total, 0) . "*\n";
-        }
-
-        $msg .= "---------------------------\n";
-        $msg .= "_Tinku Mobiles Management System_";
-
-        return $msg;
+        return $this->chunkListMessages(
+            '💰',
+            'Pending Balance',
+            $today->format('d M Y'),
+            $pending,
+            fn ($e) => $this->escapeTelegramMarkdown($e['name']) . $this->telegramPhoneLink($e['phone']) . ' - ₹' . number_format($e['net_balance'], 0),
+            $total,
+            '✅ Nothing pending.',
+            $chunkSize
+        );
     }
 
     /**
      * Plain Name - Mobile - Balance - Promised Date list of every open
-     * Promise to Pay note — the companion message to
-     * buildPendingBalanceListMessage, sent separately.
+     * Promise to Pay note — the companion set of messages to
+     * buildPendingBalanceListMessages, sent separately.
+     *
+     * @return string[]
      */
-    public function buildPromiseListMessage(int $limit = 30): string
+    public function buildPromiseListMessages(int $chunkSize = 25): array
     {
         $today = Carbon::today();
 
         EntityNote::reconcilePending();
         $promises = EntityNote::where('status', 'PENDING')->orderBy('promise_date')->get();
 
-        $msg = "🤝 *Promise to Pay ({$today->format('d M Y')}) — {$promises->count()}*\n";
-        $msg .= "---------------------------\n";
+        $total = $promises->sum(fn ($n) => (float) ($n->balance_at_time ?? 0));
 
-        if ($promises->isEmpty()) {
-            $msg .= "✅ Nothing pending.\n";
-        } else {
-            $promiseTotal = $promises->sum(fn ($n) => (float) ($n->balance_at_time ?? 0));
-            foreach ($promises->take($limit) as $i => $n) {
+        return $this->chunkListMessages(
+            '🤝',
+            'Promise to Pay',
+            $today->format('d M Y'),
+            $promises,
+            function ($n) use ($today) {
                 $amount = $n->balance_at_time !== null ? '₹' . number_format($n->balance_at_time, 0) : '—';
                 $overdueTag = $n->promise_date->lt($today) ? ' (OVERDUE)' : '';
-                $msg .= ($i + 1) . ". " . $this->escapeTelegramMarkdown($n->name) . $this->telegramPhoneLink($n->phone) . " - {$amount} - Promised: " . $n->promise_date->format('d M') . "{$overdueTag}\n";
-            }
-            if ($promises->count() > $limit) {
-                $msg .= "... +" . ($promises->count() - $limit) . " more\n";
-            }
-            $msg .= "*Total: ₹" . number_format($promiseTotal, 0) . "*\n";
-        }
-
-        $msg .= "---------------------------\n";
-        $msg .= "_Tinku Mobiles Management System_";
-
-        return $msg;
+                return $this->escapeTelegramMarkdown($n->name) . $this->telegramPhoneLink($n->phone) . " - {$amount} - Promised: " . $n->promise_date->format('d M') . $overdueTag;
+            },
+            $total,
+            '✅ Nothing pending.',
+            $chunkSize
+        );
     }
 
     /**
@@ -551,9 +578,11 @@ class ReportNotificationService
      * overdue or soon-due Personal EMI installment — same data as
      * buildEmiDueReminderMessage's Overdue/Due-in-2-days sections, just
      * flattened into the simple list shape used by the Pending Balance and
-     * Promise to Pay messages, sent as its own Telegram message.
+     * Promise to Pay messages, sent as its own set of Telegram messages.
+     *
+     * @return string[]
      */
-    public function buildPersonalFinanceDueListMessage(int $limit = 30): string
+    public function buildPersonalFinanceDueListMessages(int $chunkSize = 25): array
     {
         $today = Carbon::today();
         $cutoff = $today->copy()->addDays(2);
@@ -582,28 +611,22 @@ class ReportNotificationService
         }
         $rows = $rows->sortBy('due_date')->values();
 
-        $msg = "📅 *Personal Finance Due ({$today->format('d M Y')}) — {$rows->count()}*\n";
-        $msg .= "---------------------------\n";
+        $total = $rows->sum('amount');
 
-        if ($rows->isEmpty()) {
-            $msg .= "✅ Nothing due.\n";
-        } else {
-            $total = $rows->sum('amount');
-            foreach ($rows->take($limit) as $i => $r) {
+        return $this->chunkListMessages(
+            '📅',
+            'Personal Finance Due',
+            $today->format('d M Y'),
+            $rows,
+            function ($r) {
                 $overdueTag = $r['overdue'] ? ' (OVERDUE)' : '';
-                $msg .= ($i + 1) . ". " . $this->escapeTelegramMarkdown($r['name']) . $this->telegramPhoneLink($r['phone'])
-                    . " - ₹" . number_format($r['amount'], 0) . " - Due: " . $r['due_date']->format('d M') . "{$overdueTag}\n";
-            }
-            if ($rows->count() > $limit) {
-                $msg .= "... +" . ($rows->count() - $limit) . " more\n";
-            }
-            $msg .= "*Total: ₹" . number_format($total, 0) . "*\n";
-        }
-
-        $msg .= "---------------------------\n";
-        $msg .= "_Tinku Mobiles Management System_";
-
-        return $msg;
+                return $this->escapeTelegramMarkdown($r['name']) . $this->telegramPhoneLink($r['phone'])
+                    . ' - ₹' . number_format($r['amount'], 0) . ' - Due: ' . $r['due_date']->format('d M') . $overdueTag;
+            },
+            $total,
+            '✅ Nothing due.',
+            $chunkSize
+        );
     }
 
     /**

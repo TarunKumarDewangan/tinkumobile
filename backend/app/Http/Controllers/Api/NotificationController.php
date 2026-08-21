@@ -92,39 +92,41 @@ class NotificationController extends Controller
             'channels.*' => 'in:pending_group,owner',
         ]);
 
-        // Sent as three separate messages (not one combined one) so any one
-        // can be read/forwarded on its own. A short gap between each avoids
-        // Telegram's brief rate-limiting of rapid back-to-back sends from the
-        // same bot to the same chat — and each is attempted regardless of
+        // Sent as three separate lists (Pending Balance, Promise to Pay,
+        // Personal Finance Due), each possibly split into several messages
+        // of 25 rows so nothing is ever silently cut off with "+N more". A
+        // short gap between every single send avoids Telegram's brief
+        // rate-limiting of rapid back-to-back sends from the same bot to
+        // the same chat — and every message is attempted regardless of
         // whether an earlier one failed, so one hiccup doesn't hide the rest.
-        $pendingMsg = $service->buildPendingBalanceListMessage();
-        $promiseMsg = $service->buildPromiseListMessage();
-        $financeMsg = $service->buildPersonalFinanceDueListMessage();
+        $allMessages = array_merge(
+            $service->buildPendingBalanceListMessages(),
+            $service->buildPromiseListMessages(),
+            $service->buildPersonalFinanceDueListMessages()
+        );
 
-        $sendThree = function (callable $send) {
-            $r1 = $send(0);
-            sleep(1);
-            $r2 = $send(1);
-            sleep(1);
-            $r3 = $send(2);
-            return $r1 && $r2 && $r3;
+        $sendAll = function (callable $send) use ($allMessages) {
+            $ok = true;
+            foreach ($allMessages as $i => $msg) {
+                if ($i > 0) sleep(1);
+                $ok = $send($msg) && $ok;
+            }
+            return $ok;
         };
 
         $pendingGroupSent = false;
         $ownerSent = false;
         if (in_array('pending_group', $data['channels'])) {
-            $messages = [$pendingMsg, $promiseMsg, $financeMsg];
-            $pendingGroupSent = $sendThree(fn ($i) => $telegram->sendToPendingGroup($messages[$i]));
+            $pendingGroupSent = $sendAll(fn ($msg) => $telegram->sendToPendingGroup($msg));
         }
         if (in_array('owner', $data['channels'])) {
-            $messages = [$pendingMsg, $promiseMsg, $financeMsg];
-            $ownerSent = $sendThree(fn ($i) => $telegram->sendToOwner($messages[$i]));
+            $ownerSent = $sendAll(fn ($msg) => $telegram->sendToOwner($msg));
         }
 
         ActivityLog::log('MANUAL_PENDING_BALANCE_SUMMARY_SENT', $user, "Pending Balance summary manually sent by {$user->name}");
 
         return response()->json([
-            'message' => $pendingMsg . "\n\n" . $promiseMsg . "\n\n" . $financeMsg,
+            'message' => implode("\n\n", $allMessages),
             'pending_group' => $pendingGroupSent,
             'owner' => $ownerSent,
         ]);
