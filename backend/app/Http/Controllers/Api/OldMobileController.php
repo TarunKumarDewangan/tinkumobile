@@ -134,6 +134,11 @@ class OldMobileController extends Controller
         // so MySQL's unique constraint doesn't block multiple phones without real IMEIs.
         $data['imei'] = $this->sanitizeImei($data['imei'] ?? null);
 
+        if ($dup = $this->findDuplicateImeiProduct($data['imei'])) {
+            return response()->json(['message' => "IMEI {$data['imei']} is already recorded against \"{$dup->name}\" (Product #{$dup->id}). Please verify the IMEI before saving."], 422);
+        }
+        $this->releaseImeiIfAlreadySold($data['imei']);
+
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
@@ -223,6 +228,24 @@ class OldMobileController extends Controller
 
         if (($data['is_exchange'] ?? false) && ($data['pay_later'] ?? false)) {
             return response()->json(['message' => 'Choose either Exchange Credit or Pay Later, not both.'], 422);
+        }
+
+        // Check every IMEI up front, both against existing products AND against
+        // each other within this same batch — otherwise a duplicate only surfaces
+        // mid-transaction as a raw 500 (and, worse, only after earlier devices in
+        // the same batch already got their inserts attempted).
+        $seenInBatch = [];
+        foreach ($data['items'] as $i => $item) {
+            $imei = $this->sanitizeImei($item['imei'] ?? null);
+            if (!$imei) continue;
+            if ($dup = $this->findDuplicateImeiProduct($imei)) {
+                return response()->json(['message' => "Device #" . ($i + 1) . ": IMEI {$imei} is already recorded against \"{$dup->name}\" (Product #{$dup->id}). Please verify the IMEI before saving."], 422);
+            }
+            if (isset($seenInBatch[$imei])) {
+                return response()->json(['message' => "Device #" . ($i + 1) . ": IMEI {$imei} is duplicated within this same batch (also on Device #{$seenInBatch[$imei]})."], 422);
+            }
+            $seenInBatch[$imei] = $i + 1;
+            $this->releaseImeiIfAlreadySold($imei);
         }
 
         $customerId = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE (BULK)');
@@ -353,6 +376,12 @@ class OldMobileController extends Controller
         if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
             return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
         }
+
+        $sanitizedImei = $this->sanitizeImei($data['imei'] ?? null);
+        if ($dup = $this->findDuplicateImeiProduct($sanitizedImei, $oldMobilePurchase->product_id)) {
+            return response()->json(['message' => "IMEI {$sanitizedImei} is already recorded against \"{$dup->name}\" (Product #{$dup->id}). Please verify the IMEI before saving."], 422);
+        }
+        $this->releaseImeiIfAlreadySold($sanitizedImei, $oldMobilePurchase->product_id);
 
         // Check if the associated product has already been sold
         if ($oldMobilePurchase->product_id) {
@@ -512,5 +541,58 @@ class OldMobileController extends Controller
         if (in_array(strtolower($cleaned), ['na', 'n/a', 'none', '-', '--', '000'])) return null;
 
         return $cleaned;
+    }
+
+    /**
+     * The `products` table has a unique constraint on `imei` — without this
+     * check, a genuine duplicate (same phone entered twice, or a retried
+     * submission) crashes as a raw 500 Integrity constraint violation
+     * instead of a clear, actionable error message.
+     *
+     * A 2nd-hand shop can legitimately buy the SAME physical device more
+     * than once over time (buy it, sell it, buy it back later) — so a
+     * product already carrying this IMEI is only a real duplicate if it
+     * hasn't been sold yet. If it was already sold, this is a genuine
+     * repurchase and must be allowed through (returns null = "not a
+     * blocking duplicate").
+     */
+    private function findDuplicateImeiProduct(?string $imei, ?int $excludeProductId = null): ?\App\Models\Product
+    {
+        if (!$imei) return null;
+        $existing = \App\Models\Product::where('imei', $imei)
+            ->when($excludeProductId, fn ($q) => $q->where('id', '!=', $excludeProductId))
+            ->first();
+        if (!$existing) return null;
+
+        $alreadySold = \App\Models\SaleItem::where('product_id', $existing->id)
+            ->whereHas('invoice', fn ($q) => $q->where('is_cancelled', false))
+            ->exists();
+
+        return $alreadySold ? null : $existing;
+    }
+
+    /**
+     * Companion to findDuplicateImeiProduct(): if a product already holds this
+     * IMEI but was already sold (so it's not a blocking duplicate), the DB's
+     * unique index on products.imei would still reject the new product's
+     * INSERT — free it up first. Safe to do: the original sale's own
+     * historical record keeps its own independent IMEI snapshot on the
+     * SaleItem row, not a live read of products.imei, so this doesn't erase
+     * anything from past invoices.
+     */
+    private function releaseImeiIfAlreadySold(?string $imei, ?int $excludeProductId = null): void
+    {
+        if (!$imei) return;
+        $existing = \App\Models\Product::where('imei', $imei)
+            ->when($excludeProductId, fn ($q) => $q->where('id', '!=', $excludeProductId))
+            ->first();
+        if (!$existing) return;
+
+        $alreadySold = \App\Models\SaleItem::where('product_id', $existing->id)
+            ->whereHas('invoice', fn ($q) => $q->where('is_cancelled', false))
+            ->exists();
+        if ($alreadySold) {
+            $existing->update(['imei' => null]);
+        }
     }
 }

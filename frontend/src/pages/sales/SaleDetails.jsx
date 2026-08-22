@@ -126,9 +126,16 @@ export default function SaleDetails() {
   if (loading) return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
   if (!invoice) return <div className="alert alert-danger">Invoice not found</div>;
 
-  const fp = invoice.finance_plan; // Personal EMI / Favor plan if exists
+  const fp = invoice.finance_plan; // Personal EMI / Favor / Processing Fee plan if exists
   const fpDownPayment = fp ? parseFloat(fp.down_payment || 0) : 0;
   const fpInstallmentsPaid = fp ? parseFloat(fp.total_paid || 0) : 0;
+  const fpTypeLabel = fp?.type === 'PERSONAL' ? '📅 PERSONAL FINANCE'
+    : fp?.type === 'PROCESSING_FEE' ? '🧾 PROCESSING FEE'
+    : '🤝 FAVOR FINANCE';
+  const fpTypeBadgeClass = fp?.type === 'PERSONAL' ? 'bg-primary'
+    : fp?.type === 'PROCESSING_FEE' ? ''
+    : 'bg-info';
+  const fpTypeBadgeStyle = fp?.type === 'PROCESSING_FEE' ? { background: '#7c3aed' } : undefined;
   const financerPaid = invoice.finance_payment_status === 'RECEIVED' ? parseFloat(invoice.finance_amount || 0) : 0;
   // For personal/favor finance: balance = remaining principal not yet paid via installments
   // For others: balance = grand_total minus all collected payments
@@ -522,8 +529,8 @@ export default function SaleDetails() {
                           <div className="mb-3">
                               <label className="small text-muted fw-bold mb-1">FINANCE TYPE</label>
                               <div className="d-block w-100">
-                                  <span className={`badge fs-6 w-100 py-2 rounded-1 ${fp.type === 'PERSONAL' ? 'bg-primary' : 'bg-info'}`}>
-                                      {fp.type === 'PERSONAL' ? '📅 PERSONAL FINANCE' : '🤝 FAVOR FINANCE'}
+                                  <span className={`badge fs-6 w-100 py-2 rounded-1 ${fpTypeBadgeClass}`} style={fpTypeBadgeStyle}>
+                                      {fpTypeLabel}
                                   </span>
                               </div>
                           </div>
@@ -553,15 +560,21 @@ export default function SaleDetails() {
                   <div className="card shadow-sm border-0 rounded-3 mb-3 bg-white">
                       <div className="card-body p-4">
                           <h5 className="fw-bold mb-3 border-bottom pb-2">
-                              {fp.type === 'PERSONAL' ? '📅 PERSONAL EMI PLAN' : '🤝 FAVOR FINANCE PLAN'}
+                              {fp.type === 'PERSONAL' ? '📅 PERSONAL EMI PLAN' : fp.type === 'PROCESSING_FEE' ? '🧾 PROCESSING FEE PLAN' : '🤝 FAVOR FINANCE PLAN'}
                           </h5>
                           <div className="d-flex flex-column gap-2">
                               <div className="d-flex justify-content-between p-2 bg-light rounded">
                                   <span className="small fw-bold text-muted">TYPE:</span>
-                                  <span className={`badge ${fp.type === 'PERSONAL' ? 'bg-primary' : 'bg-info'}`}>
-                                      {fp.type === 'PERSONAL' ? '📅 PERSONAL FINANCE' : '🤝 FAVOR FINANCE'}
+                                  <span className={`badge ${fpTypeBadgeClass}`} style={fpTypeBadgeStyle}>
+                                      {fpTypeLabel}
                                   </span>
                               </div>
+                              {fp.type === 'PROCESSING_FEE' && (
+                                  <div className="d-flex justify-content-between p-2 bg-light rounded">
+                                      <span className="small fw-bold text-muted">PROCESSING FEE:</span>
+                                      <span className="fw-bold text-dark">₹{parseFloat(fp.processing_fee || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                              )}
                               <div className="d-flex justify-content-between p-2 bg-light rounded">
                                   <span className="small fw-bold text-muted">DOWN PAYMENT:</span>
                                   <span className="fw-bold text-dark">₹{fpDownPayment.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>

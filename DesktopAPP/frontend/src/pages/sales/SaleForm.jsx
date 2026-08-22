@@ -118,6 +118,7 @@ export default function SaleForm() {
   const [shopFinance, setShopFinance] = useState({
     down_payment: 0, principal: 0, interest_rate: 0, interest_type: 'FLAT',
     total_payable: 0, tenure_months: 12, emi_start_date: '',
+    processing_fee: 0, monthly_emi_override: '',
   });
   // Whether the Interest % field or the Total Payable field is the one the
   // user is actively driving — the other one auto-fills from it.
@@ -336,6 +337,8 @@ export default function SaleForm() {
           // portion) — a plain <input type="date"> needs exactly YYYY-MM-DD or it
           // silently renders blank.
           emi_start_date: fp.emi_start_date ? fp.emi_start_date.slice(0, 10) : '',
+          processing_fee: fp.processing_fee || 0,
+          monthly_emi_override: fp.type === 'PROCESSING_FEE' ? (fp.monthly_emi || '') : '',
         });
       }
       if (data.rounding_mode === 'manual') setIsManualRound(true);
@@ -666,9 +669,24 @@ export default function SaleForm() {
     const p = parseFloat(shopFinance.principal) || 0;
     const n = parseInt(shopFinance.tenure_months) || 0;
     const type = shopFinance.interest_type || 'FLAT';
-    const empty = { monthlyEmi: 0, totalPayable: p, impliedRate: 0 };
+    const empty = { monthlyEmi: 0, totalPayable: p, impliedRate: 0, lastEmi: 0, suggestedEmi: 0 };
 
-    if (!p || !n || shopFinanceType !== 'PERSONAL') return empty;
+    if (!p || !n) return empty;
+
+    if (shopFinanceType === 'PROCESSING_FEE') {
+      const fee = parseFloat(shopFinance.processing_fee) || 0;
+      const totalPayable = parseFloat((p + fee).toFixed(2));
+      const suggestedEmi = Math.round(totalPayable / n);
+      const monthlyEmi = shopFinance.monthly_emi_override
+        ? parseFloat(shopFinance.monthly_emi_override) || suggestedEmi
+        : suggestedEmi;
+      // The last installment absorbs whatever rounding the EMI figure leaves
+      // over, so the schedule still sums to exactly totalPayable.
+      const lastEmi = parseFloat((totalPayable - monthlyEmi * (n - 1)).toFixed(2));
+      return { monthlyEmi, totalPayable, impliedRate: 0, lastEmi, suggestedEmi };
+    }
+
+    if (shopFinanceType !== 'PERSONAL') return empty;
 
     if (emiInputMode === 'TOTAL') {
       const targetTotal = parseFloat(shopFinance.total_payable) || 0;
@@ -695,7 +713,7 @@ export default function SaleForm() {
     const rate = r / 12 / 100;
     const emi  = p * rate * Math.pow(1 + rate, n) / (Math.pow(1 + rate, n) - 1);
     return { monthlyEmi: parseFloat(emi.toFixed(2)), totalPayable: parseFloat((emi * n).toFixed(2)), impliedRate: r };
-  }, [shopFinance.principal, shopFinance.interest_rate, shopFinance.interest_type, shopFinance.total_payable, shopFinance.tenure_months, shopFinanceType, emiInputMode]);
+  }, [shopFinance.principal, shopFinance.interest_rate, shopFinance.interest_type, shopFinance.total_payable, shopFinance.tenure_months, shopFinance.processing_fee, shopFinance.monthly_emi_override, shopFinanceType, emiInputMode]);
 
   // Auto-calculate exchange payment split when grand total or credit changes
   useEffect(() => {
@@ -926,6 +944,7 @@ export default function SaleForm() {
       // and editing an existing one (the backend creates the plan if the
       // invoice doesn't have one yet, or updates it in place if it does).
       if (useShopFinance && shopFinance.principal > 0) {
+          const isScheduled = shopFinanceType === 'PERSONAL' || shopFinanceType === 'PROCESSING_FEE';
           finalForm.shop_finance = {
               type:           shopFinanceType,
               down_payment:   shopFinance.down_payment,
@@ -935,8 +954,12 @@ export default function SaleForm() {
               // derives the other one (and the authoritative EMI) from it.
               interest_rate:  shopFinanceType === 'PERSONAL' && emiInputMode === 'RATE' ? (shopFinance.interest_rate || 0) : null,
               total_payable:  shopFinanceType === 'PERSONAL' && emiInputMode === 'TOTAL' ? (shopFinance.total_payable || 0) : null,
-              tenure_months:  shopFinanceType === 'PERSONAL' ? (shopFinance.tenure_months || null) : null,
-              emi_start_date: shopFinanceType === 'PERSONAL' ? (shopFinance.emi_start_date || null) : null,
+              tenure_months:  isScheduled ? (shopFinance.tenure_months || null) : null,
+              emi_start_date: isScheduled ? (shopFinance.emi_start_date || null) : null,
+              processing_fee: shopFinanceType === 'PROCESSING_FEE' ? (shopFinance.processing_fee || 0) : null,
+              // The user-adjusted/rounded EMI figure — the backend makes the
+              // last installment absorb whatever remainder this leaves.
+              monthly_emi:    shopFinanceType === 'PROCESSING_FEE' ? (shopFinanceCalc.monthlyEmi || null) : null,
           };
       }
 
@@ -1713,6 +1736,13 @@ export default function SaleForm() {
                                 {/* Type toggle */}
                                 <div className="d-flex gap-2 mb-3">
                                     <button type="button"
+                                        onClick={() => setShopFinanceType('PROCESSING_FEE')}
+                                        style={{flex:1, padding:'6px 0', fontSize:'.68rem', fontWeight:800, borderRadius:8, border:'none',
+                                            background: shopFinanceType === 'PROCESSING_FEE' ? '#7c3aed' : '#e2e8f0',
+                                            color: shopFinanceType === 'PROCESSING_FEE' ? '#fff' : '#64748b'}}>
+                                        🧾 PROCESSING FEE
+                                    </button>
+                                    <button type="button"
                                         onClick={() => setShopFinanceType('PERSONAL')}
                                         style={{flex:1, padding:'6px 0', fontSize:'.68rem', fontWeight:800, borderRadius:8, border:'none',
                                             background: shopFinanceType === 'PERSONAL' ? '#1d4ed8' : '#e2e8f0',
@@ -1872,6 +1902,77 @@ export default function SaleForm() {
                                         🤝 Flexible repayment — customer can pay any time in any amount.<br/>
                                         No interest. Balance = ₹{(parseFloat(shopFinance.principal) || 0).toLocaleString('en-IN')}
                                     </div>
+                                )}
+
+                                {/* Processing Fee fields */}
+                                {shopFinanceType === 'PROCESSING_FEE' && (
+                                    <>
+                                        <div className="row g-1 mb-2">
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>PROCESSING FEE (₹)</label>
+                                                <input type="number" step="0.01" min="0" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor:'#c4b5fd'}}
+                                                    value={shopFinance.processing_fee || ''}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => setShopFinance(f => ({ ...f, processing_fee: parseFloat(e.target.value) || 0, monthly_emi_override: '' }))} />
+                                            </div>
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TOTAL PAYABLE (₹)</label>
+                                                <input type="text" disabled className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', background:'#f8fafc'}}
+                                                    value={shopFinanceCalc.totalPayable ? shopFinanceCalc.totalPayable.toLocaleString('en-IN') : ''} />
+                                            </div>
+                                        </div>
+
+                                        <div className="row g-1 mb-2">
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>TENURE (MONTHS)</label>
+                                                <input type="number" step="1" min="1" max="360" className="form-control form-control-sm fw-bold text-end"
+                                                    style={{fontSize:'.78rem', borderColor:'#c4b5fd'}}
+                                                    value={shopFinance.tenure_months || ''}
+                                                    onFocus={e => e.target.select()}
+                                                    onChange={e => setShopFinance(f => ({ ...f, tenure_months: parseInt(e.target.value) || 0, monthly_emi_override: '' }))} />
+                                            </div>
+                                            <div className="col-6">
+                                                <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>1st EMI DATE</label>
+                                                <input type="date" className="form-control form-control-sm"
+                                                    style={{fontSize:'.72rem'}}
+                                                    value={shopFinance.emi_start_date}
+                                                    onChange={e => setShopFinance(f => ({ ...f, emi_start_date: e.target.value }))} />
+                                            </div>
+                                        </div>
+
+                                        {shopFinanceCalc.monthlyEmi > 0 && (
+                                            <div style={{background:'#f5f3ff', borderRadius:8, padding:'8px 12px', border:'1px solid #ddd6fe'}}>
+                                                <div className="d-flex justify-content-between align-items-center mb-2">
+                                                    <div>
+                                                        <div style={{fontSize:'.62rem', color:'#7c3aed', fontWeight:700}}>MONTHLY EMI</div>
+                                                        <div style={{fontSize:'.58rem', color:'#94a3b8'}}>Auto-rounded — edit or nudge to adjust</div>
+                                                    </div>
+                                                    <div className="d-flex align-items-center gap-1">
+                                                        <button type="button" className="btn btn-sm btn-outline-secondary"
+                                                            style={{padding:'2px 8px', fontSize:'.7rem'}}
+                                                            onClick={() => setShopFinance(f => ({ ...f, monthly_emi_override: String(Math.max(1, shopFinanceCalc.monthlyEmi - 1)) }))}>−1</button>
+                                                        <input type="number" step="1" min="1" className="form-control form-control-sm fw-bold text-end"
+                                                            style={{fontSize:'1rem', color:'#7c3aed', width:100}}
+                                                            value={shopFinanceCalc.monthlyEmi}
+                                                            onFocus={e => e.target.select()}
+                                                            onChange={e => setShopFinance(f => ({ ...f, monthly_emi_override: e.target.value }))} />
+                                                        <button type="button" className="btn btn-sm btn-outline-secondary"
+                                                            style={{padding:'2px 8px', fontSize:'.7rem'}}
+                                                            onClick={() => setShopFinance(f => ({ ...f, monthly_emi_override: String(shopFinanceCalc.monthlyEmi + 1) }))}>+1</button>
+                                                    </div>
+                                                </div>
+                                                <div className="d-flex justify-content-between align-items-center" style={{fontSize:'.68rem', color:'#64748b'}}>
+                                                    <span>× {shopFinance.tenure_months - 1} months @ ₹{shopFinanceCalc.monthlyEmi.toLocaleString('en-IN')}</span>
+                                                    <span>Last EMI: <strong style={{color:'#7c3aed'}}>₹{shopFinanceCalc.lastEmi.toLocaleString('en-IN')}</strong></span>
+                                                </div>
+                                                <div style={{fontSize:'.6rem', color:'#94a3b8', marginTop:4}}>
+                                                    The last installment automatically absorbs any rounding so the total still adds up to ₹{shopFinanceCalc.totalPayable.toLocaleString('en-IN')}.
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}

@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('sale_invoice_id')->constrained('sale_invoices')->onDelete('cascade');
             $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
-            $table->enum('type', ['PERSONAL', 'FAVOR']);
+            $table->enum('type', ['PERSONAL', 'FAVOR', 'PROCESSING_FEE']);
 
             $table->decimal('down_payment', 12, 2)->default(0);
             $table->decimal('principal', 12, 2)->default(0);       // financed amount (total − down)

@@ -178,8 +178,8 @@ class SaleInvoiceController extends Controller
             'finance_amount'           => 'nullable|numeric|min:0',
             'finance_payment_status'   => 'nullable|in:RECEIVED,PENDING',
             'finance_payment_mode'     => 'nullable|string',
-            // Shop Finance Plan (Personal EMI or Favor)
-            'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR',
+            // Shop Finance Plan (Personal EMI, Favor, or Processing Fee)
+            'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR,PROCESSING_FEE',
             'shop_finance.principal'      => 'nullable|numeric|min:0.01',
             'shop_finance.down_payment'   => 'nullable|numeric|min:0',
             'shop_finance.interest_rate'  => 'nullable|numeric|min:0',
@@ -187,6 +187,8 @@ class SaleInvoiceController extends Controller
             'shop_finance.total_payable'  => 'nullable|numeric|min:0',
             'shop_finance.tenure_months'  => 'nullable|integer|min:1|max:360',
             'shop_finance.emi_start_date' => 'nullable|date',
+            'shop_finance.processing_fee' => 'nullable|numeric|min:0',
+            'shop_finance.monthly_emi'    => 'nullable|numeric|min:0.01',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -374,13 +376,17 @@ class SaleInvoiceController extends Controller
                 $interestType = $sf['interest_type'] ?? 'REDUCING';
                 $months       = (int) ($sf['tenure_months'] ?? 0);
                 $principal    = (float) $sf['principal'];
+                $processingFee = (float) ($sf['processing_fee'] ?? 0);
 
-                // "Total payable" is an alternative way to specify the deal
-                // (staff already agreed a fixed repayment figure with the
-                // customer) — derive the effective interest_rate from it
-                // here, authoritatively, rather than trusting the client's
-                // preview calculation.
-                if (empty($sf['interest_rate']) && !empty($sf['total_payable'])) {
+                if ($sf['type'] === 'PROCESSING_FEE') {
+                    [$monthlyEmi, $totalPayable] = $this->calcProcessingFeeEmi($principal, $processingFee, $months, $sf['monthly_emi'] ?? null);
+                    $interestRate = null;
+                } elseif (empty($sf['interest_rate']) && !empty($sf['total_payable'])) {
+                    // "Total payable" is an alternative way to specify the deal
+                    // (staff already agreed a fixed repayment figure with the
+                    // customer) — derive the effective interest_rate from it
+                    // here, authoritatively, rather than trusting the client's
+                    // preview calculation.
                     [$monthlyEmi, $totalPayable, $impliedRate] = \App\Http\Controllers\Api\FinancePlanController::calcEmiFromTotalPayable(
                         $principal,
                         (float) $sf['total_payable'],
@@ -398,20 +404,23 @@ class SaleInvoiceController extends Controller
                     );
                 }
 
+                $isScheduled = in_array($sf['type'], ['PERSONAL', 'PROCESSING_FEE']);
+
                 \App\Models\SaleFinancePlan::create([
                     'sale_invoice_id' => $invoice->id,
                     'customer_id'     => $invoice->customer_id,
                     'type'            => $sf['type'],
                     'down_payment'    => $sf['down_payment'] ?? 0,
                     'principal'       => $principal,
+                    'processing_fee'  => $sf['type'] === 'PROCESSING_FEE' ? $processingFee : null,
                     'interest_rate'   => $interestRate ?: null,
-                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
+                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : ($sf['type'] === 'PROCESSING_FEE' ? null : 'REDUCING'),
                     'tenure_months'   => $sf['tenure_months'] ?? null,
-                    'monthly_emi'     => $sf['type'] === 'PERSONAL' ? $monthlyEmi : null,
-                    'emi_start_date'  => $sf['type'] === 'PERSONAL'
+                    'monthly_emi'     => $isScheduled ? $monthlyEmi : null,
+                    'emi_start_date'  => $isScheduled
                                             ? ($sf['emi_start_date'] ?? now()->addMonth()->startOfMonth()->toDateString())
                                             : null,
-                    'total_payable'   => $sf['type'] === 'PERSONAL' ? $totalPayable : $principal,
+                    'total_payable'   => $isScheduled ? $totalPayable : $principal,
                     'total_paid'      => 0,
                     'status'          => 'ACTIVE',
                     'created_by'      => $user->id,
@@ -455,6 +464,25 @@ class SaleInvoiceController extends Controller
                                 $user->id
                             );
                         }
+                    }
+                } elseif ($sf['type'] === 'PROCESSING_FEE' && $processingFee > 0) {
+                    // Same reasoning as the interest portion above, but for the
+                    // flat processing fee — the customer's ledger balance needs
+                    // to reflect principal + fee (total_payable), not just the
+                    // goods price the SALE debit already covers.
+                    $entity = $this->resolveCustomerEntity($invoice);
+                    if ($entity) {
+                        app(\App\Services\AccountingService::class)->post(
+                            $entity->id,
+                            $invoice->sale_date,
+                            'SHOP_FINANCE_PROCESSING_FEE',
+                            $invoice->id,
+                            "Shop Finance processing fee for Invoice #{$invoice->invoice_no}",
+                            $processingFee,
+                            0,
+                            $invoice->shop_id,
+                            $user->id
+                        );
                     }
                 }
             }
@@ -803,8 +831,12 @@ class SaleInvoiceController extends Controller
                 $interestType = $sf['interest_type'] ?? 'REDUCING';
                 $months       = (int) ($sf['tenure_months'] ?? 0);
                 $principal    = (float) $sf['principal'];
+                $processingFee = (float) ($sf['processing_fee'] ?? 0);
 
-                if (empty($sf['interest_rate']) && !empty($sf['total_payable'])) {
+                if ($sf['type'] === 'PROCESSING_FEE') {
+                    [$monthlyEmi, $totalPayable] = $this->calcProcessingFeeEmi($principal, $processingFee, $months, $sf['monthly_emi'] ?? null);
+                    $interestRate = null;
+                } elseif (empty($sf['interest_rate']) && !empty($sf['total_payable'])) {
                     [$monthlyEmi, $totalPayable, $impliedRate] = \App\Http\Controllers\Api\FinancePlanController::calcEmiFromTotalPayable(
                         $principal,
                         (float) $sf['total_payable'],
@@ -822,19 +854,22 @@ class SaleInvoiceController extends Controller
                     );
                 }
 
+                $isScheduled = in_array($sf['type'], ['PERSONAL', 'PROCESSING_FEE']);
+
                 $planData = [
                     'customer_id'     => $saleInvoice->customer_id,
                     'type'            => $sf['type'],
                     'down_payment'    => $sf['down_payment'] ?? 0,
                     'principal'       => $principal,
+                    'processing_fee'  => $sf['type'] === 'PROCESSING_FEE' ? $processingFee : null,
                     'interest_rate'   => $interestRate ?: null,
-                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
+                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : ($sf['type'] === 'PROCESSING_FEE' ? null : 'REDUCING'),
                     'tenure_months'   => $sf['tenure_months'] ?? null,
-                    'monthly_emi'     => $sf['type'] === 'PERSONAL' ? $monthlyEmi : null,
-                    'emi_start_date'  => $sf['type'] === 'PERSONAL'
+                    'monthly_emi'     => $isScheduled ? $monthlyEmi : null,
+                    'emi_start_date'  => $isScheduled
                                             ? ($sf['emi_start_date'] ?? now()->addMonth()->startOfMonth()->toDateString())
                                             : null,
-                    'total_payable'   => $sf['type'] === 'PERSONAL' ? $totalPayable : $principal,
+                    'total_payable'   => $isScheduled ? $totalPayable : $principal,
                 ];
 
                 $existingPlan = \App\Models\SaleFinancePlan::where('sale_invoice_id', $saleInvoice->id)->first();
@@ -860,21 +895,42 @@ class SaleInvoiceController extends Controller
                     ]);
                 }
 
-                // Re-post the interest portion too (AccountingService::post() updates
-                // the existing SHOP_FINANCE_INTEREST row in place by voucher key, or
-                // clears it out to 0/0 — which post() treats as "nothing to post" —
-                // if this edit changed the plan to Favor/no-interest).
+                // Re-post the interest/fee portion too — clear BOTH categories
+                // first since an edit can switch the plan's type (e.g. Personal
+                // EMI -> Processing Fee), and only one of the two applies going
+                // forward. AccountingService::post() with debit=0/credit=0 is a
+                // no-op, not a clear, so a stale row from the old type would
+                // otherwise survive the switch.
+                $accounting = app(\App\Services\AccountingService::class);
+                $accounting->remove('SHOP_FINANCE_INTEREST', $saleInvoice->id);
+                $accounting->remove('SHOP_FINANCE_PROCESSING_FEE', $saleInvoice->id);
+
                 if ($sf['type'] === 'PERSONAL') {
                     $interestPortion = max(0, $totalPayable - $principal);
                     $entity = $this->resolveCustomerEntity($saleInvoice);
                     if ($entity && $interestPortion > 0) {
-                        app(\App\Services\AccountingService::class)->post(
+                        $accounting->post(
                             $entity->id,
                             $saleInvoice->sale_date,
                             'SHOP_FINANCE_INTEREST',
                             $saleInvoice->id,
                             "Shop Finance interest for Invoice #{$saleInvoice->invoice_no}",
                             $interestPortion,
+                            0,
+                            $saleInvoice->shop_id,
+                            $user->id
+                        );
+                    }
+                } elseif ($sf['type'] === 'PROCESSING_FEE' && $processingFee > 0) {
+                    $entity = $this->resolveCustomerEntity($saleInvoice);
+                    if ($entity) {
+                        $accounting->post(
+                            $entity->id,
+                            $saleInvoice->sale_date,
+                            'SHOP_FINANCE_PROCESSING_FEE',
+                            $saleInvoice->id,
+                            "Shop Finance processing fee for Invoice #{$saleInvoice->invoice_no}",
+                            $processingFee,
                             0,
                             $saleInvoice->shop_id,
                             $user->id
@@ -1344,6 +1400,27 @@ class SaleInvoiceController extends Controller
         $customer = $invoice->customer;
         if (!$customer) return null;
         return \App\Models\Entity::where('name', $customer->name)->first();
+    }
+
+    /**
+     * Returns [monthlyEmi, totalPayable] for a Processing Fee plan: no
+     * interest rate involved, just principal + a flat fee split evenly over
+     * the tenure. If the client didn't override monthly_emi, it's
+     * auto-rounded to the nearest whole rupee for a clean figure (e.g. ₹500
+     * instead of ₹500.21) — buildSchedule() makes the LAST installment
+     * absorb whatever that rounding leaves over, so the schedule still sums
+     * to exactly totalPayable regardless of which figure was used here.
+     */
+    private function calcProcessingFeeEmi(float $principal, float $processingFee, int $months, $monthlyEmiOverride = null): array
+    {
+        $totalPayable = round($principal + $processingFee, 2);
+        if ($months <= 0) return [0, $totalPayable];
+
+        $monthlyEmi = !empty($monthlyEmiOverride)
+            ? round((float) $monthlyEmiOverride, 2)
+            : round($totalPayable / $months);
+
+        return [$monthlyEmi, $totalPayable];
     }
 
     private function itemNamesSummary(array $items): string

@@ -107,9 +107,10 @@ export default function FinanceTracker() {
     const overdue  = plans.filter(p => p.status === 'OVERDUE');
     const personal = plans.filter(p => p.type === 'PERSONAL');
     const favor    = plans.filter(p => p.type === 'FAVOR');
+    const processingFee = plans.filter(p => p.type === 'PROCESSING_FEE');
     const financer = plans.filter(p => p.type === 'FINANCER');
     const totalDue = active.reduce((s, p) => s + remaining(p), 0);
-    return { total: plans.length, active: active.length, overdue: overdue.length, personal: personal.length, favor: favor.length, financer: financer.length, totalDue };
+    return { total: plans.length, active: active.length, overdue: overdue.length, personal: personal.length, favor: favor.length, processingFee: processingFee.length, financer: financer.length, totalDue };
   }, [plans]);
 
   // ── Due-date-range filter — "how many EMIs fall due between these dates" ────
@@ -128,12 +129,12 @@ export default function FinanceTracker() {
   }, [plans, dueFrom, dueTo]);
 
   function remaining(plan) {
-    const payable = plan.type === 'PERSONAL' ? parseFloat(plan.total_payable) : parseFloat(plan.principal);
+    const payable = (plan.type === 'PERSONAL' || plan.type === 'PROCESSING_FEE') ? parseFloat(plan.total_payable) : parseFloat(plan.principal);
     return Math.max(0, payable - parseFloat(plan.total_paid || 0));
   }
 
   function nextEmiBadge(plan) {
-    if (plan.type !== 'PERSONAL' || !plan.emi_start_date || !plan.tenure_months) return null;
+    if ((plan.type !== 'PERSONAL' && plan.type !== 'PROCESSING_FEE') || !plan.emi_start_date || !plan.tenure_months) return null;
     const paid     = plan.payments?.filter(p => p.emi_number > 0).length ?? 0;
     if (paid >= plan.tenure_months) return null;
     const nextNo   = paid + 1;
@@ -148,7 +149,7 @@ export default function FinanceTracker() {
     const rem    = remaining(plan);
     const next   = nextEmiBadge(plan);
     setPayForm({
-      amount:       plan.type === 'PERSONAL' && plan.monthly_emi ? plan.monthly_emi : rem,
+      amount:       (plan.type === 'PERSONAL' || plan.type === 'PROCESSING_FEE') && plan.monthly_emi ? plan.monthly_emi : rem,
       payment_date: today(),
       payment_mode: 'CASH',
       emi_number:   next ? next.nextNo : '',
@@ -203,8 +204,9 @@ export default function FinanceTracker() {
 
   const statusColor = { ACTIVE: '#16a34a', OVERDUE: '#dc2626', SETTLED: '#64748b', PENDING: '#d97706', RECEIVED: '#16a34a' };
   const statusBg    = { ACTIVE: '#f0fdf4', OVERDUE: '#fef2f2', SETTLED: '#f8fafc', PENDING: '#fffbeb', RECEIVED: '#f0fdf4' };
-  const typeBg      = { PERSONAL: '#eff6ff', FAVOR: '#ecfeff', FINANCER: '#f5f3ff' };
-  const typeColor   = { PERSONAL: '#1d4ed8', FAVOR: '#0891b2', FINANCER: '#7c3aed' };
+  const typeBg      = { PERSONAL: '#eff6ff', FAVOR: '#ecfeff', PROCESSING_FEE: '#f5f3ff', FINANCER: '#f5f3ff' };
+  const typeColor   = { PERSONAL: '#1d4ed8', FAVOR: '#0891b2', PROCESSING_FEE: '#7c3aed', FINANCER: '#7c3aed' };
+  const typeLabel   = { PERSONAL: '📅 EMI', FAVOR: '🤝 FAVOR', PROCESSING_FEE: '🧾 PROC. FEE', FINANCER: '🏦 FINANCER' };
 
   return (
     <div className="container-fluid py-3">
@@ -223,6 +225,7 @@ export default function FinanceTracker() {
           { label: 'Overdue',       value: stats.overdue,  color: '#dc2626', bg: '#fef2f2' },
           { label: 'Personal EMI',  value: stats.personal, color: '#1d4ed8', bg: '#eff6ff' },
           { label: 'Favor',         value: stats.favor,    color: '#0891b2', bg: '#ecfeff' },
+          { label: 'Processing Fee',value: stats.processingFee, color: '#7c3aed', bg: '#f5f3ff' },
           { label: 'Financer',      value: stats.financer, color: '#7c3aed', bg: '#f5f3ff' },
         ].map(s => (
           <div key={s.label} className="col-6 col-md-2">
@@ -248,6 +251,7 @@ export default function FinanceTracker() {
               <option value="">ALL TYPES</option>
               <option value="PERSONAL">PERSONAL EMI</option>
               <option value="FAVOR">FAVOR</option>
+              <option value="PROCESSING_FEE">PROCESSING FEE</option>
               <option value="FINANCER">FINANCER (EXTERNAL)</option>
             </select>
           </div>
@@ -311,7 +315,7 @@ export default function FinanceTracker() {
                     {/* Type */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0'}}>
                       <span style={{background: typeBg[plan.type], color: typeColor[plan.type], fontSize:'.62rem', fontWeight:800, padding:'2px 8px', borderRadius:20, display:'inline-block'}}>
-                        {plan.type === 'PERSONAL' ? '📅 EMI' : plan.type === 'FAVOR' ? '🤝 FAVOR' : '🏦 FINANCER'}
+                        {typeLabel[plan.type] || plan.type}
                       </span>
                       {isFinancer && plan.financer && (
                         <div style={{fontSize:'.6rem', color:'#7c3aed', fontWeight:700, marginTop:3}}>{plan.financer.name}</div>
@@ -351,6 +355,18 @@ export default function FinanceTracker() {
                             )}
                           </>
                         )}
+                        {plan.type === 'PROCESSING_FEE' && (
+                          <>
+                            <div>EMI: <strong style={{color:'#7c3aed'}}>₹{parseFloat(plan.monthly_emi).toLocaleString('en-IN')}/mo</strong></div>
+                            <div>{plan.tenure_months} months + ₹{parseFloat(plan.processing_fee || 0).toLocaleString('en-IN')} fee</div>
+                            {next && (
+                              <div style={{marginTop:3, color: next.overdue ? '#dc2626' : '#16a34a', fontWeight:700}}>
+                                EMI #{next.nextNo} due: {formatDate(next.dueDate.toISOString().slice(0,10))}
+                                {next.overdue && ' ⚠️'}
+                              </div>
+                            )}
+                          </>
+                        )}
                         {plan.type === 'FAVOR' && (
                           <div style={{color:'#0891b2'}}>Flexible repayment</div>
                         )}
@@ -364,7 +380,7 @@ export default function FinanceTracker() {
 
                     {/* Total */}
                     <td style={{padding:'10px 12px', border:'1px solid #e2e8f0', textAlign:'right', whiteSpace:'nowrap'}}>
-                      <div className="fw-bold">₹{parseFloat(plan.type === 'PERSONAL' ? plan.total_payable : plan.principal).toLocaleString('en-IN')}</div>
+                      <div className="fw-bold">₹{parseFloat((plan.type === 'PERSONAL' || plan.type === 'PROCESSING_FEE') ? plan.total_payable : plan.principal).toLocaleString('en-IN')}</div>
                       <div style={{fontSize:'.62rem', color:'#64748b'}}>Principal: ₹{parseFloat(plan.principal).toLocaleString('en-IN')}</div>
                     </td>
 
@@ -423,7 +439,7 @@ export default function FinanceTracker() {
                                 </button>
                               </>
                             )}
-                            {plan.type === 'PERSONAL' && (
+                            {(plan.type === 'PERSONAL' || plan.type === 'PROCESSING_FEE') && (
                               <button onClick={() => openSchedule(plan)}
                                 style={{padding:'3px 10px', fontSize:'.65rem', fontWeight:800, background:'#f1f5f9', color:'#475569', border:'1px solid #cbd5e1', borderRadius:6, cursor:'pointer'}}>
                                 📅 SCHEDULE
@@ -447,7 +463,7 @@ export default function FinanceTracker() {
           <div style={{background:'#fff',borderRadius:16,padding:'24px 28px',maxWidth:420,width:'95%',boxShadow:'0 20px 60px rgba(0,0,0,.25)'}} onClick={e => e.stopPropagation()}>
             <div style={{fontWeight:800, fontSize:'1rem', marginBottom:4}}>💰 Record Payment</div>
             <div style={{fontSize:'.75rem', color:'#64748b', marginBottom:16}}>
-              {payModal.customer?.name} — {payModal.type === 'PERSONAL' ? `EMI #${payForm.emi_number || '?'}` : 'Favor Payment'}
+              {payModal.customer?.name} — {(payModal.type === 'PERSONAL' || payModal.type === 'PROCESSING_FEE') ? `EMI #${payForm.emi_number || '?'}` : 'Favor Payment'}
             </div>
 
             <div className="mb-3">
@@ -457,7 +473,7 @@ export default function FinanceTracker() {
                 onChange={e => setPayForm(f => ({...f, amount: e.target.value}))} />
               <div className="x-small text-muted mt-1">
                 Due: ₹{remaining(payModal).toLocaleString('en-IN')}
-                {payModal.type === 'PERSONAL' && payModal.monthly_emi ? ` | EMI: ₹${parseFloat(payModal.monthly_emi).toLocaleString('en-IN')}` : ''}
+                {(payModal.type === 'PERSONAL' || payModal.type === 'PROCESSING_FEE') && payModal.monthly_emi ? ` | EMI: ₹${parseFloat(payModal.monthly_emi).toLocaleString('en-IN')}` : ''}
               </div>
             </div>
 
@@ -480,7 +496,7 @@ export default function FinanceTracker() {
               />
             </div>
 
-            {payModal.type === 'PERSONAL' && (
+            {(payModal.type === 'PERSONAL' || payModal.type === 'PROCESSING_FEE') && (
               <div className="mb-3">
                 <label className="x-small fw-bold text-uppercase text-muted mb-1">EMI Number (which EMI this clears)</label>
                 <input type="number" step="1" min="1" className="form-control form-control-sm"
@@ -570,7 +586,9 @@ export default function FinanceTracker() {
               <div style={{background:'#eff6ff', borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:'.73rem'}}>
                 <div className="d-flex justify-content-between">
                   <span>Principal: <strong>₹{parseFloat(scheduleModal.plan.principal).toLocaleString('en-IN')}</strong></span>
-                  <span>Rate: <strong>{scheduleModal.plan.interest_rate || 0}% p.a.</strong></span>
+                  {scheduleModal.plan.type === 'PROCESSING_FEE'
+                    ? <span>Fee: <strong>₹{parseFloat(scheduleModal.plan.processing_fee || 0).toLocaleString('en-IN')}</strong></span>
+                    : <span>Rate: <strong>{scheduleModal.plan.interest_rate || 0}% p.a.</strong></span>}
                   <span>EMI: <strong style={{color:'#1d4ed8'}}>₹{parseFloat(scheduleModal.plan.monthly_emi).toLocaleString('en-IN')}</strong></span>
                 </div>
                 <div className="d-flex justify-content-between mt-1">

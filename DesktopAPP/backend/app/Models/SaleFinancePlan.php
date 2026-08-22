@@ -8,21 +8,29 @@ class SaleFinancePlan extends Model
 {
     protected $fillable = [
         'sale_invoice_id', 'customer_id', 'type',
-        'down_payment', 'principal',
+        'down_payment', 'principal', 'processing_fee',
         'interest_rate', 'interest_type', 'tenure_months', 'monthly_emi', 'emi_start_date', 'total_payable',
         'total_paid', 'status', 'settled_at', 'created_by',
     ];
 
     protected $casts = [
-        'emi_start_date' => 'date',
-        'settled_at'     => 'datetime',
-        'down_payment'   => 'float',
-        'principal'      => 'float',
-        'interest_rate'  => 'float',
-        'monthly_emi'    => 'float',
-        'total_payable'  => 'float',
-        'total_paid'     => 'float',
+        'emi_start_date'  => 'date',
+        'settled_at'      => 'datetime',
+        'down_payment'    => 'float',
+        'principal'       => 'float',
+        'processing_fee'  => 'float',
+        'interest_rate'   => 'float',
+        'monthly_emi'     => 'float',
+        'total_payable'   => 'float',
+        'total_paid'      => 'float',
     ];
+
+    /**
+     * PERSONAL (interest-based) and PROCESSING_FEE (flat-fee-based) plans
+     * both repay principal + a cost on top via a fixed monthly EMI schedule
+     * — FAVOR has neither a schedule nor a fixed total, it's pay-whenever.
+     */
+    private const SCHEDULED_TYPES = ['PERSONAL', 'PROCESSING_FEE'];
 
     public function saleInvoice()
     {
@@ -46,16 +54,21 @@ class SaleFinancePlan extends Model
 
     public function getRemainingAttribute(): float
     {
-        return max(0, ($this->type === 'PERSONAL' ? $this->total_payable : $this->principal) - $this->total_paid);
+        return max(0, (in_array($this->type, self::SCHEDULED_TYPES) ? $this->total_payable : $this->principal) - $this->total_paid);
     }
 
     /**
-     * Build the full EMI schedule for PERSONAL plans.
+     * Build the full EMI schedule for PERSONAL/PROCESSING_FEE plans.
      * Returns array of ['emi_no', 'due_date', 'amount', 'status']
+     *
+     * For PROCESSING_FEE, monthly_emi is typically rounded to a whole rupee
+     * for a clean figure (e.g. ₹500 instead of ₹500.21) — the last
+     * installment absorbs whatever that rounding leaves over, so the
+     * schedule still sums to exactly total_payable.
      */
     public function buildSchedule(): array
     {
-        if ($this->type !== 'PERSONAL' || !$this->tenure_months || !$this->emi_start_date) {
+        if (!in_array($this->type, self::SCHEDULED_TYPES) || !$this->tenure_months || !$this->emi_start_date) {
             return [];
         }
 
@@ -76,10 +89,15 @@ class SaleFinancePlan extends Model
                 $statusLabel = 'PENDING';
             }
 
+            $amount = $this->monthly_emi;
+            if ($this->type === 'PROCESSING_FEE' && $i === $this->tenure_months) {
+                $amount = round($this->total_payable - ($this->monthly_emi * ($this->tenure_months - 1)), 2);
+            }
+
             $schedule[] = [
                 'emi_no'       => $i,
                 'due_date'     => $due->format('Y-m-d'),
-                'amount'       => $this->monthly_emi,
+                'amount'       => $amount,
                 'status'       => $statusLabel,
                 'payment'      => $paid ? $payments[$i] : null,
             ];
@@ -95,7 +113,7 @@ class SaleFinancePlan extends Model
     {
         if ($this->status === 'SETTLED') return;
 
-        if ($this->type === 'PERSONAL') {
+        if (in_array($this->type, self::SCHEDULED_TYPES)) {
             $schedule = $this->buildSchedule();
             $hasOverdue = collect($schedule)->contains('status', 'OVERDUE');
             $this->status = $hasOverdue ? 'OVERDUE' : 'ACTIVE';

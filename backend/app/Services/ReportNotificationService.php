@@ -289,7 +289,7 @@ class ReportNotificationService
         $cutoff = $today->copy()->addDays(2);
 
         $plans = SaleFinancePlan::with(['customer', 'saleInvoice'])
-            ->where('type', 'PERSONAL')
+            ->whereIn('type', ['PERSONAL', 'PROCESSING_FEE'])
             ->where('status', '!=', 'SETTLED')
             ->get();
 
@@ -588,7 +588,7 @@ class ReportNotificationService
         $cutoff = $today->copy()->addDays(2);
 
         $plans = SaleFinancePlan::with(['customer'])
-            ->where('type', 'PERSONAL')
+            ->whereIn('type', ['PERSONAL', 'PROCESSING_FEE'])
             ->where('status', '!=', 'SETTLED')
             ->get();
 

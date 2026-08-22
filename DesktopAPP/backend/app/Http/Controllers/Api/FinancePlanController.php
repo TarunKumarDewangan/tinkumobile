@@ -64,7 +64,7 @@ class FinancePlanController extends Controller
     {
         $data = $request->validate([
             'sale_invoice_id' => 'required|exists:sale_invoices,id',
-            'type'            => 'required|in:PERSONAL,FAVOR',
+            'type'            => 'required|in:PERSONAL,FAVOR,PROCESSING_FEE',
             'down_payment'    => 'nullable|numeric|min:0',
             'principal'       => 'required|numeric|min:0.01',
             'interest_rate'   => 'nullable|numeric|min:0',
@@ -72,6 +72,8 @@ class FinancePlanController extends Controller
             'total_payable'   => 'nullable|numeric|min:0',
             'tenure_months'   => 'nullable|integer|min:1|max:360',
             'emi_start_date'  => 'nullable|date',
+            'processing_fee'  => 'nullable|numeric|min:0',
+            'monthly_emi'     => 'nullable|numeric|min:0.01',
         ]);
 
         $invoice = SaleInvoice::findOrFail($data['sale_invoice_id']);
@@ -82,12 +84,19 @@ class FinancePlanController extends Controller
 
         $interestType = $data['interest_type'] ?? 'REDUCING';
         $months       = $data['tenure_months'] ?? 0;
+        $processingFee = (float) ($data['processing_fee'] ?? 0);
 
-        // "Total payable" is an alternative way to specify the deal (staff
-        // already agreed a fixed repayment figure with the customer) — the
-        // effective interest_rate is derived from it here, authoritatively,
-        // rather than trusting whatever rate the client-side preview computed.
-        if (empty($data['interest_rate']) && !empty($data['total_payable'])) {
+        if ($data['type'] === 'PROCESSING_FEE') {
+            $totalPayable = round($data['principal'] + $processingFee, 2);
+            $monthlyEmi   = $months > 0
+                ? (!empty($data['monthly_emi']) ? round((float) $data['monthly_emi'], 2) : round($totalPayable / $months))
+                : 0;
+            $interestRate = null;
+        } elseif (empty($data['interest_rate']) && !empty($data['total_payable'])) {
+            // "Total payable" is an alternative way to specify the deal (staff
+            // already agreed a fixed repayment figure with the customer) — the
+            // effective interest_rate is derived from it here, authoritatively,
+            // rather than trusting whatever rate the client-side preview computed.
             [$monthlyEmi, $totalPayable, $impliedRate] = $this->calcEmiFromTotalPayable(
                 $data['principal'],
                 (float) $data['total_payable'],
@@ -100,18 +109,21 @@ class FinancePlanController extends Controller
             [$monthlyEmi, $totalPayable] = $this->calcEmi($data['principal'], $interestRate, $months, $interestType);
         }
 
+        $isScheduled = in_array($data['type'], ['PERSONAL', 'PROCESSING_FEE']);
+
         $plan = SaleFinancePlan::create([
             'sale_invoice_id' => $data['sale_invoice_id'],
             'customer_id'     => $invoice->customer_id,
             'type'            => $data['type'],
             'down_payment'    => $data['down_payment'] ?? 0,
             'principal'       => $data['principal'],
+            'processing_fee'  => $data['type'] === 'PROCESSING_FEE' ? $processingFee : null,
             'interest_rate'   => $interestRate ?: null,
-            'interest_type'   => $data['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
+            'interest_type'   => $data['type'] === 'PERSONAL' ? $interestType : ($data['type'] === 'PROCESSING_FEE' ? null : 'REDUCING'),
             'tenure_months'   => $data['tenure_months'] ?? null,
-            'monthly_emi'     => $data['type'] === 'PERSONAL' ? $monthlyEmi : null,
-            'emi_start_date'  => $data['type'] === 'PERSONAL' ? ($data['emi_start_date'] ?? now()->addMonth()->startOfMonth()) : null,
-            'total_payable'   => $data['type'] === 'PERSONAL' ? $totalPayable : $data['principal'],
+            'monthly_emi'     => $isScheduled ? $monthlyEmi : null,
+            'emi_start_date'  => $isScheduled ? ($data['emi_start_date'] ?? now()->addMonth()->startOfMonth()) : null,
+            'total_payable'   => $isScheduled ? $totalPayable : $data['principal'],
             'total_paid'      => 0,
             'status'          => 'ACTIVE',
             'created_by'      => $request->user()->id,
@@ -203,7 +215,7 @@ class FinancePlanController extends Controller
                 ->where('sale_finance_plan_id', $financePlan->id)
                 ->sum('amount');
 
-            $remaining = ($financePlan->type === 'PERSONAL' ? $financePlan->total_payable : $financePlan->principal)
+            $remaining = (in_array($financePlan->type, ['PERSONAL', 'PROCESSING_FEE']) ? $financePlan->total_payable : $financePlan->principal)
                          - $financePlan->total_paid;
 
             if ($remaining <= 0.01) {
@@ -240,7 +252,7 @@ class FinancePlanController extends Controller
             return response()->json(['message' => 'Already settled'], 422);
         }
 
-        $remaining = ($financePlan->type === 'PERSONAL' ? $financePlan->total_payable : $financePlan->principal)
+        $remaining = (in_array($financePlan->type, ['PERSONAL', 'PROCESSING_FEE']) ? $financePlan->total_payable : $financePlan->principal)
                      - $financePlan->total_paid;
 
         return DB::transaction(function () use ($financePlan, $remaining, $request) {
