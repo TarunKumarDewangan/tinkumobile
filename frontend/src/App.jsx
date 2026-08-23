@@ -52,6 +52,7 @@ const SalesReport = lazy(() => import('./pages/reports/SalesReport'));
 const CombinedSalesReport = lazy(() => import('./pages/reports/CombinedSalesReport'));
 const SetSalesMatrix = lazy(() => import('./pages/reports/SetSalesMatrix'));
 const ProfitReport = lazy(() => import('./pages/reports/ProfitReport'));
+const DiscountReport = lazy(() => import('./pages/reports/DiscountReport'));
 const StockReport = lazy(() => import('./pages/reports/StockReport'));
 const LoanReport = lazy(() => import('./pages/reports/LoanReport'));
 const BusinessSummaryReport = lazy(() => import('./pages/reports/BusinessSummaryReport'));
@@ -172,6 +173,7 @@ function AppRoutes() {
           <Route path="reports/combined-sales" element={<CombinedSalesReport />} />
           <Route path="reports/set-sales-matrix" element={<SetSalesMatrix />} />
           <Route path="reports/profit" element={<ProfitReport />} />
+          <Route path="reports/discounts" element={<DiscountReport />} />
           <Route path="reports/stock" element={<StockReport />} />
           <Route path="reports/loans" element={<LoanReport />} />
           <Route path="reports/business-summary" element={<BusinessSummaryReport />} />

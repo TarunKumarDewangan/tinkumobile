@@ -45,6 +45,58 @@ class ReportController extends Controller
         return response()->json($query->latest('sale_date')->get());
     }
 
+    /**
+     * Discount Tracking — every sale with a "Discount (Extra)" and/or Cash
+     * Discount, so an off-bill (hidden) Cash Discount is still visible
+     * somewhere even though it's deliberately left off the printed invoice.
+     */
+    public function discounts(Request $request)
+    {
+        $shopId = $this->shopFilter($request);
+
+        $query = SaleInvoice::with('customer', 'user', 'shop')
+            ->where('is_cancelled', false)
+            ->where(function ($q) {
+                $q->where('discount', '>', 0)->orWhere('cash_discount', '>', 0);
+            });
+
+        if ($shopId)              $query->where('shop_id', $shopId);
+        if ($request->from)       $query->where('sale_date', '>=', $request->from);
+        if ($request->to)         $query->where('sale_date', '<=', $request->to);
+        if ($request->staff_id)   $query->where('user_id', $request->staff_id);
+        if ($request->hidden_only) $query->where('cash_discount', '>', 0)->where('is_cash_discount_on_bill', false);
+
+        $rows = $query->latest('sale_date')->get()->map(function ($inv) {
+            $discount     = (float) ($inv->discount ?? 0);
+            $cashDiscount = (float) ($inv->cash_discount ?? 0);
+            $hidden       = $cashDiscount > 0 && !$inv->is_cash_discount_on_bill;
+
+            return [
+                'id'                       => $inv->id,
+                'invoice_no'               => $inv->invoice_no,
+                'sale_date'                => $inv->sale_date,
+                'shop_name'                => $inv->shop?->name ?? '—',
+                'customer_name'            => $inv->customer?->name ?? '—',
+                'sold_by'                  => $inv->user?->name ?? '—',
+                'discount'                 => round($discount, 2),
+                'cash_discount'            => round($cashDiscount, 2),
+                'is_cash_discount_on_bill' => (bool) $inv->is_cash_discount_on_bill,
+                'hidden'                   => $hidden,
+                'grand_total'              => (float) $inv->grand_total,
+            ];
+        });
+
+        return response()->json([
+            'rows' => $rows,
+            'totals' => [
+                'discount'        => round($rows->sum('discount'), 2),
+                'cash_discount'   => round($rows->sum('cash_discount'), 2),
+                'hidden_discount' => round($rows->where('hidden', true)->sum('cash_discount'), 2),
+                'count'           => $rows->count(),
+            ],
+        ]);
+    }
+
     /** 2. Profit Report — Invoice Level (discounts accounted for) */
     public function profit(Request $request)
     {

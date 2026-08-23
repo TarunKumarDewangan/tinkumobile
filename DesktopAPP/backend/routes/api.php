@@ -219,6 +219,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
         Route::get('/combined-sales', [ReportController::class, 'combinedSalesReport']);
         Route::get('/set-sales-matrix', [ReportController::class, 'setSalesMatrix']);
         Route::get('/profit', [ReportController::class, 'profit']);
+        Route::get('/discounts', [ReportController::class, 'discounts']);
         Route::get('/stock', [ReportController::class, 'stock']);
         Route::get('/incentives', [ReportController::class, 'incentives']);
         Route::get('/repairs', [ReportController::class, 'repairs']);

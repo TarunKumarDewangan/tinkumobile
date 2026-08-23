@@ -105,6 +105,7 @@ const NAV = [
         { to: '/reports/combined-sales',   icon: '📊', label: 'Combined Sales',    perm: 'view_reports' },
         { to: '/reports/set-sales-matrix', icon: '📅', label: 'Set Sales Matrix',  perm: 'view_reports' },
         { to: '/reports/financer',         icon: '🏦', label: 'Financer Report',   perm: 'view_reports' },
+        { to: '/reports/discounts',        icon: '🏷️', label: 'Discounts Given',  perm: 'view_reports' },
     ]
   },
 

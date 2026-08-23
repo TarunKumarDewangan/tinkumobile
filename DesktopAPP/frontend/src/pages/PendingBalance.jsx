@@ -169,6 +169,12 @@ export default function PendingBalance() {
       ...customerRows.filter(r => personalFinanceNames.has(r.name.toUpperCase())),
       ...personalFinanceRows,
     ];
+  } else if (category === 'CUSTOMER') {
+    // A customer whose balance is actually (or partly) an EMI/Shop Finance
+    // due belongs under Personal Finance, not here — otherwise the same
+    // person shows up as a plain "Customer" debt when it's really a
+    // financed purchase, which is misleading for collections follow-up.
+    rows = allRows.filter(r => r.category === category && !personalFinanceNames.has(r.name.toUpperCase()));
   } else {
     rows = allRows.filter(r => r.category === category);
   }

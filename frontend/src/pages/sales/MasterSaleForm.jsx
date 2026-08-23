@@ -1335,7 +1335,13 @@ export default function MasterSaleForm() {
                                 <tr style={{borderBottom:'1px solid #f1f5f9', background:'#f0fdf4'}}>
                                     <td style={{padding:'6px 10px'}}>
                                         <span style={{fontSize:'.68rem', fontWeight:700, color:'#16a34a', display:'block'}}>CASH DISCOUNT</span>
-                                        <span style={{fontSize:'.58rem', color:'#86efac'}}>✅ DEDUCTED FROM BILL</span>
+                                        <label style={{fontSize:'.58rem', color:'#16a34a', display:'flex', alignItems:'center', gap:4, cursor:'pointer', marginTop:2}}>
+                                            <input type="checkbox"
+                                                style={{margin:0, cursor:'pointer'}}
+                                                checked={form.is_cash_discount_on_bill}
+                                                onChange={e => setForm({...form, is_cash_discount_on_bill: e.target.checked})} />
+                                            {form.is_cash_discount_on_bill ? '✅ DEDUCTED FROM BILL' : '🙈 HIDDEN — BILL SHOWS FULL PRICE'}
+                                        </label>
                                     </td>
                                     <td style={{padding:'6px 10px', textAlign:'right'}}>
                                         <input type="number"

@@ -6,6 +6,7 @@ export default function Reports() {
     { icon:'📊', title:'Sales Summary', desc:'All sales by date, staff, bill type', to:'/reports/sales' },
     { icon:'📱', title:'Combined Sales & Stock', desc:'Brand & model wise sales with current stock', to:'/reports/combined-sales' },
     { icon:'💹', title:'Profit Analysis', desc:'Revenue vs cost per product', to:'/reports/profit' },
+    { icon:'🏷️', title:'Discounts Given', desc:'Every discount, including cash discounts hidden from the bill', to:'/reports/discounts' },
     { icon:'📦', title:'Stock Levels', desc:'Current inventory & low stock alerts', to:'/reports/stock' },
     { icon:'💰', title:'Loan Outstanding', desc:'Pending EMI and overdue payments', to:'/reports/loans' },
   ];
