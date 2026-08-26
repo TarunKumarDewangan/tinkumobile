@@ -471,7 +471,7 @@ class ReportNotificationService
      * @param \Illuminate\Support\Collection $items
      * @param callable $formatRow fn($row): string — one already-formatted row line
      */
-    private function chunkListMessages(string $emoji, string $title, string $todayLabel, $items, callable $formatRow, float $total, string $emptyLine, int $chunkSize = 25): array
+    private function chunkListMessages(string $emoji, string $title, string $todayLabel, $items, callable $formatRow, float $total, string $emptyLine, int $chunkSize = 10): array
     {
         $header = "{$emoji} *{$title} ({$todayLabel}) — {$items->count()}*\n---------------------------\n";
         $footer = "---------------------------\n_Tinku Mobiles Management System_";
@@ -511,7 +511,7 @@ class ReportNotificationService
      *
      * @return string[]
      */
-    public function buildPendingBalanceListMessages(int $chunkSize = 25): array
+    public function buildPendingBalanceListMessages(int $chunkSize = 10): array
     {
         $today = Carbon::today();
 
@@ -548,7 +548,7 @@ class ReportNotificationService
      *
      * @return string[]
      */
-    public function buildPromiseListMessages(int $chunkSize = 25): array
+    public function buildPromiseListMessages(int $chunkSize = 10): array
     {
         $today = Carbon::today();
 
@@ -582,7 +582,7 @@ class ReportNotificationService
      *
      * @return string[]
      */
-    public function buildPersonalFinanceDueListMessages(int $chunkSize = 25): array
+    public function buildPersonalFinanceDueListMessages(int $chunkSize = 10): array
     {
         $today = Carbon::today();
         $cutoff = $today->copy()->addDays(2);
