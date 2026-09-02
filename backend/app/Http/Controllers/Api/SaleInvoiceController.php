@@ -331,10 +331,19 @@ class SaleInvoiceController extends Controller
                     'apply_gst'       => !isset($item['apply_gst']) || filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN),
                 ]);
 
-                Inventory::removeStock($shopId, $item['product_id'], $item['quantity']);
+                $product = \App\Models\Product::find($item['product_id']);
+                $isVerifiedNewMobileImei = $mobileCatId && $product && $product->category_id == $mobileCatId
+                    && trim((string) ($item['imei'] ?? '')) !== '';
+                if ($isVerifiedNewMobileImei) {
+                    // validateNewMobileImei() already confirmed this exact IMEI is a
+                    // real, unsold purchase for this product — trust that over the
+                    // shared per-product counter (see Inventory::removeStockVerifiedByImei).
+                    Inventory::removeStockVerifiedByImei($shopId, $item['product_id'], $item['quantity']);
+                } else {
+                    Inventory::removeStock($shopId, $item['product_id'], $item['quantity']);
+                }
 
                 if ($mobileCatId) {
-                    $product = \App\Models\Product::find($item['product_id']);
                     if ($product && $product->category_id == $mobileCatId) {
                         $incentiveRate = (float) Cache::remember('incentive_rate_percent', 3600, function () {
                             return Setting::where('key', 'incentive_rate_percent')->value('value') ?? 1;
@@ -735,6 +744,8 @@ class SaleInvoiceController extends Controller
                 'finance_payment_status' => $data['finance_payment_status'] ?? 'RECEIVED',
             ]);
 
+            $mobileCatId = Category::mobileNewId();
+
             foreach ($data['items'] as $item) {
                 SaleItem::create([
                     'sale_invoice_id' => $saleInvoice->id,
@@ -750,7 +761,17 @@ class SaleInvoiceController extends Controller
                     'apply_gst'       => !isset($item['apply_gst']) || filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN),
                 ]);
 
-                Inventory::removeStock($saleInvoice->shop_id, $item['product_id'], $item['quantity']);
+                $product = \App\Models\Product::find($item['product_id']);
+                $isVerifiedNewMobileImei = $mobileCatId && $product && $product->category_id == $mobileCatId
+                    && trim((string) ($item['imei'] ?? '')) !== '';
+                if ($isVerifiedNewMobileImei) {
+                    // validateNewMobileImei() already confirmed this exact IMEI is a
+                    // real, unsold purchase for this product — trust that over the
+                    // shared per-product counter (see Inventory::removeStockVerifiedByImei).
+                    Inventory::removeStockVerifiedByImei($saleInvoice->shop_id, $item['product_id'], $item['quantity']);
+                } else {
+                    Inventory::removeStock($saleInvoice->shop_id, $item['product_id'], $item['quantity']);
+                }
             }
 
             // Delete old finance company transactions individually so Eloquent delete events fire
