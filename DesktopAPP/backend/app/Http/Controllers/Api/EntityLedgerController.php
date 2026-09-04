@@ -679,77 +679,133 @@ class EntityLedgerController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return DB::transaction(function () use ($entity) {
-            $ledgerBalance = app(\App\Services\AccountingService::class)->getClosingBalance($entity);
+        $result = DB::transaction(fn () => $this->reconcileEntity($entity));
 
-            if ($entity->type === 'SUPPLIER' || $entity->type === 'DISTRIBUTOR') {
-                $outstandingSum = 0;
-                $invoices = \App\Models\PurchaseInvoice::whereIn('payment_status', ['unpaid', 'partial'])
-                    ->where(function ($q) use ($entity) {
-                        $q->where('accounting_entity_id', $entity->id);
-                        if ($entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
-                            $q->orWhere('supplier_id', $entity->relation_id);
-                        }
-                    })
-                    ->orderBy('purchase_date')->orderBy('id')->lockForUpdate()->get();
-                foreach ($invoices as $inv) {
-                    $outstandingSum += max(0, (float) $inv->grand_total - (float) $inv->total_paid);
+        return response()->json([
+            'message' => count($result['applied']) > 0
+                ? 'Reconciled ₹' . number_format($result['reconciled'], 2) . ' across ' . count($result['applied']) . ' invoice(s).'
+                : 'Already in sync — no unallocated payment found.',
+            'applied' => $result['applied'],
+        ]);
+    }
+
+    /**
+     * Run reconcileInvoices() across every entity in one pass, for cleaning up
+     * after this bug affected many entities at once — doing it one-by-one via
+     * the per-entity button isn't practical when there are dozens/hundreds.
+     * Each entity is reconciled in its own transaction so one bad row can't
+     * abort the whole batch.
+     */
+    public function reconcileAllInvoices(Request $request)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $entities = \App\Models\Entity::all();
+        $fixed = [];
+        $totalReconciled = 0;
+        $errors = [];
+
+        foreach ($entities as $entity) {
+            try {
+                $result = DB::transaction(fn () => $this->reconcileEntity($entity));
+                if (count($result['applied']) > 0) {
+                    $fixed[] = [
+                        'entity_id' => $entity->id,
+                        'entity_name' => $entity->name,
+                        'amount' => $result['reconciled'],
+                        'invoices' => count($result['applied']),
+                    ];
+                    $totalReconciled += $result['reconciled'];
                 }
-                // Payable balance is negative — a real gap means the ledger owes
-                // LESS (less negative) than what the invoices still show unpaid.
-                $gap = $outstandingSum - abs(min(0, $ledgerBalance));
+            } catch (\Throwable $e) {
+                $errors[] = ['entity_id' => $entity->id, 'entity_name' => $entity->name, 'error' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'message' => count($fixed) > 0
+                ? 'Reconciled ₹' . number_format($totalReconciled, 2) . ' across ' . count($fixed) . ' entit' . (count($fixed) === 1 ? 'y' : 'ies') . '.'
+                : 'All entities already in sync — no unallocated payments found.',
+            'fixed' => $fixed,
+            'errors' => $errors,
+        ]);
+    }
+
+    /**
+     * Core reconcile logic for a single entity, shared by reconcileInvoices()
+     * and reconcileAllInvoices(). Caller is responsible for wrapping in a
+     * DB transaction and the hasFullAccess() authorization check.
+     */
+    private function reconcileEntity(\App\Models\Entity $entity): array
+    {
+        $ledgerBalance = app(\App\Services\AccountingService::class)->getClosingBalance($entity);
+
+        if ($entity->type === 'SUPPLIER' || $entity->type === 'DISTRIBUTOR') {
+            $outstandingSum = 0;
+            $invoices = \App\Models\PurchaseInvoice::whereIn('payment_status', ['unpaid', 'partial'])
+                ->where(function ($q) use ($entity) {
+                    $q->where('accounting_entity_id', $entity->id);
+                    if ($entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
+                        $q->orWhere('supplier_id', $entity->relation_id);
+                    }
+                })
+                ->orderBy('purchase_date')->orderBy('id')->lockForUpdate()->get();
+            foreach ($invoices as $inv) {
+                $outstandingSum += max(0, (float) $inv->grand_total - (float) $inv->total_paid);
+            }
+            // Payable balance is negative — a real gap means the ledger owes
+            // LESS (less negative) than what the invoices still show unpaid.
+            $gap = $outstandingSum - abs(min(0, $ledgerBalance));
+        } else {
+            $outstandingSum = 0;
+            $invoices = \App\Models\SaleInvoice::where('is_cancelled', false)
+                ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->where(function ($q) use ($entity) {
+                    $q->where('accounting_entity_id', $entity->id);
+                    if ($entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+                        $q->orWhere('customer_id', $entity->relation_id);
+                    }
+                })
+                ->orderBy('sale_date')->orderBy('id')->lockForUpdate()->get();
+            foreach ($invoices as $inv) {
+                $alreadyCovered = (float) $inv->total_paid + (float) $inv->exchange_paid
+                    + ($inv->finance_payment_status === 'RECEIVED' ? (float) $inv->finance_amount : 0);
+                $outstandingSum += max(0, (float) $inv->grand_total - $alreadyCovered);
+            }
+            $gap = $outstandingSum - max(0, $ledgerBalance);
+        }
+
+        if ($gap <= 0.01) {
+            return ['applied' => [], 'reconciled' => 0];
+        }
+
+        $remaining = $gap;
+        $applied = [];
+        foreach ($invoices as $invoice) {
+            if ($remaining <= 0) break;
+            if ($invoice instanceof \App\Models\SaleInvoice) {
+                $alreadyCovered = (float) $invoice->total_paid + (float) $invoice->exchange_paid
+                    + ($invoice->finance_payment_status === 'RECEIVED' ? (float) $invoice->finance_amount : 0);
+                $outstanding = max(0, (float) $invoice->grand_total - $alreadyCovered);
             } else {
-                $outstandingSum = 0;
-                $invoices = \App\Models\SaleInvoice::where('is_cancelled', false)
-                    ->whereIn('payment_status', ['unpaid', 'partial'])
-                    ->where(function ($q) use ($entity) {
-                        $q->where('accounting_entity_id', $entity->id);
-                        if ($entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
-                            $q->orWhere('customer_id', $entity->relation_id);
-                        }
-                    })
-                    ->orderBy('sale_date')->orderBy('id')->lockForUpdate()->get();
-                foreach ($invoices as $inv) {
-                    $alreadyCovered = (float) $inv->total_paid + (float) $inv->exchange_paid
-                        + ($inv->finance_payment_status === 'RECEIVED' ? (float) $inv->finance_amount : 0);
-                    $outstandingSum += max(0, (float) $inv->grand_total - $alreadyCovered);
-                }
-                $gap = $outstandingSum - max(0, $ledgerBalance);
+                $outstanding = max(0, (float) $invoice->grand_total - (float) $invoice->total_paid);
             }
+            if ($outstanding <= 0) continue;
 
-            if ($gap <= 0.01) {
-                return response()->json(['message' => 'Already in sync — no unallocated payment found.', 'applied' => []]);
-            }
+            $apply = min($outstanding, $remaining);
+            $invoice->total_paid += $apply;
+            $invoice->updatePaymentStatus();
+            $remaining -= $apply;
+            $applied[] = ['invoice_no' => $invoice->invoice_no, 'amount' => $apply];
+        }
 
-            $remaining = $gap;
-            $applied = [];
-            foreach ($invoices as $invoice) {
-                if ($remaining <= 0) break;
-                if ($invoice instanceof \App\Models\SaleInvoice) {
-                    $alreadyCovered = (float) $invoice->total_paid + (float) $invoice->exchange_paid
-                        + ($invoice->finance_payment_status === 'RECEIVED' ? (float) $invoice->finance_amount : 0);
-                    $outstanding = max(0, (float) $invoice->grand_total - $alreadyCovered);
-                } else {
-                    $outstanding = max(0, (float) $invoice->grand_total - (float) $invoice->total_paid);
-                }
-                if ($outstanding <= 0) continue;
+        $reconciled = $gap - $remaining;
+        ActivityLog::log('RECONCILE_INVOICES', $entity, "Reconciled ₹" . number_format($reconciled, 2) . " of unallocated payment for {$entity->name} across " . count($applied) . " invoice(s)");
 
-                $apply = min($outstanding, $remaining);
-                $invoice->total_paid += $apply;
-                $invoice->updatePaymentStatus();
-                $remaining -= $apply;
-                $applied[] = ['invoice_no' => $invoice->invoice_no, 'amount' => $apply];
-            }
-
-            ActivityLog::log('RECONCILE_INVOICES', $entity, "Reconciled ₹" . number_format($gap - $remaining, 2) . " of unallocated payment for {$entity->name} across " . count($applied) . " invoice(s)");
-
-            return response()->json([
-                'message' => count($applied) > 0
-                    ? 'Reconciled ₹' . number_format($gap - $remaining, 2) . ' across ' . count($applied) . ' invoice(s).'
-                    : 'Already in sync — no unallocated payment found.',
-                'applied' => $applied,
-            ]);
-        });
+        return ['applied' => $applied, 'reconciled' => $reconciled];
     }
 
     /**

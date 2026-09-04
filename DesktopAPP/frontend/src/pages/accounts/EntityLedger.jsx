@@ -285,6 +285,27 @@ export default function EntityLedger() {
     }
   };
 
+  const handleReconcileAll = async () => {
+    if (!await pinGate.confirm()) return;
+    try {
+      toast.info('Reconciling all entities, please wait...');
+      const { data } = await api.post('/entities/reconcile-all-invoices');
+      if (data.fixed?.length > 0) {
+        toast.success(data.message);
+        console.log('Reconciled entities:', data.fixed);
+      } else {
+        toast.info(data.message);
+      }
+      if (data.errors?.length > 0) {
+        toast.error(`${data.errors.length} entit${data.errors.length === 1 ? 'y' : 'ies'} failed — see console for details.`);
+        console.error('Reconcile errors:', data.errors);
+      }
+      if (selectedEntityId) loadLedger(selectedEntityId, selectedEntityName);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reconcile all invoices');
+    }
+  };
+
   const handleSettle = async (e) => {
     e.preventDefault();
     if (!settleData.amount || settleData.amount <= 0) return toast.error('Enter valid amount');
@@ -369,7 +390,14 @@ export default function EntityLedger() {
               </div>
           </div>
 
-          <div className="col-auto ms-auto">
+          <div className="col-auto ms-auto d-flex gap-2">
+             <button
+               className="btn btn-outline-secondary btn-sm rounded-pill"
+               title="Catch up EVERY entity whose paid amount fell behind its ledger balance in one pass — use this instead of the per-entity Reconcile button when many customers/suppliers are affected"
+               onClick={handleReconcileAll}
+             >
+                <i className="bi bi-arrow-repeat me-1"></i> Reconcile All
+             </button>
              <button className="btn btn-glass-secondary btn-sm rounded-pill" onClick={() => { fetchSummary(); if (searchTerm) loadEntities(searchTerm, filterType); }}>
                 <i className="bi bi-arrow-clockwise me-1"></i> Refresh
              </button>
