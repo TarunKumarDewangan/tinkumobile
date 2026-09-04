@@ -262,6 +262,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('entities/customer-ledger', [EntityLedgerController::class, 'showForCustomer']);
     Route::get('entities/{name}/ledger', [EntityLedgerController::class, 'show']);
     Route::post('entities/settle', [EntityLedgerController::class, 'recordSettlement']);
+    Route::post('entities/{entity}/reconcile-invoices', [EntityLedgerController::class, 'reconcileInvoices']);
     Route::post('pending-balance/send-reminder', [EntityLedgerController::class, 'sendPendingBalanceReminder']);
 
     Route::apiResource('entities', EntityController::class);

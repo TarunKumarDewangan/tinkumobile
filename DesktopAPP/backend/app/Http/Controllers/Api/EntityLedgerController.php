@@ -664,6 +664,95 @@ class EntityLedgerController extends Controller
     }
 
     /**
+     * Catch up any Sale/Purchase invoice whose own total_paid fell behind the
+     * entity's real ledger balance — the exact gap left by a settlement that
+     * was recorded before accounting_entity_id-based matching existed here
+     * (or any other case where money got applied to the entity but never to
+     * a specific invoice). Posts no new Transaction — the money is already
+     * accounted for in the ledger; this only catches the invoice records up
+     * to match what the ledger already says.
+     */
+    public function reconcileInvoices(Request $request, \App\Models\Entity $entity)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        return DB::transaction(function () use ($entity) {
+            $ledgerBalance = app(\App\Services\AccountingService::class)->getClosingBalance($entity);
+
+            if ($entity->type === 'SUPPLIER' || $entity->type === 'DISTRIBUTOR') {
+                $outstandingSum = 0;
+                $invoices = \App\Models\PurchaseInvoice::whereIn('payment_status', ['unpaid', 'partial'])
+                    ->where(function ($q) use ($entity) {
+                        $q->where('accounting_entity_id', $entity->id);
+                        if ($entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
+                            $q->orWhere('supplier_id', $entity->relation_id);
+                        }
+                    })
+                    ->orderBy('purchase_date')->orderBy('id')->lockForUpdate()->get();
+                foreach ($invoices as $inv) {
+                    $outstandingSum += max(0, (float) $inv->grand_total - (float) $inv->total_paid);
+                }
+                // Payable balance is negative — a real gap means the ledger owes
+                // LESS (less negative) than what the invoices still show unpaid.
+                $gap = $outstandingSum - abs(min(0, $ledgerBalance));
+            } else {
+                $outstandingSum = 0;
+                $invoices = \App\Models\SaleInvoice::where('is_cancelled', false)
+                    ->whereIn('payment_status', ['unpaid', 'partial'])
+                    ->where(function ($q) use ($entity) {
+                        $q->where('accounting_entity_id', $entity->id);
+                        if ($entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+                            $q->orWhere('customer_id', $entity->relation_id);
+                        }
+                    })
+                    ->orderBy('sale_date')->orderBy('id')->lockForUpdate()->get();
+                foreach ($invoices as $inv) {
+                    $alreadyCovered = (float) $inv->total_paid + (float) $inv->exchange_paid
+                        + ($inv->finance_payment_status === 'RECEIVED' ? (float) $inv->finance_amount : 0);
+                    $outstandingSum += max(0, (float) $inv->grand_total - $alreadyCovered);
+                }
+                $gap = $outstandingSum - max(0, $ledgerBalance);
+            }
+
+            if ($gap <= 0.01) {
+                return response()->json(['message' => 'Already in sync — no unallocated payment found.', 'applied' => []]);
+            }
+
+            $remaining = $gap;
+            $applied = [];
+            foreach ($invoices as $invoice) {
+                if ($remaining <= 0) break;
+                if ($invoice instanceof \App\Models\SaleInvoice) {
+                    $alreadyCovered = (float) $invoice->total_paid + (float) $invoice->exchange_paid
+                        + ($invoice->finance_payment_status === 'RECEIVED' ? (float) $invoice->finance_amount : 0);
+                    $outstanding = max(0, (float) $invoice->grand_total - $alreadyCovered);
+                } else {
+                    $outstanding = max(0, (float) $invoice->grand_total - (float) $invoice->total_paid);
+                }
+                if ($outstanding <= 0) continue;
+
+                $apply = min($outstanding, $remaining);
+                $invoice->total_paid += $apply;
+                $invoice->updatePaymentStatus();
+                $remaining -= $apply;
+                $applied[] = ['invoice_no' => $invoice->invoice_no, 'amount' => $apply];
+            }
+
+            ActivityLog::log('RECONCILE_INVOICES', $entity, "Reconciled ₹" . number_format($gap - $remaining, 2) . " of unallocated payment for {$entity->name} across " . count($applied) . " invoice(s)");
+
+            return response()->json([
+                'message' => count($applied) > 0
+                    ? 'Reconciled ₹' . number_format($gap - $remaining, 2) . ' across ' . count($applied) . ' invoice(s).'
+                    : 'Already in sync — no unallocated payment found.',
+                'applied' => $applied,
+            ]);
+        });
+    }
+
+    /**
      * FIFO-apply a settled amount onto the entity's own open invoices
      * (Sales for a Customer-type entity when money came IN, Purchases for a
      * Supplier-type entity when money went OUT). Matches by relation first,
@@ -679,11 +768,20 @@ class EntityLedgerController extends Controller
             if ($entity && $entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
                 $customerIds->push($entity->relation_id);
             }
-            if ($customerIds->isEmpty()) return $applied;
+            if ($customerIds->isEmpty() && !$entity) return $applied;
 
-            $invoices = \App\Models\SaleInvoice::whereIn('customer_id', $customerIds->unique())
-                ->where('is_cancelled', false)
+            // accounting_entity_id is the direct, unambiguous link a Sale Invoice
+            // keeps back to the exact entity it was posted against — matching by
+            // customer name/relation alone misses invoices whose entity is typed
+            // SHOP_CUSTOMER, or was created separately from the Customer record
+            // without that relation ever being wired up, silently allocating
+            // nothing even though the settlement's money is real.
+            $invoices = \App\Models\SaleInvoice::where('is_cancelled', false)
                 ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->where(function ($q) use ($entity, $customerIds) {
+                    if ($entity) $q->orWhere('accounting_entity_id', $entity->id);
+                    if ($customerIds->isNotEmpty()) $q->orWhereIn('customer_id', $customerIds->unique());
+                })
                 ->orderBy('sale_date')->orderBy('id')
                 ->lockForUpdate()->get();
 
@@ -705,10 +803,14 @@ class EntityLedgerController extends Controller
             if ($entity && $entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
                 $supplierIds->push($entity->relation_id);
             }
-            if ($supplierIds->isEmpty()) return $applied;
+            if ($supplierIds->isEmpty() && !$entity) return $applied;
 
-            $invoices = \App\Models\PurchaseInvoice::whereIn('supplier_id', $supplierIds->unique())
-                ->whereIn('payment_status', ['unpaid', 'partial'])
+            // Same accounting_entity_id-first matching as the IN branch above.
+            $invoices = \App\Models\PurchaseInvoice::whereIn('payment_status', ['unpaid', 'partial'])
+                ->where(function ($q) use ($entity, $supplierIds) {
+                    if ($entity) $q->orWhere('accounting_entity_id', $entity->id);
+                    if ($supplierIds->isNotEmpty()) $q->orWhereIn('supplier_id', $supplierIds->unique());
+                })
                 ->orderBy('purchase_date')->orderBy('id')
                 ->lockForUpdate()->get();
 

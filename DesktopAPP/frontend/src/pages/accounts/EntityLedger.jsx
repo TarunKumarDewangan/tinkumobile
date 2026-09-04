@@ -270,6 +270,21 @@ export default function EntityLedger() {
     }
   }, []);
 
+  const handleReconcile = async () => {
+    if (!selectedEntityId) return;
+    try {
+      const { data } = await api.post(`/entities/${selectedEntityId}/reconcile-invoices`);
+      if (data.applied?.length > 0) {
+        toast.success(data.message);
+      } else {
+        toast.info(data.message);
+      }
+      loadLedger(selectedEntityId, selectedEntityName);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reconcile invoices');
+    }
+  };
+
   const handleSettle = async (e) => {
     e.preventDefault();
     if (!settleData.amount || settleData.amount <= 0) return toast.error('Enter valid amount');
@@ -469,12 +484,19 @@ export default function EntityLedger() {
                         )}
                     </div>
                     
-                    <button 
-                      className="btn btn-primary btn-sm rounded-pill px-3 fw-bold shadow-sm" 
+                    <button
+                      className="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-bold"
+                      title="Catch up any Sale/Purchase invoice whose own paid amount fell behind this entity's real ledger balance — e.g. a past settlement that never got applied to a specific invoice"
+                      onClick={handleReconcile}
+                    >
+                      🔄 Reconcile Invoices
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm rounded-pill px-3 fw-bold shadow-sm"
                       onClick={() => {
                         const isRecv = parseFloat(targetEntity?.net_balance || 0) >= 0;
-                        setSettleData(prev => ({ 
-                          ...prev, 
+                        setSettleData(prev => ({
+                          ...prev,
                           type: isRecv ? 'IN' : 'OUT',
                           transaction_date: new Date().toISOString().split('T')[0]
                         }));
