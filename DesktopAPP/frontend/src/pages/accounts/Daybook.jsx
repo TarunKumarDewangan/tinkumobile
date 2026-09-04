@@ -51,6 +51,10 @@ export default function Daybook() {
     return filteredEntries.reduce((sum, entry) => sum + parseFloat(entry.credit || 0), 0);
   }, [filteredEntries]);
 
+  const filteredPaymentReceived = useMemo(() => {
+    return filteredEntries.reduce((sum, entry) => sum + parseFloat(entry.payment_received || 0), 0);
+  }, [filteredEntries]);
+
   const fetchDaybook = async () => {
       setLoading(true);
       try {
@@ -146,6 +150,15 @@ export default function Daybook() {
                         </tr>
                     </thead>
                     <tbody>
+                        {!loading && filteredEntries.length > 0 && (
+                            <tr className="tally-totals-row">
+                                <td className="ps-3" colSpan="4">TOTAL ({filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'})</td>
+                                <td className="text-end">₹{filteredDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-end">₹{filteredCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-end">₹{filteredPaymentReceived.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-end pe-3">—</td>
+                            </tr>
+                        )}
                         {loading ? (
                             <tr><td colSpan="8" className="text-center py-5 border-0"><div className="spinner-border text-secondary" /></td></tr>
                         ) : filteredEntries.length === 0 ? (
@@ -183,6 +196,17 @@ export default function Daybook() {
                             </tr>
                         ))}
                     </tbody>
+                    {!loading && filteredEntries.length > 0 && (
+                        <tfoot>
+                            <tr className="tally-totals-row">
+                                <td className="ps-3" colSpan="4">TOTAL ({filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'})</td>
+                                <td className="text-end">₹{filteredDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-end">₹{filteredCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-end">₹{filteredPaymentReceived.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-end pe-3">—</td>
+                            </tr>
+                        </tfoot>
+                    )}
                 </table>
             </div>
         </div>
@@ -220,6 +244,17 @@ export default function Daybook() {
            }
            .custom-tally-table tbody tr.tally-row:hover {
                background-color: #f1f5f9;
+           }
+           .custom-tally-table tr.tally-totals-row td {
+               background: #eef2ff;
+               color: #1e293b;
+               font-weight: 800;
+               font-size: 0.85rem;
+               border-bottom: 2px solid #cbd5e1 !important;
+           }
+           .custom-tally-table tfoot tr.tally-totals-row td {
+               border-top: 2px solid #cbd5e1 !important;
+               border-bottom: none !important;
            }
            .custom-tally-table a {
                color: #1e293b;
