@@ -74,6 +74,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     // Products
     Route::delete('/products/stock/{id}', [ProductController::class, 'deleteStock']);
     Route::put('/products/stock/{id}', [ProductController::class, 'updateStock']);
+    Route::get('/products/sticker-list', [ProductController::class, 'stickerList']);
     Route::apiResource('products', ProductController::class);
 
     // Stock Adjustments (opening stock, corrections, backdated purchases)

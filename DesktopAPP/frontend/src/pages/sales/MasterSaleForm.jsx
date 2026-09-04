@@ -369,12 +369,15 @@ export default function MasterSaleForm() {
   );
 
   const handleImeiScan = async (val) => {
-    setImeiScanner(val);
-    if (val.length >= 4) { // Faster search threshold
-        debouncedImeiSearch(val, form.shop_id, scanProductId);
-    } else { 
+    // Printed stickers encode "SKU:IMEI" in the barcode — a scanner types the
+    // whole string, so pull just the IMEI half out for the lookup below.
+    const imeiPart = val.includes(':') ? val.split(':').pop() : val;
+    setImeiScanner(imeiPart);
+    if (imeiPart.length >= 4) { // Faster search threshold
+        debouncedImeiSearch(imeiPart, form.shop_id, scanProductId);
+    } else {
         debouncedImeiSearch.cancel();
-        setScanResult(null); 
+        setScanResult(null);
     }
   };
 
