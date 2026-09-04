@@ -14,39 +14,6 @@ use App\Http\Resources\ProductResource;
 
 class ProductController extends Controller
 {
-    /**
-     * Simple paginated, searchable, filterable product list for the Stickers
-     * feature. Deliberately separate from index() above, which is entangled
-     * with stock-grouping logic for the main Products/Stock pages.
-     */
-    public function stickerList(Request $request)
-    {
-        $user = $request->user();
-        if (!$user->can('view_products') && !$user->isOwner()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $query = Product::with('category:id,name')
-            ->select('id', 'category_id', 'name', 'sku', 'imei', 'selling_price', 'attributes')
-            ->orderBy('name');
-
-        if ($request->search) {
-            $s = $request->search;
-            $query->where(function ($q) use ($s) {
-                $q->where('name', 'like', "%{$s}%")
-                  ->orWhere('sku', 'like', "%{$s}%")
-                  ->orWhere('imei', 'like', "%{$s}%")
-                  ->orWhere('attributes->brand', 'like', "%{$s}%");
-            });
-        }
-
-        if ($request->category_id) {
-            $query->where('category_id', $request->category_id);
-        }
-
-        return response()->json($query->paginate($request->per_page ?? 20));
-    }
-
     public function index(Request $request)
     {
         $user = $request->user();

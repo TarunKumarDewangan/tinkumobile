@@ -12,9 +12,6 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PendingBalance = lazy(() => import('./pages/PendingBalance'));
 const Products = lazy(() => import('./pages/products/Products'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
-const GenerateStickers = lazy(() => import('./pages/stickers/GenerateStickers'));
-const StickerProductCrud = lazy(() => import('./pages/stickers/StickerProductCrud'));
-const StickerPrint = lazy(() => import('./pages/stickers/StickerPrint'));
 const Purchases = lazy(() => import('./pages/purchases/Purchases'));
 const PurchaseForm = lazy(() => import('./pages/purchases/PurchaseForm'));
 const MasterPurchaseForm = lazy(() => import('./pages/purchases/MasterPurchaseForm'));
@@ -122,9 +119,6 @@ function AppRoutes() {
           <Route path="products" element={<Products />} />
           <Route path="products/new" element={<ProductForm />} />
           <Route path="products/:id/edit" element={<ProductForm />} />
-          <Route path="stickers/generate" element={<GenerateStickers />} />
-          <Route path="stickers/crud" element={<StickerProductCrud />} />
-          <Route path="stickers/print" element={<StickerPrint />} />
           <Route path="purchases" element={<Purchases />} />
           <Route path="purchases/new" element={<PurchaseForm />} />
           <Route path="purchases/new-master" element={<MasterPurchaseForm />} />

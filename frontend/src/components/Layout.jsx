@@ -68,16 +68,6 @@ const NAV = [
   },
 
   {
-    section: 'Stickers',
-    dropdown: true,
-    children: [
-        { to: '/stickers/generate', icon: '🏷️', label: 'Generate Stickers', perm: 'view_products' },
-        { to: '/stickers/crud',     icon: '🛠️', label: 'CRUD',              perm: 'create_products' },
-        { to: '/stickers/print',    icon: '🖨️', label: 'Sticker Print',     perm: 'view_products' },
-    ]
-  },
-
-  {
     section: 'Services',
     dropdown: true,
     children: [
@@ -153,7 +143,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Stickers': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Tasks': false, 'Settings': false });
+  const [expanded, setExpanded] = useState({ 'Master Entries': false, 'New Mobile': true, 'Old/2nd Mobile': false, 'Other Products': false, 'Services': false, 'Business': false, 'Accounts': false, 'Airtel Recovery': false, 'Tasks': false, 'Settings': false });
   
   const getNavLinkClass = (to, end) => {
     try {
