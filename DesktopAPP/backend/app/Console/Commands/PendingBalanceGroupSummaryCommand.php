@@ -37,6 +37,11 @@ class PendingBalanceGroupSummaryCommand extends Command
             $allSent = $telegram->sendToPendingGroup($msg) && $allSent;
         }
 
+        // Also send everything as one HTML file — an easier-to-read
+        // alternative to scrolling through several chunked text messages.
+        $filename = 'daily-report-' . now()->format('Y-m-d') . '.html';
+        $allSent = $telegram->sendDocumentToPendingGroup($filename, $service->buildFullReportHtml(), '📄 Full report (one file)') && $allSent;
+
         if ($allSent) {
             $this->info('Pending Balance group summary sent successfully.');
         } else {

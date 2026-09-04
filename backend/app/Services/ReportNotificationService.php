@@ -511,22 +511,30 @@ class ReportNotificationService
      *
      * @return string[]
      */
-    public function buildPendingBalanceListMessages(int $chunkSize = 10): array
+    /**
+     * Raw rows behind buildPendingBalanceListMessages() — shared with
+     * buildFullReportHtml() so the Telegram messages and the one-file HTML
+     * export can never drift apart.
+     */
+    private function getPendingBalanceRows()
     {
-        $today = Carbon::today();
-
         $allEntities = collect(
             app(\App\Http\Controllers\Api\LedgerController::class)
                 ->entityBalances(new \Illuminate\Http\Request())
                 ->getData(true)
         );
 
-        $pending = $allEntities
+        return $allEntities
             ->filter(fn ($e) => $e['type'] === 'CUSTOMER')
             ->filter(fn ($e) => (float) $e['net_balance'] > 0.01)
             ->sortByDesc('net_balance')
             ->values();
+    }
 
+    public function buildPendingBalanceListMessages(int $chunkSize = 10): array
+    {
+        $today = Carbon::today();
+        $pending = $this->getPendingBalanceRows();
         $total = $pending->sum(fn ($e) => (float) $e['net_balance']);
 
         return $this->chunkListMessages(
@@ -548,13 +556,20 @@ class ReportNotificationService
      *
      * @return string[]
      */
+    /**
+     * Raw rows behind buildPromiseListMessages() — shared with
+     * buildFullReportHtml().
+     */
+    private function getPromiseRows()
+    {
+        EntityNote::reconcilePending();
+        return EntityNote::where('status', 'PENDING')->orderBy('promise_date')->get();
+    }
+
     public function buildPromiseListMessages(int $chunkSize = 10): array
     {
         $today = Carbon::today();
-
-        EntityNote::reconcilePending();
-        $promises = EntityNote::where('status', 'PENDING')->orderBy('promise_date')->get();
-
+        $promises = $this->getPromiseRows();
         $total = $promises->sum(fn ($n) => (float) ($n->balance_at_time ?? 0));
 
         return $this->chunkListMessages(
@@ -582,7 +597,11 @@ class ReportNotificationService
      *
      * @return string[]
      */
-    public function buildPersonalFinanceDueListMessages(int $chunkSize = 10): array
+    /**
+     * Raw rows behind buildPersonalFinanceDueListMessages() — shared with
+     * buildFullReportHtml().
+     */
+    private function getPersonalFinanceDueRows()
     {
         $today = Carbon::today();
         $cutoff = $today->copy()->addDays(2);
@@ -609,8 +628,13 @@ class ReportNotificationService
                 ]);
             }
         }
-        $rows = $rows->sortBy('due_date')->values();
+        return $rows->sortBy('due_date')->values();
+    }
 
+    public function buildPersonalFinanceDueListMessages(int $chunkSize = 10): array
+    {
+        $today = Carbon::today();
+        $rows = $this->getPersonalFinanceDueRows();
         $total = $rows->sum('amount');
 
         return $this->chunkListMessages(
@@ -627,6 +651,101 @@ class ReportNotificationService
             '✅ Nothing due.',
             $chunkSize
         );
+    }
+
+    /**
+     * One self-contained HTML file with all three lists (Pending Balance,
+     * Promise to Pay, Personal Finance Due) as proper tables — an alternative
+     * to reading them as several chunked Telegram text messages. Sent as a
+     * document attachment via TelegramService::sendDocumentToPendingGroup().
+     * Pulls from the exact same row-builders as the text messages above so
+     * the two can never show different numbers.
+     */
+    public function buildFullReportHtml(): string
+    {
+        $today = Carbon::today()->format('d M Y');
+        $esc = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
+
+        $pending = $this->getPendingBalanceRows();
+        $promises = $this->getPromiseRows();
+        $financeDue = $this->getPersonalFinanceDueRows();
+
+        $renderTable = function (string $title, string $emptyLabel, $rows, array $headers, callable $rowHtml, ?float $total = null) use ($esc) {
+            $html = "<h2>{$esc($title)} <span class=\"count\">({$rows->count()})</span></h2>";
+            if ($rows->isEmpty()) {
+                return $html . "<p class=\"empty\">{$esc($emptyLabel)}</p>";
+            }
+            $html .= '<table><thead><tr><th>#</th>';
+            foreach ($headers as $h) $html .= "<th>{$esc($h)}</th>";
+            $html .= '</tr></thead><tbody>';
+            foreach ($rows->values() as $i => $row) {
+                $html .= '<tr><td>' . ($i + 1) . '</td>' . $rowHtml($row) . '</tr>';
+            }
+            $html .= '</tbody>';
+            if ($total !== null) {
+                $colspan = count($headers);
+                $html .= "<tfoot><tr><td></td><td colspan=\"{$colspan}\">Total: ₹" . number_format($total, 0) . '</td></tr></tfoot>';
+            }
+            $html .= '</table>';
+            return $html;
+        };
+
+        $body = $renderTable(
+            '💰 Pending Balance', '✅ Nothing pending.', $pending,
+            ['Name', 'Mobile', 'Balance'],
+            fn ($e) => '<td>' . $esc($e['name']) . '</td><td>' . $esc($e['phone']) . '</td><td>₹' . number_format($e['net_balance'], 0) . '</td>',
+            $pending->sum(fn ($e) => (float) $e['net_balance'])
+        );
+
+        $body .= $renderTable(
+            '🤝 Promise to Pay', '✅ Nothing pending.', $promises,
+            ['Name', 'Mobile', 'Balance', 'Promised'],
+            function ($n) use ($esc) {
+                $amount = $n->balance_at_time !== null ? '₹' . number_format($n->balance_at_time, 0) : '—';
+                $overdue = $n->promise_date->lt(Carbon::today());
+                $dateCell = $esc($n->promise_date->format('d M')) . ($overdue ? ' <span class="overdue">(OVERDUE)</span>' : '');
+                return '<td>' . $esc($n->name) . '</td><td>' . $esc($n->phone) . '</td><td>' . $amount . '</td><td>' . $dateCell . '</td>';
+            },
+            $promises->sum(fn ($n) => (float) ($n->balance_at_time ?? 0))
+        );
+
+        $body .= $renderTable(
+            '📅 Personal Finance Due', '✅ Nothing due.', $financeDue,
+            ['Name', 'Mobile', 'Amount', 'Due Date'],
+            function ($r) use ($esc) {
+                $dateCell = $esc($r['due_date']->format('d M')) . ($r['overdue'] ? ' <span class="overdue">(OVERDUE)</span>' : '');
+                return '<td>' . $esc($r['name']) . '</td><td>' . $esc($r['phone']) . '</td><td>₹' . number_format($r['amount'], 0) . '</td><td>' . $dateCell . '</td>';
+            },
+            $financeDue->sum('amount')
+        );
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Daily Report — {$today}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color: #1e293b; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #64748b; margin-bottom: 24px; }
+  h2 { font-size: 16px; margin-top: 28px; margin-bottom: 8px; border-bottom: 2px solid #cbd5e1; padding-bottom: 4px; }
+  .count { color: #64748b; font-weight: normal; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 8px; }
+  th, td { border: 1px solid #cbd5e1; padding: 6px 10px; text-align: left; font-size: 13px; }
+  th { background: #f1f5f9; text-transform: uppercase; font-size: 11px; }
+  tfoot td { font-weight: bold; background: #f8fafc; }
+  .empty { color: #16a34a; font-weight: bold; }
+  .overdue { color: #dc2626; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Tinku Mobiles — Daily Report</h1>
+<div class="subtitle">{$today}</div>
+{$body}
+</body>
+</html>
+HTML;
     }
 
     /**

@@ -59,6 +59,54 @@ class TelegramService
     }
 
     /**
+     * Send a file attachment to a specific chat/channel ID.
+     *
+     * @param string $chatId Telegram chat ID, or @channelusername for public channels
+     * @param string $filename Name Telegram will show for the attachment (e.g. "report.html")
+     * @param string $content Raw file bytes/content
+     * @param string $caption Optional short caption shown above the attachment
+     * @return bool
+     */
+    protected function sendDocument($chatId, $filename, $content, $caption = '')
+    {
+        try {
+            $url = "https://api.telegram.org/bot{$this->botToken}/sendDocument";
+
+            $response = Http::attach('document', $content, $filename)
+                ->post($url, array_filter([
+                    'chat_id' => $chatId,
+                    'caption' => $caption,
+                ]));
+
+            if ($response->successful() && ($response->json('ok') === true)) {
+                return true;
+            }
+
+            Log::error('Telegram sendDocument API Error Response', ['chat_id' => $chatId, 'response' => $response->json()]);
+            return false;
+
+        } catch (\Exception $e) {
+            Log::error('Telegram sendDocument API Exception', ['chat_id' => $chatId, 'error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Send a file attachment to the dedicated Pending Balance / Promise to
+     * Pay group — same target as sendToPendingGroup(), for the one-file HTML
+     * report alternative to the chunked text messages.
+     */
+    public function sendDocumentToPendingGroup($filename, $content, $caption = '')
+    {
+        if (empty($this->botToken) || empty($this->pendingGroupId)) {
+            Log::warning('Telegram Pending Balance group not configured. Document not sent.');
+            return false;
+        }
+
+        return $this->sendDocument($this->pendingGroupId, $filename, $content, $caption);
+    }
+
+    /**
      * Send a message to every configured recipient — the owner's personal chat and/or
      * a broadcast channel. Returns true if it reached at least one of them.
      *

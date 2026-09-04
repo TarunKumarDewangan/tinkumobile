@@ -118,6 +118,11 @@ class NotificationController extends Controller
         $ownerSent = false;
         if (in_array('pending_group', $data['channels'])) {
             $pendingGroupSent = $sendAll(fn ($msg) => $telegram->sendToPendingGroup($msg));
+
+            // Also send everything as one HTML file — an easier-to-read
+            // alternative to scrolling through several chunked text messages.
+            $filename = 'daily-report-' . now()->format('Y-m-d') . '.html';
+            $pendingGroupSent = $telegram->sendDocumentToPendingGroup($filename, $service->buildFullReportHtml(), '📄 Full report (one file)') && $pendingGroupSent;
         }
         if (in_array('owner', $data['channels'])) {
             $ownerSent = $sendAll(fn ($msg) => $telegram->sendToOwner($msg));
