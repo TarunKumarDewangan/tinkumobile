@@ -422,6 +422,15 @@ export default function Sales() {
                     {/* 10. Actions */}
                     <td className="text-center">
                       <div className="d-flex justify-content-center gap-1 flex-wrap">
+                        {inv.accounting_entity_id && (
+                          <button
+                            onClick={() => navigate(`/accounts/entity-ledger?id=${inv.accounting_entity_id}&name=${encodeURIComponent(inv.customer?.name || '')}`)}
+                            className="pm-act-btn btn-xs"
+                            title="View Customer's Entity Ledger"
+                          >
+                            LEDGER
+                          </button>
+                        )}
                         {!inv.is_cancelled && (
                           <>
                             <button onClick={() => navTo(`/sales/${inv.id}`)} className="pm-act-btn btn-xs" title="View Details">VIEW</button>
