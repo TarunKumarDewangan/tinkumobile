@@ -23,7 +23,7 @@ use Carbon\Carbon;
 class SystemBackupController extends Controller
 {
     // Bump this whenever new tables are added to backup so old files are rejected at restore
-    private const BACKUP_VERSION = '1.4';
+    private const BACKUP_VERSION = '1.5';
 
     public function backup(Request $request)
     {
@@ -76,6 +76,19 @@ class SystemBackupController extends Controller
 
             // ── Sales ──────────────────────────────────────────────────
             'sale_invoices'         => SaleInvoice::with(['items', 'giftItems'])->get(),
+
+            // ── Shop Finance (Personal EMI / Favor / Processing Fee) ────
+            'sale_finance_plans'    => \App\Models\SaleFinancePlan::all(),
+            'finance_payments'      => \App\Models\FinancePayment::all(),
+
+            // ── Entity Notes (Pending Balance promise-to-pay notes) ─────
+            'entity_notes'          => \App\Models\EntityNote::all(),
+
+            // ── Stock Transfers (between shops) ─────────────────────────
+            'stock_transfers'       => \App\Models\StockTransfer::withTrashed()->get(),
+
+            // ── SIM Card Stock ───────────────────────────────────────────
+            'sim_stock_entries'     => \App\Models\SimStockEntry::all(),
 
             // ── Repairs ────────────────────────────────────────────────
             'repair_requests'       => \App\Models\RepairRequest::all(),
@@ -222,6 +235,13 @@ class SystemBackupController extends Controller
             DB::table('repair_requests')->delete();
             DB::table('follow_ups')->delete();
 
+            // Shop Finance (children of sale_invoices)
+            DB::table('finance_payments')->delete();
+            DB::table('sale_finance_plans')->delete();
+
+            // Entity Notes (child of entities & sale_invoices)
+            DB::table('entity_notes')->delete();
+
             // Sales
             DB::table('sale_gift_items')->delete();
             DB::table('sale_items')->delete();
@@ -230,6 +250,12 @@ class SystemBackupController extends Controller
             // Purchases
             DB::table('purchase_items')->delete();
             DB::table('purchase_invoices')->delete();
+
+            // Stock Transfers (child of products & shops)
+            DB::table('stock_transfers')->delete();
+
+            // SIM Card Stock
+            DB::table('sim_stock_entries')->delete();
 
             // Stock & Inventory
             DB::table('inventory')->delete();
@@ -340,6 +366,15 @@ class SystemBackupController extends Controller
                 $this->safeInsert('sale_items', $allItems);
                 $this->safeInsert('sale_gift_items', $allGifts);
             }
+
+            // 8b. Shop Finance & Entity Notes (children of sale_invoices/entities)
+            $this->safeInsert('sale_finance_plans', array_map($cleanItem, $data['sale_finance_plans'] ?? []));
+            $this->safeInsert('finance_payments', array_map($cleanItem, $data['finance_payments'] ?? []));
+            $this->safeInsert('entity_notes', array_map($cleanItem, $data['entity_notes'] ?? []));
+
+            // 8c. Stock Transfers & SIM Stock
+            $this->safeInsert('stock_transfers', array_map($cleanItem, $data['stock_transfers'] ?? []));
+            $this->safeInsert('sim_stock_entries', array_map($cleanItem, $data['sim_stock_entries'] ?? []));
 
             // 9. Repairs & follow-ups
             $this->safeInsert('repair_requests', array_map($cleanItem, $data['repair_requests'] ?? []));
