@@ -18,9 +18,10 @@ export default function OldMobileSales() {
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const [filters, setFilters] = useState({ 
+  const [filters, setFilters] = useState({
     from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: true
   });
+  const [financeFilter, setFinanceFilter] = useState('');
 
   useEffect(() => {
     const q = searchParams.get('search') || '';
@@ -82,8 +83,12 @@ export default function OldMobileSales() {
 
   // Filter invoices to only show those containing old mobile items
   const oldMobileInvoices = invoices.filter(inv => {
-    if (!oldMobileCategoryId) return true; // If category not loaded yet, show all as fallback
-    return inv.items?.some(item => item.product?.category_id === oldMobileCategoryId);
+    if (oldMobileCategoryId && !inv.items?.some(item => item.product?.category_id === oldMobileCategoryId)) {
+      return false; // If category not loaded yet, skip this check (fallback: show all)
+    }
+    if (financeFilter === 'NONE') return !inv.finance_plan;
+    if (financeFilter) return inv.finance_plan?.type === financeFilter;
+    return true;
   });
 
   const getStatusBadge = (status) => {
@@ -144,8 +149,18 @@ export default function OldMobileSales() {
             <label className="form-label text-muted small fw-bold">Search Invoice / Customer</label>
             <input type="text" className="form-control bg-light text-dark border-secondary-subtle text-uppercase" placeholder="Search by name, invoice..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
           </div>
+          <div className="col-12 col-md-2">
+            <label className="form-label text-muted small fw-bold">Finance Type</label>
+            <select className="form-select bg-light text-dark border-secondary-subtle" value={financeFilter} onChange={e => setFinanceFilter(e.target.value)}>
+              <option value="">ALL TYPES</option>
+              <option value="PERSONAL">PERSONAL EMI</option>
+              <option value="FAVOR">FAVOR (FLEXIBLE)</option>
+              <option value="PROCESSING_FEE">PROCESSING FEE</option>
+              <option value="NONE">NO FINANCE</option>
+            </select>
+          </div>
           <div className="col-12 col-md-2 d-flex align-items-end">
-            <button className="btn btn-outline-secondary w-100 fw-bold rounded-pill" onClick={() => setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: true})}>RESET</button>
+            <button className="btn btn-outline-secondary w-100 fw-bold rounded-pill" onClick={() => { setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: true}); setFinanceFilter(''); }}>RESET</button>
           </div>
         </div>
       </div>
@@ -172,6 +187,7 @@ export default function OldMobileSales() {
                   <th className="py-3 text-muted text-end text-info">Credit Applied</th>
                   <th className="py-3 text-muted text-end">Balance</th>
                   <th className="py-3 text-muted text-center">Status</th>
+                  <th className="py-3 text-muted text-center">Finance</th>
                   <th className="py-3 px-4 text-muted text-end">Actions</th>
                 </tr>
               </thead>
@@ -222,6 +238,30 @@ export default function OldMobileSales() {
                           getStatusBadge(inv.payment_status)
                         )}
                       </td>
+                      <td className="py-3 text-center">
+                        {inv.finance_plan ? (
+                          <div className="d-flex flex-column align-items-center gap-1">
+                            <span style={{
+                              background: inv.finance_plan.type === 'PERSONAL' ? '#eff6ff' : inv.finance_plan.type === 'PROCESSING_FEE' ? '#fdf4ff' : '#ecfeff',
+                              color:      inv.finance_plan.type === 'PERSONAL' ? '#1d4ed8' : inv.finance_plan.type === 'PROCESSING_FEE' ? '#a21caf' : '#0891b2',
+                              fontSize: '.62rem', fontWeight: 800,
+                              padding: '2px 8px', borderRadius: 20, display: 'inline-block', whiteSpace: 'nowrap',
+                            }}>
+                              {inv.finance_plan.type === 'PERSONAL' ? '📅 PERSONAL EMI' : inv.finance_plan.type === 'PROCESSING_FEE' ? '💳 PROCESSING FEE' : '🤝 FAVOR'}
+                            </span>
+                            <span style={{
+                              background: inv.finance_plan.status === 'SETTLED' ? '#f1f5f9' : inv.finance_plan.status === 'OVERDUE' ? '#fef2f2' : '#f0fdf4',
+                              color:      inv.finance_plan.status === 'SETTLED' ? '#64748b' : inv.finance_plan.status === 'OVERDUE' ? '#dc2626' : '#16a34a',
+                              fontSize: '.6rem', fontWeight: 700,
+                              padding: '1px 7px', borderRadius: 20, display: 'inline-block',
+                            }}>
+                              {inv.finance_plan.status}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted opacity-50 x-small">—</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-end">
                         <div className="d-flex justify-content-end gap-2">
                           <button onClick={() => navigate(`/sales/${inv.id}`)} className="btn btn-sm btn-outline-info rounded-pill px-3">VIEW</button>
@@ -239,7 +279,7 @@ export default function OldMobileSales() {
                 })}
                 {oldMobileInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="text-center py-5 text-muted">
+                    <td colSpan={11} className="text-center py-5 text-muted">
                       <div className="fs-1 mb-2">🧾</div>
                       No used mobile sales invoices found.
                     </td>
