@@ -26,8 +26,8 @@ class ProductController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $query = Product::with('category:id,name')
-            ->select('id', 'category_id', 'name', 'sku', 'imei', 'condition', 'selling_price', 'max_selling_price', 'attributes')
+        $query = Product::with(['category:id,name', 'brand:id,name'])
+            ->select('id', 'category_id', 'brand_id', 'name', 'sku', 'imei', 'condition', 'selling_price', 'max_selling_price', 'attributes')
             ->orderBy('name');
 
         if ($request->search) {
@@ -346,7 +346,7 @@ class ProductController extends Controller
         $user = $request->user();
         $shopId = $user->hasFullAccess() ? null : $user->shop_id;
 
-        return response()->json($product->load(['category', 'inventory' => function($q) use ($shopId) {
+        return response()->json($product->load(['category', 'brand', 'inventory' => function($q) use ($shopId) {
             if ($shopId) {
                 $q->where('shop_id', $shopId);
             }

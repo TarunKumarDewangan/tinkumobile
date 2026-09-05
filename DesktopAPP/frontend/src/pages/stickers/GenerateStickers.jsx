@@ -110,7 +110,7 @@ export default function GenerateStickers() {
                     <td>
                       <input type="checkbox" className="form-check-input" checked={isSelected} onChange={() => toggle(p)} />
                     </td>
-                    <td className="fw-semibold">{p.name}</td>
+                    <td className="fw-semibold">{p.brand ? `${p.brand.name.toUpperCase()} ` : ''}{p.name}</td>
                     <td className="font-monospace" style={{ fontSize: '0.8rem' }}>{p.sku || '—'}</td>
                     <td className="font-monospace" style={{ fontSize: '0.8rem' }}>{p.imei || '—'}</td>
                     <td>{[p.attributes?.ram, p.attributes?.storage, p.attributes?.color].filter(Boolean).join(' / ') || '—'}</td>

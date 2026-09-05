@@ -27,7 +27,7 @@ export default function StickerPrices() {
             expanded.push({
               key: `${p.id}-${i}`,
               product_id: p.id,
-              name: p.name,
+              name: (p.brand ? `${p.brand.name.toUpperCase()} ` : '') + p.name,
               condition: p.condition,
               sku: p.sku,
               imei: p.imei,
