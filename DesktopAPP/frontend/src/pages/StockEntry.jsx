@@ -116,10 +116,10 @@ export default function StockEntry() {
     .pm-table-wrap{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);}
     .pm-table{width:100%;border-collapse:collapse;font-size:.78rem;}
     .pm-table thead tr{background:linear-gradient(135deg,#1e293b,#0f172a);}
-    .pm-table thead th{color:rgba(255,255,255,.7);font-size:.62rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:11px 14px;border:none;}
-    .pm-table tbody tr{border-bottom:1px solid #f1f5f9;transition:background .1s;}
+    .pm-table thead th{color:rgba(255,255,255,.7);font-size:.62rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:11px 14px;border:1px solid #334155;}
+    .pm-table tbody tr{transition:background .1s;}
     .pm-table tbody tr:hover{background:#f8fafc;}
-    .pm-table td{padding:11px 14px;vertical-align:middle;border:none;color:#334155;}
+    .pm-table td{padding:11px 14px;vertical-align:middle;border:1px solid #e2e8f0;color:#334155;}
     .pm-badge{font-size:.6rem;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px;display:inline-block;}
     .pm-clear-btn{font-size:.7rem;font-weight:700;padding:5px 12px;border-radius:8px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;transition:all .15s;}
     .pm-clear-btn:hover{border-color:#ef4444;color:#ef4444;}
