@@ -423,7 +423,12 @@ class SaleInvoiceController extends Controller
                     'principal'       => $principal,
                     'processing_fee'  => $sf['type'] === 'PROCESSING_FEE' ? $processingFee : null,
                     'interest_rate'   => $interestRate ?: null,
-                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : ($sf['type'] === 'PROCESSING_FEE' ? null : 'REDUCING'),
+                    // Column is NOT NULL (default REDUCING) — PROCESSING_FEE/FAVOR
+                    // plans don't use this field at all, but must still pass a
+                    // valid value rather than null, which fails outright under
+                    // MySQL strict mode and silently relies on the column's own
+                    // default otherwise.
+                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
                     'tenure_months'   => $sf['tenure_months'] ?? null,
                     'monthly_emi'     => $isScheduled ? $monthlyEmi : null,
                     'emi_start_date'  => $isScheduled
@@ -648,7 +653,7 @@ class SaleInvoiceController extends Controller
             'finance_payment_mode'   => 'nullable|string',
             // Shop Finance Plan (Personal EMI or Favor) — was previously only
             // accepted on create; editing a sale to add/update one silently did nothing.
-            'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR',
+            'shop_finance.type'           => 'nullable|in:PERSONAL,FAVOR,PROCESSING_FEE',
             'shop_finance.principal'      => 'nullable|numeric|min:0.01',
             'shop_finance.down_payment'   => 'nullable|numeric|min:0',
             'shop_finance.interest_rate'  => 'nullable|numeric|min:0',
@@ -886,7 +891,12 @@ class SaleInvoiceController extends Controller
                     'principal'       => $principal,
                     'processing_fee'  => $sf['type'] === 'PROCESSING_FEE' ? $processingFee : null,
                     'interest_rate'   => $interestRate ?: null,
-                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : ($sf['type'] === 'PROCESSING_FEE' ? null : 'REDUCING'),
+                    // Column is NOT NULL (default REDUCING) — PROCESSING_FEE/FAVOR
+                    // plans don't use this field at all, but must still pass a
+                    // valid value rather than null, which fails outright under
+                    // MySQL strict mode and silently relies on the column's own
+                    // default otherwise.
+                    'interest_type'   => $sf['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
                     'tenure_months'   => $sf['tenure_months'] ?? null,
                     'monthly_emi'     => $isScheduled ? $monthlyEmi : null,
                     'emi_start_date'  => $isScheduled
