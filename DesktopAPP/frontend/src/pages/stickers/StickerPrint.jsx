@@ -67,6 +67,7 @@ export default function StickerPrint() {
                 <div className="sticker-model">{s.name}</div>
                 {specs && <div className="sticker-specs">{specs}</div>}
                 <Barcode value={barcodeValue} />
+                {s.imei && <div className="sticker-imei">IMEI: {s.imei}</div>}
                 <div className="sticker-mrp">MRP: ₹{parseFloat(s.mrp || 0).toLocaleString('en-IN')}</div>
                 <div className="sticker-price">PRICE: ₹{parseFloat(s.price || 0).toLocaleString('en-IN')}</div>
               </div>
@@ -109,7 +110,8 @@ export default function StickerPrint() {
         .sticker-model { font-size: 7pt; font-weight: 700; line-height: 1.15; }
         .sticker-specs { font-size: 6pt; color: #444; line-height: 1.1; }
         .sticker-barcode { width: 100%; max-width: 36mm; height: auto; }
-        .sticker-mrp { font-size: 6.5pt; color: #666; text-decoration: line-through; line-height: 1.1; }
+        .sticker-imei { font-size: 5.5pt; color: #444; line-height: 1.1; letter-spacing: 0.2px; }
+        .sticker-mrp { font-size: 6.5pt; color: #666; line-height: 1.1; }
         .sticker-price { font-size: 9.5pt; font-weight: 800; line-height: 1.1; }
 
         @media print {
