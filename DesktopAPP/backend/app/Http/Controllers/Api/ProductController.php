@@ -44,6 +44,51 @@ class ProductController extends Controller
             $query->where('category_id', $request->category_id);
         }
 
+        // Group identical-config units (same model/ram/storage/color) that
+        // each carry their own distinct IMEI — e.g. 5 physical units of the
+        // exact same phone — into one row with a count, instead of forcing
+        // staff to individually check every single IMEI row. Only IMEI-
+        // bearing products are grouped; products without an IMEI (loose
+        // accessories) keep their own already-editable Qty field as-is,
+        // since there's no per-unit identity to group by there.
+        if ($request->boolean('group_by_config')) {
+            // Grouping needs every matching row in hand at once (not just one
+            // page) to count correctly — capped defensively so an overly
+            // broad search can't pull the whole catalogue into memory.
+            $all = $query->limit(500)->get();
+            $groups = [];
+            $ungrouped = [];
+
+            foreach ($all as $p) {
+                if (empty($p->imei)) {
+                    $ungrouped[] = $p;
+                    continue;
+                }
+                $key = $this->generateGroupKey($p, $p->attributes['ram'] ?? null, $p->attributes['storage'] ?? null, $p->attributes['color'] ?? null);
+                if (!isset($groups[$key])) {
+                    $groups[$key] = [
+                        'id' => 'grp_' . md5($key),
+                        'is_group' => true,
+                        'category_id' => $p->category_id,
+                        'name' => $p->name,
+                        'brand' => $p->brand,
+                        'condition' => $p->condition,
+                        'selling_price' => $p->selling_price,
+                        'max_selling_price' => $p->max_selling_price,
+                        'attributes' => $p->attributes,
+                        'sku' => $p->sku,
+                        'product_ids' => [],
+                        'count' => 0,
+                    ];
+                }
+                $groups[$key]['product_ids'][] = $p->id;
+                $groups[$key]['count']++;
+            }
+
+            $rows = array_merge(array_values($groups), $ungrouped);
+            return response()->json(['data' => $rows, 'current_page' => 1, 'last_page' => 1]);
+        }
+
         return response()->json($query->paginate($request->per_page ?? 20));
     }
 
