@@ -79,7 +79,6 @@ export default function EntityLedger() {
   }, []);
 
   const handleViewEntry = async (item) => {
-    if (!await pinGate.confirm()) return;
     if (['RECEIPT', 'PAYMENT'].includes(item.voucher_type)) {
       try {
         const { data } = await api.get(`/transactions/${item.voucher_id}`);
