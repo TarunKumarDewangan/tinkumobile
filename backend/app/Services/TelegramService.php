@@ -72,7 +72,7 @@ class TelegramService
         try {
             $url = "https://api.telegram.org/bot{$this->botToken}/sendDocument";
 
-            $response = Http::attach('document', $content, $filename)
+            $response = Http::timeout(30)->attach('document', $content, $filename)
                 ->post($url, array_filter([
                     'chat_id' => $chatId,
                     'caption' => $caption,
@@ -82,7 +82,16 @@ class TelegramService
                 return true;
             }
 
-            Log::error('Telegram sendDocument API Error Response', ['chat_id' => $chatId, 'response' => $response->json()]);
+            // ->json() is null for a non-JSON response (e.g. a host-level
+            // 502/504 HTML error page), which used to log as an unhelpful
+            // 'response' => null — log the raw status + body too so a
+            // failure here is actually diagnosable from the log alone.
+            Log::error('Telegram sendDocument API Error Response', [
+                'chat_id' => $chatId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+                'body' => $response->body(),
+            ]);
             return false;
 
         } catch (\Exception $e) {

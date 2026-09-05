@@ -121,6 +121,9 @@ class NotificationController extends Controller
 
             // Also send everything as one HTML file — an easier-to-read
             // alternative to scrolling through several chunked text messages.
+            // The short pause avoids Telegram briefly rate-limiting this send
+            // for landing right after a burst of text messages to the same chat.
+            if (count($allMessages) > 0) sleep(1);
             $filename = 'daily-report-' . now()->format('Y-m-d') . '.html';
             $pendingGroupSent = $telegram->sendDocumentToPendingGroup($filename, $service->buildFullReportHtml(), '📄 Full report (one file)') && $pendingGroupSent;
         }
