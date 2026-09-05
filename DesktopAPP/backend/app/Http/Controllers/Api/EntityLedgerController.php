@@ -586,6 +586,80 @@ class EntityLedgerController extends Controller
     }
 
     /**
+     * List an entity's own open (unpaid/partial) invoices, for the "Specific
+     * Purchase/Sale" settlement mode — settling against one exact invoice
+     * instead of FIFO across all of them.
+     *
+     * Deliberately excludes any Sale invoice still carrying an active (not
+     * SETTLED) Shop Finance plan: those invoices have a SECOND independent
+     * paid-tracker (SaleFinancePlan::total_paid, kept in sync only by the
+     * Finance Tracker page's own EMI-payment flow). Settling one here would
+     * update the invoice's total_paid but silently leave the finance plan's
+     * own counter — and therefore its EMI schedule / due-reminders — wrong.
+     */
+    public function openInvoices(Request $request, \App\Models\Entity $entity)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $type = $request->query('type');
+        $rows = [];
+
+        if ($type === 'IN') {
+            $customerIds = \App\Models\Customer::where('name', $entity->name)->pluck('id');
+            if ($entity->relation_type === \App\Models\Customer::class && $entity->relation_id) {
+                $customerIds->push($entity->relation_id);
+            }
+
+            $invoices = \App\Models\SaleInvoice::where('is_cancelled', false)
+                ->whereIn('payment_status', ['unpaid', 'partial'])
+                ->where(function ($q) use ($entity, $customerIds) {
+                    $q->where('accounting_entity_id', $entity->id);
+                    if ($customerIds->isNotEmpty()) $q->orWhereIn('customer_id', $customerIds->unique());
+                })
+                ->whereDoesntHave('financePlan', fn ($q) => $q->where('status', '!=', 'SETTLED'))
+                ->orderBy('sale_date')->orderBy('id')->get();
+
+            foreach ($invoices as $inv) {
+                $alreadyCovered = (float) $inv->total_paid + (float) $inv->exchange_paid
+                    + ($inv->finance_payment_status === 'RECEIVED' ? (float) $inv->finance_amount : 0);
+                $outstanding = max(0, (float) $inv->grand_total - $alreadyCovered);
+                if ($outstanding <= 0) continue;
+                $rows[] = [
+                    'id' => $inv->id, 'type' => 'sale', 'invoice_no' => $inv->invoice_no,
+                    'date' => $inv->sale_date, 'grand_total' => (float) $inv->grand_total, 'outstanding' => $outstanding,
+                ];
+            }
+        } elseif ($type === 'OUT') {
+            $supplierIds = \App\Models\Supplier::where('name', $entity->name)->pluck('id');
+            if ($entity->relation_type === \App\Models\Supplier::class && $entity->relation_id) {
+                $supplierIds->push($entity->relation_id);
+            }
+
+            $invoices = \App\Models\PurchaseInvoice::whereIn('payment_status', ['unpaid', 'partial'])
+                ->where('status', 'received')
+                ->where(function ($q) use ($entity, $supplierIds) {
+                    $q->where('accounting_entity_id', $entity->id);
+                    if ($supplierIds->isNotEmpty()) $q->orWhereIn('supplier_id', $supplierIds->unique());
+                })
+                ->orderBy('purchase_date')->orderBy('id')->get();
+
+            foreach ($invoices as $inv) {
+                $outstanding = max(0, (float) $inv->grand_total - (float) $inv->total_paid);
+                if ($outstanding <= 0) continue;
+                $rows[] = [
+                    'id' => $inv->id, 'type' => 'purchase', 'invoice_no' => $inv->invoice_no,
+                    'date' => $inv->purchase_date, 'grand_total' => (float) $inv->grand_total, 'outstanding' => $outstanding,
+                ];
+            }
+        }
+
+        return response()->json(['invoices' => $rows]);
+    }
+
+    /**
      * Record a manual settlement for an entity.
      *
      * A settlement only ever touched the entity's aggregate ledger balance —
@@ -614,7 +688,10 @@ class EntityLedgerController extends Controller
             'payment_lines.*.amount' => 'required_with:payment_lines|numeric|min:0.01',
             'description' => 'nullable|string',
             'category' => 'required|string',
-            'transaction_date' => 'nullable|date'
+            'transaction_date' => 'nullable|date',
+            // When set, apply the settlement to this ONE invoice only, instead
+            // of the default FIFO sweep across every open invoice.
+            'invoice_id' => 'nullable|integer',
         ]);
 
         if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['amount'])) {
@@ -629,7 +706,22 @@ class EntityLedgerController extends Controller
             ? collect($data['payment_lines'])->map(fn ($l) => "{$l['payment_mode']} (₹" . number_format($l['amount'], 2) . ')')->implode(' + ')
             : $data['payment_mode'];
 
-        return DB::transaction(function () use ($data, $user, $entity, $shopId, $modeLabel) {
+        // Resolve + validate the specific-invoice target (if any) BEFORE
+        // posting anything, so a bad request never leaves a ledger Transaction
+        // posted with no matching invoice update.
+        $specificInvoice = null;
+        if (!empty($data['invoice_id'])) {
+            if (!$entity) {
+                return response()->json(['message' => 'Entity not found for this settlement.'], 422);
+            }
+            [$specificInvoice, $error] = $this->resolveSpecificInvoice($entity, $data['type'], (int) $data['invoice_id']);
+            if ($error) {
+                return response()->json(['message' => $error], 422);
+            }
+        }
+
+        try {
+            return DB::transaction(function () use ($data, $user, $entity, $shopId, $modeLabel, $specificInvoice) {
             $transaction = $this->transactionService->recordSettlement([
                 'shop_id' => $shopId,
                 'user_id' => $user->id,
@@ -644,7 +736,17 @@ class EntityLedgerController extends Controller
                 'accounting_entity_id' => $entity ? $entity->id : null,
             ]);
 
-            $appliedTo = $this->applySettlementToInvoices($entity, $data['entity_name'], $data['type'], (float) $data['amount']);
+            if ($specificInvoice) {
+                $appliedTo = $this->applySettlementToOneInvoice($specificInvoice, (float) $data['amount']);
+                if ($appliedTo === null) {
+                    // Outstanding changed (race) between the pre-check above and
+                    // this locked read — abort the whole settlement rather than
+                    // silently posting a ledger entry with no invoice to match it.
+                    throw new \RuntimeException('This invoice\'s balance changed just now — please refresh and try again.');
+                }
+            } else {
+                $appliedTo = $this->applySettlementToInvoices($entity, $data['entity_name'], $data['type'], (float) $data['amount']);
+            }
 
             $this->notifyOwner(
                 ($data['type'] === 'IN' ? "💰 *Cash IN — {$data['entity_name']}*\n" : "💸 *Cash OUT — {$data['entity_name']}*\n") .
@@ -660,7 +762,79 @@ class EntityLedgerController extends Controller
                 'transaction' => $transaction,
                 'applied_to_invoices' => $appliedTo,
             ], 201);
-        });
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Look up + validate a "Specific Purchase/Sale" settlement target before
+     * any money is posted. Returns [invoice, null] on success or
+     * [null, "error message"] otherwise — never throws, so the caller can
+     * reject the whole request with a clean 422 before the ledger Transaction
+     * is written.
+     */
+    private function resolveSpecificInvoice(\App\Models\Entity $entity, string $type, int $invoiceId): array
+    {
+        if ($type === 'IN') {
+            $invoice = \App\Models\SaleInvoice::find($invoiceId);
+            if (!$invoice) return [null, 'Invoice not found.'];
+            if ($invoice->is_cancelled) return [null, 'That invoice is cancelled.'];
+
+            $ownsIt = $invoice->accounting_entity_id === $entity->id
+                || ($entity->relation_type === \App\Models\Customer::class && $invoice->customer_id === $entity->relation_id);
+            if (!$ownsIt) return [null, 'That invoice does not belong to this customer.'];
+
+            if ($invoice->financePlan && $invoice->financePlan->status !== 'SETTLED') {
+                return [null, 'This invoice has an active Shop Finance plan — settle its EMI from Finance Tracker instead so the schedule stays accurate.'];
+            }
+        } else {
+            $invoice = \App\Models\PurchaseInvoice::find($invoiceId);
+            if (!$invoice) return [null, 'Invoice not found.'];
+            if ($invoice->status !== 'received') return [null, 'That purchase invoice has not been received yet.'];
+
+            $ownsIt = $invoice->accounting_entity_id === $entity->id
+                || ($entity->relation_type === \App\Models\Supplier::class && $invoice->supplier_id === $entity->relation_id);
+            if (!$ownsIt) return [null, 'That invoice does not belong to this supplier.'];
+        }
+
+        return [$invoice, null];
+    }
+
+    /**
+     * Apply a settlement to exactly one invoice (the "Specific Purchase/Sale"
+     * mode), instead of applySettlementToInvoices()'s FIFO sweep. Re-reads
+     * the invoice with a row lock and re-validates its outstanding balance
+     * right now — closes the race window between whatever the UI showed the
+     * user a moment ago and this actual write. Returns null if the amount no
+     * longer fits (caller aborts the whole settlement), or the applied-list
+     * shape used everywhere else otherwise.
+     */
+    private function applySettlementToOneInvoice($invoice, float $amount): ?array
+    {
+        $locked = $invoice instanceof \App\Models\SaleInvoice
+            ? \App\Models\SaleInvoice::lockForUpdate()->find($invoice->id)
+            : \App\Models\PurchaseInvoice::lockForUpdate()->find($invoice->id);
+
+        if ($locked instanceof \App\Models\SaleInvoice) {
+            $alreadyCovered = (float) $locked->total_paid + (float) $locked->exchange_paid
+                + ($locked->finance_payment_status === 'RECEIVED' ? (float) $locked->finance_amount : 0);
+            $outstanding = max(0, (float) $locked->grand_total - $alreadyCovered);
+            $type = 'sale';
+        } else {
+            $outstanding = max(0, (float) $locked->grand_total - (float) $locked->total_paid);
+            $type = 'purchase';
+        }
+
+        if ($amount <= 0 || $amount > $outstanding + 0.01) {
+            return null;
+        }
+
+        $locked->total_paid += $amount;
+        $locked->updatePaymentStatus();
+
+        return [['invoice_no' => $locked->invoice_no, 'type' => $type, 'amount' => $amount]];
     }
 
     /**

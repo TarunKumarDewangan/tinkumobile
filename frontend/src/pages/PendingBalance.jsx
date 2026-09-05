@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
+import SettlementModal from '../components/SettlementModal';
 
 const CATEGORIES = [
   { id: 'ALL', label: 'All' },
@@ -27,6 +28,7 @@ export default function PendingBalance() {
   const [notes, setNotes] = useState([]);
   const [notesOnly, setNotesOnly] = useState(false);
   const [ledgerModal, setLedgerModal] = useState(null); // { row, loading, data }
+  const [settleModal, setSettleModal] = useState(null); // { row }
 
   useEffect(() => {
     load();
@@ -366,6 +368,15 @@ export default function PendingBalance() {
                   <td className="text-center">
                     <div className="d-flex gap-1 justify-content-center">
                       <button className="btn btn-sm btn-outline-primary" onClick={() => openLedgerModal(r)}>VIEW</button>
+                      {r.entityId && (
+                        <button
+                          className="btn btn-sm btn-outline-dark"
+                          title="Record a settlement (payment received) against this balance"
+                          onClick={() => setSettleModal({ row: r })}
+                        >
+                          💵
+                        </button>
+                      )}
                       <button
                         className="btn btn-sm btn-outline-success"
                         title={r.phone ? 'Send WhatsApp reminder' : 'No phone number on file'}
@@ -558,6 +569,16 @@ export default function PendingBalance() {
           </div>
         </div>
       )}
+
+      <SettlementModal
+        show={!!settleModal}
+        entityId={settleModal?.row.entityId}
+        entityName={settleModal?.row.name}
+        currentBalance={settleModal?.row.balance}
+        defaultType="IN"
+        onClose={() => setSettleModal(null)}
+        onSuccess={load}
+      />
     </div>
   );
 }
