@@ -119,7 +119,12 @@ class FinancePlanController extends Controller
             'principal'       => $data['principal'],
             'processing_fee'  => $data['type'] === 'PROCESSING_FEE' ? $processingFee : null,
             'interest_rate'   => $interestRate ?: null,
-            'interest_type'   => $data['type'] === 'PERSONAL' ? $interestType : ($data['type'] === 'PROCESSING_FEE' ? null : 'REDUCING'),
+            // Column is NOT NULL (default REDUCING) — PROCESSING_FEE/FAVOR
+            // plans don't use this field at all, but must still pass a
+            // valid value rather than null, which fails outright under
+            // MySQL strict mode and silently relies on the column's own
+            // default otherwise.
+            'interest_type'   => $data['type'] === 'PERSONAL' ? $interestType : 'REDUCING',
             'tenure_months'   => $data['tenure_months'] ?? null,
             'monthly_emi'     => $isScheduled ? $monthlyEmi : null,
             'emi_start_date'  => $isScheduled ? ($data['emi_start_date'] ?? now()->addMonth()->startOfMonth()) : null,
