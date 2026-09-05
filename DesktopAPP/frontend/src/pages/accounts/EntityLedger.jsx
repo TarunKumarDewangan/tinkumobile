@@ -238,7 +238,12 @@ export default function EntityLedger() {
           net_balance: data.closing_balance,
           opening_balance: data.opening_balance
       });
-      setSearchParams({ id, name });
+      // replace: true — this fires every time a ledger loads, including
+      // right after the browser already navigated to this exact URL (e.g.
+      // arriving from Pending Balance's "Open Full Ledger"). Without it,
+      // that re-sync pushed a duplicate history entry, so pressing Back
+      // once just landed back on the same page instead of leaving it.
+      setSearchParams({ id, name }, { replace: true });
     } catch (error) {
       toast.error('Failed to load ledger');
     } finally {

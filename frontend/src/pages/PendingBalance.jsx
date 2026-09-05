@@ -30,6 +30,16 @@ export default function PendingBalance() {
   const [ledgerModal, setLedgerModal] = useState(null); // { row, loading, data }
   const [settleModal, setSettleModal] = useState(null); // { row }
 
+  // Single-use: set right before navigating away to an entity's ledger, read
+  // once here (then cleared) so coming back via the browser Back button
+  // highlights and scrolls to the exact row that was clicked — a normal
+  // fresh visit to this page later won't show any stale highlight.
+  const [highlightKey] = useState(() => {
+    const key = sessionStorage.getItem('pendingBalanceHighlight');
+    sessionStorage.removeItem('pendingBalanceHighlight');
+    return key;
+  });
+
   useEffect(() => {
     load();
   }, []);
@@ -266,6 +276,10 @@ export default function PendingBalance() {
   };
 
   const goToAccount = (r) => {
+    // Remembered so that coming back here via the browser Back button can
+    // highlight and scroll to the exact row that was clicked, instead of
+    // landing on an unhighlighted list the user has to re-scan.
+    sessionStorage.setItem('pendingBalanceHighlight', r.entityId ? `e${r.entityId}` : r.name.toUpperCase());
     if (r.entityId) {
       navigate(`/accounts/entity-ledger?id=${r.entityId}&name=${encodeURIComponent(r.name)}`);
     } else {
@@ -339,8 +353,15 @@ export default function PendingBalance() {
                 <tr><td colSpan={category === 'ALL' ? 6 : 5} className="text-center py-5"><div className="spinner-border text-primary" /></td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={category === 'ALL' ? 6 : 5} className="text-center py-5 text-muted fw-bold">🎉 No pending balances found</td></tr>
-              ) : rows.map((r, idx) => (
-                <tr key={(r.entityId || r.name) + '-' + idx}>
+              ) : rows.map((r, idx) => {
+                const rowKey = r.entityId ? `e${r.entityId}` : (r.name || '').toUpperCase();
+                const isHighlighted = highlightKey && rowKey === highlightKey;
+                return (
+                <tr
+                  key={rowKey + '-' + idx}
+                  ref={isHighlighted ? (el) => el?.scrollIntoView({ block: 'center' }) : undefined}
+                  style={isHighlighted ? { background: '#e2e8f0' } : undefined}
+                >
                   <td className="fw-bold text-muted">{idx + 1}</td>
                   <td>
                     <span className="fw-bold text-decoration-underline cursor-pointer" style={{ color: '#1e293b' }} onClick={() => goToAccount(r)}>
@@ -395,7 +416,8 @@ export default function PendingBalance() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             {!loading && rows.length > 0 && (
               <tfoot>
