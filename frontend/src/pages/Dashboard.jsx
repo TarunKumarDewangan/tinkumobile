@@ -35,7 +35,8 @@ export default function Dashboard() {
   const shopLabel = hasFullAccess() ? 'All Shops' : user?.shop?.name;
 
   const quickActions = [
-    { to: '/airtel/quick-recovery', label: '⚡ Quick Recovery', perm: 'view_airtel_recovery', variant: 'success' },
+    // Airtel Recovery hidden for now — see Layout.jsx's NAV.
+    // { to: '/airtel/quick-recovery', label: '⚡ Quick Recovery', perm: 'view_airtel_recovery', variant: 'success' },
     { to: '/sales/new', label: '+ New Sale', perm: 'view_sales', variant: 'primary' },
     { to: '/purchases/new', label: '+ New Purchase', perm: 'view_purchases', variant: 'outline-primary' },
     { to: '/repairs/new', label: '+ New Repair', perm: 'view_repairs', variant: 'outline-secondary' },

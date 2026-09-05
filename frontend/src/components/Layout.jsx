@@ -109,18 +109,21 @@ const NAV = [
   },
 
 
+  // Airtel Recovery — hidden from the menu for now (not needed currently).
+  // Routes/pages/backend are untouched, so this is just a menu toggle —
+  // uncomment to bring it back.
+  // {
+  //   section: 'Airtel Recovery',
+  //   dropdown: true,
+  //   children: [
+  //       { to: '/airtel/quick-recovery', icon: '⚡', label: 'Quick Recovery', perm: 'view_airtel_recovery' },
+  //       { to: '/airtel/retailers', icon: '🏪', label: 'Retailers', perm: 'view_airtel_recovery' },
+  //       { to: '/airtel/drops',     icon: '📉', label: 'Daily Drops', perm: 'view_airtel_recovery' },
+  //       { to: '/airtel/reports',   icon: '📊', label: 'Reports',    perm: 'view_reports' },
+  //       { id: 'airtel-backup', icon: '💾', label: 'Full Backup v3 (JSON)', perm: 'view_reports', action: 'BACKUP_AIRTEL' },
+  //   ]
+  // },
   {
-    section: 'Airtel Recovery',
-    dropdown: true,
-    children: [
-        { to: '/airtel/quick-recovery', icon: '⚡', label: 'Quick Recovery', perm: 'view_airtel_recovery' },
-        { to: '/airtel/retailers', icon: '🏪', label: 'Retailers', perm: 'view_airtel_recovery' },
-        { to: '/airtel/drops',     icon: '📉', label: 'Daily Drops', perm: 'view_airtel_recovery' },
-        { to: '/airtel/reports',   icon: '📊', label: 'Reports',    perm: 'view_reports' },
-        { id: 'airtel-backup', icon: '💾', label: 'Full Backup v3 (JSON)', perm: 'view_reports', action: 'BACKUP_AIRTEL' },
-    ]
-  },
-  { 
     section: 'Tasks', 
     dropdown: true,
     children: [
@@ -143,7 +146,8 @@ const NAV = [
 const BOTTOM_TABS = [
   { to: '/',         icon: '📊', label: 'Home',     end: true },
   { to: '/sales',    icon: '🧾', label: 'Sales',    perm: 'view_sales' },
-  { to: '/airtel/quick-recovery', icon: '⚡', label: 'Recovery', perm: 'view_airtel_recovery' },
+  // Airtel Recovery hidden for now — see NAV above.
+  // { to: '/airtel/quick-recovery', icon: '⚡', label: 'Recovery', perm: 'view_airtel_recovery' },
   { to: '/repairs',  icon: '🔧', label: 'Repairs',  perm: 'view_repairs' },
 ];
 
