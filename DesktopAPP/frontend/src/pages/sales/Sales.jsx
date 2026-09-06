@@ -23,6 +23,12 @@ export default function Sales() {
     from: today, to: today, bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: false, customer_category: '',
     model: '', color: '', imei: ''
   });
+  // Off by default so the date range still narrows normally — turning it
+  // on ignores the date range for every filter below (Search/Model/
+  // Color/IMEI), which previously only ever matched within whatever the
+  // date range happened to be, silently missing everything outside it.
+  const [searchAllDates, setSearchAllDates] = useState(false);
+
   const [sortMode, setSortMode] = useState('date'); // 'date' | 'entry'
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
@@ -35,20 +41,21 @@ export default function Sales() {
 
   useEffect(() => {
     setPage(1);
-  }, [filters, perPage]);
+  }, [filters, perPage, searchAllDates]);
 
   useEffect(() => {
     loadInvoices();
     if (hasFullAccess()) {
         api.get('/shops').then(r => setShops(r.data));
     }
-  }, [filters, page, perPage]);
+  }, [filters, page, perPage, searchAllDates]);
 
   const loadInvoices = async () => {
     setLoading(true);
     try {
+      const dateParams = searchAllDates ? { from: '', to: '' } : {};
       const { data } = await api.get('/sale-invoices', {
-        params: { ...filters, category_group, page, per_page: perPage === 'all' ? 1000000 : perPage }
+        params: { ...filters, ...dateParams, category_group, page, per_page: perPage === 'all' ? 1000000 : perPage }
       });
       // If data.data exists (pagination), use it; otherwise use data
       setInvoices(data.data || data);
@@ -143,11 +150,18 @@ export default function Sales() {
       <div className="card sales-card shadow-sm mb-3 p-3 bg-white">
         <div className="row g-2 text-uppercase">
             <div className="col-12 col-md-3">
-                <label className="small text-muted mb-1 fw-bold">Date Range</label>
+                <label className="small text-muted mb-1 fw-bold d-flex justify-content-between align-items-center">
+                    <span>Date Range</span>
+                    <span className="form-check form-switch mb-0" title="Ignore the date range below and search across every sale — useful when searching by IMEI/model/invoice, which otherwise only matches within this date range.">
+                        <input className="form-check-input" type="checkbox" role="switch" id="searchAllDates"
+                            checked={searchAllDates} onChange={e => setSearchAllDates(e.target.checked)} />
+                        <label className="form-check-label text-normal" htmlFor="searchAllDates" style={{ fontSize: '0.68rem' }}>ALL DATES</label>
+                    </span>
+                </label>
                 <div className="input-group input-group-sm">
-                    <input type="date" className="form-control" value={filters.from} onChange={e => setFilters({...filters, from: e.target.value})} />
+                    <input type="date" className="form-control" disabled={searchAllDates} value={filters.from} onChange={e => setFilters({...filters, from: e.target.value})} />
                     <span className="input-group-text">—</span>
-                    <input type="date" className="form-control" value={filters.to} onChange={e => setFilters({...filters, to: e.target.value})} />
+                    <input type="date" className="form-control" disabled={searchAllDates} value={filters.to} onChange={e => setFilters({...filters, to: e.target.value})} />
                 </div>
             </div>
             <div className="col-12 col-md-2">
@@ -193,7 +207,7 @@ export default function Sales() {
                 <input type="text" className="form-control form-control-sm" placeholder="E.G. 3546..." value={filters.imei} onChange={e => setFilters({...filters, imei: e.target.value})} />
             </div>
             <div className="col-12 col-md-2 d-flex align-items-end">
-                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => setFilters({from: today, to: today, bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: '', model: '', color: '', imei: ''})}>RESET</button>
+                <button className="btn btn-sm btn-outline-secondary w-100 fw-bold border-2" onClick={() => { setFilters({from: today, to: today, bill_type:'', search:'', shop_id:'', is_old_mobile: false, customer_category: '', model: '', color: '', imei: ''}); setSearchAllDates(false); }}>RESET</button>
             </div>
         </div>
 
