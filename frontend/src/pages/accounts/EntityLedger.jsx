@@ -591,6 +591,9 @@ export default function EntityLedger() {
                               </td>
                               <td>
                                   <div className="fw-semibold text-dark x-small">{item.particulars}</div>
+                                  {item.product_names && (
+                                    <div className="text-muted xx-small">📦 {item.product_names}</div>
+                                  )}
                               </td>
                               <td className="text-center">
                                 <div className="d-inline-flex gap-1">
