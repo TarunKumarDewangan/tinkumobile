@@ -117,15 +117,15 @@ class NotificationController extends Controller
         $pendingGroupSent = false;
         $ownerSent = false;
         if (in_array('pending_group', $data['channels'])) {
-            $pendingGroupSent = $sendAll(fn ($msg) => $telegram->sendToPendingGroup($msg));
+            // The chunked text messages to the emp group are turned off for
+            // now — only the one-file HTML report below goes there.
+            // Commented out, not deleted, in case they're wanted back:
+            //
+            // $pendingGroupSent = $sendAll(fn ($msg) => $telegram->sendToPendingGroup($msg));
+            // if (count($allMessages) > 0) sleep(1);
 
-            // Also send everything as one HTML file — an easier-to-read
-            // alternative to scrolling through several chunked text messages.
-            // The short pause avoids Telegram briefly rate-limiting this send
-            // for landing right after a burst of text messages to the same chat.
-            if (count($allMessages) > 0) sleep(1);
             $filename = 'daily-report-' . now()->format('Y-m-d') . '.html';
-            $pendingGroupSent = $telegram->sendDocumentToPendingGroup($filename, $service->buildFullReportHtml(), '📄 Full report (one file)') && $pendingGroupSent;
+            $pendingGroupSent = $telegram->sendDocumentToPendingGroup($filename, $service->buildFullReportHtml(), '📄 Full report (one file)');
         }
         if (in_array('owner', $data['channels'])) {
             $ownerSent = $sendAll(fn ($msg) => $telegram->sendToOwner($msg));
