@@ -670,20 +670,39 @@ class ReportNotificationService
         $promises = $this->getPromiseRows();
         $financeDue = $this->getPersonalFinanceDueRows();
 
-        $renderTable = function (string $title, string $emptyLabel, $rows, array $headers, callable $rowHtml, ?float $total = null) use ($esc) {
+        // Last few purchases per pending-balance entity — one batched query
+        // covering every entity in the list, instead of one query each.
+        $entityIds = $pending->pluck('id')->filter()->all();
+        $recentByEntity = [];
+        if (!empty($entityIds)) {
+            $recentInvoices = SaleInvoice::where('is_cancelled', false)
+                ->whereIn('accounting_entity_id', $entityIds)
+                ->with('items.product')
+                ->orderByDesc('sale_date')->orderByDesc('id')
+                ->get();
+            foreach ($recentInvoices->groupBy('accounting_entity_id') as $entId => $invoices) {
+                $recentByEntity[$entId] = $invoices->take(3);
+            }
+        }
+
+        $renderTable = function (string $title, string $emptyLabel, $rows, array $headers, callable $rowHtml, ?float $total = null, ?callable $subRowHtml = null) use ($esc) {
             $html = "<h2>{$esc($title)} <span class=\"count\">({$rows->count()})</span></h2>";
             if ($rows->isEmpty()) {
                 return $html . "<p class=\"empty\">{$esc($emptyLabel)}</p>";
             }
+            $colspan = count($headers) + 1;
             $html .= '<table><thead><tr><th>#</th>';
             foreach ($headers as $h) $html .= "<th>{$esc($h)}</th>";
             $html .= '</tr></thead><tbody>';
             foreach ($rows->values() as $i => $row) {
                 $html .= '<tr><td>' . ($i + 1) . '</td>' . $rowHtml($row) . '</tr>';
+                $sub = $subRowHtml ? $subRowHtml($row) : null;
+                if ($sub) {
+                    $html .= "<tr class=\"sub-row\"><td></td><td colspan=\"{$colspan}\">{$sub}</td></tr>";
+                }
             }
             $html .= '</tbody>';
             if ($total !== null) {
-                $colspan = count($headers);
                 $html .= "<tfoot><tr><td></td><td colspan=\"{$colspan}\">Total: ₹" . number_format($total, 0) . '</td></tr></tfoot>';
             }
             $html .= '</table>';
@@ -694,7 +713,16 @@ class ReportNotificationService
             '💰 Pending Balance', '✅ Nothing pending.', $pending,
             ['Name', 'Mobile', 'Balance'],
             fn ($e) => '<td>' . $esc($e['name']) . '</td><td>' . $esc($e['phone']) . '</td><td>₹' . number_format($e['net_balance'], 0) . '</td>',
-            $pending->sum(fn ($e) => (float) $e['net_balance'])
+            $pending->sum(fn ($e) => (float) $e['net_balance']),
+            function ($e) use ($esc, $recentByEntity) {
+                $invoices = $recentByEntity[$e['id']] ?? collect();
+                if ($invoices->isEmpty()) return null;
+                $lines = $invoices->map(function ($inv) use ($esc) {
+                    $items = $inv->items->map(fn ($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " x{$it->quantity}" : ''))->implode(', ');
+                    return $esc(Carbon::parse($inv->sale_date)->format('d M Y')) . ' — ' . $esc($items) . ' — ₹' . number_format($inv->grand_total, 0) . ' (#' . $esc($inv->invoice_no) . ')';
+                })->implode('<br>');
+                return "<span class=\"recent-label\">Last purchases:</span><br>{$lines}";
+            }
         );
 
         $body .= $renderTable(
@@ -737,6 +765,8 @@ class ReportNotificationService
   tfoot td { font-weight: bold; background: #f8fafc; }
   .empty { color: #16a34a; font-weight: bold; }
   .overdue { color: #dc2626; font-weight: bold; }
+  .sub-row td { background: #fafafa; border-top: none; font-size: 12px; color: #475569; padding: 4px 10px 8px 24px; }
+  .recent-label { text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; color: #94a3b8; font-weight: bold; }
 </style>
 </head>
 <body>
