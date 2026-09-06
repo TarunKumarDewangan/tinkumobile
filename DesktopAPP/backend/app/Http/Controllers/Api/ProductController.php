@@ -190,10 +190,21 @@ class ProductController extends Controller
                 }
                 
                 $saleItems = $saleItemsQuery->get();
-                $soldImeis = $saleItems->pluck('imei')->filter()->toArray();
-                $soldCounts = []; 
+                // Scoped by product_id (not a bare IMEI string match) — a data
+                // error elsewhere (a typo, or an IMEI wrongly keyed against the
+                // wrong product on some other sale) must never black-hole a
+                // DIFFERENT product's genuinely unsold, received unit just
+                // because the IMEI string happens to coincide. Mirrors the
+                // product-scoped check validateNewMobileImei() already does
+                // for the same reason.
+                $soldImeisByProduct = [];
                 foreach ($saleItems as $si) {
-                    if ($si->imei) continue; 
+                    if (!$si->imei) continue;
+                    $soldImeisByProduct[$si->product_id][] = $si->imei;
+                }
+                $soldCounts = [];
+                foreach ($saleItems as $si) {
+                    if ($si->imei) continue;
                     $key = $this->generateGroupKey($si->product, $si->ram, $si->storage, $si->color);
                     $soldCounts[$key] = ($soldCounts[$key] ?? 0) + $si->quantity;
                 }
@@ -210,8 +221,9 @@ class ProductController extends Controller
                     $key = $this->generateGroupKey($item->product, $item->ram, $item->storage, $item->color);
                     $imeisRaw = $item->imei ? array_map('trim', explode(',', $item->imei)) : [];
                     $unsoldImeis = [];
+                    $soldImeisForThisProduct = $soldImeisByProduct[$item->product_id] ?? [];
                     foreach ($imeisRaw as $idx => $imeiVal) {
-                        if ($imeiVal === '' || in_array($imeiVal, $soldImeis)) continue;
+                        if ($imeiVal === '' || in_array($imeiVal, $soldImeisForThisProduct)) continue;
                         // The query above matches this whole PurchaseItem batch if ANY of its
                         // comma-joined IMEIs contains the search term — without this check every
                         // sibling device in the batch would be returned too, so picking data[0]
