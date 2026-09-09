@@ -477,7 +477,7 @@ export default function SaleDetails() {
                                                   <li>WARRANTY WILL BE COVERED AS PER COMPANY POLICY.</li>
                                                   <li>WARRANTY WILL NOT BE COVERED IN CASE OF PHYSICAL/LIQUID DAMAGE.</li>
                                                   <li>PLEASE CHECK GOODS BEFORE LEAVING OUR PREMISES.</li>
-                                                  <li>SUBJECT TO KANKER JURISDICTION.</li>
+                                                  <li>SUBJECT TO DHAMTARI JURISDICTION.</li>
                                               </ol>
                                           </td>
                                           <td className="text-start ps-2 x-small">Gross Amount</td>
