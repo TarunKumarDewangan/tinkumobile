@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\PurchaseInvoiceController;
 use App\Http\Controllers\Api\SaleInvoiceController;
 use App\Http\Controllers\Api\RepairController;
@@ -266,6 +267,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('entities/reconcile-all-invoices', [EntityLedgerController::class, 'reconcileAllInvoices']);
     Route::get('entities/{entity}/open-invoices', [EntityLedgerController::class, 'openInvoices']);
     Route::post('pending-balance/send-reminder', [EntityLedgerController::class, 'sendPendingBalanceReminder']);
+
+    // Staff Attendance (face + GPS)
+    Route::get('attendance/status', [AttendanceController::class, 'status']);
+    Route::post('attendance/enroll', [AttendanceController::class, 'enroll']);
+    Route::post('attendance/check', [AttendanceController::class, 'checkInOut']);
+    Route::get('attendance', [AttendanceController::class, 'index']);
+    Route::post('attendance/manual', [AttendanceController::class, 'storeManual']);
+    Route::delete('attendance/{attendanceLog}', [AttendanceController::class, 'destroy']);
 
     Route::apiResource('entities', EntityController::class);
     Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory'])->middleware('pin');

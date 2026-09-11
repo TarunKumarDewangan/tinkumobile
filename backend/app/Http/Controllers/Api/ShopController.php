@@ -31,6 +31,9 @@ class ShopController extends Controller
             'email' => 'nullable|email|max:100',
             'gstin' => 'nullable|string|max:50',
             'is_main' => 'boolean',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'attendance_radius_meters' => 'nullable|integer|min:5|max:1000',
         ]);
         return response()->json(Shop::create($data), 201);
     }
@@ -56,6 +59,9 @@ class ShopController extends Controller
             'email' => 'nullable|email|max:100',
             'gstin' => 'nullable|string|max:50',
             'is_main' => 'boolean',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'attendance_radius_meters' => 'nullable|integer|min:5|max:1000',
         ]);
         $shop->update($data);
         return response()->json($shop);

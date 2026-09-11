@@ -6,40 +6,64 @@ export default function Shops() {
   const [shops, setShops] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' });
+  const blankForm = { name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'', latitude:'', longitude:'', attendance_radius_meters: 20 };
+  const [form, setForm] = useState(blankForm);
+  const [locating, setLocating] = useState(false);
 
   const load = () => api.get('/shops').then(r => setShops(r.data));
   useEffect(() => { load(); }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try { 
+    try {
       if (editingId) {
         await api.put(`/shops/${editingId}`, form);
         toast.success('Shop updated');
       } else {
-        await api.post('/shops', form); 
-        toast.success('Shop created'); 
+        await api.post('/shops', form);
+        toast.success('Shop created');
       }
-      setShowForm(false); 
+      setShowForm(false);
       setEditingId(null);
-      setForm({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' });
-      load(); 
+      setForm(blankForm);
+      load();
     }
     catch(e) { toast.error(e.response?.data?.message || 'Error'); }
   };
 
   const handleEdit = (shop) => {
-    setForm({ name: shop.name, address: shop.address, phone: shop.phone, alt_phone: shop.alt_phone || '', email: shop.email || '', gstin: shop.gstin || '' });
+    setForm({
+      name: shop.name, address: shop.address, phone: shop.phone, alt_phone: shop.alt_phone || '',
+      email: shop.email || '', gstin: shop.gstin || '',
+      latitude: shop.latitude ?? '', longitude: shop.longitude ?? '',
+      attendance_radius_meters: shop.attendance_radius_meters ?? 20,
+    });
     setEditingId(shop.id);
     setShowForm(true);
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Location not supported by this browser');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm(f => ({ ...f, latitude: pos.coords.latitude.toFixed(7), longitude: pos.coords.longitude.toFixed(7) }));
+        setLocating(false);
+        toast.success('Location captured');
+      },
+      () => { setLocating(false); toast.error('Failed to get location — check browser permission'); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   return (
     <div>
       <div className="page-header d-flex justify-content-between align-items-center">
         <h2>🏪 Shops</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => { setEditingId(null); setForm({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' }); setShowForm(true); }}>+ Add Shop</button>
+        <button className="btn btn-primary btn-sm" onClick={() => { setEditingId(null); setForm(blankForm); setShowForm(true); }}>+ Add Shop</button>
       </div>
       {showForm && (
         <div className="table-card p-4 mb-3">
@@ -52,9 +76,25 @@ export default function Shops() {
               <div className="col-12 col-md-8"><input className="form-control" placeholder="Address *" required value={form.address} onChange={e => setForm({...form, address:e.target.value})} /></div>
               <div className="col-12 col-md-4"><input className="form-control" placeholder="GSTIN" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} /></div>
             </div>
+
+            <div className="mt-3 pt-3 border-top">
+              <label className="form-label small fw-bold text-uppercase text-muted">📍 Attendance Location (for Staff Attendance's GPS check)</label>
+              <div className="row g-3">
+                <div className="col-6 col-md-3"><input type="number" step="any" className="form-control" placeholder="Latitude" value={form.latitude} onChange={e => setForm({...form, latitude:e.target.value})} /></div>
+                <div className="col-6 col-md-3"><input type="number" step="any" className="form-control" placeholder="Longitude" value={form.longitude} onChange={e => setForm({...form, longitude:e.target.value})} /></div>
+                <div className="col-6 col-md-3"><input type="number" className="form-control" placeholder="Radius (m)" value={form.attendance_radius_meters} onChange={e => setForm({...form, attendance_radius_meters:e.target.value})} /></div>
+                <div className="col-6 col-md-3">
+                  <button type="button" className="btn btn-outline-secondary btn-sm w-100 h-100" disabled={locating} onClick={useCurrentLocation}>
+                    {locating ? 'Locating...' : '📡 Use My Location'}
+                  </button>
+                </div>
+              </div>
+              <div className="form-text">Staff must be within this radius of these coordinates to check in/out. Stand at the shop and click "Use My Location" for an easy accurate set.</div>
+            </div>
+
             <div className="mt-3 d-flex gap-2">
               <button type="submit" className="btn btn-primary btn-sm">{editingId ? 'Update Shop' : 'Create Shop'}</button>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => { setShowForm(false); setEditingId(null); setForm({ name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'' }); }}>Cancel</button>
+              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => { setShowForm(false); setEditingId(null); setForm(blankForm); }}>Cancel</button>
             </div>
           </form>
         </div>
@@ -75,6 +115,7 @@ export default function Shops() {
                 <div>📧 {s.email || '—'}</div>
                 <div>📍 {s.address}</div>
                 <div>🏢 GSTIN: <span className="fw-bold">{s.gstin || '—'}</span></div>
+                <div>🎯 Attendance: {s.latitude && s.longitude ? `${s.latitude}, ${s.longitude} (±${s.attendance_radius_meters}m)` : <span className="text-danger">Not set up</span>}</div>
               </div>
             </div>
           </div>
