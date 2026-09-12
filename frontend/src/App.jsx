@@ -11,6 +11,7 @@ const Login = lazy(() => import('./pages/auth/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const AttendanceReport = lazy(() => import('./pages/admin/AttendanceReport'));
+const ImeiAudit = lazy(() => import('./pages/admin/ImeiAudit'));
 const PendingBalance = lazy(() => import('./pages/PendingBalance'));
 const Products = lazy(() => import('./pages/products/Products'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
@@ -122,6 +123,7 @@ function AppRoutes() {
           <Route index element={<Dashboard />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="admin/attendance-report" element={<AttendanceReport />} />
+          <Route path="admin/imei-audit" element={<ImeiAudit />} />
           <Route path="pending-balance" element={<PendingBalance />} />
           <Route path="products" element={<Products />} />
           <Route path="products/new" element={<ProductForm />} />

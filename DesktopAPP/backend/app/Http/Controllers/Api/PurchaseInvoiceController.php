@@ -157,6 +157,10 @@ class PurchaseInvoiceController extends Controller
             return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
         }
 
+        if ($imeiError = $this->validateNoDuplicatePurchaseImei($data['items'])) {
+            return $imeiError;
+        }
+
         return DB::transaction(function () use ($data, $shopId, $user) {
             $calc = app(\App\Services\InvoiceService::class)->calculateTotals($data['items'], $data);
             $invoiceNo = 'PUR-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
@@ -383,6 +387,10 @@ class PurchaseInvoiceController extends Controller
 
         if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
             return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
+        }
+
+        if ($imeiError = $this->validateNoDuplicatePurchaseImei($data['items'], $purchaseInvoice->id)) {
+            return $imeiError;
         }
 
         return DB::transaction(function () use ($data, $purchaseInvoice) {
@@ -938,5 +946,56 @@ class PurchaseInvoiceController extends Controller
             $qty  = (int) ($item['quantity'] ?? 1);
             return $qty > 1 ? "{$name} (x{$qty})" : $name;
         })->implode(', ');
+    }
+
+    /**
+     * Blocks a purchase from recording an IMEI that already belongs to a
+     * DIFFERENT product's purchase item, unless that other unit was already
+     * sold (a genuine repurchase/buyback). Without this, two Product rows can
+     * end up representing the same physical phone (e.g. two "S2 5G" rows) —
+     * the sale then gets linked to one of them while the other keeps showing
+     * the same IMEI as available forever, since nothing connects them.
+     * $excludePurchaseInvoiceId is passed by update() so a re-save of the
+     * SAME invoice's own items isn't flagged as a conflict with itself.
+     */
+    private function validateNoDuplicatePurchaseImei(array $items, ?int $excludePurchaseInvoiceId = null)
+    {
+        $matchesImei = function (?string $stored, string $imei): bool {
+            if (!$stored) return false;
+            return in_array($imei, array_map('trim', explode(',', $stored)), true);
+        };
+
+        foreach ($items as $item) {
+            if (empty($item['imei'])) continue;
+            $ownProductId = $item['product_id'] ?? null;
+            $tokens = array_filter(array_map('trim', explode(',', $item['imei'])));
+
+            foreach ($tokens as $imeiToken) {
+                if ($imeiToken === '') continue;
+
+                $conflict = PurchaseItem::where('imei', 'LIKE', "%{$imeiToken}%")
+                    ->when($ownProductId, fn ($q) => $q->where('product_id', '!=', $ownProductId))
+                    ->when($excludePurchaseInvoiceId, fn ($q) => $q->where('purchase_invoice_id', '!=', $excludePurchaseInvoiceId))
+                    ->with('product:id,name')
+                    ->get(['id', 'product_id', 'purchase_invoice_id', 'imei'])
+                    ->first(fn ($pi) => $matchesImei($pi->imei, $imeiToken));
+
+                if (!$conflict) continue;
+
+                $alreadySoldElsewhere = \App\Models\SaleItem::where('product_id', $conflict->product_id)
+                    ->where('imei', $imeiToken)
+                    ->whereHas('invoice', fn ($q) => $q->where('is_cancelled', false))
+                    ->exists();
+
+                if ($alreadySoldElsewhere) continue; // legitimate repurchase — allow
+
+                $conflictName = $conflict->product->name ?? 'another product';
+                return response()->json([
+                    'message' => "IMEI {$imeiToken} is already recorded under \"{$conflictName}\" (purchase item #{$conflict->id}). Select that product instead of quick-adding a duplicate, or check for a typo.",
+                ], 422);
+            }
+        }
+
+        return null;
     }
 }

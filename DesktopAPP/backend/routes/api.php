@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\ImeiAuditController;
 use App\Http\Controllers\Api\PurchaseInvoiceController;
 use App\Http\Controllers\Api\SaleInvoiceController;
 use App\Http\Controllers\Api\RepairController;
@@ -275,6 +276,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('attendance', [AttendanceController::class, 'index']);
     Route::post('attendance/manual', [AttendanceController::class, 'storeManual']);
     Route::delete('attendance/{attendanceLog}', [AttendanceController::class, 'destroy']);
+
+    // IMEI Audit — finds duplicate-Product-per-physical-IMEI data issues (phantom stock etc.)
+    Route::get('imei-audit', [ImeiAuditController::class, 'index']);
+    Route::post('imei-audit/fix', [ImeiAuditController::class, 'fix']);
 
     Route::apiResource('entities', EntityController::class);
     Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory'])->middleware('pin');

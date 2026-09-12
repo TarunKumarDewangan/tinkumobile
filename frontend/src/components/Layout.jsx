@@ -99,6 +99,7 @@ const NAV = [
         { to: '/admin/activity-logs',     icon: '📋', label: 'Activity Logs',    perm: 'manage_users' },
         { to: '/admin/trash',             icon: '🗑️', label: 'Trash Manager',    perm: 'manage_users' },
         { to: '/admin/attendance-report', icon: '🕐', label: 'Attendance Report', perm: 'manage_users' },
+        { to: '/admin/imei-audit', icon: '🔍', label: 'IMEI Audit', perm: 'manage_users' },
         { to: '/incentives',  icon: '🏆', label: 'Incentives', perm: 'manage_incentives' },
         { to: '/offers',      icon: '🎯', label: 'Offers',     perm: 'manage_offers' },
         { to: '/send-offers', icon: '✉️', label: 'Send Offers', perm: 'manage_offers' },
