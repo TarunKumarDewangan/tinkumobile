@@ -13,33 +13,25 @@ function loadModels() {
   return modelsLoadedPromise;
 }
 
-// Eye Aspect Ratio — standard formula over the 6 landmark points face-api.js
-// returns per eye. Drops sharply during a blink, then recovers.
-function eyeAspectRatio(eye) {
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  const vertical = dist(eye[1], eye[5]) + dist(eye[2], eye[4]);
-  const horizontal = dist(eye[0], eye[3]);
-  return vertical / (2 * horizontal);
-}
-
-const EAR_CLOSED = 0.22;
-const EAR_OPEN = 0.27;
+// Consecutive detected frames required before auto-capturing — just enough
+// to avoid snapping a blurry mid-motion frame, without making the user wait.
+const STABLE_FRAMES_REQUIRED = 4;
 
 /**
- * Live camera capture that requires a real blink before it resolves — a
- * static photo held up to the camera never has an EAR dip/recovery cycle,
- * so this is a basic liveness check against that specific spoof, not a
- * complete anti-spoofing solution.
+ * Live camera capture — auto-snaps a photo as soon as a face is steadily
+ * detected (no blink-wait step; this trades a bit of anti-spoofing rigor for
+ * a fast, reliable check-in on lower-end phones where blink detection was
+ * too slow/finicky).
  */
 export default function FaceCapture({ onCapture, onCancel }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
-  const blinkStateRef = useRef('waiting_open'); // 'waiting_open' -> 'waiting_close' -> done
+  const stableFramesRef = useRef(0);
   const capturedRef = useRef(false);
 
-  const [status, setStatus] = useState('loading'); // loading | camera_error | detecting | blink_now | verifying | done
+  const [status, setStatus] = useState('loading'); // loading | camera_error | detecting | holding | verifying | done
   const [message, setMessage] = useState('Loading face detection...');
 
   useEffect(() => {
@@ -82,30 +74,23 @@ export default function FaceCapture({ onCapture, onCancel }) {
   const detectLoop = async () => {
     if (capturedRef.current || !videoRef.current) return;
 
-    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
-    const result = await faceapi.detectSingleFace(videoRef.current, options).withFaceLandmarks();
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160 });
+    const result = await faceapi.detectSingleFace(videoRef.current, options);
 
     if (result) {
-      const leftEAR = eyeAspectRatio(result.landmarks.getLeftEye());
-      const rightEAR = eyeAspectRatio(result.landmarks.getRightEye());
-      const avgEAR = (leftEAR + rightEAR) / 2;
-
-      if (blinkStateRef.current === 'waiting_open' && avgEAR > EAR_OPEN) {
-        blinkStateRef.current = 'waiting_close';
-        setMessage('Now blink...');
-        setStatus('blink_now');
-      } else if (blinkStateRef.current === 'waiting_close' && avgEAR < EAR_CLOSED) {
-        blinkStateRef.current = 'waiting_reopen';
-      } else if (blinkStateRef.current === 'waiting_reopen' && avgEAR > EAR_OPEN) {
-        // Blink completed — capture now, with the descriptor computed from
-        // this same live frame.
+      stableFramesRef.current += 1;
+      setStatus('holding');
+      setMessage('Hold still...');
+      if (stableFramesRef.current >= STABLE_FRAMES_REQUIRED) {
         capturedRef.current = true;
         setStatus('verifying');
-        setMessage('Blink detected — verifying...');
+        setMessage('Verifying...');
         await finishCapture();
         return;
       }
-    } else if (blinkStateRef.current === 'waiting_open') {
+    } else {
+      stableFramesRef.current = 0;
+      setStatus('detecting');
       setMessage('Position your face in the frame...');
     }
 
@@ -113,12 +98,12 @@ export default function FaceCapture({ onCapture, onCancel }) {
   };
 
   const finishCapture = async () => {
-    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160 });
     const result = await faceapi.detectSingleFace(videoRef.current, options).withFaceLandmarks().withFaceDescriptor();
     if (!result) {
       // Lost the face right at the capture moment — reset and try again.
       capturedRef.current = false;
-      blinkStateRef.current = 'waiting_open';
+      stableFramesRef.current = 0;
       setStatus('detecting');
       setMessage('Lost face — look at the camera again...');
       rafRef.current = requestAnimationFrame(detectLoop);
@@ -142,9 +127,9 @@ export default function FaceCapture({ onCapture, onCancel }) {
     <div className="text-center">
       <div className="position-relative d-inline-block rounded-3 overflow-hidden border" style={{ background: '#000' }}>
         <video ref={videoRef} muted playsInline style={{ width: 320, height: 240, objectFit: 'cover', transform: 'scaleX(-1)' }} />
-        {status === 'blink_now' && (
+        {status === 'holding' && (
           <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style={{ background: 'rgba(99,102,241,0.25)' }}>
-            <span className="badge bg-primary fs-6">👁️ Blink now</span>
+            <span className="badge bg-primary fs-6">🙂 Hold still</span>
           </div>
         )}
       </div>

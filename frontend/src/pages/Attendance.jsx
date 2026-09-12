@@ -98,7 +98,7 @@ export default function Attendance() {
               <>
                 <div className="mb-3">
                   <div className="fs-1 mb-2">🙂</div>
-                  <p className="text-muted small mb-0">You haven't enrolled your face yet. This is a one-time setup — you'll blink on camera to confirm it's really you.</p>
+                  <p className="text-muted small mb-0">You haven't enrolled your face yet. This is a one-time setup — just look at the camera and hold still for a moment.</p>
                 </div>
                 <button className="btn btn-primary" disabled={submitting || !status?.shop} onClick={() => setCapturing('enroll')}>
                   {submitting ? 'Enrolling...' : '📷 Enroll My Face'}

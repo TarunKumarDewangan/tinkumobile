@@ -82,11 +82,8 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Enroll (or re-enroll) the current user's face. A blink must already
-     * have been verified client-side before this is called — the server
-     * only receives the resulting descriptor, not raw video, so liveness
-     * itself is a client-side guarantee, not something this endpoint can
-     * re-check.
+     * Enroll (or re-enroll) the current user's face. The server only
+     * receives the resulting descriptor, not raw video.
      */
     public function enroll(Request $request)
     {
