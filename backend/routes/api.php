@@ -274,6 +274,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::post('attendance/enroll', [AttendanceController::class, 'enroll']);
     Route::post('attendance/check', [AttendanceController::class, 'checkInOut']);
     Route::get('attendance', [AttendanceController::class, 'index']);
+    Route::get('attendance/summary', [AttendanceController::class, 'summary']);
     Route::post('attendance/manual', [AttendanceController::class, 'storeManual']);
     Route::delete('attendance/{attendanceLog}', [AttendanceController::class, 'destroy']);
 

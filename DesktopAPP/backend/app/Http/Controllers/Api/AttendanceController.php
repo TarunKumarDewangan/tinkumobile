@@ -212,6 +212,80 @@ class AttendanceController extends Controller
     }
 
     /**
+     * Admin — month-wise Present/Absent summary per staff member. A day
+     * counts Absent only if it's on/after their joining_date and strictly
+     * before today (today and future days are left out of the count, not
+     * marked absent, since the day isn't over yet / hasn't happened).
+     */
+    public function summary(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess() && !$user->hasRole('Admin')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'month'   => 'required|date_format:Y-m',
+            'user_id' => 'nullable|exists:users,id',
+            'shop_id' => 'nullable|exists:shops,id',
+        ]);
+
+        $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $data['month'])->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $yesterday = today()->subDay();
+        $effectiveEnd = $monthEnd->greaterThan($yesterday) ? $yesterday : $monthEnd;
+
+        $staff = \App\Models\User::whereNotNull('joining_date')
+            ->when($data['user_id'] ?? null, fn ($q, $id) => $q->where('id', $id))
+            ->when($data['shop_id'] ?? null, fn ($q, $id) => $q->where('shop_id', $id))
+            ->with('shop:id,name')
+            ->get(['id', 'name', 'emp_id', 'shop_id', 'joining_date']);
+
+        $userIds = $staff->pluck('id');
+
+        $presentDates = AttendanceLog::whereIn('user_id', $userIds)
+            ->where('type', 'IN')
+            ->whereBetween('logged_at', [$monthStart, $monthEnd->copy()->endOfDay()])
+            ->get(['user_id', 'logged_at'])
+            ->groupBy('user_id')
+            ->map(fn ($logs) => $logs->map(fn ($l) => \Carbon\Carbon::parse($l->logged_at)->toDateString())->unique());
+
+        $result = [];
+        foreach ($staff as $s) {
+            $joinDate = \Carbon\Carbon::parse($s->joining_date)->startOfDay();
+            $rangeStart = $joinDate->greaterThan($monthStart) ? $joinDate : $monthStart->copy();
+
+            $days = [];
+            $presentCount = 0;
+            $absentCount = 0;
+
+            if ($rangeStart->lessThanOrEqualTo($effectiveEnd)) {
+                $userPresent = $presentDates->get($s->id, collect());
+                for ($d = $rangeStart->copy(); $d->lessThanOrEqualTo($effectiveEnd); $d->addDay()) {
+                    $dateStr = $d->toDateString();
+                    $isPresent = $userPresent->contains($dateStr);
+                    $days[] = ['date' => $dateStr, 'status' => $isPresent ? 'present' : 'absent'];
+                    $isPresent ? $presentCount++ : $absentCount++;
+                }
+            }
+
+            $result[] = [
+                'user_id'        => $s->id,
+                'name'           => $s->name,
+                'emp_id'         => $s->emp_id,
+                'shop_name'      => $s->shop->name ?? null,
+                'joining_date'   => $s->joining_date,
+                'present_count'  => $presentCount,
+                'absent_count'   => $absentCount,
+                'days_considered' => $presentCount + $absentCount,
+                'days'           => $days,
+            ];
+        }
+
+        return response()->json(['month' => $data['month'], 'staff' => $result]);
+    }
+
+    /**
      * Admin: add a manual entry (e.g. a missed checkout) or correct one.
      * Skips face/GPS verification entirely — flagged is_manual so the
      * report always shows it wasn't a live-verified entry.

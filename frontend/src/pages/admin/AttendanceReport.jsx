@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import pinGate from '../../utils/pinGate';
 
+function currentYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function AttendanceReport() {
+  const [view, setView] = useState('log'); // 'log' | 'summary'
   const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
   const [shops, setShops] = useState([]);
@@ -11,6 +17,11 @@ export default function AttendanceReport() {
   const [filters, setFilters] = useState({ user_id: '', shop_id: '', from: '', to: '' });
   const [showManual, setShowManual] = useState(false);
   const [manual, setManual] = useState({ user_id: '', shop_id: '', type: 'IN', logged_at: '' });
+
+  const [month, setMonth] = useState(currentYearMonth());
+  const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [expandedUser, setExpandedUser] = useState(null);
 
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data.data || r.data)).catch(() => {});
@@ -24,7 +35,16 @@ export default function AttendanceReport() {
       .catch(() => toast.error('Failed to load attendance logs'))
       .finally(() => setLoading(false));
   };
-  useEffect(() => { load(); }, [filters]);
+  useEffect(() => { if (view === 'log') load(); }, [filters, view]);
+
+  const loadSummary = () => {
+    setSummaryLoading(true);
+    api.get('/attendance/summary', { params: { month, user_id: filters.user_id, shop_id: filters.shop_id } })
+      .then(r => setSummary(r.data))
+      .catch(e => toast.error(e.response?.data?.message || 'Failed to load summary'))
+      .finally(() => setSummaryLoading(false));
+  };
+  useEffect(() => { if (view === 'summary') loadSummary(); }, [view, month, filters.user_id, filters.shop_id]);
 
   const handleDelete = async (id) => {
     if (!await pinGate.confirm()) return;
@@ -51,7 +71,14 @@ export default function AttendanceReport() {
     <div>
       <div className="page-header d-flex justify-content-between align-items-center">
         <h2>🕐 Attendance Report</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowManual(true)}>+ Manual Entry</button>
+        {view === 'log' && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowManual(true)}>+ Manual Entry</button>
+        )}
+      </div>
+
+      <div className="btn-group btn-group-sm mb-3">
+        <button className={`btn ${view === 'log' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setView('log')}>📋 Log View</button>
+        <button className={`btn ${view === 'summary' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setView('summary')}>📅 Summary View</button>
       </div>
 
       <div className="table-card p-3 mb-3">
@@ -68,15 +95,78 @@ export default function AttendanceReport() {
               {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <div className="col-6 col-md-3">
-            <input type="date" className="form-control form-control-sm" value={filters.from} onChange={e => setFilters({...filters, from: e.target.value})} />
-          </div>
-          <div className="col-6 col-md-3">
-            <input type="date" className="form-control form-control-sm" value={filters.to} onChange={e => setFilters({...filters, to: e.target.value})} />
-          </div>
+          {view === 'log' ? (
+            <>
+              <div className="col-6 col-md-3">
+                <input type="date" className="form-control form-control-sm" value={filters.from} onChange={e => setFilters({...filters, from: e.target.value})} />
+              </div>
+              <div className="col-6 col-md-3">
+                <input type="date" className="form-control form-control-sm" value={filters.to} onChange={e => setFilters({...filters, to: e.target.value})} />
+              </div>
+            </>
+          ) : (
+            <div className="col-6 col-md-3">
+              <input type="month" className="form-control form-control-sm" value={month} onChange={e => setMonth(e.target.value)} />
+            </div>
+          )}
         </div>
       </div>
 
+      {view === 'summary' ? (
+        <div className="table-card">
+          {summaryLoading ? (
+            <div className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary" /></div>
+          ) : (
+            <table className="table table-bordered table-hover mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th>Staff</th>
+                  <th>Shop</th>
+                  <th>Present</th>
+                  <th>Absent</th>
+                  <th>Days Considered</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {!summary || summary.staff.length === 0 ? (
+                  <tr><td colSpan="6" className="text-center py-4 text-muted">No staff found</td></tr>
+                ) : summary.staff.map(s => (
+                  <React.Fragment key={s.user_id}>
+                    <tr>
+                      <td>{s.name} {s.emp_id ? <span className="text-muted x-small">({s.emp_id})</span> : null}</td>
+                      <td>{s.shop_name || '—'}</td>
+                      <td><span className="badge bg-success">{s.present_count}</span></td>
+                      <td><span className="badge bg-danger">{s.absent_count}</span></td>
+                      <td>{s.days_considered}</td>
+                      <td>
+                        {s.days.length > 0 && (
+                          <button className="btn btn-xs btn-outline-secondary" onClick={() => setExpandedUser(expandedUser === s.user_id ? null : s.user_id)}>
+                            {expandedUser === s.user_id ? 'Hide days' : 'View days'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {expandedUser === s.user_id && (
+                      <tr>
+                        <td colSpan="6" className="bg-body-tertiary">
+                          <div className="d-flex flex-wrap gap-1 p-2">
+                            {s.days.map(d => (
+                              <span key={d.date} className={`badge ${d.status === 'present' ? 'bg-success' : 'bg-danger'}`} title={d.date}>
+                                {d.date.slice(-2)}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
       <div className="table-card">
         {loading ? (
           <div className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary" /></div>
@@ -113,6 +203,7 @@ export default function AttendanceReport() {
           </table>
         )}
       </div>
+      )}
 
       {showManual && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
