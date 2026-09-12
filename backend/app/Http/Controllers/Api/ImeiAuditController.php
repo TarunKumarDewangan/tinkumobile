@@ -139,11 +139,14 @@ class ImeiAuditController extends Controller
 
         $data = $request->validate([
             'purchase_item_id' => 'required|exists:purchase_items,id',
-            'imei'              => 'required|string',
+            // IMEIs are long digit strings — some clients/proxies serialize them as
+            // a bare JSON number rather than a quoted string, so accept either
+            // and normalize below instead of rejecting on type.
+            'imei'              => 'required',
         ]);
 
         $pi = PurchaseItem::findOrFail($data['purchase_item_id']);
-        $imei = trim($data['imei']);
+        $imei = trim((string) $data['imei']);
         $tokens = array_filter(array_map('trim', explode(',', (string) $pi->imei)));
         $filtered = array_values(array_filter($tokens, fn ($t) => $t !== $imei));
 
