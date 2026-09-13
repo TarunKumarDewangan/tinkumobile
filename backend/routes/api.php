@@ -49,6 +49,11 @@ Route::post('/repair-request', [RepairController::class, 'publicStore'])->middle
 Route::post('/public/retailer/{msisdn}/request-otp', [AirtelRetailerController::class, 'requestPublicOtp'])->middleware('throttle:5,1');
 Route::get('/public/retailer/{msisdn}', [AirtelRetailerController::class, 'publicProfile'])->middleware('throttle:30,1');
 
+// Attendance photos — served without auth since they're opened via a plain
+// <a href target="_blank">, which can't carry the app's Bearer token; the
+// randomized filename (not the sequential log id) is the access control.
+Route::get('/attendance-photo/{path}', [AttendanceController::class, 'servePhoto'])->where('path', '.*')->middleware('throttle:60,1');
+
 // Customer Portal
 Route::post('/customer/login/request-otp', [CustomerController::class, 'requestPortalOtp'])->middleware('throttle:5,1');
 Route::post('/customer/login', [CustomerController::class, 'portalLogin'])->middleware('throttle:5,1');

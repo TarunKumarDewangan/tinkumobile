@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class AttendanceLog extends Model
 {
@@ -24,9 +23,15 @@ class AttendanceLog extends Model
 
     protected $appends = ['photo_url'];
 
+    /**
+     * Served through a dedicated route (below) rather than Storage::url()'s
+     * /storage/... symlink path — shared hosting can't always create that
+     * symlink, and it must be re-run after every deploy that wipes public/.
+     * Streaming the file directly from app/public has no such dependency.
+     */
     public function getPhotoUrlAttribute(): ?string
     {
-        return $this->snapshot_path ? Storage::disk('public')->url($this->snapshot_path) : null;
+        return $this->snapshot_path ? url('api/attendance-photo/' . $this->snapshot_path) : null;
     }
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }

@@ -212,6 +212,25 @@ class AttendanceController extends Controller
     }
 
     /**
+     * Streams a check-in/out (or enrollment) photo directly from the
+     * `public` disk, instead of relying on the /storage symlink — shared
+     * hosting doesn't always allow creating that symlink, and it has to be
+     * redone after any deploy that replaces the public/ folder. Restricted
+     * to the attendance/ prefix so this can't be used to read arbitrary
+     * files off the disk.
+     */
+    public function servePhoto(string $path)
+    {
+        if (!str_starts_with($path, 'attendance/') || str_contains($path, '..')) {
+            abort(404);
+        }
+        if (!Storage::disk('public')->exists($path)) {
+            abort(404);
+        }
+        return Storage::disk('public')->response($path);
+    }
+
+    /**
      * Admin — month-wise Present/Absent summary per staff member. A day
      * counts Absent only if it's on/after their joining_date and strictly
      * before today (today and future days are left out of the count, not
