@@ -22,6 +22,7 @@ export default function AttendanceReport() {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [expandedUser, setExpandedUser] = useState(null);
+  const [previewPhoto, setPreviewPhoto] = useState(null);
 
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data.data || r.data)).catch(() => {});
@@ -192,9 +193,15 @@ export default function AttendanceReport() {
                 <tr key={l.id}>
                   <td>
                     {l.photo_url ? (
-                      <a href={l.photo_url} target="_blank" rel="noopener noreferrer">
-                        <img src={l.photo_url} alt="" width={40} height={40} style={{ objectFit: 'cover', borderRadius: 6 }} />
-                      </a>
+                      <img
+                        src={l.photo_url}
+                        alt=""
+                        width={40}
+                        height={40}
+                        role="button"
+                        style={{ objectFit: 'cover', borderRadius: 6, cursor: 'pointer' }}
+                        onClick={() => setPreviewPhoto(l.photo_url)}
+                      />
                     ) : '—'}
                   </td>
                   <td>{new Date(l.logged_at).toLocaleString()}</td>
@@ -254,6 +261,24 @@ export default function AttendanceReport() {
                   <button type="submit" className="btn btn-primary btn-sm">Add Entry</button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {previewPhoto && (
+        <div
+          className="modal show d-block"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+          onClick={() => setPreviewPhoto(null)}
+        >
+          <div className="modal-dialog modal-dialog-centered" onClick={e => e.stopPropagation()}>
+            <div className="modal-content bg-transparent border-0">
+              <div className="modal-header border-0">
+                <button type="button" className="btn-close btn-close-white ms-auto" onClick={() => setPreviewPhoto(null)}></button>
+              </div>
+              <div className="modal-body text-center pt-0">
+                <img src={previewPhoto} alt="Attendance snapshot" className="img-fluid rounded" style={{ maxHeight: '75vh' }} />
+              </div>
             </div>
           </div>
         </div>
