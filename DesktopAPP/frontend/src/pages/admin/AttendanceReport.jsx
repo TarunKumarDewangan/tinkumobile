@@ -174,6 +174,7 @@ export default function AttendanceReport() {
           <table className="table table-bordered table-hover mb-0 align-middle">
             <thead>
               <tr>
+                <th>Photo</th>
                 <th>Date / Time</th>
                 <th>Staff</th>
                 <th>Shop</th>
@@ -186,9 +187,16 @@ export default function AttendanceReport() {
             </thead>
             <tbody>
               {logs.length === 0 ? (
-                <tr><td colSpan="8" className="text-center py-4 text-muted">No attendance entries found</td></tr>
+                <tr><td colSpan="9" className="text-center py-4 text-muted">No attendance entries found</td></tr>
               ) : logs.map(l => (
                 <tr key={l.id}>
+                  <td>
+                    {l.photo_url ? (
+                      <a href={l.photo_url} target="_blank" rel="noopener noreferrer">
+                        <img src={l.photo_url} alt="" width={40} height={40} style={{ objectFit: 'cover', borderRadius: 6 }} />
+                      </a>
+                    ) : '—'}
+                  </td>
                   <td>{new Date(l.logged_at).toLocaleString()}</td>
                   <td>{l.user?.name} {l.user?.emp_id ? <span className="text-muted x-small">({l.user.emp_id})</span> : null}</td>
                   <td>{l.shop?.name}</td>

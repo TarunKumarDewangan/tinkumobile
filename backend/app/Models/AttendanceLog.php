@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class AttendanceLog extends Model
 {
@@ -20,6 +21,13 @@ class AttendanceLog extends Model
         'face_match_score' => 'float',
         'is_manual' => 'boolean',
     ];
+
+    protected $appends = ['photo_url'];
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        return $this->snapshot_path ? Storage::disk('public')->url($this->snapshot_path) : null;
+    }
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
     public function shop(): BelongsTo { return $this->belongsTo(Shop::class); }
