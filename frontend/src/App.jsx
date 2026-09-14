@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
@@ -102,9 +102,16 @@ function Loading() {
 }
 
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, hasRole } = useAuth();
+  const location = useLocation();
   if (loading) return <Loading />;
-  return user ? children : <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  // Sales Person accounts are attendance-only for now — block direct URL
+  // access to everything else, not just hide it from the nav.
+  if (hasRole('sales_person') && location.pathname !== '/attendance') {
+    return <Navigate to="/attendance" replace />;
+  }
+  return children;
 }
 
 function AppRoutes() {

@@ -654,36 +654,24 @@ class ReportNotificationService
     }
 
     /**
-     * One self-contained HTML file with all three lists (Pending Balance,
-     * Promise to Pay, Personal Finance Due) as proper tables — an alternative
-     * to reading them as several chunked Telegram text messages. Sent as a
-     * document attachment via TelegramService::sendDocumentToPendingGroup().
-     * Pulls from the exact same row-builders as the text messages above so
-     * the two can never show different numbers.
+     * One self-contained HTML file with Promise to Pay and Personal Finance
+     * Due as proper tables — an alternative to reading them as several
+     * chunked Telegram text messages. Sent as a document attachment via
+     * TelegramService::sendDocumentToPendingGroup(). Pulls from the exact
+     * same row-builders as the text messages above so the two can never
+     * show different numbers.
+     *
+     * Deliberately excludes Pending Balance — the emp group is meant to see
+     * only what staff need to act on (promises made, personal finance dues),
+     * not the shop's overall pending-balance ledger.
      */
     public function buildFullReportHtml(): string
     {
         $today = Carbon::today()->format('d M Y');
         $esc = fn ($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
 
-        $pending = $this->getPendingBalanceRows();
         $promises = $this->getPromiseRows();
         $financeDue = $this->getPersonalFinanceDueRows();
-
-        // Last few purchases per pending-balance entity — one batched query
-        // covering every entity in the list, instead of one query each.
-        $entityIds = $pending->pluck('id')->filter()->all();
-        $recentByEntity = [];
-        if (!empty($entityIds)) {
-            $recentInvoices = SaleInvoice::where('is_cancelled', false)
-                ->whereIn('accounting_entity_id', $entityIds)
-                ->with('items.product')
-                ->orderByDesc('sale_date')->orderByDesc('id')
-                ->get();
-            foreach ($recentInvoices->groupBy('accounting_entity_id') as $entId => $invoices) {
-                $recentByEntity[$entId] = $invoices->take(3);
-            }
-        }
 
         $renderTable = function (string $title, string $emptyLabel, $rows, array $headers, callable $rowHtml, ?float $total = null, ?callable $subRowHtml = null) use ($esc) {
             $html = "<h2>{$esc($title)} <span class=\"count\">({$rows->count()})</span></h2>";
@@ -710,22 +698,6 @@ class ReportNotificationService
         };
 
         $body = $renderTable(
-            '💰 Pending Balance', '✅ Nothing pending.', $pending,
-            ['Name', 'Mobile', 'Balance'],
-            fn ($e) => '<td>' . $esc($e['name']) . '</td><td>' . $esc($e['phone']) . '</td><td>₹' . number_format($e['net_balance'], 0) . '</td>',
-            $pending->sum(fn ($e) => (float) $e['net_balance']),
-            function ($e) use ($esc, $recentByEntity) {
-                $invoices = $recentByEntity[$e['id']] ?? collect();
-                if ($invoices->isEmpty()) return null;
-                $lines = $invoices->map(function ($inv) use ($esc) {
-                    $items = $inv->items->map(fn ($it) => ($it->product->name ?? 'Unknown') . ($it->quantity > 1 ? " x{$it->quantity}" : ''))->implode(', ');
-                    return $esc(Carbon::parse($inv->sale_date)->format('d M Y')) . ' — ' . $esc($items) . ' — ₹' . number_format($inv->grand_total, 0) . ' (#' . $esc($inv->invoice_no) . ')';
-                })->implode('<br>');
-                return "<span class=\"recent-label\">Last purchases:</span><br>{$lines}";
-            }
-        );
-
-        $body .= $renderTable(
             '🤝 Promise to Pay', '✅ Nothing pending.', $promises,
             ['Name', 'Mobile', 'Balance', 'Promised'],
             function ($n) use ($esc) {
