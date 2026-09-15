@@ -51,7 +51,7 @@ export default function AttendanceReport() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [expandedUser, setExpandedUser] = useState(null);
   const [previewPhoto, setPreviewPhoto] = useState(null);
-  const [collapsedStaff, setCollapsedStaff] = useState({});
+  const [expandedStaff, setExpandedStaff] = useState({}); // collapsed by default — nothing here means collapsed
 
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data.data || r.data)).catch(() => {});
@@ -161,7 +161,7 @@ export default function AttendanceReport() {
       .sort((a, c) => (a.user?.name || '').localeCompare(c.user?.name || ''));
   }, [logs, leaves]);
 
-  const toggleStaff = (userId) => setCollapsedStaff(s => ({ ...s, [userId]: !s[userId] }));
+  const toggleStaff = (userId) => setExpandedStaff(s => ({ ...s, [userId]: !s[userId] }));
 
   return (
     <div>
@@ -292,25 +292,32 @@ export default function AttendanceReport() {
               onClick={() => toggleStaff(user?.id)}
             >
               <strong>{user?.name} {user?.emp_id ? <span className="text-muted x-small">({user.emp_id})</span> : null}</strong>
-              <span className="text-muted small">{collapsedStaff[user?.id] ? '▸ Show' : '▾ Hide'} ({days.length} day{days.length !== 1 ? 's' : ''})</span>
+              <span className="text-muted small">{expandedStaff[user?.id] ? '▾ Hide' : '▸ Show'} ({days.length} day{days.length !== 1 ? 's' : ''})</span>
             </div>
-            {!collapsedStaff[user?.id] && (
+            {expandedStaff[user?.id] && (
               <div className="table-responsive">
-                <table className="table table-bordered table-sm mb-0 align-middle">
+                <table className="table table-bordered table-sm mb-0 align-middle" style={{ borderColor: '#adb5bd' }}>
                   <thead>
                     <tr>
-                      <th style={{ width: 100 }}>Date</th>
-                      <th>Check In</th>
-                      <th>Lunch</th>
-                      <th>Check Out</th>
-                      <th style={{ width: 90 }}>Actions</th>
+                      <th rowSpan={2} style={{ width: 100, verticalAlign: 'middle' }}>Date</th>
+                      <th colSpan={3} className="text-center">Check In</th>
+                      <th colSpan={4} className="text-center">Lunch</th>
+                      <th colSpan={3} className="text-center">Check Out</th>
+                      <th rowSpan={2} style={{ width: 100, verticalAlign: 'middle' }}>Actions</th>
+                    </tr>
+                    <tr>
+                      <th>Time</th><th>Delay</th><th>Photo</th>
+                      <th>Out</th><th>In</th><th>Late</th><th>Photo</th>
+                      <th>Time</th><th>Early Leave</th><th>Photo</th>
                     </tr>
                   </thead>
                   <tbody>
                     {days.map(day => {
                       const inEvent = day.events.find(e => e.type === 'IN');
+                      const extraIns = day.events.filter(e => e.type === 'IN').length - (inEvent ? 1 : 0);
                       const outEvents = day.events.filter(e => e.type === 'OUT');
                       const outEvent = outEvents[outEvents.length - 1];
+                      const extraOuts = outEvents.length - (outEvent ? 1 : 0);
                       const lunchOuts = day.events.filter(e => e.type === 'LUNCH_OUT');
                       const lunchIns = day.events.filter(e => e.type === 'LUNCH_IN');
                       const lunchPairs = lunchOuts.map((lo, i) => ({ out: lo, in: lunchIns[i] || null }));
@@ -322,7 +329,7 @@ export default function AttendanceReport() {
                           style={{ objectFit: 'cover', borderRadius: 5, cursor: 'pointer' }}
                           onClick={() => setPreviewPhoto(ev.photo_url)}
                         />
-                      ) : null;
+                      ) : <span className="text-muted small">—</span>;
 
                       return (
                         <tr key={day.date}>
@@ -341,58 +348,44 @@ export default function AttendanceReport() {
                               </div>
                             )}
                           </td>
+
+                          {/* Check In: Time | Delay | Photo */}
+                          <td>{inEvent ? <span className="small">{istTimeStr(inEvent.logged_at)}{inEvent.is_manual && <span className="badge bg-secondary ms-1">M</span>}</span> : <span className="text-muted small">—</span>}
+                            {extraIns > 0 && <div className="text-muted x-small">+{extraIns} more</div>}
+                          </td>
+                          <td>{inEvent?.is_first_of_day && inEvent.delay_minutes > 0 ? <span className="badge bg-danger">⏰ {inEvent.delay_minutes}m</span> : <span className="text-muted small">—</span>}</td>
+                          <td>{inEvent ? <Thumb ev={inEvent} /> : <span className="text-muted small">—</span>}</td>
+
+                          {/* Lunch: Out | In | Late | Photo (one line per pair if more than one) */}
                           <td>
-                            {inEvent ? (
-                              <div className="d-flex align-items-center gap-1 flex-wrap">
-                                <Thumb ev={inEvent} />
-                                <span className="small">{istTimeStr(inEvent.logged_at)}</span>
-                                {inEvent.is_first_of_day && inEvent.delay_minutes > 0 && (
-                                  <span className="badge bg-danger">⏰ Delay {inEvent.delay_minutes}m</span>
-                                )}
-                                {inEvent.is_manual && <span className="badge bg-secondary">Manual</span>}
-                              </div>
-                            ) : <span className="text-muted small">—</span>}
+                            {lunchPairs.length === 0 ? <span className="text-muted small">—</span> :
+                              lunchPairs.map((p, i) => <div key={i} className="small">{istTimeStr(p.out.logged_at)}</div>)}
                           </td>
                           <td>
-                            {lunchPairs.length === 0 ? <span className="text-muted small">—</span> : (
-                              <div className="d-flex flex-column gap-1">
-                                {lunchPairs.map((pair, i) => {
-                                  const stillOut = !pair.in && day.date !== todayIstStr();
-                                  return (
-                                    <div key={i} className="d-flex align-items-center gap-1 flex-wrap">
-                                      <Thumb ev={pair.out} />
-                                      <span className="small">{istTimeStr(pair.out.logged_at)}</span>
-                                      <span className="text-muted small">→</span>
-                                      {pair.in ? (
-                                        <>
-                                          <Thumb ev={pair.in} />
-                                          <span className="small">{istTimeStr(pair.in.logged_at)}</span>
-                                          {pair.in.lunch_late_minutes > 0 && (
-                                            <span className="badge bg-danger">🍴 Late {pair.in.lunch_late_minutes}m</span>
-                                          )}
-                                        </>
-                                      ) : (
-                                        <span className="text-muted small">—</span>
-                                      )}
-                                      {stillOut && <span className="badge bg-warning text-dark">⚠️ No return</span>}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            {lunchPairs.length === 0 ? <span className="text-muted small">—</span> :
+                              lunchPairs.map((p, i) => {
+                                const stillOut = !p.in && day.date !== todayIstStr();
+                                return <div key={i} className="small">{p.in ? istTimeStr(p.in.logged_at) : (stillOut ? <span className="badge bg-warning text-dark">⚠️ No return</span> : '—')}</div>;
+                              })}
                           </td>
                           <td>
-                            {outEvent ? (
-                              <div className="d-flex align-items-center gap-1 flex-wrap">
-                                <Thumb ev={outEvent} />
-                                <span className="small">{istTimeStr(outEvent.logged_at)}</span>
-                                {outEvent.is_last_of_day && outEvent.early_leave_minutes > 0 && (
-                                  <span className="badge bg-danger">🚪 Early Leave {outEvent.early_leave_minutes}m</span>
-                                )}
-                                {outEvent.is_manual && <span className="badge bg-secondary">Manual</span>}
-                              </div>
-                            ) : <span className="text-muted small">—</span>}
+                            {lunchPairs.length === 0 ? <span className="text-muted small">—</span> :
+                              lunchPairs.map((p, i) => <div key={i}>{p.in?.lunch_late_minutes > 0 ? <span className="badge bg-danger">🍴 {p.in.lunch_late_minutes}m</span> : <span className="text-muted small">—</span>}</div>)}
                           </td>
+                          <td>
+                            {lunchPairs.length === 0 ? <span className="text-muted small">—</span> :
+                              lunchPairs.map((p, i) => (
+                                <div key={i} className="d-flex gap-1 mb-1"><Thumb ev={p.out} />{p.in && <Thumb ev={p.in} />}</div>
+                              ))}
+                          </td>
+
+                          {/* Check Out: Time | Early Leave | Photo */}
+                          <td>{outEvent ? <span className="small">{istTimeStr(outEvent.logged_at)}{outEvent.is_manual && <span className="badge bg-secondary ms-1">M</span>}</span> : <span className="text-muted small">—</span>}
+                            {extraOuts > 0 && <div className="text-muted x-small">+{extraOuts} more</div>}
+                          </td>
+                          <td>{outEvent?.is_last_of_day && outEvent.early_leave_minutes > 0 ? <span className="badge bg-danger">🚪 {outEvent.early_leave_minutes}m</span> : <span className="text-muted small">—</span>}</td>
+                          <td>{outEvent ? <Thumb ev={outEvent} /> : <span className="text-muted small">—</span>}</td>
+
                           <td>
                             {allEvents.length === 0 ? (
                               <span className="text-muted small">No punches</span>
