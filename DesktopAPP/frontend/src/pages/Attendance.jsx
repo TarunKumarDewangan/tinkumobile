@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import FaceCapture from '../components/FaceCapture';
+import AttendanceReport from './admin/AttendanceReport';
 
 function getPosition() {
   return new Promise((resolve, reject) => {
@@ -25,6 +26,7 @@ export default function Attendance() {
   const [capturing, setCapturing] = useState(false); // false | 'enroll' | 'IN' | 'OUT' | 'LUNCH_OUT' | 'LUNCH_IN'
   const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [showReport, setShowReport] = useState(false);
   const tickRef = useRef(null);
 
   const loadStatus = () => {
@@ -189,6 +191,18 @@ export default function Attendance() {
           </div>
         )}
       </div>
+
+      <div className="text-center mt-3">
+        <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowReport(s => !s)}>
+          {showReport ? '▾ Hide My Report' : '▸ My Attendance Report'}
+        </button>
+      </div>
+
+      {showReport && (
+        <div className="mt-3">
+          <AttendanceReport readOnly />
+        </div>
+      )}
     </div>
   );
 }

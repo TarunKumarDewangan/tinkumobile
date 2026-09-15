@@ -30,11 +30,32 @@ function addDaysStr(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+function daysInMonth(yearMonth) {
+  const [y, m] = yearMonth.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+function dowLetter(yearMonth, day) {
+  const [y, m] = yearMonth.split('-').map(Number);
+  return ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][new Date(y, m - 1, day).getDay()];
+}
+
 const TYPE_LABEL = { IN: 'Check In', OUT: 'Check Out', LUNCH_OUT: 'Lunch Out', LUNCH_IN: 'Back from Lunch' };
 const TYPE_SHORT = { IN: 'In', OUT: 'Out', LUNCH_OUT: 'L.Out', LUNCH_IN: 'L.In' };
+const LEAVE_LABEL = { full: 'Full Day', half_front: 'Half Day (Front)', half_later: 'Half Day (Later)' };
+const LEAVE_CODE = { full: 'L', half_front: 'HLF', half_later: 'HLL' };
+const GRID_CODE = { present: 'P', absent: 'A', leave_full: 'L', leave_half_front: 'HLF', leave_half_later: 'HLL' };
+const GRID_CLASS = { present: 'bg-success text-white', absent: 'bg-danger text-white', leave_full: 'bg-primary text-white', leave_half_front: 'bg-warning text-dark', leave_half_later: 'bg-secondary text-white' };
 
-export default function AttendanceReport() {
-  const [view, setView] = useState('log'); // 'log' | 'summary'
+/**
+ * Also used, read-only, as the "My Report" section on the staff Attendance
+ * page — pass readOnly to hide every mutating control (Mark Leave, Manual
+ * Entry, Delete) and the Staff/Shop filters, since the backend already
+ * force-scopes a non-admin caller to their own records regardless of what
+ * filters are sent.
+ */
+export default function AttendanceReport({ readOnly = false }) {
+  const [view, setView] = useState('log'); // 'log' | 'summary' | 'grid'
   const [logs, setLogs] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [users, setUsers] = useState([]);
@@ -54,9 +75,10 @@ export default function AttendanceReport() {
   const [expandedStaff, setExpandedStaff] = useState({}); // collapsed by default — nothing here means collapsed
 
   useEffect(() => {
+    if (readOnly) return;
     api.get('/users').then(r => setUsers(r.data.data || r.data)).catch(() => {});
     api.get('/shops').then(r => setShops(r.data)).catch(() => {});
-  }, []);
+  }, [readOnly]);
 
   const load = () => {
     setLoading(true);
@@ -74,7 +96,7 @@ export default function AttendanceReport() {
       .catch(e => toast.error(e.response?.data?.message || 'Failed to load summary'))
       .finally(() => setSummaryLoading(false));
   };
-  useEffect(() => { if (view === 'summary') loadSummary(); }, [view, month, filters.user_id, filters.shop_id]);
+  useEffect(() => { if (view === 'summary' || view === 'grid') loadSummary(); }, [view, month, filters.user_id, filters.shop_id]);
 
   const handleDelete = async (id) => {
     if (!await pinGate.confirm()) return;
@@ -165,35 +187,42 @@ export default function AttendanceReport() {
 
   return (
     <div>
-      <div className="page-header d-flex justify-content-between align-items-center">
-        <h2>🕐 Attendance Report</h2>
-        {view === 'log' && (
-          <div className="d-flex gap-2">
-            <button className="btn btn-outline-primary btn-sm" onClick={() => setShowLeave(true)}>+ Mark Leave</button>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowManual(true)}>+ Manual Entry</button>
-          </div>
-        )}
-      </div>
+      {!readOnly && (
+        <div className="page-header d-flex justify-content-between align-items-center">
+          <h2>🕐 Attendance Report</h2>
+          {view === 'log' && (
+            <div className="d-flex gap-2">
+              <button className="btn btn-outline-primary btn-sm" onClick={() => setShowLeave(true)}>+ Mark Leave</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowManual(true)}>+ Manual Entry</button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="btn-group btn-group-sm mb-3">
         <button className={`btn ${view === 'log' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setView('log')}>📋 Log View</button>
         <button className={`btn ${view === 'summary' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setView('summary')}>📅 Summary View</button>
+        <button className={`btn ${view === 'grid' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setView('grid')}>🗓️ Grid View</button>
       </div>
 
       <div className="table-card p-3 mb-3">
         <div className="row g-2">
-          <div className="col-12 col-md-3">
-            <select className="form-select form-select-sm" value={filters.user_id} onChange={e => setFilters({...filters, user_id: e.target.value})}>
-              <option value="">All Staff</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-          <div className="col-12 col-md-3">
-            <select className="form-select form-select-sm" value={filters.shop_id} onChange={e => setFilters({...filters, shop_id: e.target.value})}>
-              <option value="">All Shops</option>
-              {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
+          {!readOnly && (
+            <>
+              <div className="col-12 col-md-3">
+                <select className="form-select form-select-sm" value={filters.user_id} onChange={e => setFilters({...filters, user_id: e.target.value})}>
+                  <option value="">All Staff</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div className="col-12 col-md-3">
+                <select className="form-select form-select-sm" value={filters.shop_id} onChange={e => setFilters({...filters, shop_id: e.target.value})}>
+                  <option value="">All Shops</option>
+                  {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </>
+          )}
           {view === 'log' ? (
             <>
               <div className="col-6 col-md-3">
@@ -220,7 +249,65 @@ export default function AttendanceReport() {
         )}
       </div>
 
-      {view === 'summary' ? (
+      {view === 'grid' ? (
+        <div className="table-card">
+          <div className="p-2 small text-muted border-bottom">
+            <span className="badge bg-success me-1">P</span>Present &nbsp;
+            <span className="badge bg-danger me-1">A</span>Absent &nbsp;
+            <span className="badge bg-primary me-1">L</span>Leave (Full Day) &nbsp;
+            <span className="badge bg-warning text-dark me-1">HLF</span>Half Leave (Front) &nbsp;
+            <span className="badge bg-secondary me-1">HLL</span>Half Leave (Later)
+          </div>
+          {summaryLoading ? (
+            <div className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary" /></div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-bordered table-sm mb-0 align-middle text-center" style={{ borderColor: '#adb5bd' }}>
+                <thead>
+                  <tr>
+                    <th style={{ position: 'sticky', left: 0, background: 'var(--bs-body-bg)', zIndex: 1, minWidth: 140 }} className="text-start">Staff</th>
+                    {Array.from({ length: daysInMonth(month) }, (_, i) => i + 1).map(d => (
+                      <th key={d} style={{ minWidth: 34 }}>
+                        <div>{d}</div>
+                        <div className="text-muted" style={{ fontSize: '0.55rem' }}>{dowLetter(month, d)}</div>
+                      </th>
+                    ))}
+                    <th>P</th><th>A</th><th>L</th><th>HLF</th><th>HLL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!summary || summary.staff.length === 0 ? (
+                    <tr><td colSpan={daysInMonth(month) + 6} className="text-center py-4 text-muted">No staff found</td></tr>
+                  ) : summary.staff.map(s => {
+                    const byDate = Object.fromEntries(s.days.map(d => [d.date, d.status]));
+                    return (
+                      <tr key={s.user_id}>
+                        <td style={{ position: 'sticky', left: 0, background: 'var(--bs-body-bg)', zIndex: 1 }} className="text-start">
+                          {s.name} {s.emp_id ? <span className="text-muted x-small">({s.emp_id})</span> : null}
+                        </td>
+                        {Array.from({ length: daysInMonth(month) }, (_, i) => i + 1).map(d => {
+                          const dateStr = `${month}-${String(d).padStart(2, '0')}`;
+                          const status = byDate[dateStr];
+                          return (
+                            <td key={d} className="p-1">
+                              {status ? <span className={`badge ${GRID_CLASS[status]}`} style={{ fontSize: '0.62rem' }}>{GRID_CODE[status]}</span> : ''}
+                            </td>
+                          );
+                        })}
+                        <td><span className="badge bg-success">{s.present_count}</span></td>
+                        <td><span className="badge bg-danger">{s.absent_count}</span></td>
+                        <td><span className="badge bg-primary">{s.leave_full_count}</span></td>
+                        <td><span className="badge bg-warning text-dark">{s.leave_half_front_count}</span></td>
+                        <td><span className="badge bg-secondary">{s.leave_half_later_count}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : view === 'summary' ? (
         <div className="table-card">
           {summaryLoading ? (
             <div className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary" /></div>
@@ -233,14 +320,15 @@ export default function AttendanceReport() {
                   <th>Present</th>
                   <th>Absent</th>
                   <th>Leave (Full)</th>
-                  <th>Leave (Half)</th>
+                  <th>Leave (Half Front)</th>
+                  <th>Leave (Half Later)</th>
                   <th>Days Considered</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {!summary || summary.staff.length === 0 ? (
-                  <tr><td colSpan="8" className="text-center py-4 text-muted">No staff found</td></tr>
+                  <tr><td colSpan="9" className="text-center py-4 text-muted">No staff found</td></tr>
                 ) : summary.staff.map(s => (
                   <React.Fragment key={s.user_id}>
                     <tr>
@@ -248,8 +336,9 @@ export default function AttendanceReport() {
                       <td>{s.shop_name || '—'}</td>
                       <td><span className="badge bg-success">{s.present_count}</span></td>
                       <td><span className="badge bg-danger">{s.absent_count}</span></td>
-                      <td><span className="badge bg-info text-dark">{s.leave_full_count}</span></td>
-                      <td><span className="badge bg-info text-dark">{s.leave_half_count}</span></td>
+                      <td><span className="badge bg-primary">{s.leave_full_count}</span></td>
+                      <td><span className="badge bg-warning text-dark">{s.leave_half_front_count}</span></td>
+                      <td><span className="badge bg-secondary">{s.leave_half_later_count}</span></td>
                       <td>{s.days_considered}</td>
                       <td>
                         {s.days.length > 0 && (
@@ -261,13 +350,13 @@ export default function AttendanceReport() {
                     </tr>
                     {expandedUser === s.user_id && (
                       <tr>
-                        <td colSpan="8" className="bg-body-tertiary">
+                        <td colSpan="9" className="bg-body-tertiary">
                           <div className="d-flex flex-wrap gap-1 p-2">
-                            {s.days.map(d => {
-                              const cls = d.status === 'present' ? 'bg-success' : d.status === 'absent' ? 'bg-danger' : 'bg-info text-dark';
-                              const label = d.status === 'leave_full' ? 'LF' : d.status === 'leave_half' ? 'LH' : d.date.slice(-2);
-                              return <span key={d.date} className={`badge ${cls}`} title={`${d.date} — ${d.status}`}>{label}</span>;
-                            })}
+                            {s.days.map(d => (
+                              <span key={d.date} className={`badge ${GRID_CLASS[d.status] || 'bg-secondary'}`} title={`${d.date} — ${d.status}`}>
+                                {GRID_CODE[d.status] || d.date.slice(-2)}
+                              </span>
+                            ))}
                           </div>
                         </td>
                       </tr>
@@ -303,7 +392,7 @@ export default function AttendanceReport() {
                       <th colSpan={3} className="text-center">Check In</th>
                       <th colSpan={4} className="text-center">Lunch</th>
                       <th colSpan={3} className="text-center">Check Out</th>
-                      <th rowSpan={2} style={{ width: 100, verticalAlign: 'middle' }}>Actions</th>
+                      {!readOnly && <th rowSpan={2} style={{ width: 100, verticalAlign: 'middle' }}>Actions</th>}
                     </tr>
                     <tr>
                       <th>Time</th><th>Delay</th><th>Photo</th>
@@ -338,12 +427,14 @@ export default function AttendanceReport() {
                             {day.leave && (
                               <div className="mt-1">
                                 <span className="badge bg-info text-dark">
-                                  🏖️ {day.leave.type === 'full' ? 'Full Day' : 'Half Day'}
-                                  <button
-                                    className="btn btn-xs btn-link text-dark p-0 ms-1"
-                                    style={{ textDecoration: 'underline' }}
-                                    onClick={() => handleLeaveDelete(day.leave.id)}
-                                  >×</button>
+                                  🏖️ {LEAVE_LABEL[day.leave.type] || day.leave.type}
+                                  {!readOnly && (
+                                    <button
+                                      className="btn btn-xs btn-link text-dark p-0 ms-1"
+                                      style={{ textDecoration: 'underline' }}
+                                      onClick={() => handleLeaveDelete(day.leave.id)}
+                                    >×</button>
+                                  )}
                                 </span>
                               </div>
                             )}
@@ -386,24 +477,26 @@ export default function AttendanceReport() {
                           <td>{outEvent?.is_last_of_day && outEvent.early_leave_minutes > 0 ? <span className="badge bg-danger">🚪 {outEvent.early_leave_minutes}m</span> : <span className="text-muted small">—</span>}</td>
                           <td>{outEvent ? <Thumb ev={outEvent} /> : <span className="text-muted small">—</span>}</td>
 
-                          <td>
-                            {allEvents.length === 0 ? (
-                              <span className="text-muted small">No punches</span>
-                            ) : (
-                              <div className="d-flex flex-wrap gap-1">
-                                {allEvents.map(ev => (
-                                  <button
-                                    key={ev.id}
-                                    className="btn btn-xs btn-outline-danger"
-                                    title={`Delete ${TYPE_LABEL[ev.type]} @ ${istTimeStr(ev.logged_at)}`}
-                                    onClick={() => handleDelete(ev.id)}
-                                  >
-                                    {TYPE_SHORT[ev.type]} ✕
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </td>
+                          {!readOnly && (
+                            <td>
+                              {allEvents.length === 0 ? (
+                                <span className="text-muted small">No punches</span>
+                              ) : (
+                                <div className="d-flex flex-wrap gap-1">
+                                  {allEvents.map(ev => (
+                                    <button
+                                      key={ev.id}
+                                      className="btn btn-xs btn-outline-danger"
+                                      title={`Delete ${TYPE_LABEL[ev.type]} @ ${istTimeStr(ev.logged_at)}`}
+                                      onClick={() => handleDelete(ev.id)}
+                                    >
+                                      {TYPE_SHORT[ev.type]} ✕
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -416,7 +509,7 @@ export default function AttendanceReport() {
       </div>
       )}
 
-      {showManual && (
+      {!readOnly && showManual && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -462,7 +555,7 @@ export default function AttendanceReport() {
         </div>
       )}
 
-      {showLeave && (
+      {!readOnly && showLeave && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -486,11 +579,12 @@ export default function AttendanceReport() {
                   <div className="mb-2">
                     <label className="form-label small fw-bold">Type *</label>
                     <select className="form-select" required value={leaveForm.type} onChange={e => setLeaveForm({...leaveForm, type: e.target.value})}>
-                      <option value="full">Full Day</option>
-                      <option value="half">Half Day</option>
+                      <option value="full">Full Day (L)</option>
+                      <option value="half_front">Half Day — Front (HLF)</option>
+                      <option value="half_later">Half Day — Later (HLL)</option>
                     </select>
                   </div>
-                  <div className="form-text">Overrides Absent for this day. Marking the same staff+date again replaces the previous marking.</div>
+                  <div className="form-text">Overrides Absent for this day. Only a limited number of Leave days are allowed per staff member per month (set per shop in Shops Manager) — marking beyond that limit is blocked. Marking the same staff+date again replaces the previous marking without counting against the limit.</div>
                 </div>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setShowLeave(false)}>Cancel</button>

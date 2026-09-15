@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Shop extends Model
 {
     use UppercaseStrings, \App\Traits\SyncsWithMasterEntity;
-    protected $fillable = ['name', 'address', 'phone', 'alt_phone', 'email', 'gstin', 'is_main', 'latitude', 'longitude', 'attendance_radius_meters', 'shift_start_time', 'shift_end_time'];
+    protected $fillable = ['name', 'address', 'phone', 'alt_phone', 'email', 'gstin', 'is_main', 'latitude', 'longitude', 'attendance_radius_meters', 'shift_start_time', 'shift_end_time', 'monthly_leave_limit'];
 
     protected $casts = ['is_main' => 'boolean'];
 

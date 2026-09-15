@@ -272,18 +272,28 @@ class AttendanceController extends Controller
      * for the same filters are included alongside so the frontend can build
      * one combined per-staff/per-day timeline from a single response.
      */
+    /**
+     * True for owner/admin, who can view any staff's report. Anyone else
+     * (a Sales Person, say) can still call index()/summary() but only ever
+     * sees their own records — used to give staff read-only access to their
+     * own attendance without opening these endpoints up generally.
+     */
+    private function isReportAdmin($user): bool
+    {
+        return $user->hasFullAccess() || $user->hasRole('Admin');
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user->hasFullAccess() && !$user->hasRole('Admin')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $isAdmin = $this->isReportAdmin($user);
+        $userIdFilter = $isAdmin ? $request->user_id : $user->id;
 
         $query = AttendanceLog::with(['user:id,name,emp_id', 'shop:id,name', 'createdBy:id,name'])
             ->orderByDesc('logged_at');
 
-        if ($request->user_id) $query->where('user_id', $request->user_id);
-        if ($request->shop_id) $query->where('shop_id', $request->shop_id);
+        if ($userIdFilter) $query->where('user_id', $userIdFilter);
+        if ($isAdmin && $request->shop_id) $query->where('shop_id', $request->shop_id);
         if ($request->from) $query->where('logged_at', '>=', $this->localDateRangeUtc($request->from)[0]);
         if ($request->to) $query->where('logged_at', '<=', $this->localDateRangeUtc($request->to)[1]);
 
@@ -291,13 +301,13 @@ class AttendanceController extends Controller
         $this->annotateDayFlags($page->getCollection());
 
         $leaves = \App\Models\AttendanceLeave::with('user:id,name,emp_id')
-            ->when($request->user_id, fn ($q, $id) => $q->where('user_id', $id))
+            ->when($userIdFilter, fn ($q, $id) => $q->where('user_id', $id))
             ->when($request->from, fn ($q, $d) => $q->where('date', '>=', $d))
             ->when($request->to, fn ($q, $d) => $q->where('date', '<=', $d))
             ->orderByDesc('date')
             ->get();
 
-        return response()->json(array_merge($page->toArray(), ['leaves' => $leaves]));
+        return response()->json(array_merge($page->toArray(), ['leaves' => $leaves, 'is_admin' => $isAdmin]));
     }
 
     /**
@@ -387,9 +397,7 @@ class AttendanceController extends Controller
     public function summary(Request $request)
     {
         $user = $request->user();
-        if (!$user->hasFullAccess() && !$user->hasRole('Admin')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $isAdmin = $this->isReportAdmin($user);
 
         $data = $request->validate([
             'month'   => 'required|date_format:Y-m',
@@ -403,8 +411,9 @@ class AttendanceController extends Controller
         $effectiveEnd = $monthEnd->greaterThan($yesterday) ? $yesterday : $monthEnd;
 
         $staff = \App\Models\User::whereNotNull('joining_date')
-            ->when($data['user_id'] ?? null, fn ($q, $id) => $q->where('id', $id))
-            ->when($data['shop_id'] ?? null, fn ($q, $id) => $q->where('shop_id', $id))
+            ->when(!$isAdmin, fn ($q) => $q->where('id', $user->id))
+            ->when($isAdmin && ($data['user_id'] ?? null), fn ($q, $id) => $q->where('id', $id))
+            ->when($isAdmin && ($data['shop_id'] ?? null), fn ($q, $id) => $q->where('shop_id', $id))
             ->with('shop:id,name')
             ->get(['id', 'name', 'emp_id', 'shop_id', 'joining_date']);
 
@@ -434,7 +443,8 @@ class AttendanceController extends Controller
             $presentCount = 0;
             $absentCount = 0;
             $leaveFullCount = 0;
-            $leaveHalfCount = 0;
+            $leaveHalfFrontCount = 0;
+            $leaveHalfLaterCount = 0;
 
             if ($rangeStart->lessThanOrEqualTo($effectiveEnd)) {
                 $userPresent = $presentDates->get($s->id, collect());
@@ -445,8 +455,13 @@ class AttendanceController extends Controller
                     $isPresent = $userPresent->contains($dateStr);
 
                     if ($leave) {
-                        $status = $leave->type === 'full' ? 'leave_full' : 'leave_half';
-                        $leave->type === 'full' ? $leaveFullCount++ : $leaveHalfCount++;
+                        $status = 'leave_' . $leave->type; // leave_full | leave_half_front | leave_half_later
+                        match ($leave->type) {
+                            'full' => $leaveFullCount++,
+                            'half_front' => $leaveHalfFrontCount++,
+                            'half_later' => $leaveHalfLaterCount++,
+                            default => null,
+                        };
                     } else {
                         $status = $isPresent ? 'present' : 'absent';
                         $isPresent ? $presentCount++ : $absentCount++;
@@ -456,17 +471,18 @@ class AttendanceController extends Controller
             }
 
             $result[] = [
-                'user_id'          => $s->id,
-                'name'             => $s->name,
-                'emp_id'           => $s->emp_id,
-                'shop_name'        => $s->shop->name ?? null,
-                'joining_date'     => $s->joining_date,
-                'present_count'    => $presentCount,
-                'absent_count'     => $absentCount,
-                'leave_full_count' => $leaveFullCount,
-                'leave_half_count' => $leaveHalfCount,
-                'days_considered'  => $presentCount + $absentCount + $leaveFullCount + $leaveHalfCount,
-                'days'             => $days,
+                'user_id'               => $s->id,
+                'name'                  => $s->name,
+                'emp_id'                => $s->emp_id,
+                'shop_name'             => $s->shop->name ?? null,
+                'joining_date'          => $s->joining_date,
+                'present_count'         => $presentCount,
+                'absent_count'          => $absentCount,
+                'leave_full_count'      => $leaveFullCount,
+                'leave_half_front_count' => $leaveHalfFrontCount,
+                'leave_half_later_count' => $leaveHalfLaterCount,
+                'days_considered'       => $presentCount + $absentCount + $leaveFullCount + $leaveHalfFrontCount + $leaveHalfLaterCount,
+                'days'                  => $days,
             ];
         }
 
@@ -533,16 +549,32 @@ class AttendanceController extends Controller
         $data = $request->validate([
             'user_id' => 'required|exists:users,id',
             'date' => 'required|date',
-            'type' => 'required|in:full,half',
+            'type' => 'required|in:full,half_front,half_later',
             'notes' => 'nullable|string|max:255',
         ]);
+
+        $target = \App\Models\User::find($data['user_id']);
+        $limit = $target->shop->monthly_leave_limit ?? 2;
+        $monthStart = \Carbon\Carbon::parse($data['date'], self::TZ)->startOfMonth()->toDateString();
+        $monthEnd = \Carbon\Carbon::parse($data['date'], self::TZ)->endOfMonth()->toDateString();
+
+        $existingThisMonth = \App\Models\AttendanceLeave::where('user_id', $data['user_id'])
+            ->whereBetween('date', [$monthStart, $monthEnd])
+            ->where('date', '!=', $data['date']) // re-marking the same day isn't a new day against the limit
+            ->count();
+
+        if ($existingThisMonth >= $limit) {
+            return response()->json([
+                'message' => "Monthly leave limit ({$limit}) already reached for {$target->name} this month. Raise the limit in Shops Manager if this one should still be allowed.",
+            ], 422);
+        }
 
         $leave = \App\Models\AttendanceLeave::updateOrCreate(
             ['user_id' => $data['user_id'], 'date' => $data['date']],
             ['type' => $data['type'], 'notes' => $data['notes'] ?? null, 'created_by' => $user->id]
         );
 
-        ActivityLog::log('ATTENDANCE_LEAVE_MARKED', $user, "Marked {$data['type']} day leave for user #{$data['user_id']} on {$data['date']}");
+        ActivityLog::log('ATTENDANCE_LEAVE_MARKED', $user, "Marked {$data['type']} leave for user #{$data['user_id']} on {$data['date']}");
 
         return response()->json(['message' => 'Leave marked', 'leave' => $leave->load('user:id,name,emp_id')], 201);
     }

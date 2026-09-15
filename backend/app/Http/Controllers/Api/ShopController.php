@@ -36,6 +36,7 @@ class ShopController extends Controller
             'attendance_radius_meters' => 'nullable|integer|min:5|max:1000',
             'shift_start_time' => 'nullable|date_format:H:i',
             'shift_end_time' => 'nullable|date_format:H:i',
+            'monthly_leave_limit' => 'nullable|integer|min:0|max:31',
         ]);
         return response()->json(Shop::create($data), 201);
     }
@@ -66,6 +67,7 @@ class ShopController extends Controller
             'attendance_radius_meters' => 'nullable|integer|min:5|max:1000',
             'shift_start_time' => 'nullable|date_format:H:i',
             'shift_end_time' => 'nullable|date_format:H:i',
+            'monthly_leave_limit' => 'nullable|integer|min:0|max:31',
         ]);
         $shop->update($data);
         return response()->json($shop);

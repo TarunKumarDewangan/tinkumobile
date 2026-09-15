@@ -6,7 +6,7 @@ export default function Shops() {
   const [shops, setShops] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'', latitude:'', longitude:'', attendance_radius_meters: 20, shift_start_time: '10:30', shift_end_time: '20:30' };
+  const blankForm = { name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'', latitude:'', longitude:'', attendance_radius_meters: 20, shift_start_time: '10:30', shift_end_time: '20:30', monthly_leave_limit: 2 };
   const [form, setForm] = useState(blankForm);
   const [locating, setLocating] = useState(false);
 
@@ -39,6 +39,7 @@ export default function Shops() {
       attendance_radius_meters: shop.attendance_radius_meters ?? 20,
       shift_start_time: (shop.shift_start_time || '10:30:00').slice(0, 5),
       shift_end_time: (shop.shift_end_time || '20:30:00').slice(0, 5),
+      monthly_leave_limit: shop.monthly_leave_limit ?? 2,
     });
     setEditingId(shop.id);
     setShowForm(true);
@@ -104,6 +105,14 @@ export default function Shops() {
                 </div>
               </div>
               <div className="form-text">Arriving after Shift Start is flagged "Delay"; leaving before Shift End (as the day's final checkout) is flagged "Early Leave" in the Attendance Report.</div>
+
+              <div className="row g-3 mt-1">
+                <div className="col-6 col-md-3">
+                  <label className="form-label small">Monthly Leave Limit</label>
+                  <input type="number" min="0" max="31" className="form-control" value={form.monthly_leave_limit} onChange={e => setForm({...form, monthly_leave_limit:e.target.value})} />
+                </div>
+              </div>
+              <div className="form-text">Max Leave days (Full + Half combined) "Mark Leave" allows per staff member per month — marking beyond this is blocked with a message. Raise it here if needed.</div>
             </div>
 
             <div className="mt-3 d-flex gap-2">
@@ -131,6 +140,7 @@ export default function Shops() {
                 <div>🏢 GSTIN: <span className="fw-bold">{s.gstin || '—'}</span></div>
                 <div>🎯 Attendance: {s.latitude && s.longitude ? `${s.latitude}, ${s.longitude} (±${s.attendance_radius_meters}m)` : <span className="text-danger">Not set up</span>}</div>
                 <div>⏰ Shift: {(s.shift_start_time || '10:30:00').slice(0,5)} – {(s.shift_end_time || '20:30:00').slice(0,5)}</div>
+                <div>🏖️ Monthly Leave Limit: {s.monthly_leave_limit ?? 2}</div>
               </div>
             </div>
           </div>
