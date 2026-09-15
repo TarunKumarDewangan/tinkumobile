@@ -6,7 +6,7 @@ export default function Shops() {
   const [shops, setShops] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'', latitude:'', longitude:'', attendance_radius_meters: 20 };
+  const blankForm = { name:'', address:'', phone:'', alt_phone:'', email:'', gstin:'', latitude:'', longitude:'', attendance_radius_meters: 20, shift_start_time: '10:30', shift_end_time: '20:30' };
   const [form, setForm] = useState(blankForm);
   const [locating, setLocating] = useState(false);
 
@@ -37,6 +37,8 @@ export default function Shops() {
       email: shop.email || '', gstin: shop.gstin || '',
       latitude: shop.latitude ?? '', longitude: shop.longitude ?? '',
       attendance_radius_meters: shop.attendance_radius_meters ?? 20,
+      shift_start_time: (shop.shift_start_time || '10:30:00').slice(0, 5),
+      shift_end_time: (shop.shift_end_time || '20:30:00').slice(0, 5),
     });
     setEditingId(shop.id);
     setShowForm(true);
@@ -90,6 +92,18 @@ export default function Shops() {
                 </div>
               </div>
               <div className="form-text">Staff must be within this radius of these coordinates to check in/out. Stand at the shop and click "Use My Location" for an easy accurate set.</div>
+
+              <div className="row g-3 mt-1">
+                <div className="col-6 col-md-3">
+                  <label className="form-label small">Shift Start</label>
+                  <input type="time" className="form-control" value={form.shift_start_time} onChange={e => setForm({...form, shift_start_time:e.target.value})} />
+                </div>
+                <div className="col-6 col-md-3">
+                  <label className="form-label small">Shift End</label>
+                  <input type="time" className="form-control" value={form.shift_end_time} onChange={e => setForm({...form, shift_end_time:e.target.value})} />
+                </div>
+              </div>
+              <div className="form-text">Arriving after Shift Start is flagged "Delay"; leaving before Shift End (as the day's final checkout) is flagged "Early Leave" in the Attendance Report.</div>
             </div>
 
             <div className="mt-3 d-flex gap-2">
@@ -116,6 +130,7 @@ export default function Shops() {
                 <div>📍 {s.address}</div>
                 <div>🏢 GSTIN: <span className="fw-bold">{s.gstin || '—'}</span></div>
                 <div>🎯 Attendance: {s.latitude && s.longitude ? `${s.latitude}, ${s.longitude} (±${s.attendance_radius_meters}m)` : <span className="text-danger">Not set up</span>}</div>
+                <div>⏰ Shift: {(s.shift_start_time || '10:30:00').slice(0,5)} – {(s.shift_end_time || '20:30:00').slice(0,5)}</div>
               </div>
             </div>
           </div>

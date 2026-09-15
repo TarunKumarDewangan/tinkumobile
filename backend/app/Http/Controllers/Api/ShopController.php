@@ -34,6 +34,8 @@ class ShopController extends Controller
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'attendance_radius_meters' => 'nullable|integer|min:5|max:1000',
+            'shift_start_time' => 'nullable|date_format:H:i',
+            'shift_end_time' => 'nullable|date_format:H:i',
         ]);
         return response()->json(Shop::create($data), 201);
     }
@@ -62,6 +64,8 @@ class ShopController extends Controller
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'attendance_radius_meters' => 'nullable|integer|min:5|max:1000',
+            'shift_start_time' => 'nullable|date_format:H:i',
+            'shift_end_time' => 'nullable|date_format:H:i',
         ]);
         $shop->update($data);
         return response()->json($shop);

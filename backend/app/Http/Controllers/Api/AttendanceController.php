@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\AttendanceFaceProfile;
 use App\Models\AttendanceLog;
 use App\Models\Shop;
@@ -12,6 +13,43 @@ use Illuminate\Support\Str;
 
 class AttendanceController extends Controller
 {
+    /**
+     * The app runs in UTC (config('app.timezone')), but the shop, its shift
+     * times, and "today" for attendance purposes are all India-local. Every
+     * day-boundary check and shift-time comparison in this controller must
+     * go through these helpers — a bare whereDate('logged_at', today()) or
+     * Carbon::parse($date.' '.$shiftTime) silently compares against UTC's
+     * calendar day / UTC's clock instead, which is wrong by 5.5 hours (and
+     * wrong by a whole day for anything within 5.5h of midnight IST).
+     */
+    private const TZ = 'Asia/Kolkata';
+
+    private function nowLocal(): \Carbon\Carbon
+    {
+        return \Carbon\Carbon::now(self::TZ);
+    }
+
+    /** The IST calendar date a UTC-stored timestamp actually falls on. */
+    private function localDateOf($datetime): string
+    {
+        return \Carbon\Carbon::parse($datetime)->setTimezone(self::TZ)->toDateString();
+    }
+
+    /** [utcStart, utcEnd] spanning 00:00:00–23:59:59.999999 IST on $localDate — use with whereBetween('logged_at', ...) instead of whereDate(). */
+    private function localDateRangeUtc(string $localDate): array
+    {
+        return [
+            \Carbon\Carbon::parse($localDate . ' 00:00:00', self::TZ)->utc(),
+            \Carbon\Carbon::parse($localDate . ' 23:59:59.999999', self::TZ)->utc(),
+        ];
+    }
+
+    /** A shift_start_time/shift_end_time ("10:30:00") as an absolute instant on $localDate, IST. */
+    private function localClockOn(string $localDate, string $time): \Carbon\Carbon
+    {
+        return \Carbon\Carbon::parse($localDate . ' ' . $time, self::TZ);
+    }
+
     /**
      * Haversine distance in meters between two lat/lng points.
      */
@@ -52,10 +90,25 @@ class AttendanceController extends Controller
         return $path;
     }
 
+    const LUNCH_MINUTES = 45;
+
+    /**
+     * Today's state machine, derived purely from the last log of the day:
+     *   no log / last = OUT        -> not_in     (only "Check In" allowed)
+     *   last = IN or LUNCH_IN      -> checked_in  ("Check Out" or "Lunch" allowed)
+     *   last = LUNCH_OUT           -> on_lunch    (only "Back from Lunch" allowed)
+     */
+    private function stateFor(?AttendanceLog $lastToday): string
+    {
+        if (!$lastToday || $lastToday->type === 'OUT') return 'not_in';
+        if ($lastToday->type === 'LUNCH_OUT') return 'on_lunch';
+        return 'checked_in'; // IN or LUNCH_IN
+    }
+
     /**
      * Does the current user already have a face profile, and what's their
-     * open attendance state today (so the frontend knows whether the next
-     * action is Check In or Check Out)?
+     * open attendance state today (so the frontend knows which action
+     * buttons to show)?
      */
     public function status(Request $request)
     {
@@ -63,13 +116,18 @@ class AttendanceController extends Controller
         $hasProfile = AttendanceFaceProfile::where('user_id', $user->id)->exists();
 
         $lastToday = AttendanceLog::where('user_id', $user->id)
-            ->whereDate('logged_at', today())
+            ->whereBetween('logged_at', $this->localDateRangeUtc($this->nowLocal()->toDateString()))
             ->orderByDesc('logged_at')
             ->first();
 
+        $state = $this->stateFor($lastToday);
+
         return response()->json([
             'enrolled' => $hasProfile,
-            'next_action' => (!$lastToday || $lastToday->type === 'OUT') ? 'IN' : 'OUT',
+            'state' => $state,
+            'lunch_deadline' => $state === 'on_lunch'
+                ? \Carbon\Carbon::parse($lastToday->logged_at)->addMinutes(self::LUNCH_MINUTES)->toIso8601String()
+                : null,
             'last_log' => $lastToday,
             'shop' => $user->shop ? [
                 'id' => $user->shop->id,
@@ -124,6 +182,7 @@ class AttendanceController extends Controller
     public function checkInOut(Request $request)
     {
         $data = $request->validate([
+            'action' => 'required|in:IN,OUT,LUNCH_OUT,LUNCH_IN',
             'descriptor' => 'required|array|size:128',
             'descriptor.*' => 'numeric',
             'latitude' => 'required|numeric|between:-90,90',
@@ -164,17 +223,32 @@ class AttendanceController extends Controller
         }
 
         $lastToday = AttendanceLog::where('user_id', $user->id)
-            ->whereDate('logged_at', today())
+            ->whereBetween('logged_at', $this->localDateRangeUtc($this->nowLocal()->toDateString()))
             ->orderByDesc('logged_at')
             ->first();
-        $type = (!$lastToday || $lastToday->type === 'OUT') ? 'IN' : 'OUT';
+        $state = $this->stateFor($lastToday);
+
+        // Which action is legal from which state — validated server-side so
+        // a stale client (or a direct API call) can't skip lunch's return
+        // step or start a second lunch mid-lunch.
+        $allowed = [
+            'not_in'     => ['IN'],
+            'checked_in' => ['OUT', 'LUNCH_OUT'],
+            'on_lunch'   => ['LUNCH_IN'],
+        ];
+        if (!in_array($data['action'], $allowed[$state])) {
+            return response()->json([
+                'message' => "\"{$data['action']}\" isn't valid right now — " .
+                    ($state === 'on_lunch' ? 'you need to come back from lunch first.' : "you're already \"{$state}\"."),
+            ], 422);
+        }
 
         $photoPath = $this->saveSnapshot($data['photo'] ?? null, 'log-' . $user->id);
 
         $log = AttendanceLog::create([
             'user_id' => $user->id,
             'shop_id' => $shop->id,
-            'type' => $type,
+            'type' => $data['action'],
             'logged_at' => now(),
             'latitude' => $data['latitude'],
             'longitude' => $data['longitude'],
@@ -184,14 +258,19 @@ class AttendanceController extends Controller
             'is_manual' => false,
         ]);
 
+        $labels = ['IN' => 'Checked In', 'OUT' => 'Checked Out', 'LUNCH_OUT' => 'Lunch started', 'LUNCH_IN' => 'Back from lunch'];
         return response()->json([
-            'message' => "Checked {$type} successfully",
+            'message' => "{$labels[$data['action']]} successfully",
             'log' => $log,
         ], 201);
     }
 
     /**
-     * Admin report — filterable by user/shop/date range.
+     * Admin report — filterable by user/shop/date range. Each row is
+     * annotated with delay/early-leave/lunch-late-return flags (computed
+     * against the shop's shift times), and matching AttendanceLeave rows
+     * for the same filters are included alongside so the frontend can build
+     * one combined per-staff/per-day timeline from a single response.
      */
     public function index(Request $request)
     {
@@ -205,10 +284,79 @@ class AttendanceController extends Controller
 
         if ($request->user_id) $query->where('user_id', $request->user_id);
         if ($request->shop_id) $query->where('shop_id', $request->shop_id);
-        if ($request->from) $query->whereDate('logged_at', '>=', $request->from);
-        if ($request->to) $query->whereDate('logged_at', '<=', $request->to);
+        if ($request->from) $query->where('logged_at', '>=', $this->localDateRangeUtc($request->from)[0]);
+        if ($request->to) $query->where('logged_at', '<=', $this->localDateRangeUtc($request->to)[1]);
 
-        return response()->json($query->paginate($request->per_page ?? 100));
+        $page = $query->paginate($request->per_page ?? 100);
+        $this->annotateDayFlags($page->getCollection());
+
+        $leaves = \App\Models\AttendanceLeave::with('user:id,name,emp_id')
+            ->when($request->user_id, fn ($q, $id) => $q->where('user_id', $id))
+            ->when($request->from, fn ($q, $d) => $q->where('date', '>=', $d))
+            ->when($request->to, fn ($q, $d) => $q->where('date', '<=', $d))
+            ->orderByDesc('date')
+            ->get();
+
+        return response()->json(array_merge($page->toArray(), ['leaves' => $leaves]));
+    }
+
+    /**
+     * Attaches, to each log in $items:
+     *  - IN:       is_first_of_day + delay_minutes (vs shop shift_start_time)
+     *  - OUT:      is_last_of_day + early_leave_minutes (vs shop shift_end_time)
+     *  - LUNCH_IN: lunch_late_minutes (vs its matching LUNCH_OUT + 45 min)
+     * Groups the affected (user, date) pairs and re-fetches each day's full
+     * log set once (not per-row), so this stays cheap even for a full page.
+     */
+    private function annotateDayFlags($items): void
+    {
+        $pairs = [];
+        foreach ($items as $log) {
+            $date = $this->localDateOf($log->logged_at);
+            $pairs[$log->user_id . '|' . $date] = ['user_id' => $log->user_id, 'date' => $date];
+        }
+        if (empty($pairs)) return;
+
+        $shops = Shop::all(['id', 'shift_start_time', 'shift_end_time'])->keyBy('id');
+
+        $dayLogsCache = [];
+        foreach ($pairs as $key => $p) {
+            $dayLogsCache[$key] = AttendanceLog::where('user_id', $p['user_id'])
+                ->whereBetween('logged_at', $this->localDateRangeUtc($p['date']))
+                ->orderBy('logged_at')
+                ->get(['id', 'type', 'logged_at', 'shop_id']);
+        }
+
+        foreach ($items as $log) {
+            $date = $this->localDateOf($log->logged_at);
+            $dayLogs = $dayLogsCache[$log->user_id . '|' . $date];
+            $shop = $shops->get($log->shop_id);
+
+            if ($log->type === 'IN') {
+                $firstIn = $dayLogs->firstWhere('type', 'IN');
+                $log->is_first_of_day = $firstIn && $firstIn->id === $log->id;
+                if ($log->is_first_of_day && $shop) {
+                    $shiftStart = $this->localClockOn($date, $shop->shift_start_time);
+                    $loggedAt = \Carbon\Carbon::parse($log->logged_at);
+                    $log->delay_minutes = max(0, (int) round(($loggedAt->getTimestamp() - $shiftStart->getTimestamp()) / 60));
+                }
+            } elseif ($log->type === 'OUT') {
+                $lastOut = $dayLogs->where('type', 'OUT')->last();
+                $log->is_last_of_day = $lastOut && $lastOut->id === $log->id;
+                if ($log->is_last_of_day && $shop) {
+                    $shiftEnd = $this->localClockOn($date, $shop->shift_end_time);
+                    $loggedAt = \Carbon\Carbon::parse($log->logged_at);
+                    $log->early_leave_minutes = max(0, (int) round(($shiftEnd->getTimestamp() - $loggedAt->getTimestamp()) / 60));
+                }
+            } elseif ($log->type === 'LUNCH_IN') {
+                $precedingLunchOut = $dayLogs->filter(fn ($l) => $l->type === 'LUNCH_OUT' && $l->logged_at < $log->logged_at)->last();
+                if ($precedingLunchOut) {
+                    $deadline = \Carbon\Carbon::parse($precedingLunchOut->logged_at)->addMinutes(self::LUNCH_MINUTES);
+                    $loggedAt = \Carbon\Carbon::parse($log->logged_at);
+                    $log->lunch_late_minutes = max(0, (int) round(($loggedAt->getTimestamp() - $deadline->getTimestamp()) / 60));
+                }
+            }
+        }
     }
 
     /**
@@ -249,9 +397,9 @@ class AttendanceController extends Controller
             'shop_id' => 'nullable|exists:shops,id',
         ]);
 
-        $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $data['month'])->startOfMonth();
+        $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $data['month'], self::TZ)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();
-        $yesterday = today()->subDay();
+        $yesterday = $this->nowLocal()->startOfDay()->subDay();
         $effectiveEnd = $monthEnd->greaterThan($yesterday) ? $yesterday : $monthEnd;
 
         $staff = \App\Models\User::whereNotNull('joining_date')
@@ -264,40 +412,61 @@ class AttendanceController extends Controller
 
         $presentDates = AttendanceLog::whereIn('user_id', $userIds)
             ->where('type', 'IN')
-            ->whereBetween('logged_at', [$monthStart, $monthEnd->copy()->endOfDay()])
+            ->whereBetween('logged_at', [$monthStart->copy()->utc(), $monthEnd->copy()->utc()])
             ->get(['user_id', 'logged_at'])
             ->groupBy('user_id')
-            ->map(fn ($logs) => $logs->map(fn ($l) => \Carbon\Carbon::parse($l->logged_at)->toDateString())->unique());
+            ->map(fn ($logs) => $logs->map(fn ($l) => $this->localDateOf($l->logged_at))->unique());
+
+        // A manually marked Leave always overrides the auto-computed Absent
+        // for that day — it's a deliberate admin decision, not a guess.
+        $leaveDates = \App\Models\AttendanceLeave::whereIn('user_id', $userIds)
+            ->whereBetween('date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->get(['user_id', 'date', 'type'])
+            ->groupBy('user_id')
+            ->map(fn ($rows) => $rows->keyBy(fn ($r) => $r->date->toDateString()));
 
         $result = [];
         foreach ($staff as $s) {
-            $joinDate = \Carbon\Carbon::parse($s->joining_date)->startOfDay();
+            $joinDate = \Carbon\Carbon::parse($s->joining_date, self::TZ)->startOfDay();
             $rangeStart = $joinDate->greaterThan($monthStart) ? $joinDate : $monthStart->copy();
 
             $days = [];
             $presentCount = 0;
             $absentCount = 0;
+            $leaveFullCount = 0;
+            $leaveHalfCount = 0;
 
             if ($rangeStart->lessThanOrEqualTo($effectiveEnd)) {
                 $userPresent = $presentDates->get($s->id, collect());
+                $userLeaves = $leaveDates->get($s->id, collect());
                 for ($d = $rangeStart->copy(); $d->lessThanOrEqualTo($effectiveEnd); $d->addDay()) {
                     $dateStr = $d->toDateString();
+                    $leave = $userLeaves->get($dateStr);
                     $isPresent = $userPresent->contains($dateStr);
-                    $days[] = ['date' => $dateStr, 'status' => $isPresent ? 'present' : 'absent'];
-                    $isPresent ? $presentCount++ : $absentCount++;
+
+                    if ($leave) {
+                        $status = $leave->type === 'full' ? 'leave_full' : 'leave_half';
+                        $leave->type === 'full' ? $leaveFullCount++ : $leaveHalfCount++;
+                    } else {
+                        $status = $isPresent ? 'present' : 'absent';
+                        $isPresent ? $presentCount++ : $absentCount++;
+                    }
+                    $days[] = ['date' => $dateStr, 'status' => $status];
                 }
             }
 
             $result[] = [
-                'user_id'        => $s->id,
-                'name'           => $s->name,
-                'emp_id'         => $s->emp_id,
-                'shop_name'      => $s->shop->name ?? null,
-                'joining_date'   => $s->joining_date,
-                'present_count'  => $presentCount,
-                'absent_count'   => $absentCount,
-                'days_considered' => $presentCount + $absentCount,
-                'days'           => $days,
+                'user_id'          => $s->id,
+                'name'             => $s->name,
+                'emp_id'           => $s->emp_id,
+                'shop_name'        => $s->shop->name ?? null,
+                'joining_date'     => $s->joining_date,
+                'present_count'    => $presentCount,
+                'absent_count'     => $absentCount,
+                'leave_full_count' => $leaveFullCount,
+                'leave_half_count' => $leaveHalfCount,
+                'days_considered'  => $presentCount + $absentCount + $leaveFullCount + $leaveHalfCount,
+                'days'             => $days,
             ];
         }
 
@@ -347,5 +516,44 @@ class AttendanceController extends Controller
         }
         $attendanceLog->delete();
         return response()->json(['message' => 'Entry deleted']);
+    }
+
+    /**
+     * Admin: mark a staff member's day as a Full or Half day Leave. Instant,
+     * no approval workflow — same spirit as the Manual Entry tool. Marking
+     * the same staff+date again just replaces the previous marking.
+     */
+    public function leaveStore(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess() && !$user->hasRole('Admin')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'date' => 'required|date',
+            'type' => 'required|in:full,half',
+            'notes' => 'nullable|string|max:255',
+        ]);
+
+        $leave = \App\Models\AttendanceLeave::updateOrCreate(
+            ['user_id' => $data['user_id'], 'date' => $data['date']],
+            ['type' => $data['type'], 'notes' => $data['notes'] ?? null, 'created_by' => $user->id]
+        );
+
+        ActivityLog::log('ATTENDANCE_LEAVE_MARKED', $user, "Marked {$data['type']} day leave for user #{$data['user_id']} on {$data['date']}");
+
+        return response()->json(['message' => 'Leave marked', 'leave' => $leave->load('user:id,name,emp_id')], 201);
+    }
+
+    public function leaveDestroy(Request $request, \App\Models\AttendanceLeave $attendanceLeave)
+    {
+        $user = $request->user();
+        if (!$user->hasFullAccess() && !$user->hasRole('Admin')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $attendanceLeave->delete();
+        return response()->json(['message' => 'Leave marking removed']);
     }
 }

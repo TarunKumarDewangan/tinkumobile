@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import FaceCapture from '../components/FaceCapture';
@@ -10,11 +10,22 @@ function getPosition() {
   });
 }
 
+function formatRemaining(ms) {
+  const overdue = ms < 0;
+  const abs = Math.abs(ms);
+  const mins = Math.floor(abs / 60000);
+  const secs = Math.floor((abs % 60000) / 1000);
+  const clock = `${mins}:${String(secs).padStart(2, '0')}`;
+  return overdue ? `${clock} over` : `${clock} left`;
+}
+
 export default function Attendance() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
-  const [capturing, setCapturing] = useState(false); // false | 'enroll' | 'check'
+  const [capturing, setCapturing] = useState(false); // false | 'enroll' | 'IN' | 'OUT' | 'LUNCH_OUT' | 'LUNCH_IN'
   const [submitting, setSubmitting] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const tickRef = useRef(null);
 
   const loadStatus = () => {
     setLoading(true);
@@ -25,6 +36,13 @@ export default function Attendance() {
   };
 
   useEffect(() => { loadStatus(); }, []);
+
+  useEffect(() => {
+    if (status?.state === 'on_lunch') {
+      tickRef.current = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(tickRef.current);
+    }
+  }, [status?.state]);
 
   const handleEnrollCapture = async ({ descriptor, photo }) => {
     setCapturing(false);
@@ -40,13 +58,13 @@ export default function Attendance() {
     }
   };
 
-  const handleCheckCapture = async ({ descriptor, photo }) => {
+  const handleCheckCapture = (action) => async ({ descriptor, photo }) => {
     setCapturing(false);
     setSubmitting(true);
     try {
       const pos = await getPosition();
       const { data } = await api.post('/attendance/check', {
-        descriptor, photo,
+        action, descriptor, photo,
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
       });
@@ -66,6 +84,9 @@ export default function Attendance() {
   if (loading) {
     return <div className="text-center py-5"><div className="spinner-border text-primary" /></div>;
   }
+
+  const stateIcon = { not_in: '🚪', checked_in: '✅', on_lunch: '🍴' };
+  const remainingMs = status?.lunch_deadline ? (new Date(status.lunch_deadline).getTime() - now) : null;
 
   return (
     <div>
@@ -88,8 +109,8 @@ export default function Attendance() {
         {capturing === 'enroll' && (
           <FaceCapture onCapture={handleEnrollCapture} onCancel={() => setCapturing(false)} />
         )}
-        {capturing === 'check' && (
-          <FaceCapture onCapture={handleCheckCapture} onCancel={() => setCapturing(false)} />
+        {(capturing === 'IN' || capturing === 'OUT' || capturing === 'LUNCH_OUT' || capturing === 'LUNCH_IN') && (
+          <FaceCapture onCapture={handleCheckCapture(capturing)} onCancel={() => setCapturing(false)} />
         )}
 
         {!capturing && status?.shop && (
@@ -107,21 +128,59 @@ export default function Attendance() {
             ) : (
               <>
                 <div className="mb-3">
-                  <div className="fs-1 mb-2">{status.next_action === 'IN' ? '🚪' : '👋'}</div>
+                  <div className="fs-1 mb-2">{stateIcon[status.state]}</div>
                   <p className="text-muted small mb-1">
                     {status.last_log
-                      ? `Last: ${status.last_log.type} at ${new Date(status.last_log.logged_at).toLocaleTimeString()}`
+                      ? `Last: ${status.last_log.type.replace('_', ' ')} at ${new Date(status.last_log.logged_at).toLocaleTimeString()}`
                       : 'No attendance yet today.'}
                   </p>
-                  <p className="fw-bold mb-0">Next action: {status.next_action === 'IN' ? 'Check In' : 'Check Out'}</p>
                 </div>
-                <button
-                  className={`btn ${status.next_action === 'IN' ? 'btn-success' : 'btn-danger'}`}
-                  disabled={submitting || !status?.shop?.latitude}
-                  onClick={() => setCapturing('check')}
-                >
-                  {submitting ? 'Please wait...' : (status.next_action === 'IN' ? '✅ Check In' : '🚪 Check Out')}
-                </button>
+
+                {status.state === 'on_lunch' && remainingMs !== null && (
+                  <div className={`alert small ${remainingMs < 0 ? 'alert-danger' : 'alert-info'}`}>
+                    🍴 On lunch — {formatRemaining(remainingMs)} {remainingMs < 0 ? '(late return)' : '(45 min break)'}
+                  </div>
+                )}
+
+                {status.state === 'not_in' && (
+                  <button
+                    className="btn btn-success"
+                    disabled={submitting || !status?.shop?.latitude}
+                    onClick={() => setCapturing('IN')}
+                  >
+                    {submitting ? 'Please wait...' : '✅ Check In'}
+                  </button>
+                )}
+
+                {status.state === 'checked_in' && (
+                  <div className="d-flex gap-2 justify-content-center flex-wrap">
+                    <button
+                      className="btn btn-danger"
+                      disabled={submitting || !status?.shop?.latitude}
+                      onClick={() => setCapturing('OUT')}
+                    >
+                      {submitting ? 'Please wait...' : '🚪 Check Out'}
+                    </button>
+                    <button
+                      className="btn btn-outline-primary"
+                      disabled={submitting || !status?.shop?.latitude}
+                      onClick={() => setCapturing('LUNCH_OUT')}
+                    >
+                      🍴 Lunch
+                    </button>
+                  </div>
+                )}
+
+                {status.state === 'on_lunch' && (
+                  <button
+                    className="btn btn-primary"
+                    disabled={submitting || !status?.shop?.latitude}
+                    onClick={() => setCapturing('LUNCH_IN')}
+                  >
+                    {submitting ? 'Please wait...' : '🍽️ Back from Lunch'}
+                  </button>
+                )}
+
                 <div className="mt-3">
                   <button className="btn btn-sm btn-link text-muted" onClick={() => setCapturing('enroll')}>Re-enroll my face</button>
                 </div>

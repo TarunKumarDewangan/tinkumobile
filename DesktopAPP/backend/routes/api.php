@@ -281,6 +281,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('attendance', [AttendanceController::class, 'index']);
     Route::get('attendance/summary', [AttendanceController::class, 'summary']);
     Route::post('attendance/manual', [AttendanceController::class, 'storeManual']);
+    Route::post('attendance/leave', [AttendanceController::class, 'leaveStore']);
+    Route::delete('attendance/leave/{attendanceLeave}', [AttendanceController::class, 'leaveDestroy']);
     Route::delete('attendance/{attendanceLog}', [AttendanceController::class, 'destroy']);
 
     // IMEI Audit — finds duplicate-Product-per-physical-IMEI data issues (phantom stock etc.)
