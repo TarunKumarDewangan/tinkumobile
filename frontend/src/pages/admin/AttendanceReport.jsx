@@ -31,7 +31,7 @@ function addDaysStr(dateStr, days) {
 }
 
 const TYPE_LABEL = { IN: 'Check In', OUT: 'Check Out', LUNCH_OUT: 'Lunch Out', LUNCH_IN: 'Back from Lunch' };
-const TYPE_BADGE = { IN: 'bg-success', OUT: 'bg-secondary', LUNCH_OUT: 'bg-warning text-dark', LUNCH_IN: 'bg-primary' };
+const TYPE_SHORT = { IN: 'In', OUT: 'Out', LUNCH_OUT: 'L.Out', LUNCH_IN: 'L.In' };
 
 export default function AttendanceReport() {
   const [view, setView] = useState('log'); // 'log' | 'summary'
@@ -295,66 +295,127 @@ export default function AttendanceReport() {
               <span className="text-muted small">{collapsedStaff[user?.id] ? '▸ Show' : '▾ Hide'} ({days.length} day{days.length !== 1 ? 's' : ''})</span>
             </div>
             {!collapsedStaff[user?.id] && (
-              <div className="p-3">
-                {days.map(day => (
-                  <div key={day.date} className="mb-3 pb-3 border-bottom">
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                      <strong className="small">{day.date}</strong>
-                      {day.leave && (
-                        <span className="badge bg-info text-dark">
-                          🏖️ {day.leave.type === 'full' ? 'Full Day Leave' : 'Half Day Leave'}
-                          <button
-                            className="btn btn-xs btn-link text-dark p-0 ms-2"
-                            style={{ textDecoration: 'underline' }}
-                            onClick={() => handleLeaveDelete(day.leave.id)}
-                          >remove</button>
-                        </span>
-                      )}
-                    </div>
-                    {day.events.length === 0 ? (
-                      <div className="text-muted small">No punches this day.</div>
-                    ) : (
-                      <div className="d-flex flex-column gap-1">
-                        {day.events.map((ev, idx) => {
-                          const noLunchReturn = ev.type === 'LUNCH_OUT'
-                            && !day.events.slice(idx + 1).some(e2 => e2.type === 'LUNCH_IN')
-                            && day.date !== todayIstStr();
-                          return (
-                            <div key={ev.id} className="d-flex align-items-center gap-2 flex-wrap">
-                              {ev.photo_url ? (
-                                <img
-                                  src={ev.photo_url} alt="" width={32} height={32} role="button"
-                                  style={{ objectFit: 'cover', borderRadius: 6, cursor: 'pointer' }}
-                                  onClick={() => setPreviewPhoto(ev.photo_url)}
-                                />
-                              ) : <div style={{ width: 32, height: 32 }} className="text-center text-muted small">—</div>}
-                              <span className="small text-muted" style={{ width: 90 }}>{istTimeStr(ev.logged_at)}</span>
-                              <span className={`badge ${TYPE_BADGE[ev.type]}`}>{TYPE_LABEL[ev.type]}</span>
-                              {ev.is_first_of_day && ev.delay_minutes > 0 && (
-                                <span className="badge bg-danger">⏰ Delay {ev.delay_minutes}m</span>
-                              )}
-                              {ev.is_last_of_day && ev.early_leave_minutes > 0 && (
-                                <span className="badge bg-danger">🚪 Early Leave {ev.early_leave_minutes}m</span>
-                              )}
-                              {ev.type === 'LUNCH_IN' && ev.lunch_late_minutes > 0 && (
-                                <span className="badge bg-danger">🍴 Late Return {ev.lunch_late_minutes}m</span>
-                              )}
-                              {noLunchReturn && (
-                                <span className="badge bg-warning text-dark">⚠️ No return recorded</span>
-                              )}
-                              {ev.is_manual ? (
-                                <span className="badge bg-secondary">Manual{ev.created_by ? ` by ${ev.createdBy?.name}` : ''}</span>
-                              ) : (
-                                <span className="text-muted x-small">{ev.distance_meters?.toFixed(1)}m · {(ev.face_match_score * 100).toFixed(0)}%</span>
-                              )}
-                              <button className="btn btn-xs btn-outline-danger ms-auto" onClick={() => handleDelete(ev.id)}>Delete</button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="table-responsive">
+                <table className="table table-bordered table-sm mb-0 align-middle">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 100 }}>Date</th>
+                      <th>Check In</th>
+                      <th>Lunch</th>
+                      <th>Check Out</th>
+                      <th style={{ width: 90 }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {days.map(day => {
+                      const inEvent = day.events.find(e => e.type === 'IN');
+                      const outEvents = day.events.filter(e => e.type === 'OUT');
+                      const outEvent = outEvents[outEvents.length - 1];
+                      const lunchOuts = day.events.filter(e => e.type === 'LUNCH_OUT');
+                      const lunchIns = day.events.filter(e => e.type === 'LUNCH_IN');
+                      const lunchPairs = lunchOuts.map((lo, i) => ({ out: lo, in: lunchIns[i] || null }));
+                      const allEvents = day.events;
+
+                      const Thumb = ({ ev }) => ev.photo_url ? (
+                        <img
+                          src={ev.photo_url} alt="" width={26} height={26} role="button"
+                          style={{ objectFit: 'cover', borderRadius: 5, cursor: 'pointer' }}
+                          onClick={() => setPreviewPhoto(ev.photo_url)}
+                        />
+                      ) : null;
+
+                      return (
+                        <tr key={day.date}>
+                          <td>
+                            <div className="small fw-bold">{day.date}</div>
+                            {day.leave && (
+                              <div className="mt-1">
+                                <span className="badge bg-info text-dark">
+                                  🏖️ {day.leave.type === 'full' ? 'Full Day' : 'Half Day'}
+                                  <button
+                                    className="btn btn-xs btn-link text-dark p-0 ms-1"
+                                    style={{ textDecoration: 'underline' }}
+                                    onClick={() => handleLeaveDelete(day.leave.id)}
+                                  >×</button>
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            {inEvent ? (
+                              <div className="d-flex align-items-center gap-1 flex-wrap">
+                                <Thumb ev={inEvent} />
+                                <span className="small">{istTimeStr(inEvent.logged_at)}</span>
+                                {inEvent.is_first_of_day && inEvent.delay_minutes > 0 && (
+                                  <span className="badge bg-danger">⏰ Delay {inEvent.delay_minutes}m</span>
+                                )}
+                                {inEvent.is_manual && <span className="badge bg-secondary">Manual</span>}
+                              </div>
+                            ) : <span className="text-muted small">—</span>}
+                          </td>
+                          <td>
+                            {lunchPairs.length === 0 ? <span className="text-muted small">—</span> : (
+                              <div className="d-flex flex-column gap-1">
+                                {lunchPairs.map((pair, i) => {
+                                  const stillOut = !pair.in && day.date !== todayIstStr();
+                                  return (
+                                    <div key={i} className="d-flex align-items-center gap-1 flex-wrap">
+                                      <Thumb ev={pair.out} />
+                                      <span className="small">{istTimeStr(pair.out.logged_at)}</span>
+                                      <span className="text-muted small">→</span>
+                                      {pair.in ? (
+                                        <>
+                                          <Thumb ev={pair.in} />
+                                          <span className="small">{istTimeStr(pair.in.logged_at)}</span>
+                                          {pair.in.lunch_late_minutes > 0 && (
+                                            <span className="badge bg-danger">🍴 Late {pair.in.lunch_late_minutes}m</span>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <span className="text-muted small">—</span>
+                                      )}
+                                      {stillOut && <span className="badge bg-warning text-dark">⚠️ No return</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            {outEvent ? (
+                              <div className="d-flex align-items-center gap-1 flex-wrap">
+                                <Thumb ev={outEvent} />
+                                <span className="small">{istTimeStr(outEvent.logged_at)}</span>
+                                {outEvent.is_last_of_day && outEvent.early_leave_minutes > 0 && (
+                                  <span className="badge bg-danger">🚪 Early Leave {outEvent.early_leave_minutes}m</span>
+                                )}
+                                {outEvent.is_manual && <span className="badge bg-secondary">Manual</span>}
+                              </div>
+                            ) : <span className="text-muted small">—</span>}
+                          </td>
+                          <td>
+                            {allEvents.length === 0 ? (
+                              <span className="text-muted small">No punches</span>
+                            ) : (
+                              <div className="d-flex flex-wrap gap-1">
+                                {allEvents.map(ev => (
+                                  <button
+                                    key={ev.id}
+                                    className="btn btn-xs btn-outline-danger"
+                                    title={`Delete ${TYPE_LABEL[ev.type]} @ ${istTimeStr(ev.logged_at)}`}
+                                    onClick={() => handleDelete(ev.id)}
+                                  >
+                                    {TYPE_SHORT[ev.type]} ✕
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
