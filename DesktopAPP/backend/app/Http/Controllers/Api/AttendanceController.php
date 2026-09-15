@@ -412,21 +412,33 @@ class AttendanceController extends Controller
 
         $staff = \App\Models\User::whereNotNull('joining_date')
             ->when(!$isAdmin, fn ($q) => $q->where('id', $user->id))
-            ->when($isAdmin && ($data['user_id'] ?? null), fn ($q, $id) => $q->where('id', $id))
-            ->when($isAdmin && ($data['shop_id'] ?? null), fn ($q, $id) => $q->where('shop_id', $id))
+            ->when($isAdmin, fn ($q) => $q
+                ->when($data['user_id'] ?? null, fn ($q2, $id) => $q2->where('id', $id))
+                ->when($data['shop_id'] ?? null, fn ($q2, $id) => $q2->where('shop_id', $id)))
             ->with('shop:id,name')
             ->get(['id', 'name', 'emp_id', 'shop_id', 'joining_date']);
 
         $userIds = $staff->pluck('id');
+        $shops = Shop::all(['id', 'shift_start_time', 'monthly_leave_limit'])->keyBy('id');
 
-        $presentDates = AttendanceLog::whereIn('user_id', $userIds)
+        // First IN per (user, date), with its shop — used both for the
+        // present/absent dates and for the auto-Half-Day-Front-on-delay rule.
+        $firstInByUserDate = AttendanceLog::whereIn('user_id', $userIds)
             ->where('type', 'IN')
             ->whereBetween('logged_at', [$monthStart->copy()->utc(), $monthEnd->copy()->utc()])
-            ->get(['user_id', 'logged_at'])
+            ->orderBy('logged_at')
+            ->get(['user_id', 'logged_at', 'shop_id'])
             ->groupBy('user_id')
-            ->map(fn ($logs) => $logs->map(fn ($l) => $this->localDateOf($l->logged_at))->unique());
+            ->map(function ($logs) {
+                $byDate = [];
+                foreach ($logs as $l) {
+                    $date = $this->localDateOf($l->logged_at);
+                    if (!isset($byDate[$date])) $byDate[$date] = $l; // first, since already ordered
+                }
+                return $byDate;
+            });
 
-        // A manually marked Leave always overrides the auto-computed Absent
+        // A manually marked Leave always overrides the auto-computed status
         // for that day — it's a deliberate admin decision, not a guess.
         $leaveDates = \App\Models\AttendanceLeave::whereIn('user_id', $userIds)
             ->whereBetween('date', [$monthStart->toDateString(), $monthEnd->toDateString()])
@@ -438,6 +450,7 @@ class AttendanceController extends Controller
         foreach ($staff as $s) {
             $joinDate = \Carbon\Carbon::parse($s->joining_date, self::TZ)->startOfDay();
             $rangeStart = $joinDate->greaterThan($monthStart) ? $joinDate : $monthStart->copy();
+            $limit = $shops->get($s->shop_id)?->monthly_leave_limit ?? 2;
 
             $days = [];
             $presentCount = 0;
@@ -445,26 +458,54 @@ class AttendanceController extends Controller
             $leaveFullCount = 0;
             $leaveHalfFrontCount = 0;
             $leaveHalfLaterCount = 0;
+            $quotaUsed = 0;
 
             if ($rangeStart->lessThanOrEqualTo($effectiveEnd)) {
-                $userPresent = $presentDates->get($s->id, collect());
+                $userFirstIns = $firstInByUserDate->get($s->id, collect());
                 $userLeaves = $leaveDates->get($s->id, collect());
                 for ($d = $rangeStart->copy(); $d->lessThanOrEqualTo($effectiveEnd); $d->addDay()) {
                     $dateStr = $d->toDateString();
                     $leave = $userLeaves->get($dateStr);
-                    $isPresent = $userPresent->contains($dateStr);
+                    $firstIn = $userFirstIns[$dateStr] ?? null;
+                    $isPresent = (bool) $firstIn;
 
                     if ($leave) {
+                        // A manual marking always wins and always consumes a slot,
+                        // regardless of the auto-delay rule below.
                         $status = 'leave_' . $leave->type; // leave_full | leave_half_front | leave_half_later
+                        $quotaUsed++;
                         match ($leave->type) {
                             'full' => $leaveFullCount++,
                             'half_front' => $leaveHalfFrontCount++,
                             'half_later' => $leaveHalfLaterCount++,
                             default => null,
                         };
+                    } elseif ($isPresent) {
+                        $inShop = $shops->get($firstIn->shop_id);
+                        $delayMinutes = $inShop
+                            ? max(0, (int) round((\Carbon\Carbon::parse($firstIn->logged_at)->getTimestamp() - $this->localClockOn($dateStr, $inShop->shift_start_time)->getTimestamp()) / 60))
+                            : 0;
+
+                        if ($delayMinutes >= 5) {
+                            // 5+ minutes late — auto Half Day (Front), unless the
+                            // monthly leave quota is already used up, in which case
+                            // the day counts as Absent instead (still showed up,
+                            // but late arrivals beyond the allowance aren't excused).
+                            if ($quotaUsed < $limit) {
+                                $status = 'leave_half_front';
+                                $leaveHalfFrontCount++;
+                                $quotaUsed++;
+                            } else {
+                                $status = 'absent';
+                                $absentCount++;
+                            }
+                        } else {
+                            $status = 'present';
+                            $presentCount++;
+                        }
                     } else {
-                        $status = $isPresent ? 'present' : 'absent';
-                        $isPresent ? $presentCount++ : $absentCount++;
+                        $status = 'absent';
+                        $absentCount++;
                     }
                     $days[] = ['date' => $dateStr, 'status' => $status];
                 }
@@ -535,6 +576,62 @@ class AttendanceController extends Controller
     }
 
     /**
+     * How many of the monthly leave quota this user has already used up,
+     * for $excludeDate's month, not counting $excludeDate itself — mirrors
+     * summary()'s day-walk (manual leave always counts; otherwise a 5+ min
+     * late first-IN auto-counts up to $limit) so the "can I mark one more?"
+     * check here never drifts from what the report actually shows.
+     */
+    private function quotaUsedForUserMonth(int $userId, string $monthYm, string $excludeDate, int $limit): int
+    {
+        $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $monthYm, self::TZ)->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $yesterday = $this->nowLocal()->startOfDay()->subDay();
+        $effectiveEnd = $monthEnd->greaterThan($yesterday) ? $yesterday : $monthEnd;
+        if ($monthStart->greaterThan($effectiveEnd)) return 0;
+
+        $shops = Shop::all(['id', 'shift_start_time'])->keyBy('id');
+
+        $firstInByDate = AttendanceLog::where('user_id', $userId)
+            ->where('type', 'IN')
+            ->whereBetween('logged_at', [$monthStart->copy()->utc(), $monthEnd->copy()->utc()])
+            ->orderBy('logged_at')
+            ->get(['logged_at', 'shop_id'])
+            ->reduce(function ($carry, $l) {
+                $date = $this->localDateOf($l->logged_at);
+                if (!isset($carry[$date])) $carry[$date] = $l;
+                return $carry;
+            }, []);
+
+        $leavesByDate = \App\Models\AttendanceLeave::where('user_id', $userId)
+            ->whereBetween('date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->get(['date'])
+            ->keyBy(fn ($r) => $r->date->toDateString());
+
+        $quotaUsed = 0;
+        for ($d = $monthStart->copy(); $d->lessThanOrEqualTo($effectiveEnd); $d->addDay()) {
+            $dateStr = $d->toDateString();
+            if ($dateStr === $excludeDate) continue;
+
+            if ($leavesByDate->has($dateStr)) {
+                $quotaUsed++;
+                continue;
+            }
+            $firstIn = $firstInByDate[$dateStr] ?? null;
+            if (!$firstIn) continue;
+
+            $shop = $shops->get($firstIn->shop_id);
+            if (!$shop) continue;
+            $delayMinutes = max(0, (int) round((\Carbon\Carbon::parse($firstIn->logged_at)->getTimestamp() - $this->localClockOn($dateStr, $shop->shift_start_time)->getTimestamp()) / 60));
+            if ($delayMinutes >= 5 && $quotaUsed < $limit) {
+                $quotaUsed++;
+            }
+        }
+
+        return $quotaUsed;
+    }
+
+    /**
      * Admin: mark a staff member's day as a Full or Half day Leave. Instant,
      * no approval workflow — same spirit as the Manual Entry tool. Marking
      * the same staff+date again just replaces the previous marking.
@@ -555,13 +652,13 @@ class AttendanceController extends Controller
 
         $target = \App\Models\User::find($data['user_id']);
         $limit = $target->shop->monthly_leave_limit ?? 2;
-        $monthStart = \Carbon\Carbon::parse($data['date'], self::TZ)->startOfMonth()->toDateString();
-        $monthEnd = \Carbon\Carbon::parse($data['date'], self::TZ)->endOfMonth()->toDateString();
+        $monthYm = \Carbon\Carbon::parse($data['date'], self::TZ)->format('Y-m');
 
-        $existingThisMonth = \App\Models\AttendanceLeave::where('user_id', $data['user_id'])
-            ->whereBetween('date', [$monthStart, $monthEnd])
-            ->where('date', '!=', $data['date']) // re-marking the same day isn't a new day against the limit
-            ->count();
+        // Counts BOTH manually-marked leaves and auto-Half-Day-Front days
+        // (5+ min late arrivals, see checkInOut()/summary()) toward the same
+        // monthly quota, so an admin can't manually add a leave day the
+        // system already effectively granted via late-arrival auto-marking.
+        $existingThisMonth = $this->quotaUsedForUserMonth($data['user_id'], $monthYm, $data['date'], $limit);
 
         if ($existingThisMonth >= $limit) {
             return response()->json([

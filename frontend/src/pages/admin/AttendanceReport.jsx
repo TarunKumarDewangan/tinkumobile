@@ -258,6 +258,9 @@ export default function AttendanceReport({ readOnly = false }) {
             <span className="badge bg-warning text-dark me-1">HLF</span>Half Leave (Front) &nbsp;
             <span className="badge bg-secondary me-1">HLL</span>Half Leave (Later)
           </div>
+          <div className="px-2 pb-2 small text-muted">
+            Arriving 5+ minutes late auto-marks that day HLF, using up one of the staff member's monthly leave days — once that limit is used up, further late days auto-mark Absent instead. Set the limit per shop in Shops Manager.
+          </div>
           {summaryLoading ? (
             <div className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary" /></div>
           ) : (
@@ -444,7 +447,14 @@ export default function AttendanceReport({ readOnly = false }) {
                           <td>{inEvent ? <span className="small">{istTimeStr(inEvent.logged_at)}{inEvent.is_manual && <span className="badge bg-secondary ms-1">M</span>}</span> : <span className="text-muted small">—</span>}
                             {extraIns > 0 && <div className="text-muted x-small">+{extraIns} more</div>}
                           </td>
-                          <td>{inEvent?.is_first_of_day && inEvent.delay_minutes > 0 ? <span className="badge bg-danger">⏰ {inEvent.delay_minutes}m</span> : <span className="text-muted small">—</span>}</td>
+                          <td>
+                            {inEvent?.is_first_of_day && inEvent.delay_minutes > 0 ? (
+                              <>
+                                <span className="badge bg-danger">⏰ {inEvent.delay_minutes}m</span>
+                                {inEvent.delay_minutes >= 5 && <div className="text-muted x-small mt-1">→ auto HLF/Absent, see Grid View</div>}
+                              </>
+                            ) : <span className="text-muted small">—</span>}
+                          </td>
                           <td>{inEvent ? <Thumb ev={inEvent} /> : <span className="text-muted small">—</span>}</td>
 
                           {/* Lunch: Out | In | Late | Photo (one line per pair if more than one) */}
