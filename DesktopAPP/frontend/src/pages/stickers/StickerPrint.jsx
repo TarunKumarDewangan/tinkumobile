@@ -68,8 +68,10 @@ export default function StickerPrint() {
                 {specs && <div className="sticker-specs">{specs}</div>}
                 <Barcode value={barcodeValue} />
                 {s.imei && <div className="sticker-imei">IMEI: {s.imei}</div>}
-                <div className="sticker-mrp">MRP: ₹{parseFloat(s.mrp || 0).toLocaleString('en-IN')}</div>
-                <div className="sticker-price">PRICE: ₹{parseFloat(s.price || 0).toLocaleString('en-IN')}</div>
+                <div className="sticker-pricing">
+                  <span className="sticker-mrp">MRP: ₹{parseFloat(s.mrp || 0).toLocaleString('en-IN')}</span>
+                  <span className="sticker-price">PRICE: ₹{parseFloat(s.price || 0).toLocaleString('en-IN')}</span>
+                </div>
               </div>
             );
           })}
@@ -111,15 +113,15 @@ export default function StickerPrint() {
         .sticker-specs { font-size: 6pt; color: #444; line-height: 1.1; }
         .sticker-barcode { width: 100%; max-width: 36mm; height: auto; }
         .sticker-imei { font-size: 5.5pt; color: #444; line-height: 1.1; letter-spacing: 0.2px; }
-        .sticker-mrp { font-size: 6.5pt; color: #666; line-height: 1.1; }
-        .sticker-price { font-size: 9.5pt; font-weight: 800; line-height: 1.1; }
+        .sticker-pricing { display: flex; justify-content: center; gap: 1.5mm; width: 100%; }
+        .sticker-mrp, .sticker-price { font-size: 6.5pt; font-weight: 800; color: #000; line-height: 1.1; white-space: nowrap; }
 
         @media print {
           @page { size: 40mm 40mm; margin: 0; }
           body * { visibility: hidden; }
           .sticker-sheet, .sticker-sheet * { visibility: visible; }
           .sticker-sheet { position: absolute; left: 0; top: 0; gap: 0; }
-          .sticker { border: none; page-break-after: always; }
+          .sticker { border: 1px solid #000; page-break-after: always; }
           .d-print-none { display: none !important; }
         }
       `}} />
