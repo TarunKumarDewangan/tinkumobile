@@ -84,5 +84,36 @@ class EntityNote extends Model
                 $note->update(['balance_at_time' => $liveBalance]);
             }
         }
+
+        static::dedupeOpenPromisesPerEntity();
+    }
+
+    /**
+     * Self-heals data from before EntityNoteController::store() started
+     * superseding by entity (not just by invoice) — any entity left with
+     * more than one still-PENDING note (created from different pages on
+     * different days) keeps only the one with the latest promise_date;
+     * the rest are auto-resolved. Runs every time reconcilePending() does,
+     * so existing duplicates clear themselves on the next report/page load
+     * with no manual cleanup step needed.
+     */
+    private static function dedupeOpenPromisesPerEntity(): void
+    {
+        $duplicateEntityIds = static::where('status', 'PENDING')
+            ->whereNotNull('entity_id')
+            ->select('entity_id')
+            ->groupBy('entity_id')
+            ->havingRaw('COUNT(*) > 1')
+            ->pluck('entity_id');
+
+        foreach ($duplicateEntityIds as $entityId) {
+            $pending = static::where('entity_id', $entityId)
+                ->where('status', 'PENDING')
+                ->orderByDesc('promise_date')
+                ->orderByDesc('id')
+                ->get();
+
+            $pending->slice(1)->each(fn ($n) => $n->update(['status' => 'FULFILLED', 'resolved_at' => now()]));
+        }
     }
 }

@@ -66,6 +66,18 @@ class EntityNoteController extends Controller
                 ->update(['status' => 'FULFILLED', 'resolved_at' => now()]);
         }
 
+        // Also supersede any other open promise for the SAME customer/entity,
+        // regardless of which invoice (or none) it was tied to — promises are
+        // created from several different pages (Sale Details, Pending
+        // Balance, Promise to Pay), and without this a person who already had
+        // one open promise just accumulates a second, third, etc. every time
+        // staff log a fresh follow-up, all showing the same live balance.
+        if (! empty($data['entity_id'])) {
+            EntityNote::where('entity_id', $data['entity_id'])
+                ->where('status', 'PENDING')
+                ->update(['status' => 'FULFILLED', 'resolved_at' => now()]);
+        }
+
         return response()->json(EntityNote::create($data)->load('entity', 'createdBy'), 201);
     }
 
