@@ -290,7 +290,6 @@ class LedgerController extends Controller
         }
 
         $entities = $entities->get();
-        $accounting = app(AccountingService::class);
 
         // Bulk load all ledgers for the fetched entities to avoid N+1 query issues
         $entityIds = $entities->pluck('id');
@@ -337,8 +336,21 @@ class LedgerController extends Controller
             ->get()
             ->keyBy('id');
 
-        $results = $entities->map(function ($entity) use ($accounting, $ledgers, $transactionMap, $transactionCategoryMap, $transactionEntityIdMap, $saleInvoices, $purchaseInvoices) {
-            $closing = $accounting->getClosingBalance($entity);
+        // getClosingBalance() runs its own SUM(debit)/SUM(credit) query per
+        // entity — fine for a single-entity Ledger view, but an N+1 disaster
+        // here where every entity on the page ran it separately (hundreds of
+        // queries for a business with hundreds of customers/suppliers). One
+        // grouped query up front replaces all of them.
+        $closingTotals = Ledger::whereIn('entity_id', $entityIds)
+            ->selectRaw('entity_id, SUM(debit) as dr, SUM(credit) as cr')
+            ->groupBy('entity_id')
+            ->get()
+            ->keyBy('entity_id');
+
+        $results = $entities->map(function ($entity) use ($ledgers, $transactionMap, $transactionCategoryMap, $transactionEntityIdMap, $saleInvoices, $purchaseInvoices, $closingTotals) {
+            $openingSigned = ($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float) $entity->opening_balance;
+            $closingTotal = $closingTotals->get($entity->id);
+            $closing = $openingSigned + ((float) ($closingTotal->dr ?? 0) - (float) ($closingTotal->cr ?? 0));
             
             // Filter ledgers in memory for this entity
             $entityLedgers = $ledgers->where('entity_id', $entity->id);
