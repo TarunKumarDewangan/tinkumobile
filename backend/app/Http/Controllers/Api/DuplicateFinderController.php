@@ -71,6 +71,48 @@ class DuplicateFinderController extends Controller
             ];
         }
 
+        // Second pattern: a SALE_INCOME and a SHOP_FINANCE_DOWN_PAYMENT
+        // transaction for the same invoice, same amount, close in time — the
+        // exact shape of the "EMI down payment recorded twice" bug (the
+        // frontend always mirrors total_paid to equal the Shop Finance down
+        // payment, but the backend used to record both as separate income).
+        // Fixed going forward in SaleInvoiceController; this finds any that
+        // already exist. The fix keeps the SHOP_FINANCE_DOWN_PAYMENT entry
+        // (that's what the corrected code produces) and removes the
+        // duplicate SALE_INCOME one.
+        $pairGroups = $rows
+            ->where('entity_type', \App\Models\SaleInvoice::class)
+            ->groupBy(fn ($t) => $t->entity_type . '|' . $t->entity_id . '|' . $t->amount);
+
+        foreach ($pairGroups as $key => $group) {
+            $saleIncome = $group->firstWhere('category', 'SALE_INCOME');
+            $shopFinanceDp = $group->firstWhere('category', 'SHOP_FINANCE_DOWN_PAYMENT');
+            if (!$saleIncome || !$shopFinanceDp) continue;
+
+            $spanSeconds = abs($saleIncome->created_at->diffInSeconds($shopFinanceDp->created_at));
+            if ($spanSeconds > self::WINDOW_MINUTES * 60) continue;
+
+            $issues[] = [
+                'key'          => $key . '|pair',
+                'entity_type'  => class_basename($saleIncome->entity_type),
+                'entity_id'    => $saleIncome->entity_id,
+                'entity_name'  => $saleIncome->entity_name,
+                'category'     => 'SALE_INCOME + SHOP_FINANCE_DOWN_PAYMENT',
+                'type'         => $saleIncome->type,
+                'amount'       => (float) $saleIncome->amount,
+                'description'  => 'Down payment recorded twice — once as general sale income, once as the Shop Finance plan\'s own down payment',
+                'count'        => 2,
+                'extra_amount' => (float) $saleIncome->amount,
+                'span_seconds' => $spanSeconds,
+                // First = kept (the correct SHOP_FINANCE_DOWN_PAYMENT entry),
+                // rest = deleted — matches how the Fix button reads this array.
+                'transactions' => [
+                    ['id' => $shopFinanceDp->id, 'created_at' => $shopFinanceDp->created_at],
+                    ['id' => $saleIncome->id, 'created_at' => $saleIncome->created_at],
+                ],
+            ];
+        }
+
         // Worst (most extra amount) first.
         usort($issues, fn ($a, $b) => $b['extra_amount'] <=> $a['extra_amount']);
 

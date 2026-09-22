@@ -274,7 +274,15 @@ class SaleInvoiceController extends Controller
             $invoice->updatePaymentStatus();
 
             // Record Income Transaction using Service (Only for the cash portion, not exchange credit)
-            $cashPaid = (float) ($invoice->total_paid);
+            //
+            // When a Shop Finance plan is active, the frontend always mirrors
+            // total_paid to equal shop_finance.down_payment — it's the SAME
+            // cash handover, not two separate payments. That amount is
+            // recorded once below as SHOP_FINANCE_DOWN_PAYMENT, so it must be
+            // excluded here or the customer's ledger gets credited twice for
+            // one payment (e.g. a ₹14,500 down payment showing as ₹29,000).
+            $shopFinanceDownPayment = (float) ($data['shop_finance']['down_payment'] ?? 0);
+            $cashPaid = max(0, (float) ($invoice->total_paid) - $shopFinanceDownPayment);
             if ($cashPaid > 0) {
                 $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($invoice, [
@@ -817,7 +825,25 @@ class SaleInvoiceController extends Controller
             }
 
             // Record updated cash income transaction if total_paid > 0
-            $cashPaid = (float) ($saleInvoice->total_paid);
+            //
+            // Same reasoning as store(): the frontend always mirrors total_paid
+            // to equal shop_finance.down_payment when a Shop Finance plan is
+            // active — one cash handover, not two — and that amount is
+            // recorded separately below as SHOP_FINANCE_DOWN_PAYMENT, so it
+            // must be excluded here to avoid crediting it twice.
+            //
+            // total_paid also already includes any later top-ups collected via
+            // addPayment() (its own 'SALE' category transaction, never touched
+            // by this delete-then-recreate block above) — without subtracting
+            // those out too, editing a sale after a top-up recreates a second
+            // SALE_INCOME entry for the same money the 'SALE' entry already
+            // covers.
+            $shopFinanceDownPayment = (float) ($data['shop_finance']['down_payment'] ?? 0);
+            $existingTopUps = (float) \App\Models\Transaction::where('entity_type', get_class($saleInvoice))
+                ->where('entity_id', $saleInvoice->id)
+                ->where('category', 'SALE')
+                ->sum('amount');
+            $cashPaid = max(0, (float) ($saleInvoice->total_paid) - $shopFinanceDownPayment - $existingTopUps);
             if ($cashPaid > 0) {
                 $itemNames = $this->itemNamesSummary($data['items']);
                 $this->transactionService->recordForModel($saleInvoice, [

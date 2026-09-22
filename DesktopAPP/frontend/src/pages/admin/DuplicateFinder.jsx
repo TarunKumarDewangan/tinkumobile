@@ -46,12 +46,13 @@ export default function DuplicateFinder() {
       </div>
 
       <div className="alert alert-secondary small">
-        Finds transactions that look like they were created by the same edit/save firing
+        Finds two kinds of double-counted transactions: (1) the same edit/save firing
         twice (two tabs, a slow connection, a retried request) — same customer/supplier,
-        same category, same amount, recorded within {30} minutes of each other. These
-        double-count in that person's ledger balance until removed. Fixing keeps the
-        earliest entry and removes the later duplicate(s) — a soft delete, recoverable
-        from Trash Manager if needed.
+        same category, same amount, within {30} minutes of each other; and (2) an EMI
+        down payment recorded twice — once as general sale income, once as the Shop
+        Finance plan's own down payment. Both double-count in that person's ledger
+        balance until removed. Fixing keeps the correct entry and removes the
+        duplicate(s) — a soft delete, recoverable from Trash Manager if needed.
       </div>
 
       {loading ? (
@@ -82,7 +83,11 @@ export default function DuplicateFinder() {
               {issues.map(i => (
                 <tr key={i.key}>
                   <td>{i.entity_name || '—'} <span className="text-muted x-small">({i.entity_type} #{i.entity_id})</span></td>
-                  <td><span className={`badge ${i.type === 'IN' ? 'bg-success' : 'bg-secondary'}`}>{i.category}</span></td>
+                  <td>
+                    <span className={`badge ${i.key.endsWith('|pair') ? 'bg-warning text-dark' : (i.type === 'IN' ? 'bg-success' : 'bg-secondary')}`}>
+                      {i.category}
+                    </span>
+                  </td>
                   <td>₹{i.amount.toLocaleString('en-IN')}</td>
                   <td>{i.count}</td>
                   <td className="text-danger fw-bold">₹{i.extra_amount.toLocaleString('en-IN')}</td>
