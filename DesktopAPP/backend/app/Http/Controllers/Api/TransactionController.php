@@ -159,6 +159,23 @@ class TransactionController extends Controller
             return response()->json(['message' => 'Transaction not found'], 404);
         }
 
+        // These categories are regenerated from the sale invoice's own stored
+        // fields (total_paid, the finance plan's down_payment, wallet credit
+        // used) every time that invoice is edited — SaleInvoiceController::
+        // update() deletes and re-posts them from those fields on every save,
+        // with no idea a specific entry was ever manually removed here. So a
+        // delete from the Ledger looks like it worked, then silently
+        // reappears the next time anyone edits that sale — confusing and not
+        // what "Delete" implies. Block it here and point at the fix that
+        // actually sticks: editing the sale's payment fields, which updates
+        // both the source and its transactions together.
+        $regeneratedOnSaleEdit = ['SALE_INCOME', 'FINANCE_INCOME', 'SHOP_FINANCE_DOWN_PAYMENT', 'EXCHANGE_CREDIT_APPLIED'];
+        if ($transaction->entity_type === \App\Models\SaleInvoice::class && in_array($transaction->category, $regeneratedOnSaleEdit)) {
+            return response()->json([
+                'message' => 'This entry is generated from the sale invoice\'s own payment details and will reappear the next time that sale is edited. Edit the sale invoice itself (reduce the amount paid / down payment there) instead of deleting this entry directly.',
+            ], 422);
+        }
+
         // Clean up ledger table entries linked to this transaction
         \App\Models\Ledger::whereIn('voucher_type', ['RECEIPT', 'PAYMENT'])
             ->where('voucher_id', $transaction->id)
