@@ -347,13 +347,20 @@ class LedgerController extends Controller
             ->get()
             ->keyBy('entity_id');
 
-        $results = $entities->map(function ($entity) use ($ledgers, $transactionMap, $transactionCategoryMap, $transactionEntityIdMap, $saleInvoices, $purchaseInvoices, $closingTotals) {
+        // Same class of problem as getClosingBalance() above, one level down:
+        // $ledgers->where('entity_id', $entity->id) used to re-scan the
+        // ENTIRE ledgers collection for every single entity (O(entities x
+        // ledger rows) in PHP, not SQL — so it never showed up as extra
+        // network requests, just a slow response). Grouping once turns
+        // every entity's lookup into an O(1) array access instead.
+        $ledgersByEntity = $ledgers->groupBy('entity_id');
+
+        $results = $entities->map(function ($entity) use ($ledgersByEntity, $transactionMap, $transactionCategoryMap, $transactionEntityIdMap, $saleInvoices, $purchaseInvoices, $closingTotals) {
             $openingSigned = ($entity->balance_type === 'RECEIVABLE' ? 1 : -1) * (float) $entity->opening_balance;
             $closingTotal = $closingTotals->get($entity->id);
             $closing = $openingSigned + ((float) ($closingTotal->dr ?? 0) - (float) ($closingTotal->cr ?? 0));
             
-            // Filter ledgers in memory for this entity
-            $entityLedgers = $ledgers->where('entity_id', $entity->id);
+            $entityLedgers = $ledgersByEntity->get($entity->id, collect());
 
             // Bank/Card/UPI entities are asset (cash-holding) accounts, not
             // parties — money IN increases the balance instead of reducing
