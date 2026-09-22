@@ -289,6 +289,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('imei-audit', [ImeiAuditController::class, 'index']);
     Route::post('imei-audit/fix', [ImeiAuditController::class, 'fix']);
 
+    // Duplicate Finder — finds transactions likely created by an overlapping edit/save request
+    Route::get('duplicate-finder', [\App\Http\Controllers\Api\DuplicateFinderController::class, 'index']);
+    Route::post('duplicate-finder/fix', [\App\Http\Controllers\Api\DuplicateFinderController::class, 'fix']);
+
     Route::apiResource('entities', EntityController::class);
     Route::delete('entities/{entity}/with-history', [EntityController::class, 'destroyWithHistory'])->middleware('pin');
     Route::post('entities-sync', [EntityController::class, 'autoSync']);
