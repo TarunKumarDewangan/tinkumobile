@@ -689,12 +689,21 @@ class SaleInvoiceController extends Controller
 
         DB::beginTransaction();
         try {
+            // Row-lock this invoice for the duration of the edit — without it, two
+            // overlapping save requests (a double-click, a retried request on a slow
+            // connection) can each independently read the "old" transactions, both
+            // delete them, and both insert their own replacements, leaving duplicate
+            // SALE_INCOME/SHOP_FINANCE_DOWN_PAYMENT rows behind that double-count in
+            // the customer's ledger. Same pattern addPayment() already uses for the
+            // same reason.
+            $saleInvoice = SaleInvoice::lockForUpdate()->findOrFail($saleInvoice->id);
+
             // Restore inventory for old items
             foreach ($saleInvoice->items as $item) {
                 Inventory::addStock($saleInvoice->shop_id, $item->product_id, $item->quantity);
             }
             $saleInvoice->items()->delete();
-            $saleInvoice->giftItems()->delete(); 
+            $saleInvoice->giftItems()->delete();
 
             // Recalculate invoice totals via shared InvoiceService (inclusive-pricing model)
             $gst = $this->invoiceService->calculateInclusiveTotals($data, $data['items']);
