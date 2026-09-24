@@ -145,6 +145,11 @@ class PurchaseInvoiceController extends Controller
             'items.*.trade_disc_pct'   => 'nullable|numeric|min:0|max:100',
             'items.*.cash_disc_pct'    => 'nullable|numeric|min:0|max:100',
             'items.*.calc_gst_rate'    => 'nullable|numeric|min:0|max:100',
+            // Manual Rate rows — Rate (Ex. GST) / Rate (Incl. of Tax) typed
+            // directly instead of derived from unit_price + discount% + GST%.
+            'items.*.rate_ex_gst'      => 'nullable|numeric|min:0',
+            'items.*.rate_incl_gst'    => 'nullable|numeric|min:0',
+            'items.*.is_manual_rate'   => 'nullable|boolean',
             'items.*.subcategory'      => 'nullable|string|max:255',
             'items.*.location'         => 'nullable|string|max:255',
             'items.*.gst_rate'         => 'nullable|string|max:50',
@@ -152,6 +157,12 @@ class PurchaseInvoiceController extends Controller
             'items.*.description'      => 'nullable|string',
             'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
+
+        // A Manual Rate item is GST-exempt regardless of what the client sent
+        // for apply_gst — force it here, before InvoiceService reads $data
+        // to total the invoice, so a client bug or stale toggle can't sneak
+        // a manually-typed row's amount into the GST-taxable base.
+        $data['items'] = $this->forceManualRateGstExempt($data['items']);
 
         if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
             return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
@@ -272,6 +283,8 @@ class PurchaseInvoiceController extends Controller
                     }
                 }
 
+                $isManualRate = isset($item['is_manual_rate']) && filter_var($item['is_manual_rate'], FILTER_VALIDATE_BOOLEAN);
+
                 PurchaseItem::create([
                     'purchase_invoice_id' => $invoice->id,
                     'product_id'          => $productId,
@@ -292,7 +305,13 @@ class PurchaseInvoiceController extends Controller
                     'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
                     'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
                     'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
-                    'apply_gst'           => isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null,
+                    // A Manual Rate row is exempt from GST calculation regardless
+                    // of what the client sent — the typed Rate (Incl. of Tax) is
+                    // record-keeping only, not a tax computation input.
+                    'apply_gst'           => $isManualRate ? false : (isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null),
+                    'rate_ex_gst'         => $item['rate_ex_gst'] ?? null,
+                    'rate_incl_gst'       => $item['rate_incl_gst'] ?? null,
+                    'is_manual_rate'      => $isManualRate,
                 ]);
 
                 // ── Update inventory ONLY if received ──
@@ -377,6 +396,9 @@ class PurchaseInvoiceController extends Controller
             'items.*.trade_disc_pct'   => 'nullable|numeric|min:0|max:100',
             'items.*.cash_disc_pct'    => 'nullable|numeric|min:0|max:100',
             'items.*.calc_gst_rate'    => 'nullable|numeric|min:0|max:100',
+            'items.*.rate_ex_gst'      => 'nullable|numeric|min:0',
+            'items.*.rate_incl_gst'    => 'nullable|numeric|min:0',
+            'items.*.is_manual_rate'   => 'nullable|boolean',
             'items.*.subcategory'      => 'nullable|string|max:255',
             'items.*.location'         => 'nullable|string|max:255',
             'items.*.gst_rate'         => 'nullable|string|max:50',
@@ -384,6 +406,8 @@ class PurchaseInvoiceController extends Controller
             'items.*.description'      => 'nullable|string',
             'items.*.brand_name'       => 'nullable|string|max:255',
         ]);
+
+        $data['items'] = $this->forceManualRateGstExempt($data['items']);
 
         if (!\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) ($data['total_paid'] ?? 0))) {
             return response()->json(['message' => 'Split payment lines must add up to the amount paid'], 422);
@@ -543,6 +567,8 @@ class PurchaseInvoiceController extends Controller
                     }
                 }
 
+                $isManualRate = isset($item['is_manual_rate']) && filter_var($item['is_manual_rate'], FILTER_VALIDATE_BOOLEAN);
+
                 PurchaseItem::create([
                     'purchase_invoice_id' => $purchaseInvoice->id,
                     'product_id'          => $productId,
@@ -563,7 +589,10 @@ class PurchaseInvoiceController extends Controller
                     'trade_disc_pct'      => $item['trade_disc_pct'] ?? 0,
                     'cash_disc_pct'       => $item['cash_disc_pct'] ?? 0,
                     'calc_gst_rate'       => $item['calc_gst_rate'] ?? 0,
-                    'apply_gst'           => isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null,
+                    'apply_gst'           => $isManualRate ? false : (isset($item['apply_gst']) ? filter_var($item['apply_gst'], FILTER_VALIDATE_BOOLEAN) : null),
+                    'rate_ex_gst'         => $item['rate_ex_gst'] ?? null,
+                    'rate_incl_gst'       => $item['rate_incl_gst'] ?? null,
+                    'is_manual_rate'      => $isManualRate,
                 ]);
             }
 
@@ -958,6 +987,23 @@ class PurchaseInvoiceController extends Controller
      * $excludePurchaseInvoiceId is passed by update() so a re-save of the
      * SAME invoice's own items isn't flagged as a conflict with itself.
      */
+    /**
+     * A Manual Rate item's Rate (Incl. of Tax) is a typed number for record
+     * keeping, not a tax computation — force apply_gst false for it here so
+     * every downstream consumer of $data['items'] (InvoiceService's GST
+     * total, the stored PurchaseItem row) agrees, regardless of what the
+     * client sent.
+     */
+    private function forceManualRateGstExempt(array $items): array
+    {
+        return array_map(function ($item) {
+            if (isset($item['is_manual_rate']) && filter_var($item['is_manual_rate'], FILTER_VALIDATE_BOOLEAN)) {
+                $item['apply_gst'] = false;
+            }
+            return $item;
+        }, $items);
+    }
+
     private function validateNoDuplicatePurchaseImei(array $items, ?int $excludePurchaseInvoiceId = null)
     {
         $matchesImei = function (?string $stored, string $imei): bool {

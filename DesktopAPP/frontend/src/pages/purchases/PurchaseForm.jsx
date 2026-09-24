@@ -165,9 +165,18 @@ export default function PurchaseForm() {
             ? !!i.apply_gst
             : (p.calculate_gst ?? true);
 
+          const isManualRate = !!i.is_manual_rate;
+
+          // A Manual Rate row's rate fields were typed verbatim and stored
+          // as-is (rate_ex_gst/rate_incl_gst columns) — reload them exactly,
+          // never recompute from unit_price/discount%/GST% like a normal row.
           const factor = (1 - tDisc/100) * (1 - cDisc/100);
-          const rate_ex_gst = factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price;
-          const dp_inc_gst = applyGst ? parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2)) : rate_ex_gst;
+          const rate_ex_gst = isManualRate
+            ? (parseFloat(i.rate_ex_gst) || 0)
+            : (factor > 0 ? parseFloat((unit_price / factor).toFixed(2)) : unit_price);
+          const dp_inc_gst = isManualRate
+            ? (parseFloat(i.rate_incl_gst) || 0)
+            : (applyGst ? parseFloat((rate_ex_gst * (1 + gst/100)).toFixed(2)) : rate_ex_gst);
 
           return {
             product_id: i.product_id,
@@ -187,6 +196,7 @@ export default function PurchaseForm() {
             trade_disc_pct: tDisc,
             cash_disc_pct: cDisc,
             apply_gst: applyGst,
+            is_manual_rate: isManualRate,
             selling_price: i.selling_price || '',
             wholeseller_price: i.wholeseller_price || '',
             min_selling_price: i.min_selling_price || '',
@@ -295,7 +305,32 @@ export default function PurchaseForm() {
     const a = [...items];
     a[i][field] = val;
 
-    if (['dp_inc_gst', 'rate_ex_gst', 'calc_gst_rate', 'trade_disc_pct', 'cash_disc_pct', 'unit_price'].includes(field)) {
+    if (field === 'is_manual_rate') {
+      // Turning Manual Rate on marks the row GST-exempt (its Rate Incl. of
+      // Tax is a typed number, not a tax computation) and — below — stops
+      // the auto-calc chain from touching this row's rate fields at all.
+      a[i].is_manual_rate = !!val;
+      if (val) a[i].apply_gst = false;
+      setItems(a);
+      return;
+    }
+
+    if (a[i].is_manual_rate && ['dp_inc_gst', 'rate_ex_gst'].includes(field)) {
+      // Manual Rate row — Rate (Ex. GST), Rate (Incl. of Tax) and MOP are
+      // each typed independently, no cross-calculation between them.
+      // Rate (Ex. GST) still drives unit_price (the Amount column / actual
+      // inventory cost) directly, with no discount% deduction — everything
+      // else about this row is exactly what was typed.
+      if (field === 'rate_ex_gst') {
+        const v = parseFloat(val) || 0;
+        a[i].rate_ex_gst = v;
+        a[i].unit_price = v;
+      }
+      setItems(a);
+      return;
+    }
+
+    if (!a[i].is_manual_rate && ['dp_inc_gst', 'rate_ex_gst', 'calc_gst_rate', 'trade_disc_pct', 'cash_disc_pct', 'unit_price'].includes(field)) {
       const gst = parseFloat(a[i].calc_gst_rate ?? 18) || 0;
       const tDisc = parseFloat(a[i].trade_disc_pct ?? 3.85) || 0;
       const cDisc = parseFloat(a[i].cash_disc_pct ?? 2) || 0;
@@ -360,7 +395,11 @@ export default function PurchaseForm() {
     if (field === 'product_id') {
       const p = products.find(x => x.id == val);
       if (p) {
-        if (p.purchase_price && parseFloat(p.purchase_price) > 0) {
+        // Manual Rate rows keep whatever the user already typed into
+        // unit_price/rate_ex_gst/dp_inc_gst/selling_price — a product pick
+        // shouldn't silently overwrite numbers this row is deliberately
+        // managing outside the normal GST/discount formula.
+        if (!a[i].is_manual_rate && p.purchase_price && parseFloat(p.purchase_price) > 0) {
           a[i].unit_price = p.purchase_price;
           const gst = parseFloat(a[i].calc_gst_rate ?? 18) || 0;
           const tDisc = parseFloat(a[i].trade_disc_pct ?? 3.85) || 0;
@@ -371,7 +410,9 @@ export default function PurchaseForm() {
           a[i].dp_inc_gst = parseFloat((baseExGst * (1 + (gst / 100))).toFixed(2));
         }
         // if purchase_price is 0/null/empty, leave unit_price unchanged to force manual entry
-        a[i].selling_price = (p.selling_price && parseFloat(p.selling_price) > 0) ? p.selling_price : (a[i].dp_inc_gst || '');
+        if (!a[i].is_manual_rate) {
+          a[i].selling_price = (p.selling_price && parseFloat(p.selling_price) > 0) ? p.selling_price : (a[i].dp_inc_gst || '');
+        }
         a[i].wholeseller_price = p.wholeseller_price || '';
         a[i].min_selling_price = p.min_selling_price || '';
         a[i].max_selling_price = p.max_selling_price || '';
@@ -647,13 +688,16 @@ export default function PurchaseForm() {
 
       let flatItems = [];
       items.forEach(it => {
-        const { imei_list, ...rest } = it;
+        // Backend column is rate_incl_gst — dp_inc_gst is just this form's
+        // internal name for the same "Rate (Incl. of Tax)" value.
+        const { imei_list, dp_inc_gst, ...rest } = it;
+        const withRate = { ...rest, rate_incl_gst: dp_inc_gst || null };
         if (category_group === 'other') {
-          flatItems.push({ ...rest, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
+          flatItems.push({ ...withRate, imei: imei_list?.[0] || '', quantity: rest.quantity || 1 });
         } else {
           // Store all IMEIs as comma-separated in one row so edit loads as one row
           const imeiArr = Array.isArray(imei_list) ? imei_list.filter(Boolean) : [];
-          flatItems.push({ ...rest, imei: imeiArr.join(','), quantity: imeiArr.length || rest.quantity || 1 });
+          flatItems.push({ ...withRate, imei: imeiArr.join(','), quantity: imeiArr.length || rest.quantity || 1 });
         }
       });
       
@@ -817,7 +861,7 @@ export default function PurchaseForm() {
                     {items.length > 0 && (
                       <>
                         <button type="button" style={{background:'linear-gradient(135deg,#10b981,#059669)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
-                          onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
+                          onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:'',is_manual_rate:false}])}>
                           ➕ Add Row
                         </button>
                         <button type="button" style={{background:'linear-gradient(135deg,#0ea5e9,#0284c7)',border:'none',color:'#fff',fontWeight:700,fontSize:'.72rem',padding:'7px 14px',borderRadius:9,cursor:'pointer'}}
@@ -837,7 +881,7 @@ export default function PurchaseForm() {
                     <div style={{fontSize:'2.5rem',opacity:.3,marginBottom:8}}>🛒</div>
                     <div style={{fontWeight:700,fontSize:'.82rem',marginBottom:4}}>No items added yet</div>
                     <button type="button" style={{background:'#f1f5f9',border:'1.5px solid #e2e8f0',borderRadius:8,padding:'6px 16px',fontSize:'.75rem',fontWeight:700,cursor:'pointer',color:'#6366f1'}}
-                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: ''}])}>
+                      onClick={()=>setItems([{product_id:'',is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0, show_calc: true, dp_inc_gst: '', calc_gst_rate: 18, trade_disc_pct: 3.85, cash_disc_pct: 2, rate_ex_gst: '', is_manual_rate: false}])}>
                       + Add Item
                     </button>
                   </div>
@@ -885,6 +929,16 @@ export default function PurchaseForm() {
                                         }}
                                       />
                                     </div>
+                                  </div>
+                                  <div style={{marginTop:6, marginBottom:2}}>
+                                    <label style={{display:'flex', alignItems:'center', gap:5, cursor:'pointer', width:'fit-content'}}>
+                                      <input type="checkbox" checked={!!item.is_manual_rate}
+                                        onChange={e=>updateItem(i,'is_manual_rate',e.target.checked)}
+                                        style={{cursor:'pointer'}}/>
+                                      <span style={{fontSize:'0.62rem', fontWeight:800, color: item.is_manual_rate ? '#b45309' : '#94a3b8', textTransform:'uppercase'}}>
+                                        🔓 Manual Rate {item.is_manual_rate ? '(GST-exempt, type all rates)' : ''}
+                                      </span>
+                                    </label>
                                   </div>
                                   {item.is_new && category_group === 'other' && (
                                     <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -962,7 +1016,7 @@ export default function PurchaseForm() {
                                   </div>
 
                                   <div style={{display: 'flex', gap: 4, justifyContent: 'flex-end'}}>
-                                    <button type="button" onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])} style={{background:'#e0e7ff', border:'1px solid #c7d2fe', color:'#4338ca', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 9}>➕ NEW ROW</button>
+                                    <button type="button" onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:'',is_manual_rate:false}])} style={{background:'#e0e7ff', border:'1px solid #c7d2fe', color:'#4338ca', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 9}>➕ NEW ROW</button>
                                     <button type="button" onClick={()=>duplicateRow(i,'color')} style={{background:'#f0fdf4', border:'1px solid #86efac', color:'#16a34a', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 10}>➕ COLOR</button>
                                     <button type="button" onClick={()=>duplicateRow(i,'specs')} style={{background:'#fefce8', border:'1px solid #fde047', color:'#ca8a04', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 11}>➕ SPECS</button>
                                     <button type="button" onClick={()=>removeItem(i)} style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#ef4444', borderRadius:6, padding:'3px 8px', fontSize:'.65rem', cursor:'pointer', fontWeight:700}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 12}>🗑 REMOVE</button>
@@ -978,11 +1032,11 @@ export default function PurchaseForm() {
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '110px'}}>
-                                  <input type="number" className="pf-inp" placeholder="0.00" value={item.dp_inc_gst||''} onChange={e=>updateItem(i,'dp_inc_gst',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 2}/>
+                                  <input type="number" className="pf-inp" placeholder="0.00" value={item.dp_inc_gst||''} onChange={e=>updateItem(i,'dp_inc_gst',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem', background: item.is_manual_rate ? '#fffbeb' : undefined, borderColor: item.is_manual_rate ? '#fde68a' : undefined}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 2}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '110px'}}>
-                                  <input type="number" className="pf-inp" step=".01" value={item.rate_ex_gst||''} onChange={e=>updateItem(i,'rate_ex_gst',parseFloat(e.target.value))} style={{textAlign:'right', fontWeight:800, color:'#4f46e5', background:'#eef2ff', borderColor:'#c7d2fe', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length}/>
+                                  <input type="number" className="pf-inp" step=".01" value={item.rate_ex_gst||''} onChange={e=>updateItem(i,'rate_ex_gst',parseFloat(e.target.value))} style={{textAlign:'right', fontWeight:800, color: item.is_manual_rate ? '#b45309' : '#4f46e5', background: item.is_manual_rate ? '#fffbeb' : '#eef2ff', borderColor: item.is_manual_rate ? '#fde68a' : '#c7d2fe', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'center', verticalAlign: 'top'}}>
@@ -990,11 +1044,11 @@ export default function PurchaseForm() {
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '85px'}}>
-                                  <input type="number" className="pf-inp" value={item.trade_disc_pct??3.85} onChange={e=>updateItem(i,'trade_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 3}/>
+                                  <input type="number" className="pf-inp" disabled={item.is_manual_rate} value={item.trade_disc_pct??3.85} onChange={e=>updateItem(i,'trade_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem', opacity: item.is_manual_rate ? 0.4 : 1}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 3}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '6px', textAlign: 'right', verticalAlign: 'top', width: '85px'}}>
-                                  <input type="number" className="pf-inp" value={item.cash_disc_pct??2} onChange={e=>updateItem(i,'cash_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem'}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 4}/>
+                                  <input type="number" className="pf-inp" disabled={item.is_manual_rate} value={item.cash_disc_pct??2} onChange={e=>updateItem(i,'cash_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem', opacity: item.is_manual_rate ? 0.4 : 1}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 4}/>
                                 </td>
 
                                 <td style={{border: '1.5px solid #0f172a', padding: '8px 10px', textAlign: 'right', verticalAlign: 'top', width: '120px', fontWeight: 800, fontSize: '0.85rem'}}>
@@ -1197,7 +1251,7 @@ export default function PurchaseForm() {
                     </div>
                     
                     <button type="button" style={{background:'#fff',color:'#6366f1',border:'2px dashed #a5b4fc',borderRadius:12,padding:'11px 28px',fontSize:'.8rem',fontWeight:700,cursor:'pointer',width:'100%',marginTop:10}}
-                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:''}])}>
+                      onClick={()=>setItems([...items,{product_id:'',brand_id:null,is_new:false,new_product_name:'',category_id:defaultCategoryId,imei_list:[''],ram:'',storage:'',color:'',quantity:1,unit_price:0,selling_price:0,wholeseller_price:0,min_selling_price:0,max_selling_price:0,incentive_amount:0,show_calc:true,dp_inc_gst:'',calc_gst_rate:18,trade_disc_pct:3.85,cash_disc_pct:2,rate_ex_gst:'',is_manual_rate:false}])}>
                       + Add More Items
                     </button>
                   </>

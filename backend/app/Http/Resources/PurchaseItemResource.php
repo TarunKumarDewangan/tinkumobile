@@ -36,6 +36,9 @@ class PurchaseItemResource extends JsonResource
             'cash_disc_pct' => $this->cash_disc_pct,
             'calc_gst_rate' => $this->calc_gst_rate,
             'apply_gst' => $this->apply_gst,
+            'rate_ex_gst' => $this->rate_ex_gst,
+            'rate_incl_gst' => $this->rate_incl_gst,
+            'is_manual_rate' => $this->is_manual_rate,
         ];
     }
 }
