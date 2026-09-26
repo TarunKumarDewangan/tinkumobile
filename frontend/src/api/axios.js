@@ -1,4 +1,5 @@
 import axios from 'axios';
+import pinGate from '../utils/pinGate';
 
 const api = axios.create({
   // Use relative /api in dev (Vite proxy handles forwarding to :8000)
@@ -17,6 +18,17 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // If a PIN was just verified, attach the one-time proof token to this
+  // (the very next) request. Call sites always call pinGate.confirm()
+  // immediately before the actual protected request, so this lines up —
+  // it's consumed here either way so it's never reused for a later,
+  // unrelated request.
+  const pinToken = pinGate.consumeToken();
+  if (pinToken) {
+    config.headers['X-Pin-Token'] = pinToken;
+  }
+
   return config;
 });
 
