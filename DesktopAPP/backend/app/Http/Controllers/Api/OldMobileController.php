@@ -19,77 +19,72 @@ class OldMobileController extends Controller
     }
 
     /**
-     * Post the ledger transaction(s) for a non-exchange purchase. Always posts
-     * a "payable" leg for the full purchase price (Credit — this is what the
-     * shop now owes the seller), and, unless pay_later is set, an immediate
-     * "payment" leg (Debit, dual-posts to Cash/Bank) for the same amount that
-     * nets it straight back to zero. This mirrors how a Sale posts the full
-     * grand_total as a Debit and any payment received as a separate Credit —
-     * so a paid-in-full purchase leaves a clean two-line audit trail with no
-     * residual balance, and a pay-later purchase leaves the seller correctly
-     * showing as PAYABLE until settled (via the normal Entity Ledger Settle).
+     * Post the ledger transaction(s) for an old-mobile purchase. Always posts
+     * one "payable" leg for the FULL purchase price first (Credit — this is
+     * what the shop now owes the seller), so the ledger shows the real total
+     * up front regardless of how it ends up funded. Then settles it: a "cash
+     * paid" leg (Debit, dual-posts to Cash/Bank) for whatever portion was
+     * paid now, and/or an "exchange credit" leg (Debit) for whatever portion
+     * was covered by trade-in credit — together they net the payable back to
+     * zero for anything paid/settled now, and leave it standing as PAYABLE
+     * for a pay-later purchase (until settled via the normal Entity Ledger
+     * Settle) or for Reserve-mode credit not yet applied to a future sale.
      */
     private function recordPurchaseTransactions(OldMobilePurchase $purchase, array $data): void
     {
         if ($purchase->purchase_price <= 0) return;
 
         // exchange_credit_amount is how much of purchase_price is credited —
-        // null means "the full amount" (today's plain full-exchange purchase).
-        // Whatever's left (always 0 when is_exchange is off) is paid as cash,
-        // through the exact same payable+payment legs a non-exchange purchase
-        // already uses — a split is just these two paths run for smaller amounts.
+        // null means "the full amount" (a plain full-exchange purchase).
+        // Whatever's left (always 0 when is_exchange is off) is cash.
         $creditAmount = $purchase->is_exchange
             ? min((float) ($purchase->exchange_credit_amount ?? $purchase->purchase_price), (float) $purchase->purchase_price)
             : 0;
         $cashAmount = (float) $purchase->purchase_price - $creditAmount;
 
-        if ($creditAmount > 0) {
-            if ($purchase->exchange_credit_mode === 'reserve') {
-                // Held in the customer's wallet, not posted to the ledger yet —
-                // it only becomes a real ledger entry when actually applied to
-                // a future sale (see SaleInvoiceController), so it can't be
-                // silently absorbed by unrelated dues in the meantime.
-                if ($purchase->customer_id) {
-                    \App\Models\Customer::where('id', $purchase->customer_id)
-                        ->increment('exchange_credit_balance', $creditAmount);
-                }
-            } else {
-                $this->transactionService->recordForModel($purchase, [
-                    'type'             => 'IN',
-                    'category'         => 'OLD_MOBILE_EXCHANGE',
-                    'amount'           => $creditAmount,
-                    'payment_mode'     => 'EXCHANGE',
-                    'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                    'transaction_date' => $purchase->purchase_date,
-                    'shop_id'          => $purchase->shop_id,
-                ]);
-            }
-        }
-
-        if ($cashAmount <= 0) return;
-
         $this->transactionService->recordForModel($purchase, [
             'type'             => 'IN',
             'category'         => 'OLD_MOBILE_PURCHASE',
-            'amount'           => $cashAmount,
+            'amount'           => (float) $purchase->purchase_price,
             'payment_mode'     => 'PAYABLE',
             'description'      => "Old mobile purchase (payable): {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
             'transaction_date' => $purchase->purchase_date,
             'shop_id'          => $purchase->shop_id,
         ]);
 
-        if (!$purchase->pay_later) {
+        if ($creditAmount > 0) {
+            // Reserve mode also credits the customer's wallet for redemption
+            // on a future sale; Adjust mode settles right here instead and
+            // never touches the wallet — same distinction as before, just
+            // now expressed as a settlement against the payable line above
+            // rather than being the purchase's only record.
+            if ($purchase->exchange_credit_mode === 'reserve' && $purchase->customer_id) {
+                \App\Models\Customer::where('id', $purchase->customer_id)
+                    ->increment('exchange_credit_balance', $creditAmount);
+            }
             $this->transactionService->recordForModel($purchase, [
                 'type'             => 'OUT',
-                'category'         => 'OLD_MOBILE_PURCHASE_PAYMENT',
-                'amount'           => $cashAmount,
-                'payment_mode'     => $data['payment_mode'] ?? 'CASH',
-                'payment_lines'    => $data['payment_lines'] ?? null,
-                'description'      => "Cash paid for old mobile purchase: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                'category'         => 'OLD_MOBILE_EXCHANGE',
+                'amount'           => $creditAmount,
+                'payment_mode'     => 'EXCHANGE',
+                'description'      => "Settled via exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
                 'transaction_date' => $purchase->purchase_date,
                 'shop_id'          => $purchase->shop_id,
             ]);
         }
+
+        if ($cashAmount <= 0 || $purchase->pay_later) return;
+
+        $this->transactionService->recordForModel($purchase, [
+            'type'             => 'OUT',
+            'category'         => 'OLD_MOBILE_PURCHASE_PAYMENT',
+            'amount'           => $cashAmount,
+            'payment_mode'     => $data['payment_mode'] ?? 'CASH',
+            'payment_lines'    => $data['payment_lines'] ?? null,
+            'description'      => "Cash paid for old mobile purchase: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+            'transaction_date' => $purchase->purchase_date,
+            'shop_id'          => $purchase->shop_id,
+        ]);
     }
 
     public function index(Request $request)
