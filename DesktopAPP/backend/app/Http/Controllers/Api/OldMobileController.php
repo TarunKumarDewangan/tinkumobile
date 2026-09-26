@@ -33,7 +33,17 @@ class OldMobileController extends Controller
     {
         if ($purchase->purchase_price <= 0) return;
 
-        if ($purchase->is_exchange) {
+        // exchange_credit_amount is how much of purchase_price is credited —
+        // null means "the full amount" (today's plain full-exchange purchase).
+        // Whatever's left (always 0 when is_exchange is off) is paid as cash,
+        // through the exact same payable+payment legs a non-exchange purchase
+        // already uses — a split is just these two paths run for smaller amounts.
+        $creditAmount = $purchase->is_exchange
+            ? min((float) ($purchase->exchange_credit_amount ?? $purchase->purchase_price), (float) $purchase->purchase_price)
+            : 0;
+        $cashAmount = (float) $purchase->purchase_price - $creditAmount;
+
+        if ($creditAmount > 0) {
             if ($purchase->exchange_credit_mode === 'reserve') {
                 // Held in the customer's wallet, not posted to the ledger yet —
                 // it only becomes a real ledger entry when actually applied to
@@ -41,27 +51,27 @@ class OldMobileController extends Controller
                 // silently absorbed by unrelated dues in the meantime.
                 if ($purchase->customer_id) {
                     \App\Models\Customer::where('id', $purchase->customer_id)
-                        ->increment('exchange_credit_balance', $purchase->purchase_price);
+                        ->increment('exchange_credit_balance', $creditAmount);
                 }
-                return;
+            } else {
+                $this->transactionService->recordForModel($purchase, [
+                    'type'             => 'IN',
+                    'category'         => 'OLD_MOBILE_EXCHANGE',
+                    'amount'           => $creditAmount,
+                    'payment_mode'     => 'EXCHANGE',
+                    'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                    'transaction_date' => $purchase->purchase_date,
+                    'shop_id'          => $purchase->shop_id,
+                ]);
             }
-
-            $this->transactionService->recordForModel($purchase, [
-                'type'             => 'IN',
-                'category'         => 'OLD_MOBILE_EXCHANGE',
-                'amount'           => $purchase->purchase_price,
-                'payment_mode'     => 'EXCHANGE',
-                'description'      => "Old mobile trade-in exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
-                'transaction_date' => $purchase->purchase_date,
-                'shop_id'          => $purchase->shop_id,
-            ]);
-            return;
         }
+
+        if ($cashAmount <= 0) return;
 
         $this->transactionService->recordForModel($purchase, [
             'type'             => 'IN',
             'category'         => 'OLD_MOBILE_PURCHASE',
-            'amount'           => $purchase->purchase_price,
+            'amount'           => $cashAmount,
             'payment_mode'     => 'PAYABLE',
             'description'      => "Old mobile purchase (payable): {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
             'transaction_date' => $purchase->purchase_date,
@@ -72,7 +82,7 @@ class OldMobileController extends Controller
             $this->transactionService->recordForModel($purchase, [
                 'type'             => 'OUT',
                 'category'         => 'OLD_MOBILE_PURCHASE_PAYMENT',
-                'amount'           => $purchase->purchase_price,
+                'amount'           => $cashAmount,
                 'payment_mode'     => $data['payment_mode'] ?? 'CASH',
                 'payment_lines'    => $data['payment_lines'] ?? null,
                 'description'      => "Cash paid for old mobile purchase: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
@@ -133,6 +143,9 @@ class OldMobileController extends Controller
             'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
             'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
             'exchange_credit_mode' => 'nullable|in:adjust,reserve',
+            // Only meaningful when is_exchange is true — how much of
+            // purchase_price is credited; the rest is paid as cash now.
+            'exchange_credit_amount' => 'nullable|numeric|min:0.01|lte:purchase_price',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -143,11 +156,15 @@ class OldMobileController extends Controller
             return response()->json(['message' => 'Choose either Exchange Credit or Pay Later, not both.'], 422);
         }
 
-        // The split only makes sense for real cash paid out now — trade-in exchange
-        // credit and a deferred (pay-later) purchase aren't a cash account movement yet.
-        $paysNow = !($data['is_exchange'] ?? false) && !($data['pay_later'] ?? false);
-        if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
-            return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
+        // The split only makes sense for real cash paid out now — a full trade-in
+        // exchange credit and a deferred (pay-later) purchase aren't a cash account
+        // movement yet. A partial exchange (is_exchange + a smaller
+        // exchange_credit_amount) still has a cash remainder that must be checked.
+        $creditAmount = ($data['is_exchange'] ?? false) ? (float) ($data['exchange_credit_amount'] ?? $data['purchase_price']) : 0;
+        $cashAmount = (float) $data['purchase_price'] - $creditAmount;
+        $paysNow = !($data['pay_later'] ?? false) && $cashAmount > 0;
+        if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, $cashAmount)) {
+            return response()->json(['message' => 'Split payment lines must add up to the cash amount paid'], 422);
         }
 
         // Sanitize IMEI: treat placeholder values (000000, empty, all-zeros) as null
@@ -163,6 +180,7 @@ class OldMobileController extends Controller
         $data['shop_id'] = $user->hasFullAccess() ? $request->shop_id : $user->shop_id;
         $data['user_id'] = $user->id;
         $data['exchange_credit_mode'] = ($data['is_exchange'] ?? false) ? ($data['exchange_credit_mode'] ?? 'adjust') : null;
+        $data['exchange_credit_amount'] = ($data['is_exchange'] ?? false) ? ($data['exchange_credit_amount'] ?? null) : null;
 
         return DB::transaction(function () use ($data, $user) {
             $purchase = OldMobilePurchase::create($data);
@@ -239,6 +257,9 @@ class OldMobileController extends Controller
             'items.*.storage'        => 'nullable|string|max:50',
             'items.*.color'          => 'nullable|string|max:100',
             'items.*.condition_note' => 'nullable|string',
+            // Only meaningful when is_exchange is true — how much of this
+            // device's purchase_price is credited; the rest is cash now.
+            'items.*.exchange_credit_amount' => 'nullable|numeric|min:0.01|lte:items.*.purchase_price',
             'payment_mode'   => 'nullable|string',
         ]);
 
@@ -296,6 +317,7 @@ class OldMobileController extends Controller
                     'selling_price'  => $item['selling_price'] ?? 0,
                     'is_exchange'    => $isExchange,
                     'exchange_credit_mode' => $exchangeCreditMode,
+                    'exchange_credit_amount' => $isExchange ? ($item['exchange_credit_amount'] ?? null) : null,
                     'pay_later'      => $payLater,
                     'ram'            => $item['ram'] ?? null,
                     'storage'        => $item['storage'] ?? null,
@@ -382,6 +404,7 @@ class OldMobileController extends Controller
             'payment_lines'  => 'nullable|array|min:2',
             'payment_lines.*.payment_mode' => 'required_with:payment_lines|string',
             'payment_lines.*.amount'       => 'required_with:payment_lines|numeric|min:0.01',
+            'exchange_credit_amount' => 'nullable|numeric|min:0.01|lte:purchase_price',
         ]);
 
         if (!$data['customer_id'] && !$data['customer_phone']) {
@@ -392,9 +415,11 @@ class OldMobileController extends Controller
             return response()->json(['message' => 'Choose either Exchange Credit or Pay Later, not both.'], 422);
         }
 
-        $paysNow = !($data['is_exchange'] ?? false) && !($data['pay_later'] ?? false);
-        if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, (float) $data['purchase_price'])) {
-            return response()->json(['message' => 'Split payment lines must add up to the purchase price'], 422);
+        $creditAmount = ($data['is_exchange'] ?? false) ? (float) ($data['exchange_credit_amount'] ?? $data['purchase_price']) : 0;
+        $cashAmount = (float) $data['purchase_price'] - $creditAmount;
+        $paysNow = !($data['pay_later'] ?? false) && $cashAmount > 0;
+        if ($paysNow && !\App\Services\TransactionService::paymentLinesSumMatches($data['payment_lines'] ?? null, $cashAmount)) {
+            return response()->json(['message' => 'Split payment lines must add up to the cash amount paid'], 422);
         }
 
         $sanitizedImei = $this->sanitizeImei($data['imei'] ?? null);
@@ -417,6 +442,7 @@ class OldMobileController extends Controller
 
         $data['customer_id'] = $data['customer_id'] ?? $this->syncCustomer($data, 'OLD MOBILE PURCHASE');
         $data['exchange_credit_mode'] = ($data['is_exchange'] ?? false) ? ($data['exchange_credit_mode'] ?? 'adjust') : null;
+        $data['exchange_credit_amount'] = ($data['is_exchange'] ?? false) ? ($data['exchange_credit_amount'] ?? null) : null;
 
         // If the previous version of this purchase reserved wallet credit,
         // reverse that first — otherwise editing it (e.g. changing the price,
@@ -424,7 +450,7 @@ class OldMobileController extends Controller
         // instead of reflecting only what this purchase currently represents.
         if ($oldMobilePurchase->is_exchange && $oldMobilePurchase->exchange_credit_mode === 'reserve' && $oldMobilePurchase->customer_id) {
             \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)
-                ->decrement('exchange_credit_balance', $oldMobilePurchase->purchase_price);
+                ->decrement('exchange_credit_balance', (float) ($oldMobilePurchase->exchange_credit_amount ?? $oldMobilePurchase->purchase_price));
         }
 
         // Update purchase record
@@ -493,8 +519,9 @@ class OldMobileController extends Controller
         // the customer's wallet, so reverse that here (never below 0, in case
         // some of it was already spent on a sale in the meantime).
         if ($oldMobilePurchase->is_exchange && $oldMobilePurchase->exchange_credit_mode === 'reserve' && $oldMobilePurchase->customer_id) {
+            $reservedAmount = (float) ($oldMobilePurchase->exchange_credit_amount ?? $oldMobilePurchase->purchase_price);
             \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)
-                ->update(['exchange_credit_balance' => DB::raw('GREATEST(0, exchange_credit_balance - ' . (float) $oldMobilePurchase->purchase_price . ')')]);
+                ->update(['exchange_credit_balance' => DB::raw('GREATEST(0, exchange_credit_balance - ' . $reservedAmount . ')')]);
         }
 
         // Delete associated transaction records (individual deletes fire model events → cleans ledger table)

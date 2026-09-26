@@ -15,6 +15,11 @@ export default function OldMobilePurchaseForm() {
   const emptyDevice = () => ({
     model_name: '', imei: '', ram: '', storage: '', color: '',
     purchase_price: '', selling_price: '', condition_note: '',
+    // Only used when is_exchange is on — how much of this device's purchase
+    // price is credited to the customer's wallet. Blank means "all of it"
+    // (today's plain full-exchange behavior); a smaller number leaves the
+    // rest to be paid as cash.
+    exchange_credit_amount: '',
   });
 
   // Form State — shop/customer/date/payout-mode are shared across every
@@ -43,6 +48,15 @@ export default function OldMobilePurchaseForm() {
   const addDevice = () => setDevices(prev => [...prev, emptyDevice()]);
   const removeDevice = (idx) => setDevices(prev => prev.filter((_, i) => i !== idx));
   const totalPurchasePrice = devices.reduce((sum, d) => sum + (parseFloat(d.purchase_price) || 0), 0);
+  // Cash portion of a device: full price when not on Exchange Credit, or
+  // (price - credited amount) when it is — same math the backend uses.
+  const cashPortion = (d) => {
+    const price = parseFloat(d.purchase_price) || 0;
+    if (!form.is_exchange) return price;
+    const credit = d.exchange_credit_amount !== '' ? (parseFloat(d.exchange_credit_amount) || 0) : price;
+    return Math.max(0, price - credit);
+  };
+  const totalCashDue = devices.reduce((sum, d) => sum + cashPortion(d), 0);
 
   // Masters
   const [shops, setShops] = useState([]);
@@ -158,11 +172,14 @@ export default function OldMobilePurchaseForm() {
         is_exchange: form.is_exchange ? 1 : 0,
         exchange_credit_mode: form.is_exchange ? exchangeCreditMode : undefined,
         pay_later: (!form.is_exchange && form.pay_later) ? 1 : 0,
-        payment_mode: (form.is_exchange || form.pay_later) ? undefined : (form.payment_mode || 'CASH'),
+        payment_mode: (!form.pay_later && totalCashDue > 0) ? (form.payment_mode || 'CASH') : undefined,
         items: devices.map(d => ({
           ...d,
           purchase_price: parseFloat(d.purchase_price),
           selling_price: d.selling_price ? parseFloat(d.selling_price) : 0,
+          exchange_credit_amount: (form.is_exchange && d.exchange_credit_amount !== '')
+            ? parseFloat(d.exchange_credit_amount)
+            : undefined,
         })),
       });
       toast.success(devices.length > 1 ? `${devices.length} old mobile purchases recorded successfully!` : 'Old mobile purchase recorded successfully!');
@@ -304,9 +321,11 @@ export default function OldMobilePurchaseForm() {
                 </div>
               )}
 
-              {!form.is_exchange && !form.pay_later && totalPurchasePrice > 0 && (
+              {!form.pay_later && totalCashDue > 0 && (
                 <div className="col-12">
-                  <label className="form-label text-muted small fw-bold">PAID VIA</label>
+                  <label className="form-label text-muted small fw-bold">
+                    {form.is_exchange ? `PAID VIA (CASH REMAINDER — ₹${totalCashDue.toLocaleString('en-IN')})` : 'PAID VIA'}
+                  </label>
                   <select className="form-select bg-white text-dark border-secondary-subtle fw-semibold"
                     value={form.payment_mode || 'CASH'}
                     onChange={e => setForm({...form, payment_mode: e.target.value})}>
@@ -503,6 +522,33 @@ export default function OldMobilePurchaseForm() {
                     />
                   </div>
                 </div>
+
+                {form.is_exchange && (
+                  <div className="col-12">
+                    <div className="p-3 bg-light rounded-3 border border-secondary-subtle">
+                      <label className="form-label text-muted small fw-bold mb-1">
+                        EXCHANGE CREDIT AMOUNT <span className="text-muted fw-normal">(leave blank for the full amount)</span>
+                      </label>
+                      <div className="input-group" style={{ maxWidth: 260 }}>
+                        <span className="input-group-text bg-white border-secondary-subtle text-primary fw-bold">₹</span>
+                        <input
+                          type="number"
+                          className="form-control bg-white text-dark border-secondary-subtle fw-bold"
+                          placeholder={d.purchase_price ? parseFloat(d.purchase_price).toFixed(2) : '0.00'}
+                          min="0"
+                          max={d.purchase_price || undefined}
+                          value={d.exchange_credit_amount}
+                          onChange={e => updateDevice(idx, 'exchange_credit_amount', e.target.value)}
+                        />
+                      </div>
+                      {cashPortion(d) > 0 && (
+                        <div className="small text-success fw-bold mt-2">
+                          💵 Cash paid now for this device: ₹{cashPortion(d).toLocaleString('en-IN')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="col-12 col-md-6">
                   <label className="form-label text-muted small fw-bold">TARGET SELLING PRICE</label>
