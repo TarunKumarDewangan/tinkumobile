@@ -18,6 +18,7 @@ export default function OldMobiles() {
   const [viewingItem, setViewingItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editForm, setEditForm] = useState({
+    customer_id: '',
     customer_name: '',
     customer_phone: '',
     model_name: '',
@@ -26,6 +27,7 @@ export default function OldMobiles() {
     selling_price: '',
     is_exchange: true,
     pay_later: false,
+    exchange_credit_amount: '',
     payment_mode: 'CASH',
     ram: '',
     storage: '',
@@ -33,6 +35,11 @@ export default function OldMobiles() {
     condition_note: '',
     purchase_date: ''
   });
+  // Live "does this name/phone match an existing customer" search, so an
+  // edit doesn't accidentally create a duplicate customer record instead of
+  // linking to the seller's real, existing ledger.
+  const [customerMatches, setCustomerMatches] = useState([]);
+  const [customerSearching, setCustomerSearching] = useState(false);
 
   const loadList = () => {
     setLoading(true);
@@ -78,7 +85,9 @@ export default function OldMobiles() {
   const handleEditClick = async (item) => {
     if (!await pinGate.confirm()) return;
     setEditingItem(item);
+    setCustomerMatches([]);
     setEditForm({
+      customer_id: item.customer?.id || item.customer_id || '',
       customer_name: item.customer?.name || item.customer_name || '',
       customer_phone: item.customer?.phone || item.customer_phone || '',
       model_name: item.model_name || '',
@@ -87,6 +96,7 @@ export default function OldMobiles() {
       selling_price: item.selling_price || '',
       is_exchange: item.is_exchange ?? true,
       pay_later: item.pay_later ?? false,
+      exchange_credit_amount: item.exchange_credit_amount || '',
       payment_mode: 'CASH',
       ram: item.ram || '',
       storage: item.storage || '',
@@ -106,6 +116,32 @@ export default function OldMobiles() {
     } catch (e) {
       toast.error(e.response?.data?.message || "Failed to update old mobile purchase");
     }
+  };
+
+  // Live-search existing customers as the name/phone is typed — lets an edit
+  // link back to the seller's real, existing ledger instead of drifting into
+  // a duplicate record. Typing a name/phone with no match just falls through
+  // to the normal create-a-new-customer-on-save behavior, unchanged.
+  useEffect(() => {
+    if (!editingItem || editForm.customer_id) { setCustomerMatches([]); return; }
+    const q = editForm.customer_name || editForm.customer_phone;
+    if (!q || q.length < 2) { setCustomerMatches([]); return; }
+    setCustomerSearching(true);
+    const t = setTimeout(() => {
+      api.get('/customers', { params: { search: q } })
+        .then(r => setCustomerMatches(r.data.slice(0, 6)))
+        .catch(() => setCustomerMatches([]))
+        .finally(() => setCustomerSearching(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [editForm.customer_name, editForm.customer_phone, editForm.customer_id, editingItem]);
+
+  const selectEditCustomer = (c) => {
+    setEditForm(f => ({ ...f, customer_id: c.id, customer_name: c.name, customer_phone: c.phone }));
+    setCustomerMatches([]);
+  };
+  const clearEditCustomer = () => {
+    setEditForm(f => ({ ...f, customer_id: '', customer_name: '', customer_phone: '' }));
   };
 
   return (
@@ -364,13 +400,37 @@ export default function OldMobiles() {
       <Modal show={!!editingItem} onClose={() => setEditingItem(null)} title="Edit Old Mobile Purchase">
         <form onSubmit={handleEditSubmit}>
           <div className="row g-3">
-            <div className="col-12 col-md-6">
-              <label className="form-label small fw-bold text-muted">Customer Name</label>
-              <input type="text" className="form-control text-uppercase" required value={editForm.customer_name} onChange={e => setEditForm({ ...editForm, customer_name: e.target.value.toUpperCase() })} />
+            <div className="col-12 col-md-6" style={{ position: 'relative' }}>
+              <label className="form-label small fw-bold text-muted">
+                Customer Name {editForm.customer_id && <span className="badge bg-success-subtle text-success border border-success-subtle ms-1">Linked to existing customer</span>}
+              </label>
+              <input type="text" className="form-control text-uppercase" required
+                value={editForm.customer_name}
+                onChange={e => setEditForm({ ...editForm, customer_name: e.target.value.toUpperCase(), customer_id: '' })}
+                autoComplete="off" />
+              {editForm.customer_id ? (
+                <button type="button" className="btn btn-link btn-sm p-0 x-small mt-1" onClick={clearEditCustomer}>✕ Not this customer — search again</button>
+              ) : (customerSearching || customerMatches.length > 0) && (
+                <div className="list-group shadow-sm" style={{ position: 'absolute', zIndex: 20, width: '100%' }}>
+                  {customerSearching && <div className="list-group-item x-small text-muted">Searching…</div>}
+                  {customerMatches.map(c => (
+                    <button type="button" key={c.id} className="list-group-item list-group-item-action py-2"
+                      onClick={() => selectEditCustomer(c)}>
+                      <div className="fw-bold small">{c.name}</div>
+                      <div className="x-small text-muted">📞 {c.phone}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Customer Phone</label>
-              <input type="text" className="form-control" required value={editForm.customer_phone} onChange={e => setEditForm({ ...editForm, customer_phone: e.target.value })} />
+              <input type="text" className="form-control" required
+                value={editForm.customer_phone}
+                onChange={e => setEditForm({ ...editForm, customer_phone: e.target.value, customer_id: '' })} />
+              {!editForm.customer_id && (
+                <div className="form-text xx-small">No match? A new customer is created automatically from this name &amp; phone when you save.</div>
+              )}
             </div>
             <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Model Name</label>
@@ -403,7 +463,7 @@ export default function OldMobiles() {
                 value={editForm.is_exchange ? 'exchange' : editForm.pay_later ? 'pay_later' : 'cash'}
                 onChange={e => {
                   const v = e.target.value;
-                  setEditForm({ ...editForm, is_exchange: v === 'exchange', pay_later: v === 'pay_later' });
+                  setEditForm({ ...editForm, is_exchange: v === 'exchange', pay_later: v === 'pay_later', exchange_credit_amount: v === 'exchange' ? editForm.exchange_credit_amount : '' });
                 }}
               >
                 <option value="exchange">Exchange (Trade-in Credit)</option>
@@ -415,6 +475,31 @@ export default function OldMobiles() {
               <label className="form-label small fw-bold text-muted">Purchase Value (₹)</label>
               <input type="number" step="0.01" className="form-control fw-bold text-success" required value={editForm.purchase_price} onChange={e => setEditForm({ ...editForm, purchase_price: e.target.value })} />
             </div>
+            {editForm.is_exchange && (
+              <div className="col-12">
+                <div className="p-3 bg-light rounded-3 border border-secondary-subtle">
+                  <label className="form-label small fw-bold mb-1">
+                    Exchange Credit Amount <span className="text-muted fw-normal">(leave blank for the full amount)</span>
+                  </label>
+                  <div className="input-group" style={{ maxWidth: 260 }}>
+                    <span className="input-group-text bg-white border-secondary-subtle text-primary fw-bold">₹</span>
+                    <input type="number" step="0.01" min="0" max={editForm.purchase_price || undefined}
+                      className="form-control fw-bold"
+                      placeholder={editForm.purchase_price ? parseFloat(editForm.purchase_price).toFixed(2) : '0.00'}
+                      value={editForm.exchange_credit_amount}
+                      onChange={e => setEditForm({ ...editForm, exchange_credit_amount: e.target.value })} />
+                  </div>
+                  {(() => {
+                    const price = parseFloat(editForm.purchase_price) || 0;
+                    const credit = editForm.exchange_credit_amount !== '' ? (parseFloat(editForm.exchange_credit_amount) || 0) : price;
+                    const cash = Math.max(0, price - credit);
+                    return cash > 0 ? (
+                      <div className="small text-success fw-bold mt-2">💵 Cash paid now: ₹{cash.toLocaleString('en-IN')}</div>
+                    ) : null;
+                  })()}
+                </div>
+              </div>
+            )}
             <div className="col-12 col-md-6">
               <label className="form-label small fw-bold text-muted">Target Reselling Price (₹)</label>
               <input type="number" step="0.01" className="form-control fw-bold text-warning" value={editForm.selling_price} onChange={e => setEditForm({ ...editForm, selling_price: e.target.value })} />
