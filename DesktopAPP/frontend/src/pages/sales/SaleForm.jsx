@@ -1812,8 +1812,15 @@ export default function SaleForm() {
                                                             const on = e.target.checked;
                                                             setUseCreditForDownPayment(on);
                                                             if (on) {
-                                                                const dp = parseFloat(shopFinance.down_payment) || 0;
+                                                                // If Down Payment hasn't been typed yet, applying credit
+                                                                // sets it (to the full available credit) rather than
+                                                                // clamping the credit down to a still-empty ₹0 — otherwise
+                                                                // checking this box before typing a Down Payment amount
+                                                                // looks like it does nothing.
+                                                                const dp = Math.max(parseFloat(shopFinance.down_payment) || 0, customerCredit);
                                                                 const creditUsed = Math.min(dp, customerCredit);
+                                                                const pr = Math.max(0, grandTotal - dp);
+                                                                setShopFinance(f => ({ ...f, down_payment: dp, principal: parseFloat(pr.toFixed(2)) }));
                                                                 setForm(f => ({ ...f, exchange_paid: creditUsed, total_paid: Math.max(0, dp - creditUsed) }));
                                                             } else {
                                                                 const dp = parseFloat(shopFinance.down_payment) || 0;
@@ -1835,16 +1842,24 @@ export default function SaleForm() {
                                                                     value={form.exchange_paid || ''}
                                                                     onFocus={e => e.target.select()}
                                                                     onChange={e => {
-                                                                        const dp = parseFloat(shopFinance.down_payment) || 0;
                                                                         let val = parseFloat(e.target.value) || 0;
-                                                                        val = Math.min(val, dp, customerCredit);
+                                                                        val = Math.min(val, customerCredit);
+                                                                        // Typing a credit amount larger than the current Down
+                                                                        // Payment raises the Down Payment to match — credit
+                                                                        // covering the down payment shouldn't require typing
+                                                                        // the same number twice in two different fields.
+                                                                        const dp = Math.max(parseFloat(shopFinance.down_payment) || 0, val);
+                                                                        const pr = Math.max(0, grandTotal - dp);
+                                                                        setShopFinance(f => ({ ...f, down_payment: dp, principal: parseFloat(pr.toFixed(2)) }));
                                                                         setForm(f => ({ ...f, exchange_paid: val, total_paid: Math.max(0, dp - val) }));
                                                                     }} />
                                                             </div>
                                                             <button type="button" className="btn btn-xs fw-bold" style={{fontSize:'.62rem', padding:'4px 8px', background:'#67e8f9', color:'#0e7490', border:'none', borderRadius:6, whiteSpace:'nowrap'}}
                                                                 onClick={() => {
-                                                                    const dp = parseFloat(shopFinance.down_payment) || 0;
-                                                                    const full = Math.min(dp, customerCredit);
+                                                                    const full = Math.min(customerCredit, grandTotal);
+                                                                    const dp = Math.max(parseFloat(shopFinance.down_payment) || 0, full);
+                                                                    const pr = Math.max(0, grandTotal - dp);
+                                                                    setShopFinance(f => ({ ...f, down_payment: dp, principal: parseFloat(pr.toFixed(2)) }));
                                                                     setForm(f => ({ ...f, exchange_paid: full, total_paid: Math.max(0, dp - full) }));
                                                                 }}>
                                                                 FULL
