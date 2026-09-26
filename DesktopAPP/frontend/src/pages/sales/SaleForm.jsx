@@ -114,6 +114,11 @@ export default function SaleForm() {
 
   // Shop Finance (Personal EMI / Favor)
   const [useShopFinance, setUseShopFinance] = useState(false);
+  // When on, the Shop Finance Down Payment is funded (in full or in part) by
+  // the customer's exchange-credit wallet instead of new cash — Cash
+  // Collected then becomes down_payment - creditUsed, computed, never typed
+  // independently, so the two can't double-count the same rupee.
+  const [useCreditForDownPayment, setUseCreditForDownPayment] = useState(false);
   const [shopFinanceType, setShopFinanceType] = useState('PERSONAL');
   const [shopFinance, setShopFinance] = useState({
     down_payment: 0, principal: 0, interest_rate: 0, interest_type: 'FLAT',
@@ -1735,6 +1740,9 @@ export default function SaleForm() {
                                         if (on) {
                                             const remaining = Math.max(0, grandTotal - parseFloat(form.total_paid || 0));
                                             setShopFinance(f => ({ ...f, principal: parseFloat(remaining.toFixed(2)) }));
+                                        } else if (useCreditForDownPayment) {
+                                            setUseCreditForDownPayment(false);
+                                            setForm(f => ({ ...f, exchange_paid: 0 }));
                                         }
                                     }} />
                             </div>
@@ -1786,9 +1794,69 @@ export default function SaleForm() {
                                                     // Transaction/dual-post) in sync — otherwise it's left stale at
                                                     // whatever it was before Shop Finance was turned on, and the sale
                                                     // ends up recording the down payment as cash received TWICE.
-                                                    setForm(f => ({ ...f, total_paid: dp }));
+                                                    // When credit is covering part of this down payment, cash is
+                                                    // only ever the remainder — never the full down payment again.
+                                                    if (useCreditForDownPayment) {
+                                                        const creditUsed = Math.min(form.exchange_paid || 0, dp, customerCredit);
+                                                        setForm(f => ({ ...f, exchange_paid: creditUsed, total_paid: Math.max(0, dp - creditUsed) }));
+                                                    } else {
+                                                        setForm(f => ({ ...f, total_paid: dp }));
+                                                    }
                                                 }} />
                                         </div>
+                                        {customerCredit > 0 && (
+                                            <div className="mt-2 p-2 rounded-3" style={{background:'#ecfeff', border:'1px solid #67e8f9'}}>
+                                                <label style={{display:'flex', alignItems:'center', gap:5, cursor:'pointer', marginBottom: useCreditForDownPayment ? 6 : 0}}>
+                                                    <input type="checkbox" checked={useCreditForDownPayment}
+                                                        onChange={e => {
+                                                            const on = e.target.checked;
+                                                            setUseCreditForDownPayment(on);
+                                                            if (on) {
+                                                                const dp = parseFloat(shopFinance.down_payment) || 0;
+                                                                const creditUsed = Math.min(dp, customerCredit);
+                                                                setForm(f => ({ ...f, exchange_paid: creditUsed, total_paid: Math.max(0, dp - creditUsed) }));
+                                                            } else {
+                                                                const dp = parseFloat(shopFinance.down_payment) || 0;
+                                                                setForm(f => ({ ...f, exchange_paid: 0, total_paid: dp }));
+                                                            }
+                                                        }} />
+                                                    <span style={{fontSize:'.62rem', fontWeight:800, color:'#0891b2', textTransform:'uppercase'}}>
+                                                        💳 Use Exchange Credit (Available: ₹{customerCredit.toLocaleString('en-IN')})
+                                                    </span>
+                                                </label>
+                                                {useCreditForDownPayment && (
+                                                    <>
+                                                        <div className="d-flex gap-1 align-items-center">
+                                                            <div className="input-group input-group-sm">
+                                                                <span className="input-group-text" style={{fontSize:'.7rem'}}>₹</span>
+                                                                <input type="number" step="0.01" min="0"
+                                                                    className="form-control fw-bold text-end"
+                                                                    style={{fontSize:'.78rem', borderColor:'#67e8f9', color:'#0891b2'}}
+                                                                    value={form.exchange_paid || ''}
+                                                                    onFocus={e => e.target.select()}
+                                                                    onChange={e => {
+                                                                        const dp = parseFloat(shopFinance.down_payment) || 0;
+                                                                        let val = parseFloat(e.target.value) || 0;
+                                                                        val = Math.min(val, dp, customerCredit);
+                                                                        setForm(f => ({ ...f, exchange_paid: val, total_paid: Math.max(0, dp - val) }));
+                                                                    }} />
+                                                            </div>
+                                                            <button type="button" className="btn btn-xs fw-bold" style={{fontSize:'.62rem', padding:'4px 8px', background:'#67e8f9', color:'#0e7490', border:'none', borderRadius:6, whiteSpace:'nowrap'}}
+                                                                onClick={() => {
+                                                                    const dp = parseFloat(shopFinance.down_payment) || 0;
+                                                                    const full = Math.min(dp, customerCredit);
+                                                                    setForm(f => ({ ...f, exchange_paid: full, total_paid: Math.max(0, dp - full) }));
+                                                                }}>
+                                                                FULL
+                                                            </button>
+                                                        </div>
+                                                        <div style={{fontSize:'.6rem', color:'#0891b2', marginTop:4, fontWeight:600}}>
+                                                            💵 Cash still needed: ₹{Math.max(0, (parseFloat(shopFinance.down_payment)||0) - (form.exchange_paid||0)).toLocaleString('en-IN')}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="col-6">
                                         <label style={{fontSize:'.6rem', fontWeight:700, color:'#64748b', display:'block', marginBottom:2}}>FINANCED AMOUNT</label>
@@ -1987,7 +2055,7 @@ export default function SaleForm() {
                         )}
                     </div>
 
-                    {customerCredit > 0 && (
+                    {customerCredit > 0 && (useShopFinance ? !useCreditForDownPayment : true) && (
                         <div className="mb-2 p-2 rounded-3" style={{background:'#ecfeff', border:'1px solid #67e8f9'}}>
                             <div className="d-flex justify-content-between align-items-center mb-1">
                                 <label style={{fontSize:'.68rem', fontWeight:700, color:'#0891b2', margin:0}}>EXCHANGE CREDIT USED</label>
@@ -1999,6 +2067,11 @@ export default function SaleForm() {
                                 onFocus={e => e.target.select()}
                                 onChange={e => { let val = parseFloat(e.target.value)||0; if(val > customerCredit) val = customerCredit; setForm({...form, exchange_paid: val}); }} />
                             <div style={{fontSize:'.6rem', color:'#0891b2', marginTop:4, fontWeight:600}}>This amount is settled from the customer's ledger.</div>
+                        </div>
+                    )}
+                    {useShopFinance && useCreditForDownPayment && customerCredit > 0 && (
+                        <div className="mb-2 p-2 rounded-3 x-small" style={{background:'#f0fdf4', border:'1px solid #86efac', color:'#16a34a', fontWeight:600}}>
+                            ✓ ₹{(form.exchange_paid||0).toLocaleString('en-IN')} exchange credit is being applied via the Down Payment section above.
                         </div>
                     )}
 
@@ -2082,11 +2155,15 @@ export default function SaleForm() {
                             </div>
                         )}
 
-                        <label style={{fontSize:'.68rem', fontWeight:700, color:'#16a34a', display:'block', marginBottom:4}}>{(useFinance || useShopFinance) ? 'DOWN PAYMENT (CASH COLLECTED)' : 'AMOUNT PAID (INITIAL)'}</label>
+                        <label style={{fontSize:'.68rem', fontWeight:700, color:'#16a34a', display:'block', marginBottom:4}}>
+                            {(useFinance || useShopFinance) ? 'DOWN PAYMENT (CASH COLLECTED)' : 'AMOUNT PAID (INITIAL)'}
+                            {useShopFinance && useCreditForDownPayment && <span className="ms-1" style={{fontSize:'.6rem', color:'#64748b', fontWeight:600, textTransform:'none'}}>(= Down Payment − Credit Used)</span>}
+                        </label>
                         <input type="number" step="0.01"
                             className="form-control fw-bold border-success"
-                            style={{fontSize:'1.6rem', fontWeight:900, color:'#16a34a', background:'#f0fdf4', borderRadius:10}}
+                            style={{fontSize:'1.6rem', fontWeight:900, color:'#16a34a', background: (useShopFinance && useCreditForDownPayment) ? '#f1f5f9' : '#f0fdf4', borderRadius:10}}
                             placeholder="₹ 0.00"
+                            disabled={useShopFinance && useCreditForDownPayment}
                             value={form.total_paid === 0 ? '' : form.total_paid}
                             onFocus={e => e.target.select()}
                             onChange={e => {

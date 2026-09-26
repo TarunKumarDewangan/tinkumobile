@@ -453,7 +453,12 @@ class SaleInvoiceController extends Controller
                 // not on the invoice, so it was never reaching the Ledger. Without
                 // this, the customer's Entity Ledger/net balance kept counting the
                 // full grand_total as owed even after the down payment was taken.
-                $downPayment = (float) ($sf['down_payment'] ?? 0);
+                //
+                // When part (or all) of that down payment was funded by exchange
+                // credit rather than cash, applyExchangeCreditWallet() above already
+                // posted EXCHANGE_CREDIT_APPLIED for that amount — exclude it here or
+                // the same rupee gets credited to the customer's ledger twice.
+                $downPayment = max(0, (float) ($sf['down_payment'] ?? 0) - (float) $invoice->wallet_credit_used);
                 if ($downPayment > 0) {
                     $this->transactionService->recordForModel($invoice, [
                         'type'        => 'IN',
@@ -953,7 +958,9 @@ class SaleInvoiceController extends Controller
                 }
 
                 // Re-post the down payment with current data (old one was deleted above).
-                $downPayment = (float) ($sf['down_payment'] ?? 0);
+                // Same exclusion as store(): a credit-funded portion was already
+                // posted separately by applyExchangeCreditWallet() above.
+                $downPayment = max(0, (float) ($sf['down_payment'] ?? 0) - (float) $saleInvoice->wallet_credit_used);
                 if ($downPayment > 0) {
                     $this->transactionService->recordForModel($saleInvoice, [
                         'type'        => 'IN',
