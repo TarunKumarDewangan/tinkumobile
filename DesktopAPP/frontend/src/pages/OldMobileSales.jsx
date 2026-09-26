@@ -19,7 +19,7 @@ export default function OldMobileSales() {
   const [loading, setLoading] = useState(true);
   
   const [filters, setFilters] = useState({
-    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: true
+    from: '', to: '', bill_type: '', search: searchParams.get('search') || '', shop_id: '', is_old_mobile: true, model: '', imei: ''
   });
   const [financeFilter, setFinanceFilter] = useState('');
 
@@ -146,8 +146,16 @@ export default function OldMobileSales() {
             </div>
           )}
           <div className="col-12 col-md-3">
-            <label className="form-label text-muted small fw-bold">Search Invoice / Customer</label>
-            <input type="text" className="form-control bg-light text-dark border-secondary-subtle text-uppercase" placeholder="Search by name, invoice..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
+            <label className="form-label text-muted small fw-bold">Search Name / Phone / Invoice</label>
+            <input type="text" className="form-control bg-light text-dark border-secondary-subtle text-uppercase" placeholder="Search by name, phone, invoice..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
+          </div>
+          <div className="col-12 col-md-2">
+            <label className="form-label text-muted small fw-bold">Model Name</label>
+            <input type="text" className="form-control bg-light text-dark border-secondary-subtle text-uppercase" placeholder="e.g. Vivo Y30" value={filters.model} onChange={e => setFilters({...filters, model: e.target.value})} />
+          </div>
+          <div className="col-12 col-md-2">
+            <label className="form-label text-muted small fw-bold">IMEI</label>
+            <input type="text" className="form-control bg-light text-dark border-secondary-subtle" placeholder="Search by IMEI" value={filters.imei} onChange={e => setFilters({...filters, imei: e.target.value})} />
           </div>
           <div className="col-12 col-md-2">
             <label className="form-label text-muted small fw-bold">Finance Type</label>
@@ -160,7 +168,7 @@ export default function OldMobileSales() {
             </select>
           </div>
           <div className="col-12 col-md-2 d-flex align-items-end">
-            <button className="btn btn-outline-secondary w-100 fw-bold rounded-pill" onClick={() => { setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: true}); setFinanceFilter(''); }}>RESET</button>
+            <button className="btn btn-outline-secondary w-100 fw-bold rounded-pill" onClick={() => { setFilters({from:'', to:'', bill_type:'', search:'', shop_id:'', is_old_mobile: true, model:'', imei:''}); setFinanceFilter(''); }}>RESET</button>
           </div>
         </div>
       </div>

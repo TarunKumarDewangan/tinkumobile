@@ -87,6 +87,26 @@ class OldMobileController extends Controller
         $user = $request->user();
         $query = OldMobilePurchase::with('customer', 'user');
         if (! $user->hasFullAccess()) $query->where('shop_id', $user->shop_id);
+
+        if ($request->search) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('model_name', 'like', "%{$s}%")
+                  ->orWhere('imei', 'like', "%{$s}%")
+                  ->orWhereHas('customer', function ($cq) use ($s) {
+                      $cq->where('name', 'like', "%{$s}%")
+                         ->orWhere('phone', 'like', "%{$s}%");
+                  });
+            });
+        }
+        if ($request->model_name) $query->where('model_name', 'like', "%{$request->model_name}%");
+        if ($request->imei)       $query->where('imei', 'like', "%{$request->imei}%");
+        if ($request->from)       $query->where('purchase_date', '>=', $request->from);
+        if ($request->to)         $query->where('purchase_date', '<=', $request->to);
+        if ($request->type === 'exchange')  $query->where('is_exchange', true);
+        if ($request->type === 'pay_later') $query->where('is_exchange', false)->where('pay_later', true);
+        if ($request->type === 'cash')      $query->where('is_exchange', false)->where('pay_later', false);
+
         return response()->json($query->latest()->get());
     }
 

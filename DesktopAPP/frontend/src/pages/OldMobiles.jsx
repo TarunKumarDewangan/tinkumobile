@@ -6,9 +6,12 @@ import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
 import Modal from '../components/Modal';
 
+const emptyFilters = { search: '', model_name: '', imei: '', from: '', to: '', type: '' };
+
 export default function OldMobiles() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(emptyFilters);
   const navigate = useNavigate();
 
   // CRUD States
@@ -33,15 +36,18 @@ export default function OldMobiles() {
 
   const loadList = () => {
     setLoading(true);
-    api.get('/old-mobiles')
+    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+    api.get('/old-mobiles', { params })
       .then(r => setList(r.data))
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    loadList();
-  }, []);
+    const t = setTimeout(loadList, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   // Devices bought from the same customer in one visit (the bulk purchase
   // form) all share a batch_id — group them here purely for display so the
@@ -117,6 +123,50 @@ export default function OldMobiles() {
         >
           <span>➕</span> Record Purchase / Exchange
         </button>
+      </div>
+
+      <div className="card border-0 bg-white shadow-sm rounded-4 border-secondary-subtle mb-3 p-3">
+        <div className="row g-2 align-items-end">
+          <div className="col-6 col-md-3">
+            <label className="form-label small fw-bold text-muted mb-1">Search Name/Phone</label>
+            <input type="text" className="form-control form-control-sm" placeholder="Name or phone..."
+              value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label small fw-bold text-muted mb-1">Model Name</label>
+            <input type="text" className="form-control form-control-sm" placeholder="e.g. Vivo Y30"
+              value={filters.model_name} onChange={e => setFilters({ ...filters, model_name: e.target.value })} />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label small fw-bold text-muted mb-1">IMEI</label>
+            <input type="text" className="form-control form-control-sm" placeholder="Search by IMEI"
+              value={filters.imei} onChange={e => setFilters({ ...filters, imei: e.target.value })} />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label small fw-bold text-muted mb-1">From</label>
+            <input type="date" className="form-control form-control-sm"
+              value={filters.from} onChange={e => setFilters({ ...filters, from: e.target.value })} />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label small fw-bold text-muted mb-1">To</label>
+            <input type="date" className="form-control form-control-sm"
+              value={filters.to} onChange={e => setFilters({ ...filters, to: e.target.value })} />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label small fw-bold text-muted mb-1">Type</label>
+            <select className="form-select form-select-sm" value={filters.type} onChange={e => setFilters({ ...filters, type: e.target.value })}>
+              <option value="">All Types</option>
+              <option value="exchange">🔄 Exchange</option>
+              <option value="cash">💵 Cash Payout</option>
+              <option value="pay_later">🕒 Pay Later</option>
+            </select>
+          </div>
+          <div className="col-6 col-md-1">
+            <button type="button" className="btn btn-sm btn-outline-secondary w-100" onClick={() => setFilters(emptyFilters)}>
+              ✕ Clear
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card border-0 bg-white shadow-sm rounded-4 border-secondary-subtle overflow-hidden">
