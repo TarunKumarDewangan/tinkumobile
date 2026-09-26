@@ -580,7 +580,15 @@ class EntityLedgerController extends Controller
         return response()->json([
             'entity' => $entity,
             'transactions' => $ledgerItems->sortByDesc(function($item) {
-                return $item['transaction_date'] . $item['created_at'];
+                // Several legs of the same purchase/sale (e.g. a payable line
+                // plus its cash/credit settlements) are routinely created
+                // within the same second — created_at alone ties them, and
+                // without a tiebreaker the display order falls back to
+                // whatever order the DB happened to return rows in, which
+                // isn't guaranteed. Zero-padded id as a tiebreaker makes
+                // "most recently created wins a tie" deterministic.
+                $id = is_numeric($item['id'] ?? null) ? (int) $item['id'] : 0;
+                return $item['transaction_date'] . $item['created_at'] . sprintf('%020d', $id);
             })->values()
         ]);
     }
