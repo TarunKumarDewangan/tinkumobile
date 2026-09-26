@@ -43,9 +43,9 @@ export default function PinModal() {
     if (pin.length < 4) { setError('PIN must be at least 4 digits'); return; }
     setLoading(true);
     try {
-      await api.post('/settings/verify-pin', { pin });
+      const { data } = await api.post('/settings/verify-pin', { pin });
       setVisible(false);
-      pinGate.resolve(true);
+      pinGate.resolve(true, data.pin_token);
     } catch {
       setError('Wrong PIN. Try again.');
       setPin('');
