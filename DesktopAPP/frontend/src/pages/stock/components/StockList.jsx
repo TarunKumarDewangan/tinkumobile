@@ -4,8 +4,22 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../../../api/axios';
 import Modal from '../../../components/Modal';
+import { useAuth } from '../../../contexts/AuthContext';
+
+const inr = (n) => `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+// A config group can hold units bought at different costs — show the range
+// instead of implying they all cost the first batch's price.
+const purchasePriceLabel = (p) => {
+  const min = Number(p.purchase_price_min ?? p.purchase_price ?? 0);
+  const max = Number(p.purchase_price_max ?? p.purchase_price ?? 0);
+  if (!max) return '—';
+  return min === max ? inr(min) : `${inr(min)} – ${inr(max)}`;
+};
 
 export default function StockList({ products, loading, filters, handleFilterChange, refresh }) {
+  const { hasFullAccess } = useAuth();
+  const showPurchasePrice = hasFullAccess();
   const [editingItem, setEditingItem] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -95,7 +109,8 @@ export default function StockList({ products, loading, filters, handleFilterChan
                 <th>IMEI / SN</th>
                 <th>Location</th>
                 <th className="text-center">Stock</th>
-                <th className="text-end">Price</th>
+                {showPurchasePrice && <th className="text-end">Purchase (ex-GST)</th>}
+                <th className="text-end">{showPurchasePrice ? 'Sale Price' : 'Price'}</th>
                 <th className="text-end pe-4">Actions</th>
               </tr>
             </thead>
@@ -180,6 +195,11 @@ export default function StockList({ products, loading, filters, handleFilterChan
                       {p.current_stock} PCS
                     </span>
                   </td>
+                  {showPurchasePrice && (
+                    <td className="text-end text-nowrap" style={{ fontSize: '.85rem', color: '#64748b' }}>
+                      {purchasePriceLabel(p)}
+                    </td>
+                  )}
                   <td className="text-end fw-bold" style={{ fontSize: '.9rem', color: '#1e293b' }}>
                     ₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}
                   </td>

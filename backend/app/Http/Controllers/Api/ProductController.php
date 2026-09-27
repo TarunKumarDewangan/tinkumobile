@@ -134,6 +134,7 @@ class ProductController extends Controller
                         ];
                     }
                     $grouped[$key]['current_stock'] += $item['quantity'];
+                    $this->trackPurchasePriceRange($grouped[$key], (float) ($item['product']->purchase_price ?? 0));
                 }
             }
 
@@ -274,6 +275,7 @@ class ProductController extends Controller
                         }
                         $grouped[$key]['current_stock'] += $currentStock;
                         $grouped[$key]['attributes']['imeis'] = array_merge($grouped[$key]['attributes']['imeis'], array_column($unsoldImeis, 'imei'));
+                        $this->trackPurchasePriceRange($grouped[$key], (float) $item->unit_price);
                     } else {
                         foreach ($unsoldImeis as $u) {
                             $rowKey = "item_{$item->id}_{$u['idx']}";
@@ -638,6 +640,17 @@ class ProductController extends Controller
 
             return response()->json(['message' => 'Stock item updated successfully.']);
         });
+    }
+
+    /**
+     * A config group can merge units bought in different batches at different
+     * costs, while its purchase_price only carries the first batch's — so keep
+     * the lowest and highest cost across everything merged in, for display.
+     */
+    private function trackPurchasePriceRange(array &$group, float $price): void
+    {
+        $group['purchase_price_min'] = isset($group['purchase_price_min']) ? min($group['purchase_price_min'], $price) : $price;
+        $group['purchase_price_max'] = isset($group['purchase_price_max']) ? max($group['purchase_price_max'], $price) : $price;
     }
 
     private function generateGroupKey($product, $ram, $storage, $color)
