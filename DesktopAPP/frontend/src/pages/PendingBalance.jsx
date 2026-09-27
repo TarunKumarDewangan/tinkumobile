@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import SettlementModal from '../components/SettlementModal';
+import NarrationBreakdown from '../components/NarrationBreakdown';
 
 const CATEGORIES = [
   { id: 'ALL', label: 'All' },
@@ -565,7 +566,7 @@ export default function PendingBalance() {
                               <td className="text-end">{parseFloat(item.credit || 0) > 0 ? `₹${parseFloat(item.credit).toLocaleString('en-IN')}` : '—'}</td>
                               <td className="text-end fw-bold text-nowrap">₹{Math.abs(parseFloat(item.running_balance || 0)).toLocaleString('en-IN')} {parseFloat(item.running_balance || 0) >= 0 ? 'Dr' : 'Cr'}</td>
                               <td className="small">
-                                {item.particulars}
+                                <NarrationBreakdown breakdown={item.breakdown}>{item.particulars}</NarrationBreakdown>
                                 {item.product_names && (
                                   <>
                                     {' '}

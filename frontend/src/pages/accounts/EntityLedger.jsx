@@ -7,6 +7,7 @@ import { formatDate } from '../../utils/formatters';
 import _ from 'lodash'; // Using lodash for debounce
 import { isAssetEntityType } from '../../utils/assetEntityTypes';
 import SettlementModal from '../../components/SettlementModal';
+import NarrationBreakdown from '../../components/NarrationBreakdown';
 
 const getVoucherBadgeClass = (type) => {
   return 'bg-light text-dark border border-secondary border-opacity-25 xx-small';
@@ -590,7 +591,9 @@ export default function EntityLedger() {
                                     : <>₹{Math.abs(item.running_balance).toLocaleString()} {item.running_balance >= 0 ? 'Dr' : 'Cr'}</>}
                               </td>
                               <td>
-                                  <div className="fw-semibold text-dark x-small">{item.particulars}</div>
+                                  <div className="fw-semibold text-dark x-small">
+                                    <NarrationBreakdown breakdown={item.breakdown}>{item.particulars}</NarrationBreakdown>
+                                  </div>
                                   {item.product_names && (
                                     <div className="text-muted xx-small">📦 {item.product_names}</div>
                                   )}

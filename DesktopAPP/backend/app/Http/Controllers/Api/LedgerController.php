@@ -221,6 +221,13 @@ class LedgerController extends Controller
 
             $isNonMobile = false;
             $productNames = null;
+            $breakdown = null;
+
+            if ($vType === 'SALE' && isset($saleInvoices[$vId])) {
+                $breakdown = $this->invoiceBreakdown($saleInvoices[$vId], true);
+            } elseif ($vType === 'PURCHASE' && isset($purchaseInvoices[$vId])) {
+                $breakdown = $this->invoiceBreakdown($purchaseInvoices[$vId], false);
+            }
 
             if ($vType === 'SALE' || $vType === 'SALE_FINANCE') {
                 $invoice = $saleInvoices[$vId] ?? null;
@@ -311,6 +318,7 @@ class LedgerController extends Controller
             }
             $ledger->is_non_mobile = $isNonMobile;
             $ledger->product_names = $productNames ?: null;
+            $ledger->breakdown = $breakdown;
             $statement[] = $ledger;
         }
 
@@ -331,6 +339,54 @@ class LedgerController extends Controller
             'closing_balance' => $runningBalance,
             'entries' => $statement
         ]);
+    }
+
+    /**
+     * Item-by-item makeup of an invoice's ledger charge (grand_total), for the
+     * ledger narration's hover breakdown. Sale prices are GST-inclusive, so GST
+     * is shown as "included", not added; purchase prices are ex-GST, so it's
+     * added. The final adjustment is whatever makes the lines sum to exactly
+     * grand_total — normally just the round-off.
+     */
+    private function invoiceBreakdown($invoice, bool $isSale): array
+    {
+        $items = $invoice->items->map(fn ($it) => [
+            'name'   => $it->product->name ?? 'Unknown',
+            'specs'  => trim(collect([$it->ram, $it->storage])->filter()->implode('/') . ($it->color ? ' · ' . $it->color : ''), ' ·'),
+            'imei'   => $it->imei ?: null,
+            'qty'    => (int) $it->quantity,
+            'rate'   => (float) $it->unit_price,
+            'amount' => round((float) $it->quantity * (float) $it->unit_price, 2),
+        ])->values();
+
+        $gst = round((float) $invoice->cgst_amount + (float) $invoice->sgst_amount, 2);
+        $running = $items->sum('amount');
+        $lines = [];
+
+        if (!$isSale && $gst > 0) {
+            $lines[] = ['label' => 'GST', 'amount' => $gst];
+            $running += $gst;
+        }
+        if ((float) $invoice->discount > 0) {
+            $lines[] = ['label' => 'Discount', 'amount' => -(float) $invoice->discount];
+            $running -= (float) $invoice->discount;
+        }
+        if ($invoice->is_cash_discount_on_bill && (float) $invoice->cash_discount > 0) {
+            $lines[] = ['label' => 'Cash discount', 'amount' => -(float) $invoice->cash_discount];
+            $running -= (float) $invoice->cash_discount;
+        }
+        $adjustment = round((float) $invoice->grand_total - $running, 2);
+        if (abs($adjustment) >= 0.01) {
+            $lines[] = ['label' => abs($adjustment) <= 1 ? 'Round off' : 'Adjustment', 'amount' => $adjustment];
+        }
+
+        return [
+            'invoice_no'   => $invoice->invoice_no,
+            'items'        => $items,
+            'lines'        => $lines,
+            'gst_included' => $isSale && $gst > 0 ? $gst : null,
+            'total'        => (float) $invoice->grand_total,
+        ];
     }
 
     /**
