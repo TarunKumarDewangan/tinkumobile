@@ -136,6 +136,18 @@ class LedgerController extends Controller
             ->get()
             ->keyBy('id');
 
+        // The debit-first tiebreak above puts a sale before its payment, but an
+        // old-mobile purchase is the mirror image — the purchase line is the
+        // credit and its cash/exchange settlements are debits — so it lands
+        // below its own settlements. Lift that line to the top of its day;
+        // every other row keeps its existing order (the key's index part
+        // preserves it for ties).
+        $ledgers = $ledgers->values()->sortBy(function ($ledger, $index) use ($transactions) {
+            $isOldMobilePurchaseLine = in_array($ledger->voucher_type, ['RECEIPT', 'PAYMENT'])
+                && ($transactions[$ledger->voucher_id]->category ?? null) === 'OLD_MOBILE_PURCHASE';
+            return $ledger->date?->format('Y-m-d') . '|' . ($isOldMobilePurchaseLine ? '0' : '1') . '|' . sprintf('%010d', $index);
+        })->values();
+
         // Calculate running balances
         $runningBalance = $openingBalance;
         $statement = [];
