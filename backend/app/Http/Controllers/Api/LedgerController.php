@@ -136,16 +136,69 @@ class LedgerController extends Controller
             ->get()
             ->keyBy('id');
 
-        // The debit-first tiebreak above puts a sale before its payment, but an
-        // old-mobile purchase is the mirror image — the purchase line is the
-        // credit and its cash/exchange settlements are debits — so it lands
-        // below its own settlements. Lift that line to the top of its day;
-        // every other row keeps its existing order (the key's index part
-        // preserves it for ties).
-        $ledgers = $ledgers->values()->sortBy(function ($ledger, $index) use ($transactions) {
-            $isOldMobilePurchaseLine = in_array($ledger->voucher_type, ['RECEIPT', 'PAYMENT'])
-                && ($transactions[$ledger->voucher_id]->category ?? null) === 'OLD_MOBILE_PURCHASE';
-            return $ledger->date?->format('Y-m-d') . '|' . ($isOldMobilePurchaseLine ? '0' : '1') . '|' . sprintf('%010d', $index);
+        // Within a day, show things in the order they happened: each row is
+        // grouped with the document it belongs to (sale invoice, purchase
+        // invoice, old-mobile purchase, repair...), groups are ordered by when
+        // that document was recorded, and inside a group the document's own
+        // charge comes first, then its settlements. The debit-first tiebreak
+        // above can't do this — it interleaves separate documents by amount,
+        // and puts an old-mobile purchase (a credit) below its own
+        // cash/exchange settlements (debits).
+        $documentOf = function ($ledger) use ($transactions) {
+            switch ($ledger->voucher_type) {
+                case 'SALE':
+                case 'SALE_FINANCE':
+                case 'FINANCE_PENDING':
+                case 'SHOP_FINANCE_INTEREST':
+                case 'SHOP_FINANCE_PROCESSING_FEE':
+                    return [\App\Models\SaleInvoice::class, $ledger->voucher_id];
+                case 'PURCHASE':
+                    return [\App\Models\PurchaseInvoice::class, $ledger->voucher_id];
+                case 'REPAIR':
+                    return [\App\Models\RepairRequest::class, $ledger->voucher_id];
+                case 'RECEIPT':
+                case 'PAYMENT':
+                    $tx = $transactions[$ledger->voucher_id] ?? null;
+                    if ($tx && $tx->entity_type && $tx->entity_id) {
+                        return [$tx->entity_type, $tx->entity_id];
+                    }
+            }
+            return null;
+        };
+
+        // Stable across edits (unlike ledger row ids, which change whenever a
+        // document's entries are deleted and re-posted).
+        $documentRecordedAt = [];
+        foreach ($ledgers->map($documentOf)->filter()->groupBy(0) as $class => $docs) {
+            if (!class_exists($class)) continue;
+            $docQuery = $class::query();
+            if (in_array(\Illuminate\Database\Eloquent\SoftDeletes::class, class_uses_recursive($class))) {
+                $docQuery->withTrashed();
+            }
+            foreach ($docQuery->whereIn('id', $docs->pluck(1)->unique())->pluck('created_at', 'id') as $docId => $createdAt) {
+                $documentRecordedAt["{$class}:{$docId}"] = (string) $createdAt;
+            }
+        }
+
+        $ledgers = $ledgers->values()->sortBy(function ($ledger, $index) use ($transactions, $documentOf, $documentRecordedAt) {
+            $doc = $documentOf($ledger);
+            $groupKey = $doc ? "{$doc[0]}:{$doc[1]}" : "Ledger:{$ledger->id}";
+            $groupRecordedAt = $documentRecordedAt[$groupKey] ?? (string) $ledger->created_at;
+
+            $category = in_array($ledger->voucher_type, ['RECEIPT', 'PAYMENT'])
+                ? ($transactions[$ledger->voucher_id]->category ?? null)
+                : null;
+            $rank = match (true) {
+                in_array($ledger->voucher_type, ['SALE', 'PURCHASE', 'REPAIR', 'FINANCE_PENDING']),
+                $category === 'OLD_MOBILE_PURCHASE'          => 0,
+                $category === 'OLD_MOBILE_PURCHASE_PAYMENT'  => 1,
+                $category === 'OLD_MOBILE_EXCHANGE'          => 2,
+                default                                      => 3,
+            };
+
+            // $index (the SQL order) keeps the existing debit-first order for
+            // everything else within a group.
+            return implode('|', [$ledger->date?->format('Y-m-d'), $groupRecordedAt, $groupKey, $rank, sprintf('%010d', $index)]);
         })->values();
 
         // Calculate running balances
