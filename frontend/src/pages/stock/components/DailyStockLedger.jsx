@@ -18,7 +18,7 @@ export default function DailyStockLedger() {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState({});
 
-  const openClosingDetail = (date) => navigate(`/stock-entry/closing-stock?date=${date}`);
+  const openClosingDetail = (date) => navigate(`/stocks/closing-stock?date=${date}`);
 
   const load = useCallback(async () => {
     setLoading(true);

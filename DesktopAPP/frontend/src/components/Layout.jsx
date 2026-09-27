@@ -40,7 +40,7 @@ const NAV = [
     dropdown: true,
     children: [
         { to: '/purchases',        icon: '🛒', label: 'Purchases',      perm: 'view_purchases' },
-        { to: '/stock-entry',      icon: '📦', label: 'Stocks',         perm: 'create_purchases' },
+        { to: '/stocks',           icon: '📦', label: 'Stocks',         perm: 'create_purchases' },
         { to: '/stock-transfers',  icon: '🚚', label: 'Stock Transfer', perm: 'create_purchases' },
         { to: '/sales',            icon: '🧾', label: 'Sales',          perm: 'view_sales' },
         { to: '/finance-tracker',  icon: '💳', label: 'Finance',        perm: 'view_finance_tracker' },
@@ -245,7 +245,7 @@ export default function Layout() {
       const key = e.key.toLowerCase();
       if (key === 's') {
         e.preventDefault();
-        navigate('/stock-entry');
+        navigate('/stocks');
       } else if (key === 'n') {
         e.preventDefault();
         navigate('/sales/new?category_group=new_mobile');

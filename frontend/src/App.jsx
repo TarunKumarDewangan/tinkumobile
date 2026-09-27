@@ -115,6 +115,14 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+// Hostinger's edge blocks any URL containing "-entr" (e.g. /stock-entry) with
+// its own 404, so the Stocks page lives at /stocks. Old in-app links and
+// history entries still land on the right page, query string included.
+function RedirectKeepingQuery({ to }) {
+  const location = useLocation();
+  return <Navigate to={{ pathname: to, search: location.search }} replace />;
+}
+
 function AppRoutes() {
   return (
     <Suspense fallback={<Loading />}>
@@ -170,8 +178,10 @@ function AppRoutes() {
           <Route path="old-mobiles/sales/:id/edit" element={<SaleForm />} />
           <Route path="old-mobiles/report" element={<OldMobileExchangeReport />} />
           <Route path="gifts" element={<Gifts />} />
-          <Route path="stock-entry" element={<StockEntry />} />
-          <Route path="stock-entry/closing-stock" element={<ClosingStockDetail />} />
+          <Route path="stocks" element={<StockEntry />} />
+          <Route path="stocks/closing-stock" element={<ClosingStockDetail />} />
+          <Route path="stock-entry" element={<RedirectKeepingQuery to="/stocks" />} />
+          <Route path="stock-entry/closing-stock" element={<RedirectKeepingQuery to="/stocks/closing-stock" />} />
           <Route path="stock-transfers" element={<StockTransfers />} />
           <Route path="employees" element={<Employees />} />
           <Route path="incentives" element={<Incentives />} />

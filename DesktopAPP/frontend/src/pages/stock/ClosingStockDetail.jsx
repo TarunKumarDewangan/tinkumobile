@@ -93,7 +93,7 @@ export default function ClosingStockDetail() {
           <h2>🏪 Closing Stock — as of {fmtDate(date)}</h2>
           <p>Full breakdown of what was on hand as of this date</p>
         </div>
-        <button className="pm-back-btn" onClick={() => navigate('/stock-entry')}>← Back to Stocks</button>
+        <button className="pm-back-btn" onClick={() => navigate('/stocks')}>← Back to Stocks</button>
       </div>
 
       <div className="pm-filters">
