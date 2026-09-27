@@ -8,6 +8,7 @@ import _ from 'lodash'; // Using lodash for debounce
 import { isAssetEntityType } from '../../utils/assetEntityTypes';
 import SettlementModal from '../../components/SettlementModal';
 import NarrationBreakdown from '../../components/NarrationBreakdown';
+import { voucherTypeLabel } from '../../utils/voucherTypeLabels';
 
 const getVoucherBadgeClass = (type) => {
   return 'bg-light text-dark border border-secondary border-opacity-25 xx-small';
@@ -577,7 +578,7 @@ export default function EntityLedger() {
                               <td className="ps-3">
                                   <span className="x-small text-muted">{new Date(item.date).toLocaleDateString('en-GB')}</span>
                               </td>
-                              <td><span className={`badge ${getVoucherBadgeClass(item.voucher_type)}`}>{item.voucher_type}</span></td>
+                              <td><span className={`badge ${getVoucherBadgeClass(item.voucher_type)}`}>{voucherTypeLabel(item.voucher_type)}</span></td>
                               <td><span className="text-uppercase x-small fw-semibold text-muted">{item.payment_mode || '—'}</span></td>
                               <td className={`text-end fw-bold x-small ${item.debit > 0 ? 'text-dark' : 'text-muted opacity-25'}`}>
                                   {item.debit > 0 ? `₹${Number(item.debit).toLocaleString()}` : '—'}

@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import api from '../api/axios';
 import SettlementModal from '../components/SettlementModal';
 import NarrationBreakdown from '../components/NarrationBreakdown';
+import { voucherTypeLabel } from '../utils/voucherTypeLabels';
 
 const CATEGORIES = [
   { id: 'ALL', label: 'All' },
@@ -560,7 +561,7 @@ export default function PendingBalance() {
                           ) : ledgerModal.data.entries.map((item, idx) => (
                             <tr key={idx}>
                               <td className="text-nowrap">{new Date(item.date).toLocaleDateString('en-GB')}</td>
-                              <td><span className="badge bg-secondary">{item.voucher_type}</span></td>
+                              <td><span className="badge bg-secondary">{voucherTypeLabel(item.voucher_type)}</span></td>
                               <td>—</td>
                               <td className="text-end">{parseFloat(item.debit || 0) > 0 ? `₹${parseFloat(item.debit).toLocaleString('en-IN')}` : '—'}</td>
                               <td className="text-end">{parseFloat(item.credit || 0) > 0 ? `₹${parseFloat(item.credit).toLocaleString('en-IN')}` : '—'}</td>

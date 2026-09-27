@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { Link } from 'react-router-dom';
+import { voucherTypeLabel } from '../../utils/voucherTypeLabels';
 
 export default function Daybook() {
   const [entries, setEntries] = useState([]);
@@ -173,7 +174,7 @@ export default function Daybook() {
                                 </td>
                                 <td>
                                     <span className="badge bg-light text-dark border border-secondary border-opacity-25">
-                                        {entry.voucher_type}
+                                        {voucherTypeLabel(entry.voucher_type)}
                                     </span>
                                 </td>
                                 <td className="small">{entry.particulars}</td>
