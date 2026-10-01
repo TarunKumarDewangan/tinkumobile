@@ -1,10 +1,15 @@
-﻿import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import pinGate from '../utils/pinGate';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatters';
 import Modal from '../components/Modal';
+import PaymentSplitInput from '../components/PaymentSplitInput';
+import { buildModeOptions, buildPaymentPayload, newSingleLine, paymentLinesSumMatches } from '../utils/paymentSplit';
+import { isAssetEntityType } from '../utils/assetEntityTypes';
+
+const BASE_MODES = ['CASH', 'PHONEPE', 'GPAY', 'UPI', 'BANK / NEFT'];
 
 const emptyFilters = { search: '', model_name: '', imei: '', from: '', to: '', type: '' };
 
@@ -40,6 +45,35 @@ export default function OldMobiles() {
   // linking to the seller's real, existing ledger.
   const [customerMatches, setCustomerMatches] = useState([]);
   const [customerSearching, setCustomerSearching] = useState(false);
+  // How the cash portion is paid — pre-filled from the purchase's real
+  // payout entries so an edit keeps PhonePe/bank/split instead of turning
+  // everything into CASH.
+  const [payLines, setPayLines] = useState(newSingleLine('CASH', 0));
+  const [bankEntities, setBankEntities] = useState([]);
+  const modeOptions = useMemo(() => {
+    const opts = buildModeOptions(BASE_MODES.map(m => ({ value: m, label: m })), bankEntities)
+      .concat([{ value: 'OTHER', label: 'OTHER' }]);
+    // Keep any mode the purchase was originally paid with selectable, even
+    // if it isn't in today's list, so it isn't lost on save.
+    payLines.forEach(l => {
+      if (l.mode && !opts.some(o => o.value === l.mode)) opts.unshift({ value: l.mode, label: l.mode });
+    });
+    return opts;
+  }, [bankEntities, payLines]);
+
+  useEffect(() => {
+    api.get('/entities').then(res => setBankEntities((res.data || []).filter(e => isAssetEntityType(e.type)))).catch(() => {});
+  }, []);
+
+  // Cash paid now on this purchase: full price for a cash payout, or the part
+  // of the price not covered by exchange credit; nothing for Pay Later.
+  const editCashAmount = (() => {
+    if (editForm.pay_later) return 0;
+    const price = parseFloat(editForm.purchase_price) || 0;
+    if (!editForm.is_exchange) return price;
+    const credit = editForm.exchange_credit_amount !== '' ? (parseFloat(editForm.exchange_credit_amount) || 0) : price;
+    return Math.max(0, price - credit);
+  })();
 
   const loadList = () => {
     setLoading(true);
@@ -97,19 +131,42 @@ export default function OldMobiles() {
       is_exchange: item.is_exchange ?? true,
       pay_later: item.pay_later ?? false,
       exchange_credit_amount: item.exchange_credit_amount || '',
-      payment_mode: 'CASH',
+      // Keep how the credit was applied — older rows with no mode were
+      // effectively Adjust (no wallet), so default those to Adjust.
+      exchange_credit_mode: item.exchange_credit_mode || 'adjust',
       ram: item.ram || '',
       storage: item.storage || '',
       color: item.color || '',
       condition_note: item.condition_note || '',
       purchase_date: item.purchase_date ? item.purchase_date.split('T')[0] : ''
     });
+
+    // Pre-fill "Paid via" from how the cash part was really paid.
+    setPayLines(newSingleLine('CASH', 0));
+    try {
+      const { data } = await api.get(`/old-mobiles/${item.id}`);
+      const lines = data.payout_payment_lines || [];
+      if (lines.length > 1) {
+        setPayLines(lines.map(l => ({ mode: l.payment_mode, otherMode: '', amount: l.amount })));
+      } else if (lines.length === 1) {
+        setPayLines(newSingleLine(lines[0].payment_mode || 'CASH', lines[0].amount));
+      }
+    } catch (e) {}
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    if (editCashAmount > 0 && !paymentLinesSumMatches(payLines, editCashAmount)) {
+      toast.error(`Split payment must add up to the cash amount ₹${editCashAmount.toLocaleString('en-IN')}`);
+      return;
+    }
+    const payload = {
+      ...editForm,
+      exchange_credit_mode: editForm.is_exchange ? editForm.exchange_credit_mode : undefined,
+      ...(editCashAmount > 0 ? buildPaymentPayload(payLines) : { payment_mode: undefined }),
+    };
     try {
-      await api.put(`/old-mobiles/${editingItem.id}`, editForm);
+      await api.put(`/old-mobiles/${editingItem.id}`, payload);
       toast.success("Old mobile purchase updated successfully");
       setEditingItem(null);
       loadList();
@@ -497,7 +554,34 @@ export default function OldMobiles() {
                       <div className="small text-success fw-bold mt-2">💵 Cash paid now: ₹{cash.toLocaleString('en-IN')}</div>
                     ) : null;
                   })()}
+                  <label className="form-label small fw-bold mb-1 mt-3">How is the exchange credit used?</label>
+                  <select
+                    className="form-select"
+                    value={editForm.exchange_credit_mode}
+                    onChange={e => setEditForm({ ...editForm, exchange_credit_mode: e.target.value })}
+                  >
+                    <option value="adjust">💳 Adjust against existing balance — reduces what they owe right now</option>
+                    <option value="reserve">🔒 Reserve for their next purchase — kept in their wallet, balance untouched</option>
+                  </select>
+                  {editingItem && editForm.exchange_credit_mode !== (editingItem.exchange_credit_mode || 'adjust') && (
+                    <div className="small text-warning-emphasis fw-bold mt-1">
+                      ⚠️ Changing this moves the credit {editForm.exchange_credit_mode === 'reserve' ? 'off their balance and into their wallet' : 'out of their wallet and onto their balance'}.
+                    </div>
+                  )}
                 </div>
+              </div>
+            )}
+            {editCashAmount > 0 && (
+              <div className="col-12">
+                <label className="form-label small fw-bold text-muted">
+                  Paid via {editForm.is_exchange ? `(cash part — ₹${editCashAmount.toLocaleString('en-IN')})` : `(₹${editCashAmount.toLocaleString('en-IN')})`}
+                </label>
+                <PaymentSplitInput
+                  totalAmount={editCashAmount}
+                  lines={payLines}
+                  onChange={setPayLines}
+                  modeOptions={modeOptions}
+                />
               </div>
             )}
             <div className="col-12 col-md-6">

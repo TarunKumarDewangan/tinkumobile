@@ -488,7 +488,24 @@ class OldMobileController extends Controller
         if (! $user->hasFullAccess() && $oldMobilePurchase->shop_id !== $user->shop_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
-        return response()->json($oldMobilePurchase->load('customer', 'user'));
+        $oldMobilePurchase->load('customer', 'user');
+
+        // How the cash portion was actually paid (one line, or one per split
+        // mode) — lets the Edit form pre-fill it instead of silently
+        // re-recording everything as CASH on save. Bank/UPI mirror entries
+        // aren't linked to the purchase, so this is just the real payout legs.
+        $oldMobilePurchase->setAttribute('payout_payment_lines',
+            \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
+                ->where('entity_id', $oldMobilePurchase->id)
+                ->where('category', 'OLD_MOBILE_PURCHASE_PAYMENT')
+                ->where(fn ($q) => $q->whereNull('is_internal_transfer')->orWhere('is_internal_transfer', false))
+                ->orderBy('id')
+                ->get(['payment_mode', 'amount'])
+                ->map(fn ($t) => ['payment_mode' => $t->payment_mode, 'amount' => (float) $t->amount])
+                ->values()
+        );
+
+        return response()->json($oldMobilePurchase);
     }
 
     public function update(Request $request, OldMobilePurchase $oldMobilePurchase)
@@ -563,8 +580,23 @@ class OldMobileController extends Controller
         // or switching modes) would leave the wallet holding a stale amount
         // instead of reflecting only what this purchase currently represents.
         if ($oldMobilePurchase->is_exchange && $oldMobilePurchase->exchange_credit_mode === 'reserve' && $oldMobilePurchase->customer_id) {
+            // Don't let an edit pull back reserved credit the customer has
+            // already spent on a sale — that would leave their wallet negative.
+            $oldReserved = (float) ($oldMobilePurchase->exchange_credit_amount ?? $oldMobilePurchase->purchase_price);
+            $newReserved = (($data['is_exchange'] ?? false) && $data['exchange_credit_mode'] === 'reserve'
+                    && (int) $data['customer_id'] === (int) $oldMobilePurchase->customer_id)
+                ? (float) ($data['exchange_credit_amount'] ?? $data['purchase_price'])
+                : 0;
+            $wallet = (float) \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)->value('exchange_credit_balance');
+            if ($wallet - $oldReserved + $newReserved < -0.01) {
+                $spent = $oldReserved - $wallet;
+                return response()->json([
+                    'message' => "₹" . number_format($spent, 2) . " of this purchase's reserved credit was already used on a sale, so it can't be reduced or moved below that. Edit or cancel that sale first.",
+                ], 422);
+            }
+
             \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)
-                ->decrement('exchange_credit_balance', (float) ($oldMobilePurchase->exchange_credit_amount ?? $oldMobilePurchase->purchase_price));
+                ->decrement('exchange_credit_balance', $oldReserved);
         }
 
         // Update purchase record

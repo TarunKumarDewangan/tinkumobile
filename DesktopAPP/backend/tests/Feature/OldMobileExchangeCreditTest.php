@@ -214,4 +214,81 @@ class OldMobileExchangeCreditTest extends TestCase
         $this->assertEquals(5000, (float) $customer->fresh()->exchange_credit_balance);
         $this->assertEquals('reserve', $purchase->fresh()->exchange_credit_mode);
     }
+
+    private function liveNet(Customer $customer): float
+    {
+        return (float) $this->getJson("/api/entities/customer-ledger?customer_id={$customer->id}")->json('entity.net_balance');
+    }
+
+    private function postPurchase(User $user, Shop $shop, Customer $customer, array $extra)
+    {
+        return $this->actingAs($user)->postJson('/api/old-mobiles', array_merge([
+            'customer_id' => $customer->id, 'model_name' => 'Test Phone', 'purchase_date' => now()->toDateString(),
+            'shop_id' => $shop->id,
+        ], $extra));
+    }
+
+    public function test_customer_ledger_does_not_double_count_cash_or_pay_later_old_mobile_purchases()
+    {
+        [$shop, $user, $customer] = $this->makeShopUserCustomer();
+        $this->giveExistingDebt($shop, $user, $customer, 20000);
+        $this->actingAs($user);
+        $this->assertEquals(20000, $this->liveNet($customer));
+
+        // Pay Later 3000: shop now owes them 3000 → they owe 17000.
+        $this->postPurchase($user, $shop, $customer, ['purchase_price' => 3000, 'is_exchange' => false, 'pay_later' => true])->assertStatus(201);
+        $this->assertEquals(17000, $this->liveNet($customer));
+
+        // Cash 4000 paid out now: no change to what they owe.
+        $this->postPurchase($user, $shop, $customer, ['purchase_price' => 4000, 'is_exchange' => false, 'payment_mode' => 'CASH'])->assertStatus(201);
+        $this->assertEquals(17000, $this->liveNet($customer));
+    }
+
+    public function test_show_returns_payout_lines_and_edit_keeps_the_original_payment_mode()
+    {
+        [$shop, $user, $customer] = $this->makeShopUserCustomer();
+        $id = $this->postPurchase($user, $shop, $customer, [
+            'purchase_price' => 6000, 'is_exchange' => false,
+            'payment_mode' => 'SPLIT',
+            'payment_lines' => [['payment_mode' => 'CASH', 'amount' => 4000], ['payment_mode' => 'PHONEPE', 'amount' => 2000]],
+        ])->assertStatus(201)->json('id');
+
+        $lines = $this->actingAs($user)->getJson("/api/old-mobiles/{$id}")->json('payout_payment_lines');
+        $this->assertEquals([['payment_mode' => 'CASH', 'amount' => 4000], ['payment_mode' => 'PHONEPE', 'amount' => 2000]], $lines);
+
+        // Edit something unrelated, sending back the same split — it must survive.
+        $this->actingAs($user)->putJson("/api/old-mobiles/{$id}", [
+            'customer_id' => $customer->id, 'model_name' => 'Test Phone RENAMED', 'purchase_price' => 6000,
+            'purchase_date' => now()->toDateString(), 'is_exchange' => false, 'pay_later' => false,
+            'payment_mode' => 'SPLIT', 'payment_lines' => $lines,
+        ])->assertStatus(200);
+
+        $after = $this->actingAs($user)->getJson("/api/old-mobiles/{$id}")->json('payout_payment_lines');
+        $this->assertEquals($lines, $after);
+    }
+
+    public function test_edit_keeps_reserve_mode_and_blocks_pulling_back_spent_credit()
+    {
+        [$shop, $user, $customer] = $this->makeShopUserCustomer();
+        $id = $this->postPurchase($user, $shop, $customer, [
+            'purchase_price' => 8000, 'is_exchange' => true, 'exchange_credit_mode' => 'reserve',
+        ])->assertStatus(201)->json('id');
+        $this->assertEquals(8000, (float) $customer->fresh()->exchange_credit_balance);
+
+        $edit = fn (array $extra) => $this->actingAs($user)->putJson("/api/old-mobiles/{$id}", array_merge([
+            'customer_id' => $customer->id, 'model_name' => 'Test Phone', 'purchase_price' => 8000,
+            'purchase_date' => now()->toDateString(), 'is_exchange' => true, 'pay_later' => false,
+        ], $extra));
+
+        // Editing with Reserve kept → wallet stays 8000 (no silent flip to Adjust).
+        $edit(['exchange_credit_mode' => 'reserve', 'condition_note' => 'scratch'])->assertStatus(200);
+        $this->assertEquals('reserve', OldMobilePurchase::find($id)->exchange_credit_mode);
+        $this->assertEquals(8000, (float) $customer->fresh()->exchange_credit_balance);
+
+        // Simulate 5000 of it spent on a sale, then try to switch to Adjust → blocked.
+        $customer->update(['exchange_credit_balance' => 3000]);
+        $edit(['exchange_credit_mode' => 'adjust'])->assertStatus(422);
+        $this->assertEquals(3000, (float) $customer->fresh()->exchange_credit_balance);
+        $this->assertEquals('reserve', OldMobilePurchase::find($id)->exchange_credit_mode);
+    }
 }

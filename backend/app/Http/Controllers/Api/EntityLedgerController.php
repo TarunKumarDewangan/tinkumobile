@@ -523,13 +523,19 @@ class EntityLedgerController extends Controller
                 ]);
             });
 
-        // Old Mobile Purchases (non-exchange)
+        // Old Mobile Purchases (non-exchange) — only legacy ones. Every purchase
+        // recorded since the payable leg was introduced already carries its
+        // own OLD_MOBILE_PURCHASE transaction (picked up in step 1 above), so
+        // adding this virtual charge for those too double-counted cash and
+        // Pay Later purchases — e.g. understating what the customer owes by
+        // the full purchase price on the Sale form's credit check.
         $oldMobQuery = \App\Models\OldMobilePurchase::where(function($q) use ($entityName, $entity) {
             $q->whereHas('customer', fn($c) => $c->where('name', $entityName));
             if ($entity && $entity->relation_id && $entity->relation_type === 'App\Models\Customer') {
                 $q->orWhere('customer_id', $entity->relation_id);
             }
-        })->where('is_exchange', false);
+        })->where('is_exchange', false)
+          ->whereDoesntHave('transactions', fn($t) => $t->where('category', 'OLD_MOBILE_PURCHASE'));
         
         if ($startDate) $oldMobQuery->where('purchase_date', '>=', $startDate);
         if ($endDate) $oldMobQuery->where('purchase_date', '<=', $endDate);
