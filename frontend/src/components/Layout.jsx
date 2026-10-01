@@ -97,6 +97,7 @@ const NAV = [
         { to: '/admin/role-permissions',  icon: '🔑', label: 'Role Permissions',  perm: 'manage_users' },
         { to: '/admin/security-settings', icon: '🔐', label: 'Security / PIN',   perm: 'manage_users' },
         { to: '/admin/activity-logs',     icon: '📋', label: 'Activity Logs',    perm: 'manage_users' },
+        { to: '/admin/exchange-credit-issues', icon: '⚠️', label: 'Exchange Credit Issues', perm: 'manage_users' },
         { to: '/admin/trash',             icon: '🗑️', label: 'Trash Manager',    perm: 'manage_users' },
         { to: '/admin/attendance-report', icon: '🕐', label: 'Attendance Report', perm: 'manage_users' },
         { to: '/admin/imei-audit', icon: '🔍', label: 'IMEI Audit', perm: 'manage_users' },

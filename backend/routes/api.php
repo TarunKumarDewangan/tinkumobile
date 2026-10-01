@@ -201,9 +201,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
     Route::get('/old-mobiles', [OldMobileController::class, 'index']);
     Route::post('/old-mobiles', [OldMobileController::class, 'store']);
     Route::post('/old-mobiles/bulk', [OldMobileController::class, 'bulkStore']);
+    Route::get('/old-mobiles/exchange-credit-issues', [OldMobileController::class, 'exchangeCreditIssues']);
     Route::get('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'show']);
     Route::put('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'update']);
     Route::delete('/old-mobiles/{oldMobilePurchase}', [OldMobileController::class, 'destroy']);
+    Route::post('/old-mobiles/{oldMobilePurchase}/resolve-exchange-issue', [OldMobileController::class, 'resolveExchangeCreditIssue'])->middleware('pin');
 
     // Gifts
     Route::get('/gift-products', [GiftController::class, 'products']);

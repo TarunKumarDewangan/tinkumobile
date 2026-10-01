@@ -22,13 +22,19 @@ class OldMobileController extends Controller
      * Post the ledger transaction(s) for an old-mobile purchase. Always posts
      * one "payable" leg for the FULL purchase price first (Credit — this is
      * what the shop now owes the seller), so the ledger shows the real total
-     * up front regardless of how it ends up funded. Then settles it: a "cash
-     * paid" leg (Debit, dual-posts to Cash/Bank) for whatever portion was
-     * paid now, and/or an "exchange credit" leg (Debit) for whatever portion
-     * was covered by trade-in credit — together they net the payable back to
-     * zero for anything paid/settled now, and leave it standing as PAYABLE
-     * for a pay-later purchase (until settled via the normal Entity Ledger
-     * Settle) or for Reserve-mode credit not yet applied to a future sale.
+     * up front regardless of how it ends up funded. Then settles whatever
+     * portion was paid now (Debit, "cash paid" leg, dual-posts to Cash/Bank),
+     * and/or whatever portion is Reserve-mode exchange credit (Debit,
+     * "exchange credit" leg, which also tops up the customer's wallet) —
+     * together those net the payable back to zero for anything actually
+     * paid or parked in the wallet. Adjust-mode credit gets neither leg: the
+     * payable simply stands, so it nets straight against whatever the
+     * customer already owes — that IS "reduces what they owe right now" on
+     * a running-balance ledger, and posting a second leg to cancel it back
+     * out would silently erase the trade-in's value (see 2026-10-01 fix —
+     * that's exactly what the bug did before this comment changed).
+     * A pay-later purchase likewise leaves its cash portion standing as
+     * PAYABLE until settled via the normal Entity Ledger Settle.
      */
     private function recordPurchaseTransactions(OldMobilePurchase $purchase, array $data): void
     {
@@ -52,13 +58,13 @@ class OldMobileController extends Controller
             'shop_id'          => $purchase->shop_id,
         ]);
 
-        if ($creditAmount > 0) {
-            // Reserve mode also credits the customer's wallet for redemption
-            // on a future sale; Adjust mode settles right here instead and
-            // never touches the wallet — same distinction as before, just
-            // now expressed as a settlement against the payable line above
-            // rather than being the purchase's only record.
-            if ($purchase->exchange_credit_mode === 'reserve' && $purchase->customer_id) {
+        // Only Reserve mode pulls the credit off the ledger and parks it in
+        // the customer's wallet — that's the only case that needs a leg to
+        // cancel the payable back out. Adjust mode leaves the payable above
+        // standing untouched, so it nets naturally against the customer's
+        // existing balance instead of vanishing into a wash.
+        if ($creditAmount > 0 && $purchase->exchange_credit_mode === 'reserve') {
+            if ($purchase->customer_id) {
                 \App\Models\Customer::where('id', $purchase->customer_id)
                     ->increment('exchange_credit_balance', $creditAmount);
             }
@@ -85,6 +91,119 @@ class OldMobileController extends Controller
             'transaction_date' => $purchase->purchase_date,
             'shop_id'          => $purchase->shop_id,
         ]);
+    }
+
+    /**
+     * Old-mobile purchases caught by the pre-2026-10-01 bug: "Adjust against
+     * existing balance" exchange credit silently cancelled itself out
+     * instead of reducing what the customer owed (see recordPurchaseTransactions
+     * doc comment). Detected by the tell-tale leftover OLD_MOBILE_EXCHANGE
+     * transaction leg that only that buggy code path ever created for
+     * Adjust-mode purchases — new ones never create it, so this list is
+     * naturally bounded to historical records and won't pick up anything
+     * fixed going forward. Owner/admin review each one and resolve it here;
+     * resolved rows drop off the list.
+     */
+    public function exchangeCreditIssues(Request $request)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $purchases = OldMobilePurchase::with('customer', 'user')
+            ->where('is_exchange', true)
+            ->where('exchange_credit_mode', 'adjust')
+            ->whereNull('exchange_issue_resolved_at')
+            ->whereHas('transactions', fn ($q) => $q->where('category', 'OLD_MOBILE_EXCHANGE'))
+            ->orderBy('purchase_date')
+            ->get();
+
+        // Resolve each purchase's entity + current ledger balance in one batch
+        // rather than N+1 — the payable transaction already carries the
+        // resolved accounting_entity_id from when it was first posted.
+        $entityIds = \App\Models\Transaction::where('entity_type', OldMobilePurchase::class)
+            ->whereIn('entity_id', $purchases->pluck('id'))
+            ->where('category', 'OLD_MOBILE_PURCHASE')
+            ->pluck('accounting_entity_id', 'entity_id');
+
+        $balances = DB::table('entity_balances')
+            ->whereIn('entity_id', $entityIds->filter()->unique()->values())
+            ->pluck('net_balance', 'entity_id');
+
+        $rows = $purchases->map(function ($p) use ($entityIds, $balances) {
+            $creditAmount = (float) ($p->exchange_credit_amount ?? $p->purchase_price);
+            $entityId = $entityIds->get($p->id);
+            return [
+                'id'                   => $p->id,
+                'purchase_date'        => $p->purchase_date,
+                'model_name'           => $p->model_name,
+                'imei'                 => $p->imei,
+                'purchase_price'       => (float) $p->purchase_price,
+                'credit_amount'        => $creditAmount,
+                'customer_id'          => $p->customer_id,
+                'customer_name'        => $p->customer->name ?? null,
+                'customer_phone'       => $p->customer->phone ?? null,
+                'current_balance'      => $entityId ? (float) ($balances->get($entityId) ?? 0) : null,
+                'entity_id'            => $entityId,
+                'recorded_by'          => $p->user->name ?? null,
+            ];
+        })->values();
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Resolve one exchange-credit audit row after manual review.
+     */
+    public function resolveExchangeCreditIssue(Request $request, OldMobilePurchase $oldMobilePurchase)
+    {
+        $user = $request->user();
+        if (! $user->hasFullAccess()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'action' => 'required|in:credit_ledger,move_to_wallet,ignore',
+            'note'   => 'nullable|string|max:500',
+        ]);
+
+        if ($oldMobilePurchase->exchange_issue_resolved_at) {
+            return response()->json(['message' => 'This has already been resolved.'], 422);
+        }
+
+        $creditAmount = (float) ($oldMobilePurchase->exchange_credit_amount ?? $oldMobilePurchase->purchase_price);
+        $customerName = $oldMobilePurchase->customer->name ?? 'Customer';
+
+        if ($data['action'] === 'credit_ledger') {
+            $this->transactionService->recordForModel($oldMobilePurchase, [
+                'type'             => 'IN',
+                'category'         => 'OLD_MOBILE_EXCHANGE_CORRECTION',
+                'amount'           => $creditAmount,
+                'payment_mode'     => 'CORRECTION',
+                'description'      => "Correction: exchange credit wasn't applied for {$oldMobilePurchase->model_name} purchase on " . \Illuminate\Support\Carbon::parse($oldMobilePurchase->purchase_date)->format('d M Y') . " from {$customerName} (data-issue fix)",
+                'transaction_date' => now()->toDateString(),
+                'shop_id'          => $oldMobilePurchase->shop_id,
+            ]);
+        } elseif ($data['action'] === 'move_to_wallet') {
+            if ($oldMobilePurchase->customer_id) {
+                \App\Models\Customer::where('id', $oldMobilePurchase->customer_id)
+                    ->increment('exchange_credit_balance', $creditAmount);
+            }
+            $oldMobilePurchase->exchange_credit_mode = 'reserve';
+        }
+
+        $oldMobilePurchase->exchange_issue_resolved_at = now();
+        $oldMobilePurchase->exchange_issue_resolution = $data['action'];
+        $oldMobilePurchase->exchange_issue_note = $data['note'] ?? null;
+        $oldMobilePurchase->exchange_issue_resolved_by = $user->id;
+        $oldMobilePurchase->save();
+
+        ActivityLog::log('OLD_MOBILE_EXCHANGE_ISSUE_RESOLVED', $oldMobilePurchase,
+            "Exchange credit issue resolved ({$data['action']}): ₹{$creditAmount} for {$oldMobilePurchase->model_name} from {$customerName}" . (($data['note'] ?? null) ? " — {$data['note']}" : '')
+        );
+
+        return response()->json($oldMobilePurchase->fresh(['customer']));
     }
 
     public function index(Request $request)

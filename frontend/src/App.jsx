@@ -50,6 +50,7 @@ const SendOffers = lazy(() => import('./pages/SendOffers'));
 const Users = lazy(() => import('./pages/admin/Users'));
 const Shops = lazy(() => import('./pages/admin/Shops'));
 const ActivityLogs = lazy(() => import('./pages/admin/ActivityLogs'));
+const ExchangeCreditIssues = lazy(() => import('./pages/admin/ExchangeCreditIssues'));
 const TrashManager = lazy(() => import('./pages/admin/TrashManager'));
 const Reports = lazy(() => import('./pages/reports/Reports'));
 const SalesReport = lazy(() => import('./pages/reports/SalesReport'));
@@ -192,6 +193,7 @@ function AppRoutes() {
           <Route path="admin/role-permissions" element={<RolePermissions />} />
           <Route path="admin/security-settings" element={<SecuritySettings />} />
           <Route path="admin/activity-logs" element={<ActivityLogs />} />
+          <Route path="admin/exchange-credit-issues" element={<ExchangeCreditIssues />} />
           <Route path="admin/trash" element={<TrashManager />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/sales" element={<SalesReport />} />
