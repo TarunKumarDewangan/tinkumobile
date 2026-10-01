@@ -174,7 +174,7 @@ export default function Daybook() {
                                 </td>
                                 <td>
                                     <span className="badge bg-light text-dark border border-secondary border-opacity-25">
-                                        {voucherTypeLabel(entry.voucher_type)}
+                                        {voucherTypeLabel(entry.display_type || entry.voucher_type)}
                                     </span>
                                 </td>
                                 <td className="small">{entry.particulars}</td>

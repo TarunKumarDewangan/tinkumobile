@@ -267,6 +267,25 @@ class OldMobileExchangeCreditTest extends TestCase
         $this->assertEquals($lines, $after);
     }
 
+    public function test_ledger_labels_exchange_rows_as_exchange_not_cash()
+    {
+        [$shop, $user, $customer] = $this->makeShopUserCustomer();
+        $entity = $this->giveExistingDebt($shop, $user, $customer, 20000);
+        $this->postPurchase($user, $shop, $customer, [
+            'purchase_price' => 15000, 'is_exchange' => true, 'exchange_credit_mode' => 'reserve',
+        ])->assertStatus(201);
+
+        $rows = collect($this->actingAs($user)->getJson("/api/ledgers/statement/{$entity->id}")->assertStatus(200)->json('entries'));
+        $exchange = $rows->firstWhere('display_type', 'EXCHANGE');
+        $this->assertNotNull($exchange, 'exchange row should be labelled EXCHANGE');
+        $this->assertEquals('PAYMENT', $exchange['voucher_type']); // stored type unchanged — actions still work
+        $this->assertStringStartsWith('Exchange Credit - ', $exchange['particulars']);
+        $this->assertStringNotContainsString('Cash Paid', $exchange['particulars']);
+
+        // The payable row and real cash rows keep their normal labels.
+        $this->assertTrue($rows->contains(fn ($r) => str_starts_with($r['particulars'], 'Purchase Recorded (Payable)') && empty($r['display_type'])));
+    }
+
     public function test_edit_keeps_reserve_mode_and_blocks_pulling_back_spent_credit()
     {
         [$shop, $user, $customer] = $this->makeShopUserCustomer();

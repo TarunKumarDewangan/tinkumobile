@@ -43,8 +43,13 @@ class LedgerController extends Controller
 
         $sales = \App\Models\SaleInvoice::whereIn('id', $saleIds)->get()->keyBy('id');
         $purchases = \App\Models\PurchaseInvoice::whereIn('id', $purchaseIds)->get()->keyBy('id');
+        $dayTransactions = \App\Models\Transaction::whereIn('id',
+                $ledgers->whereIn('voucher_type', ['RECEIPT', 'PAYMENT'])->pluck('voucher_id')->unique()->filter())
+            ->get(['id', 'payment_mode', 'category'])
+            ->keyBy('id');
 
         foreach ($ledgers as $ledger) {
+            $this->labelExchangeRow($ledger, $dayTransactions[$ledger->voucher_id] ?? null);
             $paymentReceived = null;
             $balance = null;
 
@@ -65,6 +70,22 @@ class LedgerController extends Controller
             'entries' => $ledgers,
             'totals' => $totals
         ]);
+    }
+
+    /**
+     * Exchange-credit rows (old-mobile trade-in credit, or wallet credit spent
+     * on a sale) are stored as RECEIPT/PAYMENT so View/Edit/Delete keep
+     * targeting the Transaction — but they aren't cash. Expose display_type
+     * EXCHANGE and fix the "Cash Paid/Received" wording on rows posted before
+     * the narration itself was changed.
+     */
+    private function labelExchangeRow($ledger, $tx): void
+    {
+        if (!$tx || !in_array($ledger->voucher_type, ['RECEIPT', 'PAYMENT'], true)) return;
+        if (!\App\Models\Transaction::isExchangeEntry($tx->payment_mode, $tx->category)) return;
+
+        $ledger->display_type = 'EXCHANGE';
+        $ledger->particulars = preg_replace('/^(Cash Paid|Cash Received)(?= - |$)/', 'Exchange Credit', (string) $ledger->particulars);
     }
 
     /**
@@ -319,6 +340,7 @@ class LedgerController extends Controller
             $ledger->is_non_mobile = $isNonMobile;
             $ledger->product_names = $productNames ?: null;
             $ledger->breakdown = $breakdown;
+            $this->labelExchangeRow($ledger, $transactions[$vId] ?? null);
             $statement[] = $ledger;
         }
 

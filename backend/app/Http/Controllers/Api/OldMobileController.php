@@ -73,7 +73,7 @@ class OldMobileController extends Controller
                 'category'         => 'OLD_MOBILE_EXCHANGE',
                 'amount'           => $creditAmount,
                 'payment_mode'     => 'EXCHANGE',
-                'description'      => "Settled via exchange credit: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
+                'description'      => "Kept in customer's wallet for next purchase: {$purchase->model_name} from " . ($purchase->customer->name ?? 'Customer'),
                 'transaction_date' => $purchase->purchase_date,
                 'shop_id'          => $purchase->shop_id,
             ]);

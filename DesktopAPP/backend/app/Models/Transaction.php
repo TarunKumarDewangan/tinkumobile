@@ -14,6 +14,16 @@ class Transaction extends Model
     use PostsToLedger, SyncsBalances;
     use SoftDeletes;
 
+    /**
+     * Exchange credit (old-mobile trade-in credit, or reserved wallet credit
+     * spent on a sale) — not a cash movement, labelled EXCHANGE on ledgers.
+     */
+    public static function isExchangeEntry(?string $paymentMode, ?string $category): bool
+    {
+        return strtoupper((string) $paymentMode) === 'EXCHANGE'
+            || in_array($category, ['OLD_MOBILE_EXCHANGE', 'EXCHANGE_CREDIT_APPLIED'], true);
+    }
+
     protected function getLedgerData(): ?array
     {
         $entityId = $this->accounting_entity_id;
@@ -85,12 +95,15 @@ class Transaction extends Model
         // on this ledger row keep correctly targeting this Transaction record —
         // 'PURCHASE' is already a reserved voucher_type for real Purchase Invoices.
         $isPayableEntry = $this->payment_mode === 'PAYABLE';
+        // Trade-in / wallet exchange credit isn't cash — say so, so the ledger
+        // doesn't read "Cash Paid"/"Cash Received" for an exchange deal.
+        $isExchangeEntry = self::isExchangeEntry($this->payment_mode, $this->category);
 
         return [
             'entity_id' => $entityId,
             'date' => $this->transaction_date,
             'voucher_type' => $isReceipt ? 'RECEIPT' : 'PAYMENT',
-            'particulars' => ($isPayableEntry ? 'Purchase Recorded (Payable)' : ($isReceipt ? 'Cash Received' : 'Cash Paid')) . ($this->description ? ' - ' . $this->description : ''),
+            'particulars' => ($isPayableEntry ? 'Purchase Recorded (Payable)' : ($isExchangeEntry ? 'Exchange Credit' : ($isReceipt ? 'Cash Received' : 'Cash Paid'))) . ($this->description ? ' - ' . $this->description : ''),
             'debit' => $isReceipt ? 0 : $this->amount,
             'credit' => $isReceipt ? $this->amount : 0,
             'user_id' => $this->user_id,
