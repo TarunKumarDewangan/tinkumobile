@@ -1669,19 +1669,33 @@ class SaleInvoiceController extends Controller
                 ], 422);
             }
 
-            // The IMEI must not already be sold on another active invoice.
-            $alreadySold = \App\Models\SaleItem::where('imei', $imei)
+            // The IMEI must not already be sold more times than the shop has
+            // bought it. A phone sold, then bought back (a customer/dealer
+            // return recorded as a new purchase), is legitimately in stock
+            // again and must be sellable — counting only "is it on any
+            // active sale" blocked every bought-back phone for good.
+            $activeSales = \App\Models\SaleItem::where('imei', $imei)
                 ->whereHas('invoice', function ($q) use ($excludeSaleInvoiceId) {
                     $q->where('is_cancelled', false);
                     if ($excludeSaleInvoiceId) {
                         $q->where('id', '!=', $excludeSaleInvoiceId);
                     }
                 })
-                ->exists();
+                ->with('invoice:id,invoice_no')
+                ->get();
 
-            if ($alreadySold) {
+            // Purchases whose invoice still exists (soft-deleted purchase
+            // invoices are excluded by whereHas).
+            $timesBought = \App\Models\PurchaseItem::where('imei', 'LIKE', "%{$imei}%")
+                ->whereHas('invoice')
+                ->get(['imei'])
+                ->filter(fn ($pi) => $matchesImei($pi->imei, $imei))
+                ->count();
+
+            if ($activeSales->count() >= max(1, $timesBought)) {
+                $onInvoice = $activeSales->last()?->invoice?->invoice_no;
                 return response()->json([
-                    'message' => "IMEI {$imei} has already been sold on another invoice.",
+                    'message' => "IMEI {$imei} has already been sold" . ($onInvoice ? " on invoice #{$onInvoice}" : ' on another invoice') . ".",
                 ], 422);
             }
         }
