@@ -269,9 +269,6 @@ export default function Layout() {
   const roleName = isOwner() ? 'Owner' : (isAdmin() ? 'Executive' : (user?.roles?.[0] || 'Staff'));
 
   const isVisible = (item) => {
-    // Sales Person accounts are attendance-only for now — everything else,
-    // including Dashboard, is hidden from the nav.
-    if (hasRole('sales_person') && item.to !== '/attendance') return false;
     if (item.owner && !hasFullAccess()) return false;
     if (item.perm && !can(item.perm)) return false;
     // Hide reports for Managers

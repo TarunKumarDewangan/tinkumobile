@@ -104,15 +104,11 @@ function Loading() {
 }
 
 function ProtectedRoute({ children }) {
-  const { user, loading, hasRole } = useAuth();
-  const location = useLocation();
+  const { user, loading } = useAuth();
   if (loading) return <Loading />;
   if (!user) return <Navigate to="/login" replace />;
-  // Sales Person accounts are attendance-only for now — block direct URL
-  // access to everything else, not just hide it from the nav.
-  if (hasRole('sales_person') && location.pathname !== '/attendance') {
-    return <Navigate to="/attendance" replace />;
-  }
+  // What each role can see is controlled from Admin → Role Permissions
+  // (Sales Person used to be hard-locked to /attendance here).
   return children;
 }
 
