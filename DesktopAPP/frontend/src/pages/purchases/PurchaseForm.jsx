@@ -899,7 +899,7 @@ export default function PurchaseForm() {
                             <th style={{border: '1.5px solid #0f172a', padding: '8px', fontSize: '0.75rem', textTransform: 'uppercase', width: '60px', textAlign: 'center'}}>per</th>
                             <th style={{border: '1.5px solid #0f172a', padding: '8px', fontSize: '0.75rem', textTransform: 'uppercase', width: '85px', textAlign: 'right'}}>Disc. %</th>
                             <th style={{border: '1.5px solid #0f172a', padding: '8px', fontSize: '0.75rem', textTransform: 'uppercase', width: '85px', textAlign: 'right'}}>CD %</th>
-                            <th style={{border: '1.5px solid #0f172a', padding: '8px', fontSize: '0.75rem', textTransform: 'uppercase', width: '120px', textAlign: 'right'}}>Amount</th>
+                            <th style={{border: '1.5px solid #0f172a', padding: '8px', fontSize: '0.75rem', textTransform: 'uppercase', width: '170px', textAlign: 'right'}}>Amount</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1051,8 +1051,32 @@ export default function PurchaseForm() {
                                   <input type="number" className="pf-inp" disabled={item.is_manual_rate} value={item.cash_disc_pct??2} onChange={e=>updateItem(i,'cash_disc_pct',e.target.value)} style={{textAlign:'right', padding: '4px 6px', fontSize: '0.8rem', opacity: item.is_manual_rate ? 0.4 : 1}} tabIndex={baseTabIndex + 6 + item.imei_list.length + 4}/>
                                 </td>
 
-                                <td style={{border: '1.5px solid #0f172a', padding: '8px 10px', textAlign: 'right', verticalAlign: 'top', width: '120px', fontWeight: 800, fontSize: '0.85rem'}}>
-                                  ₹{lineTotal.toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits: 2})}
+                                <td style={{border: '1.5px solid #0f172a', padding: '8px 10px', textAlign: 'right', verticalAlign: 'top', width: '170px'}}>
+                                  {(() => {
+                                    // Display-only per-row breakdown: amount incl. GST on top, then
+                                    // ex-GST and the CGST/SGST it carries. Same rule as the bill-level
+                                    // GST rows below (GST-exempt rows carry none); totals unchanged.
+                                    const fmt = (n) => '₹' + n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                                    const taxed = form.calculate_gst && item.apply_gst !== false;
+                                    const cRate = parseFloat(form.cgst_rate) || 0;
+                                    const sRate = parseFloat(form.sgst_rate) || 0;
+                                    const cgst = taxed ? lineTotal * cRate / 100 : 0;
+                                    const sgst = taxed ? lineTotal * sRate / 100 : 0;
+                                    const small = {fontSize: '0.7rem', color: '#475569', fontWeight: 600, lineHeight: 1.5, whiteSpace: 'nowrap'};
+                                    return (
+                                      <>
+                                        <div style={{fontWeight: 800, fontSize: '0.85rem'}}>{fmt(lineTotal + cgst + sgst)}</div>
+                                        <div style={{...small, fontSize: '0.62rem', color: '#94a3b8', marginBottom: 2}}>{taxed ? 'INCL. GST' : 'GST-EXEMPT'}</div>
+                                        {taxed && (
+                                          <>
+                                            <div style={small}>Ex-GST {fmt(lineTotal)}</div>
+                                            <div style={small}>CGST {cRate}% {fmt(cgst)}</div>
+                                            <div style={small}>SGST {sRate}% {fmt(sgst)}</div>
+                                          </>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
                             );
