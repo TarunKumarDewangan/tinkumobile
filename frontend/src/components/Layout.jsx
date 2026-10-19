@@ -149,7 +149,7 @@ const NAV = [
 ];
 
 const BOTTOM_TABS = [
-  { to: '/',         icon: '📊', label: 'Home',     end: true },
+  { to: '/',         icon: '📊', label: 'Home',     perm: 'view_dashboard', end: true },
   { to: '/sales',    icon: '🧾', label: 'Sales',    perm: 'view_sales' },
   // Airtel Recovery hidden for now — see NAV above.
   // { to: '/airtel/quick-recovery', icon: '⚡', label: 'Recovery', perm: 'view_airtel_recovery' },

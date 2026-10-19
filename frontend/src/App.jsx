@@ -112,6 +112,14 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+// The home page ("/", where every login lands) is the Dashboard only for
+// roles with view_dashboard ticked on Role Permissions; everyone else is
+// sent to Attendance, which every account can open.
+function HomeRoute() {
+  const { can } = useAuth();
+  return can('view_dashboard') ? <Dashboard /> : <Navigate to="/attendance" replace />;
+}
+
 // Hostinger's edge blocks any URL containing "-entr" (e.g. /stock-entry) with
 // its own 404, so the Stocks page lives at /stocks. Old in-app links and
 // history entries still land on the right page, query string included.
@@ -133,7 +141,7 @@ function AppRoutes() {
 
         {/* Protected */}
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route index element={<Dashboard />} />
+          <Route index element={<HomeRoute />} />
           <Route path="attendance" element={<Attendance />} />
           <Route path="admin/attendance-report" element={<AttendanceReport />} />
           <Route path="admin/imei-audit" element={<ImeiAudit />} />

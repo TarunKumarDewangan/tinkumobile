@@ -228,6 +228,11 @@ class ReportController extends Controller
     /** 10. Dashboard Summary (for owner/manager home page) */
     public function dashboard(Request $request)
     {
+        $user = $request->user();
+        if (! $user->hasFullAccess() && ! $user->can('view_dashboard')) {
+            return response()->json(['message' => 'You do not have access to the dashboard.'], 403);
+        }
+
         $shopId = $this->shopFilter($request);
         $today  = now()->toDateString();
 
