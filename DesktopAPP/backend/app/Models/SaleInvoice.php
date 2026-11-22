@@ -21,21 +21,20 @@ class SaleInvoice extends Model
         parent::boot();
 
         static::saving(function ($model) {
-            if ($model->isDirty('customer_id') || !$model->accounting_entity_id) {
-                // Prefer existing FK if already set
-                $entity = null;
-                if ($model->accounting_entity_id) {
-                    $entity = \App\Models\Entity::find($model->accounting_entity_id);
-                }
-                // Fall back to name lookup only if FK is null
-                if (!$entity && $model->customer_id) {
+            // Resolve the ledger account from the customer whenever the customer
+            // is set/changed (or none is linked yet). Previously an edit that
+            // changed the customer kept the OLD customer's account, so the bill
+            // stayed in the wrong person's ledger.
+            if ($model->customer_id && ($model->isDirty('customer_id') || !$model->accounting_entity_id)) {
+                $entity = \App\Models\Entity::where('relation_type', \App\Models\Customer::class)
+                    ->where('relation_id', $model->customer_id)
+                    ->first();
+                if (!$entity) {
                     $customer = \App\Models\Customer::find($model->customer_id);
-                    if ($customer) {
-                        $entity = \App\Models\Entity::where('name', $customer->name)->first();
-                        if ($entity) {
-                            $model->accounting_entity_id = $entity->id;
-                        }
-                    }
+                    $entity = $customer ? \App\Models\Entity::where('name', $customer->name)->first() : null;
+                }
+                if ($entity) {
+                    $model->accounting_entity_id = $entity->id;
                 }
             }
         });
