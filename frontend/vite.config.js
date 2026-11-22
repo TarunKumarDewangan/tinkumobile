@@ -7,15 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      // Without these, a new deploy's service worker sits "waiting" until
-      // every open tab of the OLD version is closed, so users who keep a
-      // tab open across a deploy stay stuck on stale JS chunk references
-      // (the "Failed to load module script" / blank-page bug) until they
-      // manually hard-refresh. This makes a new SW take over immediately.
+      // 'prompt' (not 'autoUpdate'): a new deploy waits instead of reloading open
+      // tabs mid-work. The old tab keeps working from its cached files, and
+      // UpdateBanner applies the update on "Refresh" or the next page change.
+      registerType: 'prompt',
       workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
         cleanupOutdatedCaches: true,
       },
       includeAssets: ['icon-192.png', 'icon-512.png', 'icon-192-maskable.png', 'icon-512-maskable.png'],

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: # "Run workflow" button = test + deploy by hand
 
 jobs:
   backend:
@@ -61,3 +62,78 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Keep build for deploy
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          include-hidden-files: true # .htaccess
+          retention-days: 3
+
+  # Deploys only after BOTH test jobs pass. Skips itself (green, with a notice)
+  # until the SSH secrets are added in GitHub → Settings → Secrets → Actions.
+  # Put "[skip deploy]" in a commit message to push without deploying.
+  deploy:
+    name: Deploy (Hostinger)
+    needs: [backend, frontend]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip deploy]')))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      API_DIR: domains/api.tinkumobile.in            # git repo on the server (relative to home)
+      FRONT_DIR: domains/tinkumobile.in/public_html  # website files
+    steps:
+      - name: Check deploy secrets
+        id: check
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_KEY" ]; then
+            echo "::notice::Deploy skipped - SSH secrets are not set yet."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get frontend build
+        if: steps.check.outputs.enabled == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      - name: Set up SSH
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "SSH=ssh -i $HOME/.ssh/deploy_key -p ${SSH_PORT:-22} -o BatchMode=yes $SSH_USER@$SSH_HOST" >> "$GITHUB_ENV"
+
+      # Backend first: new API code is live before the new screens arrive.
+      - name: Backend - git pull, composer, migrate, OPcache
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          $SSH "set -e; cd $API_DIR; OLD=\$(git rev-parse HEAD); GIT_TERMINAL_PROMPT=0 git pull --ff-only origin main; bash deploy/backend.sh \$OLD"
+
+      # Old files are NOT deleted, so tabs still open on the previous version keep
+      # working. index.html and sw.js go last, so nobody gets a half-copied site.
+      # Asset files unused for 14 days are cleaned up.
+      - name: Frontend - upload dist
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          cd dist
+          tar -czf - --exclude=./index.html --exclude=./sw.js . | $SSH "mkdir -p $FRONT_DIR && tar -xzf - -C $FRONT_DIR"
+          tar -czf - ./index.html ./sw.js | $SSH "tar -xzf - -C $FRONT_DIR"
+          $SSH "find $FRONT_DIR/assets -type f -mtime +14 -delete 2>/dev/null || true"
+          echo "Frontend deployed."

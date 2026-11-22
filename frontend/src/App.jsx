@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import PermissionRoute from './components/PermissionRoute';
 import PinModal from './components/PinModal';
+import UpdateBanner from './components/UpdateBanner';
 
 // Pages
 const Login = lazy(() => import('./pages/auth/Login'));
@@ -256,6 +257,7 @@ export default function App() {
         <AppRoutes />
         <ToastContainer position="top-right" autoClose={3000} />
         <PinModal />
+        <UpdateBanner />
       </BrowserRouter>
     </AuthProvider>
   );

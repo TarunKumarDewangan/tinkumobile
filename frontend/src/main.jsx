@@ -7,18 +7,22 @@ import App from './App.jsx'
 import { registerSW } from 'virtual:pwa-register'
 
 // vite-plugin-pwa generates sw.js at build time, but never registers it on
-// its own — without this call the service worker sits in dist/ unused and
-// the PWA gets none of its offline/caching benefits.
+// its own — without this call the service worker sits in dist/ unused.
 //
-// onNeedRefresh fires when a new deploy is detected while a tab is already
-// open. Reload right away instead of leaving the tab on stale JS forever —
-// otherwise this is exactly what causes the "Failed to load module script"
-// blank-page bug (an old tab trying to fetch a JS chunk that a newer deploy
-// already deleted), and previously only a manual Ctrl+Shift+R fixed it.
+// A new deploy must NOT reload an open tab by itself: a staff member could be
+// half-way through a bill and lose the form. So the new version waits
+// (registerType: 'prompt'); the old tab keeps running on its own cached files,
+// and <UpdateBanner> applies the update when the user taps "Refresh" or moves
+// to another page (see components/UpdateBanner.jsx).
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    updateSW(true);
+    window.__applyAppUpdate = () => updateSW(true);
+    window.dispatchEvent(new Event('app-update-ready'));
+  },
+  onRegisteredSW(_url, registration) {
+    // Tabs stay open all day in the shop — look for a new deploy every 30 min.
+    if (registration) setInterval(() => registration.update().catch(() => {}), 30 * 60 * 1000);
   },
 });
 
