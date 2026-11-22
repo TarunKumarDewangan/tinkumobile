@@ -40,6 +40,7 @@ class AuthController extends Controller
             'shop'     => $user->shop,
             'roles'    => $user->getRoleNames(),
             'permissions' => $user->getAllPermissions()->pluck('name'),
+            'ui_design' => $user->ui_design,
         ];
     }
 
@@ -157,6 +158,21 @@ class AuthController extends Controller
             'shop'        => $user->shop,
             'roles'       => $user->getRoleNames(),
             'permissions' => $user->getAllPermissions()->pluck('name'),
+            'ui_design'   => $user->ui_design,
         ]);
+    }
+
+    /** Save the signed-in user's choice of the old or new screen design (look only). */
+    public function updateUiDesign(Request $request)
+    {
+        $data = $request->validate([
+            'ui_design' => 'required|in:old,new',
+        ]);
+
+        $user = $request->user();
+        $user->ui_design = $data['ui_design'];
+        $user->saveQuietly(); // a look preference, not worth an activity-log entry
+
+        return response()->json(['ui_design' => $user->ui_design]);
     }
 }

@@ -29,3 +29,23 @@ export function subscribeUiMode(cb) {
     window.removeEventListener('storage', cb);
   };
 }
+
+// ── Account sync: the choice also follows the user to other devices ──
+// The account's saved choice (from /me or login) wins over this device's.
+export function applyAccountUiMode(accountMode) {
+  if ((accountMode === 'old' || accountMode === 'new') && accountMode !== getUiMode()) {
+    setUiMode(accountMode);
+  }
+}
+
+// Save a new choice to the account (fire-and-forget; the look already changed).
+export async function saveUiModeToAccount(mode, api) {
+  try {
+    const raw = localStorage.getItem('tinku_user');
+    if (raw) {
+      const u = JSON.parse(raw);
+      localStorage.setItem('tinku_user', JSON.stringify({ ...u, ui_design: mode }));
+    }
+  } catch { /* cache only */ }
+  try { await api.put('/me/ui-design', { ui_design: mode }); } catch { /* offline: next toggle retries */ }
+}

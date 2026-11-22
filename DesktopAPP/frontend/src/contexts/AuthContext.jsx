@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/axios';
+import { applyAccountUiMode } from '../ui/uiMode';
 
 const AuthContext = createContext(null);
 
@@ -17,6 +18,9 @@ export function AuthProvider({ children }) {
     return null;
   });
   const [loading, setLoading] = useState(true);
+
+  // Old/new screen design saved on the account follows the user to every device.
+  useEffect(() => { applyAccountUiMode(user?.ui_design); }, [user?.ui_design]);
 
   const fetchUser = async () => {
     try {

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
-import { getUiMode, setUiMode, subscribeUiMode } from '../ui/uiMode';
+import api from '../api/axios';
+import { getUiMode, setUiMode, subscribeUiMode, saveUiModeToAccount } from '../ui/uiMode';
 
-/** Topbar switch between the old and the new look. Look only — no behaviour changes. */
+/** Topbar switch between the old and the new look (saved on the account). Look only — no behaviour changes. */
 export default function UiModeToggle() {
   const mode = useSyncExternalStore(subscribeUiMode, getUiMode, () => 'old');
   const isNew = mode === 'new';
@@ -9,7 +10,7 @@ export default function UiModeToggle() {
   return (
     <button
       type="button"
-      onClick={() => setUiMode(isNew ? 'old' : 'new')}
+      onClick={() => { const next = isNew ? 'old' : 'new'; setUiMode(next); saveUiModeToAccount(next, api); }}
       title={isNew ? 'Switch back to the old design' : 'Try the new design'}
       aria-pressed={isNew}
       className="ui-mode-toggle tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-full tw:border tw:px-2.5 tw:py-1 tw:text-xs tw:font-semibold tw:whitespace-nowrap tw:cursor-pointer"

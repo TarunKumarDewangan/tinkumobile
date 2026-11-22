@@ -65,6 +65,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\ShopScope::class])->grou
 
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::put('/me/ui-design', [AuthController::class, 'updateUiDesign']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
 
     // Universal search

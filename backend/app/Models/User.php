@@ -28,7 +28,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password', 'shop_id', 'is_owner', 'require_login_otp',
-        'phone', 'address', 'designation', 'base_salary', 'joining_date', 'aadhaar_no', 'status', 'emp_id'
+        'phone', 'address', 'designation', 'base_salary', 'joining_date', 'aadhaar_no', 'status', 'emp_id', 'ui_design'
     ];
 
     protected $hidden = ['password', 'remember_token'];
