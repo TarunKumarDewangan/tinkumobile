@@ -120,6 +120,13 @@ jobs:
           printf '%s\n' "$SSH_KEY" | tr -d '\r' | sed '/^[[:space:]]*$/d' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           if ! ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null; then
+            # Shape of the key only (never its content) to see what went wrong.
+            K=~/.ssh/deploy_key
+            echo "lines: $(wc -l < $K)"
+            echo "first line is BEGIN: $(head -1 $K | grep -c -- '-----BEGIN .*PRIVATE KEY-----')"
+            echo "last line is END:   $(tail -1 $K | grep -c -- '-----END .*PRIVATE KEY-----')"
+            echo "line lengths: $(awk '{printf "%d ", length($0)}' $K)"
+            echo "odd characters: $(grep -v -- '-----' $K | tr -d 'A-Za-z0-9+/=\n' | wc -c)"
             echo "::error::SSH_PRIVATE_KEY secret is not a valid private key. Paste the WHOLE file, from -----BEGIN to -----END ... KEY-----"
             exit 1
           fi
