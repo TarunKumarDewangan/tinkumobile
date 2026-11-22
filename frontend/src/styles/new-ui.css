@@ -385,6 +385,28 @@ html[data-ui="new"] [style*="linear-gradient(135deg, rgb(102, 126, 234)"] {
   box-shadow: none !important;
 }
 
+
+/* Dark gradient banners (Bank Balances total, Set Sales Matrix): flat ink, text stays white */
+html[data-ui="new"] [style*="linear-gradient(135deg, rgb(15, 23, 42)"],
+html[data-ui="new"] [style*="linear-gradient(135deg, rgb(26, 26, 46)"] {
+  background: #24222d !important;
+  box-shadow: none !important;
+}
+/* Violet banners (Combined Sales report): flat accent */
+html[data-ui="new"] [style*="linear-gradient(135deg, rgb(79, 70, 229)"] {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+/* Black card headers (Stock Transfers …) → light header like every other card */
+html[data-ui="new"] .card-header.bg-dark {
+  background: var(--ui-subtle) !important;
+  color: var(--ui-ink) !important;
+  border-bottom: 1px solid var(--ui-line);
+}
+html[data-ui="new"] .card-header.bg-dark .text-white,
+html[data-ui="new"] .card-header.bg-dark h5,
+html[data-ui="new"] .card-header.bg-dark h6 { color: var(--ui-ink) !important; }
+
 } /* @media screen */
 
 /* ── Menu icons: emoji in the old design, line icons in the new one ──
