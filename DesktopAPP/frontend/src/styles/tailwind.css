@@ -1,0 +1,21 @@
+/*
+ * Tailwind v4 for NEW components only.
+ * - Every class is prefixed:  tw:flex  tw:gap-2  tw:text-sm ...
+ * - "important": tw: utilities win over Bootstrap rules (e.g. its button reset).
+ * - Preflight (Tailwind's CSS reset) is NOT imported, so Bootstrap and the
+ *   existing design are untouched.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw) important;
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --color-ink: #1d1b24;
+  --color-muted: #6c6a77;
+  --color-line: #e6e5eb;
+  --color-canvas: #f4f4f6;
+  --color-accent: #5a43c8;
+  --color-accent-dark: #4a35ad;
+  --color-accent-soft: #f0edfb;
+}

@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'react-toastify/dist/ReactToastify.css'
 import './index.css'
+import './styles/tailwind.css'
+import './styles/new-ui.css'
+import { applyUiMode } from './ui/uiMode'
 import App from './App.jsx'
 
 // Safety net for a stale lazy-loaded route chunk (an old build's JS file no
@@ -16,6 +19,9 @@ window.addEventListener('vite:preloadError', () => {
   }
 });
 setTimeout(() => sessionStorage.removeItem('reloaded-after-chunk-error'), 10000);
+
+// Set old/new look before the first paint (no flash of the other design).
+applyUiMode();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

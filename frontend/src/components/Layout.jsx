@@ -4,6 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import GlobalSearch from './GlobalSearch';
+import UiModeToggle from './UiModeToggle';
+import { NavIcon, TabIcon } from '../ui/navIcons';
 
 const NAV = [
   { section: 'Main' },
@@ -303,7 +305,7 @@ export default function Layout() {
                         <button className="sidebar-dropdown-toggle" onClick={() => toggleSection(item.section)}>
                             <div className="d-flex align-items-center gap-2">
                                 <span style={{fontSize:'0.9rem'}}>
-                                    {item.section === 'Master Entries' ? '🗂️' :
+                                    <NavIcon section={item.section} emoji={item.section === 'Master Entries' ? '🗂️' :
                                      item.section === 'New Mobile' ? '📦' : 
                                      item.section === 'Old/2nd Mobile' ? '📲' :
                                      item.section === 'Other Products' ? '🗃️' :
@@ -312,7 +314,7 @@ export default function Layout() {
                                      item.section === 'Accounts' ? '🏦' :
                                      item.section === 'Airtel Recovery' ? '🔴' :
                                      item.section === 'Tasks' ? '✅' :
-                                     item.section === 'Settings' ? '⚙️' : '⚙️'}
+                                     item.section === 'Settings' ? '⚙️' : '⚙️'} />
                                 </span>
                                 {item.section}
                             </div>
@@ -323,11 +325,11 @@ export default function Layout() {
                                 {visibleChildren.map(child => (
                                     child.action === 'BACKUP_AIRTEL' ? (
                                         <button key={child.id} onClick={handleAirtelBackup} className="sidebar-action-btn">
-                                            {child.icon} {child.label}
+                                            <NavIcon emoji={child.icon} action={child.action} /> {child.label}
                                         </button>
                                     ) : (
                                         <NavLink key={child.to} to={child.to} end={child.end} onClick={closeSidebar} className={() => getNavLinkClass(child.to, child.end)}>
-                                            {child.icon} {child.label}
+                                            <NavIcon to={child.to} emoji={child.icon} /> {child.label}
                                         </NavLink>
                                     )
                                 ))}
@@ -340,7 +342,7 @@ export default function Layout() {
             if (!isVisible(item)) return null;
              return (
               <NavLink key={item.to} to={item.to} end={item.end} onClick={closeSidebar} className={() => getNavLinkClass(item.to, item.end)}>
-                {item.icon} {item.label}
+                <NavIcon to={item.to} emoji={item.icon} /> {item.label}
               </NavLink>
             );
           })}
@@ -382,6 +384,7 @@ export default function Layout() {
           </div>
           <GlobalSearch />
           <div className="topbar-right">
+            <UiModeToggle />
             <span className="badge rounded-pill" style={{ background:isAdmin()? '#fef3c7':  'var(--primary)', color: isAdmin()? '#92400e' : '#fff', fontSize:'0.7rem' }}>{roleName}</span>
             <span className="text-muted d-none d-md-inline" style={{ fontSize:'0.8rem' }}>{user?.email}</span>
           </div>
@@ -398,12 +401,12 @@ export default function Layout() {
         <div className="mobile-navbar-inner">
           {BOTTOM_TABS.filter(isVisible).map(t => (
              <NavLink key={t.to} to={t.to} end={t.end} className={() => `mobile-nav-item ${getNavLinkClass(t.to, t.end)}`} onClick={closeSidebar}>
-              <span className="nav-icon">{t.icon}</span>
+              <span className="nav-icon"><TabIcon to={t.to} emoji={t.icon} /></span>
               {t.label}
             </NavLink>
           ))}
           <button className="mobile-nav-item" onClick={() => setSidebarOpen(true)}>
-            <span className="nav-icon">☰</span>
+            <span className="nav-icon"><TabIcon to="more" emoji="☰" /></span>
             More
           </button>
         </div>
