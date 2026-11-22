@@ -1,19 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { renderSticker, escposForCanvases, sendToRawBT, printCanvasesInBrowser } from '../../utils/thermalSticker';
+import { renderSticker, escposForCanvases, sendToRawBT, printCanvasesInBrowser, STICKER_HEIGHT_MM } from '../../utils/thermalSticker';
 
 const SETTINGS_KEY = 'stickerPrintSettings';
-const HEIGHTS = [30, 35, 40, 45, 50];
-const RAWBT_BATCH = 8; // stickers per send — keeps the Android hand-off small and reliable
+const RAWBT_BATCH = 12; // stickers per send — keeps the Android hand-off small and reliable
 const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-    return { heightMm: HEIGHTS.includes(s.heightMm) ? s.heightMm : 40, copies: Math.min(10, Math.max(1, parseInt(s.copies) || 1)) };
+    return { copies: Math.min(10, Math.max(1, parseInt(s.copies) || 1)) };
   } catch {
-    return { heightMm: 40, copies: 1 };
+    return { copies: 1 };
   }
 }
 
@@ -39,8 +38,8 @@ export default function StickerPrint() {
   }, [settings]);
 
   const rendered = useMemo(
-    () => stickers.map(s => ({ key: s.key, canvas: renderSticker(s, { shopName, heightMm: settings.heightMm }) })),
-    [stickers, shopName, settings.heightMm]
+    () => stickers.map(s => ({ key: s.key, canvas: renderSticker(s, { shopName, heightMm: STICKER_HEIGHT_MM }) })),
+    [stickers, shopName]
   );
   const previews = useMemo(() => rendered.map(r => ({ key: r.key, src: r.canvas.toDataURL('image/png') })), [rendered]);
   // Copies repeat each sticker back-to-back.
@@ -52,7 +51,7 @@ export default function StickerPrint() {
     return out;
   }, [canvases]);
 
-  const printPc = () => printCanvasesInBrowser(canvases, settings.heightMm);
+  const printPc = () => printCanvasesInBrowser(canvases, STICKER_HEIGHT_MM);
   const printMobile = (items) => sendToRawBT(escposForCanvases(items));
 
   const pcBtn = (
@@ -87,18 +86,11 @@ export default function StickerPrint() {
           <div className="card mb-3">
             <div className="card-body py-2 d-flex flex-wrap gap-3 align-items-center">
               <label className="d-flex align-items-center gap-2 mb-0">
-                <span className="small fw-semibold">Sticker length</span>
-                <select className="form-select form-select-sm" style={{ width: 100 }} value={settings.heightMm}
-                  onChange={e => setSettings(s => ({ ...s, heightMm: parseInt(e.target.value) }))}>
-                  {HEIGHTS.map(h => <option key={h} value={h}>{h} mm</option>)}
-                </select>
-              </label>
-              <label className="d-flex align-items-center gap-2 mb-0">
                 <span className="small fw-semibold">Copies each</span>
                 <input type="number" min="1" max="10" className="form-control form-control-sm" style={{ width: 70 }} value={settings.copies}
                   onChange={e => setSettings(s => ({ ...s, copies: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))} />
               </label>
-              <span className="small text-muted">{canvases.length} sticker{canvases.length === 1 ? '' : 's'} · 58 mm roll (48 mm print)</span>
+              <span className="small text-muted">{canvases.length} sticker{canvases.length === 1 ? '' : 's'} · 2 × 1 inch · selling price printed as code</span>
             </div>
           </div>
 
@@ -118,7 +110,7 @@ export default function StickerPrint() {
 
       <style dangerouslySetInnerHTML={{ __html: `
         .sticker-preview { display: flex; flex-wrap: wrap; gap: 12px; }
-        .sticker-preview img { width: 192px; height: auto; border: 1px solid #ccc; background: #fff; image-rendering: pixelated; }
+        .sticker-preview img { width: 288px; height: auto; border: 1px solid #ccc; background: #fff; image-rendering: pixelated; }
       `}} />
     </div>
   );

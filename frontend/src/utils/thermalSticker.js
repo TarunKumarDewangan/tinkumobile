@@ -1,9 +1,10 @@
-import JsBarcode from 'jsbarcode';
+import QRCode from 'qrcode';
 
 // 58 mm thermal printers (e.g. Posiflow 58D) print 48 mm wide at 203 dpi = 384 dots (8 dots per mm).
 export const DOTS_PER_MM = 8;
 export const PRINT_WIDTH_MM = 48;
 export const PAPER_WIDTH_MM = 58;
+export const STICKER_HEIGHT_MM = 25.4; // 1 inch
 const W = PRINT_WIDTH_MM * DOTS_PER_MM; // 384
 
 const FONT = 'Arial, Helvetica, sans-serif';
@@ -42,22 +43,58 @@ function wrapLines(ctx, text, maxWidth, maxLines) {
   return lines;
 }
 
-// Barcode with whole-dot bar widths (sharp on thermal), widest that fits.
-function drawBarcode(value, maxWidth, height) {
-  const probe = document.createElement('canvas');
-  JsBarcode(probe, value, { format: 'CODE128', width: 1, height: 10, margin: 0, displayValue: false });
-  const modules = probe.width;
-  const barW = Math.max(1, Math.floor(maxWidth / modules));
-  const c = document.createElement('canvas');
-  JsBarcode(c, value, { format: 'CODE128', width: barW, height, margin: 0, displayValue: false, background: '#ffffff', lineColor: '#000000' });
-  return c;
+// Selling price is printed as a shop code: B L A C K W H I T E = 1 2 3 4 5 6 7 8 9 0
+const CODE_LETTERS = ['E', 'B', 'L', 'A', 'C', 'K', 'W', 'H', 'I', 'T'];
+export function priceCode(price) {
+  const n = Math.round(parseFloat(price) || 0);
+  if (n <= 0) return '';
+  return String(n).split('').map(d => CODE_LETTERS[+d]).join('');
+}
+
+// Text kept in the QR: "VIVO V70 FE 5G 8 256:IMEI". The sale screen reads the part after ':'.
+// Kept to ~30 characters (model name shortened, RAM/storage always kept) so the QR
+// stays small with big squares that scan easily from thermal paper.
+const QR_INFO_MAX = 30;
+export function setInfo(s) {
+  const num = v => String(v || '').replace(/\s*(GB|TB|MB)\s*$/i, '').trim();
+  const specs = [num(s.ram), num(s.storage)].filter(Boolean).join(' ');
+  const room = Math.max(8, QR_INFO_MAX - (specs ? specs.length + 1 : 0));
+  let name = String(s.name || '').replace(/:/g, ' ').replace(/\s+/g, ' ').trim();
+  if (name.length > room) {
+    const cut = name.slice(0, room + 1);
+    name = (cut.lastIndexOf(' ') > 0 ? cut.slice(0, cut.lastIndexOf(' ')) : name.slice(0, room)).trim(); // whole words only
+  }
+  return [name, specs].filter(Boolean).join(' ');
+}
+export function qrValue(s) {
+  const id = s.imei || s.sku || '';
+  const info = setInfo(s);
+  return id ? `${info}:${id}` : info;
+}
+
+// QR drawn module-by-module with whole-dot squares so it stays sharp on thermal paper.
+// Returns its size; drawn left-aligned at x and vertically centred within `areaH`.
+function drawQr(ctx, text, x, areaH) {
+  const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
+  const n = qr.modules.size;
+  const quiet = 2; // white border scanners need
+  const px = Math.max(1, Math.floor(Math.min(areaH, 190) / (n + quiet * 2)));
+  const size = px * (n + quiet * 2);
+  const y = Math.max(0, Math.floor((areaH - size) / 2));
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.modules.get(r, c)) ctx.fillRect(x + (c + quiet) * px, y + (r + quiet) * px, px, px);
+    }
+  }
+  return size;
 }
 
 /**
- * Draw one sticker as a black/white canvas, 384 dots wide.
- * heightMm = sticker length on the roll; a dashed cut line is drawn at the bottom.
+ * Draw one 2 × 1 inch sticker (384 × 203 dots, 48 mm print area) as a black/white canvas.
+ * Left: QR (set info + IMEI). Right: shop, NEW/USED, model, RAM/storage, IMEI, MRP, price code.
  */
-export function renderSticker(s, { shopName, heightMm = 40 }) {
+export function renderSticker(s, { shopName, heightMm = STICKER_HEIGHT_MM }) {
   const H = Math.round(heightMm * DOTS_PER_MM);
   const c = document.createElement('canvas');
   c.width = W;
@@ -65,86 +102,76 @@ export function renderSticker(s, { shopName, heightMm = 40 }) {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#000';
-  ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  const pad = 8;
-  const inner = W - pad * 2;
-  const cutZone = 10; // space reserved for the dashed cut line
-  const scale = Math.min(1.25, Math.max(0.75, heightMm / 40));
-  let y = 4;
+  const pad = 4;
+  const cutZone = 6;
+  const usable = H - cutZone;
 
-  // Shop name + NEW/USED box on one line
-  const cond = s.condition === 'new' ? 'NEW' : 'USED';
-  ctx.font = `bold ${Math.round(18 * scale)}px ${FONT}`;
-  const condW = ctx.measureText(cond).width + 14;
-  const nameSize = fitFont(ctx, String(shopName).toUpperCase(), 'bold', Math.round(22 * scale), 12, inner - condW - 8);
-  const rowH = Math.round(Math.max(nameSize, 18 * scale) + 6);
-  ctx.textAlign = 'left';
-  ctx.font = `bold ${nameSize}px ${FONT}`;
-  ctx.fillText(String(shopName).toUpperCase(), pad, y + (rowH - nameSize) / 2);
-  ctx.fillRect(W - pad - condW, y, condW, rowH);
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'center';
-  ctx.font = `bold ${Math.round(18 * scale)}px ${FONT}`;
-  ctx.fillText(cond, W - pad - condW / 2, y + (rowH - 18 * scale) / 2);
+  // QR on the left
+  let qrSize = 0;
+  try {
+    qrSize = drawQr(ctx, qrValue(s), 0, usable);
+  } catch {
+    qrSize = 0; // text too long for a QR — print without it
+  }
+
+  const x0 = qrSize + 2;
+  const colW = W - x0 - pad;
   ctx.fillStyle = '#000';
-  y += rowH + 4;
+  ctx.textAlign = 'left';
+  let y = 2;
+
+  // Shop name + NEW/USED box
+  const cond = s.condition === 'new' ? 'NEW' : 'USED';
+  ctx.font = `bold 15px ${FONT}`;
+  const condW = ctx.measureText(cond).width + 8;
+  const shop = String(shopName).toUpperCase();
+  const shopSize = fitFont(ctx, shop, 'bold', 16, 10, colW - condW - 4);
+  ctx.fillText(shop, x0, y + 1);
+  ctx.fillRect(W - pad - condW, y, condW, 18);
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold 15px ${FONT}`;
+  ctx.fillText(cond, W - pad - condW + 4, y + 2);
+  ctx.fillStyle = '#000';
+  y += Math.max(shopSize, 18) + 3;
 
   // Model (up to 2 lines)
-  const modelSize = Math.round(22 * scale);
-  ctx.font = `bold ${modelSize}px ${FONT}`;
-  for (const line of wrapLines(ctx, s.name, inner, 2)) {
-    ctx.fillText(line, W / 2, y);
-    y += modelSize + 2;
+  ctx.font = `bold 18px ${FONT}`;
+  for (const line of wrapLines(ctx, s.name, colW, 2)) {
+    ctx.fillText(line, x0, y);
+    y += 20;
   }
 
-  // Specs
-  const specs = [s.ram, s.storage, s.color].filter(Boolean).join(' / ');
-  if (specs) {
-    const sz = fitFont(ctx, specs, 'normal', Math.round(18 * scale), 12, inner);
-    ctx.fillText(specs, W / 2, y);
-    y += sz + 4;
+  // RAM / storage / colour
+  const specs = [s.ram, s.storage].filter(Boolean).join(' / ') + (s.color ? `  ${s.color}` : '');
+  if (specs.trim()) {
+    fitFont(ctx, specs.trim(), 'normal', 15, 10, colW);
+    ctx.fillText(specs.trim(), x0, y);
+    y += 17;
   }
-
-  // Bottom block (drawn upward from the cut line): prices, IMEI, barcode
-  const priceSize = Math.round(20 * scale);
-  const imeiSize = Math.round(16 * scale);
-  const mrp = `MRP ₹${parseFloat(s.mrp || 0).toLocaleString('en-IN')}`;
-  const price = `PRICE ₹${parseFloat(s.price || 0).toLocaleString('en-IN')}`;
-  let bottom = H - cutZone - 2;
-
-  const priceY = bottom - priceSize;
-  ctx.font = `bold ${priceSize}px ${FONT}`;
-  const both = `${mrp}   ${price}`;
-  const ps = fitFont(ctx, both, 'bold', priceSize, 12, inner);
-  ctx.fillText(both, W / 2, priceY + (priceSize - ps));
-  bottom = priceY - 4;
 
   if (s.imei) {
-    const iy = bottom - imeiSize;
-    ctx.font = `normal ${imeiSize}px ${FONT}`;
-    ctx.fillText(`IMEI ${s.imei}`, W / 2, iy);
-    bottom = iy - 3;
+    fitFont(ctx, `IMEI ${s.imei}`, 'normal', 14, 10, colW);
+    ctx.fillText(`IMEI ${s.imei}`, x0, y);
   }
 
-  // IMEI alone (all digits) packs tightly in CODE128, so bars can be 2 dots wide —
-  // much easier to scan from thermal paper. The sale screen looks items up by IMEI.
-  const barcodeValue = s.imei || s.sku || '';
-  const barH = Math.floor(bottom - y - 2);
-  if (barcodeValue && barH >= 24) {
-    try {
-      const bc = drawBarcode(barcodeValue, inner, Math.min(barH, Math.round(70 * scale)));
-      ctx.drawImage(bc, Math.round((W - bc.width) / 2), Math.round(y + (barH - bc.height) / 2));
-    } catch {
-      // Characters not valid for CODE128 — skip the barcode.
-    }
+  // Bottom line: MRP left, price code right (bold, large)
+  const code = priceCode(s.price);
+  const codeSize = 24;
+  const by = usable - codeSize - 2;
+  ctx.font = `bold ${codeSize}px ${FONT}`;
+  const codeW = code ? ctx.measureText(code).width : 0;
+  if (code) ctx.fillText(code, W - pad - codeW, by);
+  const mrpVal = parseFloat(s.mrp || 0);
+  if (mrpVal > 0) {
+    const mrp = `MRP ₹${mrpVal.toLocaleString('en-IN')}`;
+    const ms = fitFont(ctx, mrp, 'bold', 18, 10, colW - codeW - 6);
+    ctx.fillText(mrp, x0, by + (codeSize - ms));
   }
 
   // Dashed cut line
-  ctx.fillStyle = '#000';
-  for (let x = 0; x < W; x += 12) ctx.fillRect(x, H - 4, 6, 2);
+  for (let x = 0; x < W; x += 12) ctx.fillRect(x, H - 3, 6, 2);
 
   return c;
 }
