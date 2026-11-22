@@ -4,7 +4,24 @@ import QRCode from 'qrcode';
 export const DOTS_PER_MM = 8;
 export const PRINT_WIDTH_MM = 48;
 export const PAPER_WIDTH_MM = 58;
-export const STICKER_HEIGHT_MM = 25.4; // 1 inch
+
+/**
+ * Label-roll layout (mm). Pre-cut label rolls sit so the print head starts a few mm
+ * inside the label, so the printed area is narrower than the full 48 mm head:
+ *  - heightMm: label height, gapMm: blank gap between labels (each sticker advances height + gap)
+ *  - widthMm: width actually printed, shiftMm: move the print right from the head's left edge
+ */
+export const DEFAULT_LAYOUT = { heightMm: 25.4, gapMm: 3, widthMm: 40, shiftMm: 0 };
+export function normalizeLayout(l = {}) {
+  const num = (v, d, min, max) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
+  const shiftMm = num(l.shiftMm, DEFAULT_LAYOUT.shiftMm, 0, 20);
+  return {
+    heightMm: num(l.heightMm, DEFAULT_LAYOUT.heightMm, 15, 60),
+    gapMm: num(l.gapMm, DEFAULT_LAYOUT.gapMm, 0, 10),
+    shiftMm,
+    widthMm: Math.min(PRINT_WIDTH_MM - shiftMm, num(l.widthMm, DEFAULT_LAYOUT.widthMm, 25, PRINT_WIDTH_MM)),
+  };
+}
 const W = PRINT_WIDTH_MM * DOTS_PER_MM; // 384
 
 const FONT = 'Arial, Helvetica, sans-serif';
@@ -74,11 +91,11 @@ export function qrValue(s) {
 
 // QR drawn module-by-module with whole-dot squares so it stays sharp on thermal paper.
 // Returns its size; drawn left-aligned at x and vertically centred within `areaH`.
-function drawQr(ctx, text, x, areaH) {
+function drawQr(ctx, text, x, areaH, maxSize = 190) {
   const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
   const n = qr.modules.size;
   const quiet = 2; // white border scanners need
-  const px = Math.max(1, Math.floor(Math.min(areaH, 190) / (n + quiet * 2)));
+  const px = Math.max(1, Math.floor(Math.min(areaH, maxSize) / (n + quiet * 2)));
   const size = px * (n + quiet * 2);
   const y = Math.max(0, Math.floor((areaH - size) / 2));
   ctx.fillStyle = '#000';
@@ -91,11 +108,13 @@ function drawQr(ctx, text, x, areaH) {
 }
 
 /**
- * Draw one 2 × 1 inch sticker (384 × 203 dots, 48 mm print area) as a black/white canvas.
+ * Draw one sticker (default 2 × 1 inch label) as a black/white canvas 384 dots wide (the full head).
+ * Content is placed inside [shift, shift + width] so it lands inside the label.
  * Left: QR (set info + IMEI). Right: shop, NEW/USED, model, RAM/storage, IMEI, MRP, price code.
  */
-export function renderSticker(s, { shopName, heightMm = STICKER_HEIGHT_MM }) {
-  const H = Math.round(heightMm * DOTS_PER_MM);
+export function renderSticker(s, { shopName, layout }) {
+  const L = normalizeLayout(layout);
+  const H = Math.round(L.heightMm * DOTS_PER_MM);
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
@@ -104,80 +123,82 @@ export function renderSticker(s, { shopName, heightMm = STICKER_HEIGHT_MM }) {
   ctx.fillRect(0, 0, W, H);
   ctx.textBaseline = 'top';
 
-  const pad = 4;
-  const cutZone = 6;
-  const usable = H - cutZone;
+  const left = Math.round(L.shiftMm * DOTS_PER_MM);
+  const right = Math.min(W, left + Math.round(L.widthMm * DOTS_PER_MM));
+  const vpad = 6; // keep clear of the label's top/bottom edge
+  const usable = H - vpad * 2;
 
-  // QR on the left
+  // QR on the left — at most ~42% of the width so text has room
   let qrSize = 0;
   try {
-    qrSize = drawQr(ctx, qrValue(s), 0, usable);
+    qrSize = drawQr(ctx, qrValue(s), left, H, Math.min(usable, Math.round((right - left) * 0.42)));
   } catch {
     qrSize = 0; // text too long for a QR — print without it
   }
 
-  const x0 = qrSize + 2;
-  const colW = W - x0 - pad;
+  const x0 = left + qrSize + 2;
+  const colW = right - x0;
   ctx.fillStyle = '#000';
   ctx.textAlign = 'left';
-  let y = 2;
+  let y = vpad;
 
   // Shop name + NEW/USED box
   const cond = s.condition === 'new' ? 'NEW' : 'USED';
-  ctx.font = `bold 15px ${FONT}`;
-  const condW = ctx.measureText(cond).width + 8;
+  ctx.font = `bold 14px ${FONT}`;
+  const condW = ctx.measureText(cond).width + 6;
   const shop = String(shopName).toUpperCase();
-  const shopSize = fitFont(ctx, shop, 'bold', 16, 10, colW - condW - 4);
+  const shopSize = fitFont(ctx, shop, 'bold', 15, 9, colW - condW - 3);
   ctx.fillText(shop, x0, y + 1);
-  ctx.fillRect(W - pad - condW, y, condW, 18);
+  ctx.fillRect(right - condW, y, condW, 17);
   ctx.fillStyle = '#fff';
-  ctx.font = `bold 15px ${FONT}`;
-  ctx.fillText(cond, W - pad - condW + 4, y + 2);
+  ctx.font = `bold 14px ${FONT}`;
+  ctx.fillText(cond, right - condW + 3, y + 2);
   ctx.fillStyle = '#000';
-  y += Math.max(shopSize, 18) + 3;
+  y += Math.max(shopSize, 17) + 3;
 
   // Model (up to 2 lines)
-  ctx.font = `bold 18px ${FONT}`;
+  ctx.font = `bold 17px ${FONT}`;
   for (const line of wrapLines(ctx, s.name, colW, 2)) {
     ctx.fillText(line, x0, y);
-    y += 20;
+    y += 19;
   }
 
   // RAM / storage / colour
-  const specs = [s.ram, s.storage].filter(Boolean).join(' / ') + (s.color ? `  ${s.color}` : '');
-  if (specs.trim()) {
-    fitFont(ctx, specs.trim(), 'normal', 15, 10, colW);
-    ctx.fillText(specs.trim(), x0, y);
-    y += 17;
+  const specs = ([s.ram, s.storage].filter(Boolean).join(' / ') + (s.color ? `  ${s.color}` : '')).trim();
+  if (specs) {
+    fitFont(ctx, specs, 'normal', 14, 9, colW);
+    ctx.fillText(specs, x0, y);
+    y += 16;
   }
 
   if (s.imei) {
-    fitFont(ctx, `IMEI ${s.imei}`, 'normal', 14, 10, colW);
+    fitFont(ctx, `IMEI ${s.imei}`, 'normal', 14, 9, colW);
     ctx.fillText(`IMEI ${s.imei}`, x0, y);
   }
 
   // Bottom line: MRP left, price code right (bold, large)
   const code = priceCode(s.price);
-  const codeSize = 24;
-  const by = usable - codeSize - 2;
+  const codeSize = 22;
+  const by = H - vpad - codeSize;
   ctx.font = `bold ${codeSize}px ${FONT}`;
   const codeW = code ? ctx.measureText(code).width : 0;
-  if (code) ctx.fillText(code, W - pad - codeW, by);
+  if (code) ctx.fillText(code, right - codeW, by);
   const mrpVal = parseFloat(s.mrp || 0);
   if (mrpVal > 0) {
     const mrp = `MRP ₹${mrpVal.toLocaleString('en-IN')}`;
-    const ms = fitFont(ctx, mrp, 'bold', 18, 10, colW - codeW - 6);
+    const ms = fitFont(ctx, mrp, 'bold', 16, 9, colW - codeW - 4);
     ctx.fillText(mrp, x0, by + (codeSize - ms));
   }
-
-  // Dashed cut line
-  for (let x = 0; x < W; x += 12) ctx.fillRect(x, H - 3, 6, 2);
 
   return c;
 }
 
-/** ESC/POS raster bytes (GS v 0) for a list of canvases, one after another. */
-export function escposForCanvases(canvases, feedLines = 1) {
+/**
+ * ESC/POS raster bytes (GS v 0) for a list of canvases. After each sticker the paper
+ * advances exactly `gapMm` (ESC J, in dots) so every sticker lands on the next label —
+ * no extra feed at the end, which used to push half a label out.
+ */
+export function escposForCanvases(canvases, gapMm = 0) {
   const bytes = [0x1b, 0x40]; // ESC @ init
   for (const c of canvases) {
     const ctx = c.getContext('2d');
@@ -203,9 +224,9 @@ export function escposForCanvases(canvases, feedLines = 1) {
         }
       }
     }
-    if (feedLines > 0) bytes.push(0x1b, 0x64, feedLines); // ESC d n — small gap between stickers
+    let gap = Math.round(gapMm * DOTS_PER_MM);
+    while (gap > 0) { const n = Math.min(255, gap); bytes.push(0x1b, 0x4a, n); gap -= n; } // ESC J n — feed n dots
   }
-  bytes.push(0x1b, 0x64, 3); // feed so the last sticker clears the tear bar
   return new Uint8Array(bytes);
 }
 
@@ -222,12 +243,15 @@ export function sendToRawBT(bytes) {
 }
 
 /** Print canvases on a PC through the browser, page = one sticker on a 58 mm roll. */
-export function printCanvasesInBrowser(canvases, heightMm) {
+export function printCanvasesInBrowser(canvases, layout) {
+  const L = normalizeLayout(layout);
+  const heightMm = L.heightMm;
+  const pageMm = L.heightMm + L.gapMm;
   const imgs = canvases.map(c => `<div class="p"><img src="${c.toDataURL('image/png')}"></div>`).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Stickers</title><style>
-    @page { size: ${PAPER_WIDTH_MM}mm ${heightMm}mm; margin: 0; }
+    @page { size: ${PAPER_WIDTH_MM}mm ${pageMm}mm; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
-    .p { width: ${PAPER_WIDTH_MM}mm; height: ${heightMm}mm; display: flex; justify-content: center; align-items: flex-start; overflow: hidden; page-break-after: always; break-after: page; }
+    .p { width: ${PAPER_WIDTH_MM}mm; height: ${pageMm}mm; display: flex; justify-content: center; align-items: flex-start; overflow: hidden; page-break-after: always; break-after: page; }
     .p:last-child { page-break-after: auto; break-after: auto; }
     img { width: ${PRINT_WIDTH_MM}mm; height: ${heightMm}mm; image-rendering: pixelated; }
   </style></head><body>${imgs}</body></html>`;
