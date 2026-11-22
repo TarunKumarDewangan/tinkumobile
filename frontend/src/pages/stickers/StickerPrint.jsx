@@ -1,26 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import JsBarcode from 'jsbarcode';
 import { useAuth } from '../../contexts/AuthContext';
+import { renderSticker, escposForCanvases, sendToRawBT, printCanvasesInBrowser } from '../../utils/thermalSticker';
 
-function Barcode({ value }) {
-  const setRef = useCallback((canvas) => {
-    if (!canvas || !value) return;
-    try {
-      JsBarcode(canvas, value, {
-        format: 'CODE128',
-        width: 1.1,
-        height: 26,
-        fontSize: 8,
-        margin: 0,
-        displayValue: true,
-      });
-    } catch (e) {
-      // Invalid characters for CODE128 (shouldn't happen with SKU/IMEI) — leave canvas blank.
-    }
-  }, [value]);
+const SETTINGS_KEY = 'stickerPrintSettings';
+const HEIGHTS = [30, 35, 40, 45, 50];
+const RAWBT_BATCH = 8; // stickers per send — keeps the Android hand-off small and reliable
+const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
-  return <canvas ref={setRef} className="sticker-barcode" />;
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    return { heightMm: HEIGHTS.includes(s.heightMm) ? s.heightMm : 40, copies: Math.min(10, Math.max(1, parseInt(s.copies) || 1)) };
+  } catch {
+    return { heightMm: 40, copies: 1 };
+  }
 }
 
 export default function StickerPrint() {
@@ -28,10 +22,11 @@ export default function StickerPrint() {
   const shopName = user?.shop?.name || 'TINKU MOBILE';
   const [stickers, setStickers] = useState([]);
   const [error, setError] = useState('');
+  const [settings, setSettings] = useState(loadSettings);
 
   useEffect(() => {
-    const raw = sessionStorage.getItem('stickerPrintBatch');
-    const rows = raw ? JSON.parse(raw) : [];
+    let rows = [];
+    try { rows = JSON.parse(sessionStorage.getItem('stickerPrintBatch') || '[]'); } catch { rows = []; }
     if (rows.length === 0) {
       setError('No priced stickers found. Go to Generate Stickers first.');
       return;
@@ -39,91 +34,91 @@ export default function StickerPrint() {
     setStickers(rows);
   }, []);
 
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
+  }, [settings]);
+
+  const rendered = useMemo(
+    () => stickers.map(s => ({ key: s.key, canvas: renderSticker(s, { shopName, heightMm: settings.heightMm }) })),
+    [stickers, shopName, settings.heightMm]
+  );
+  const previews = useMemo(() => rendered.map(r => ({ key: r.key, src: r.canvas.toDataURL('image/png') })), [rendered]);
+  // Copies repeat each sticker back-to-back.
+  const canvases = useMemo(() => rendered.flatMap(r => Array(settings.copies).fill(r.canvas)), [rendered, settings.copies]);
+
+  const batches = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < canvases.length; i += RAWBT_BATCH) out.push({ from: i + 1, to: Math.min(i + RAWBT_BATCH, canvases.length), items: canvases.slice(i, i + RAWBT_BATCH) });
+    return out;
+  }, [canvases]);
+
+  const printPc = () => printCanvasesInBrowser(canvases, settings.heightMm);
+  const printMobile = (items) => sendToRawBT(escposForCanvases(items));
+
+  const pcBtn = (
+    <button className={`btn btn-sm fw-bold ${isAndroid ? 'btn-outline-secondary' : 'btn-primary'}`} onClick={printPc}>
+      🖨️ Print (PC)
+    </button>
+  );
+  const mobileBtns = batches.length <= 1 ? (
+    <button className={`btn btn-sm fw-bold ${isAndroid ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => printMobile(canvases)}>
+      📱 Print on Mobile (RawBT)
+    </button>
+  ) : batches.map(b => (
+    <button key={b.from} className={`btn btn-sm fw-bold ${isAndroid ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => printMobile(b.items)}>
+      📱 RawBT {b.from}–{b.to}
+    </button>
+  ));
+
   return (
     <div>
-      <div className="page-header d-print-none">
+      <div className="page-header">
         <h2>🖨️ Sticker Print</h2>
-        <div className="d-flex gap-2">
+        <div className="d-flex gap-2 flex-wrap">
           <Link to="/stickers/prices" className="btn btn-outline-secondary btn-sm">← Back to Prices</Link>
-          {stickers.length > 0 && (
-            <button className="btn btn-primary btn-sm fw-bold" onClick={() => window.print()}>🖨️ Print</button>
-          )}
+          {stickers.length > 0 && (isAndroid ? <>{mobileBtns}{pcBtn}</> : <>{pcBtn}{mobileBtns}</>)}
         </div>
       </div>
 
-      {error && <div className="alert alert-warning d-print-none">{error}</div>}
+      {error && <div className="alert alert-warning">{error}</div>}
 
       {stickers.length > 0 && (
-        <div className="sticker-sheet">
-          {stickers.map(s => {
-            const barcodeValue = s.imei ? `${s.sku}:${s.imei}` : (s.sku || '');
-            const specs = [s.ram, s.storage, s.color].filter(Boolean).join('/');
-            return (
-              <div className="sticker" key={s.key}>
-                <div className="sticker-brand">{shopName.toUpperCase()}</div>
-                <div className={`sticker-condition ${s.condition === 'new' ? 'is-new' : 'is-used'}`}>
-                  {s.condition === 'new' ? 'NEW' : 'USED'}
-                </div>
-                <div className="sticker-model">{s.name}</div>
-                {specs && <div className="sticker-specs">{specs}</div>}
-                <Barcode value={barcodeValue} />
-                {s.imei && <div className="sticker-imei">IMEI: {s.imei}</div>}
-                <div className="sticker-pricing">
-                  <span className="sticker-mrp">MRP: ₹{parseFloat(s.mrp || 0).toLocaleString('en-IN')}</span>
-                  <span className="sticker-price">PRICE: ₹{parseFloat(s.price || 0).toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <div className="card mb-3">
+            <div className="card-body py-2 d-flex flex-wrap gap-3 align-items-center">
+              <label className="d-flex align-items-center gap-2 mb-0">
+                <span className="small fw-semibold">Sticker length</span>
+                <select className="form-select form-select-sm" style={{ width: 100 }} value={settings.heightMm}
+                  onChange={e => setSettings(s => ({ ...s, heightMm: parseInt(e.target.value) }))}>
+                  {HEIGHTS.map(h => <option key={h} value={h}>{h} mm</option>)}
+                </select>
+              </label>
+              <label className="d-flex align-items-center gap-2 mb-0">
+                <span className="small fw-semibold">Copies each</span>
+                <input type="number" min="1" max="10" className="form-control form-control-sm" style={{ width: 70 }} value={settings.copies}
+                  onChange={e => setSettings(s => ({ ...s, copies: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))} />
+              </label>
+              <span className="small text-muted">{canvases.length} sticker{canvases.length === 1 ? '' : 's'} · 58 mm roll (48 mm print)</span>
+            </div>
+          </div>
+
+          <details className="mb-3 small">
+            <summary className="fw-semibold">Printer setup help (Posiflow 58 mm)</summary>
+            <div className="mt-2">
+              <div><b>PC:</b> connect by USB, install the Posiflow 58 driver. In the print window choose the Posiflow printer, Margins <b>None</b>, Scale <b>100</b>, untick <b>Headers and footers</b>.</div>
+              <div className="mt-1"><b>Android:</b> install <b>RawBT</b> from the Play Store, pair the printer by Bluetooth inside RawBT once, then use <b>Print on Mobile</b>.</div>
+            </div>
+          </details>
+
+          <div className="sticker-preview">
+            {previews.map(p => <img key={p.key} src={p.src} alt="sticker" />)}
+          </div>
+        </>
       )}
 
       <style dangerouslySetInnerHTML={{ __html: `
-        .sticker-sheet {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 3mm;
-        }
-        .sticker {
-          width: 40mm;
-          height: 40mm;
-          box-sizing: border-box;
-          border: 1px dashed #999;
-          padding: 1.5mm;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          align-items: center;
-          text-align: center;
-          overflow: hidden;
-          page-break-inside: avoid;
-        }
-        .sticker-brand { font-size: 7.5pt; font-weight: 800; letter-spacing: 0.3px; line-height: 1.1; }
-        .sticker-condition {
-          font-size: 6.5pt;
-          font-weight: 800;
-          letter-spacing: 0.6px;
-          padding: 0.3mm 2mm;
-          border-radius: 2mm;
-          line-height: 1.4;
-        }
-        .sticker-condition.is-new { background: #16a34a; color: #fff; }
-        .sticker-condition.is-used { background: #475569; color: #fff; }
-        .sticker-model { font-size: 7pt; font-weight: 700; line-height: 1.15; }
-        .sticker-specs { font-size: 6pt; color: #444; line-height: 1.1; }
-        .sticker-barcode { width: 100%; max-width: 36mm; height: auto; }
-        .sticker-imei { font-size: 5.5pt; color: #444; line-height: 1.1; letter-spacing: 0.2px; }
-        .sticker-pricing { display: flex; justify-content: center; gap: 1.5mm; width: 100%; }
-        .sticker-mrp, .sticker-price { font-size: 6.5pt; font-weight: 800; color: #000; line-height: 1.1; white-space: nowrap; }
-
-        @media print {
-          @page { size: 40mm 40mm; margin: 0; }
-          body * { visibility: hidden; }
-          .sticker-sheet, .sticker-sheet * { visibility: visible; }
-          .sticker-sheet { position: absolute; left: 0; top: 0; gap: 0; }
-          .sticker { border: 1px solid #000; page-break-after: always; }
-          .d-print-none { display: none !important; }
-        }
+        .sticker-preview { display: flex; flex-wrap: wrap; gap: 12px; }
+        .sticker-preview img { width: 192px; height: auto; border: 1px solid #ccc; background: #fff; image-rendering: pixelated; }
       `}} />
     </div>
   );
