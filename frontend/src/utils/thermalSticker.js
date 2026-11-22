@@ -11,7 +11,7 @@ export const PAPER_WIDTH_MM = 58;
  *  - heightMm: label height, gapMm: blank gap between labels (each sticker advances height + gap)
  *  - widthMm: width actually printed, shiftMm: move the print right from the head's left edge
  */
-export const DEFAULT_LAYOUT = { heightMm: 25.4, gapMm: 3, widthMm: 40, shiftMm: 0 };
+export const DEFAULT_LAYOUT = { heightMm: 23.5, gapMm: 3, widthMm: 40, shiftMm: 0 };
 export function normalizeLayout(l = {}) {
   const num = (v, d, min, max) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
   const shiftMm = num(l.shiftMm, DEFAULT_LAYOUT.shiftMm, 0, 20);
