@@ -317,6 +317,74 @@ html[data-ui="new"] .login-logo span { color: var(--ui-accent); }
   html[data-ui="new"] .fade-in { animation: none; }
 }
 
+
+/* ── Page-level "hero" headers & gradient buttons (Stocks, Purchases …) ──
+   These pages ship their own CSS; restyle it here instead of in the pages. */
+html[data-ui="new"] .pm-hero,
+html[data-ui="new"] .pf-hero {
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius) !important;
+  box-shadow: var(--ui-shadow) !important;
+}
+html[data-ui="new"] .pm-hero h2,
+html[data-ui="new"] .pf-hero h2 { color: var(--ui-ink) !important; letter-spacing: -0.01em; font-weight: 700; }
+html[data-ui="new"] .pm-hero p,
+html[data-ui="new"] .pf-hero p { color: var(--ui-muted) !important; }
+html[data-ui="new"] .pm-hero button,
+html[data-ui="new"] .pf-hero button,
+html[data-ui="new"] .pm-hero .btn,
+html[data-ui="new"] .pf-hero .btn,
+html[data-ui="new"] .pf-back {
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line-strong) !important;
+  color: var(--ui-ink-2) !important;
+  box-shadow: none !important;
+}
+html[data-ui="new"] .pm-hero button:hover,
+html[data-ui="new"] .pf-hero button:hover,
+html[data-ui="new"] .pf-back:hover { background: var(--ui-subtle) !important; transform: none; }
+html[data-ui="new"] .pm-hero button[style*="239"],
+html[data-ui="new"] .pm-hero button[style*="ef4444"] {
+  color: #c9372c !important;
+  border-color: #f0c9c5 !important;
+}
+html[data-ui="new"] .pm-hero span,
+html[data-ui="new"] .pf-hero span { color: inherit; }
+html[data-ui="new"] .pf-wrap,
+html[data-ui="new"] .pm-wrap { background: transparent !important; font-family: inherit !important; }
+html[data-ui="new"] .pm-new-btn,
+html[data-ui="new"] .pf-bulk,
+html[data-ui="new"] .pf-submit,
+html[data-ui="new"] .bm-btn-primary {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+html[data-ui="new"] .pm-new-btn:hover,
+html[data-ui="new"] .pf-bulk:hover,
+html[data-ui="new"] .pf-submit:hover { background: var(--ui-accent-dark) !important; }
+html[data-ui="new"] .pf-submit.green { background: #188a55 !important; }
+html[data-ui="new"] .pf-submit.green:hover { background: #137347 !important; }
+html[data-ui="new"] .pf-item-num { background: var(--ui-accent) !important; }
+html[data-ui="new"] .pm-tab.active {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+html[data-ui="new"] .pm-table thead tr,
+html[data-ui="new"] .pm-table thead th {
+  background: var(--ui-subtle) !important;
+  color: var(--ui-muted) !important;
+}
+
+
+/* Inline indigo/violet gradients used for totals and primary actions → one accent */
+/* React writes inline colours as rgb(), so match that form */
+html[data-ui="new"] [style*="linear-gradient(135deg, rgb(99, 102, 241)"],
+html[data-ui="new"] [style*="linear-gradient(135deg, rgb(102, 126, 234)"] {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+
 } /* @media screen */
 
 /* ── Menu icons: emoji in the old design, line icons in the new one ──
