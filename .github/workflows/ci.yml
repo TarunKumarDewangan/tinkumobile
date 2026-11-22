@@ -115,8 +115,14 @@ jobs:
         if: steps.check.outputs.enabled == 'true'
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          # Keys pasted from Windows often carry \r line endings, which OpenSSH
+          # rejects ("error in libcrypto") — strip them and end with a newline.
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' | sed '/^[[:space:]]*$/d' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null; then
+            echo "::error::SSH_PRIVATE_KEY secret is not a valid private key. Paste the WHOLE file, from -----BEGIN to -----END ... KEY-----"
+            exit 1
+          fi
           ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           echo "SSH=ssh -i $HOME/.ssh/deploy_key -p ${SSH_PORT:-22} -o BatchMode=yes $SSH_USER@$SSH_HOST" >> "$GITHUB_ENV"
 
