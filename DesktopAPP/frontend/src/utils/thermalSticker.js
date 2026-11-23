@@ -90,14 +90,14 @@ export function qrValue(s) {
 }
 
 // QR drawn module-by-module with whole-dot squares so it stays sharp on thermal paper.
-// Returns its size; drawn left-aligned at x and vertically centred within `areaH`.
-function drawQr(ctx, text, x, areaH, maxSize = 190) {
+// Returns its size; drawn left-aligned at x and vertically centred within [top, top + areaH].
+function drawQr(ctx, text, x, areaH, maxSize = 190, top = 0) {
   const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
   const n = qr.modules.size;
   const quiet = 2; // white border scanners need
   const px = Math.max(1, Math.floor(Math.min(areaH, maxSize) / (n + quiet * 2)));
   const size = px * (n + quiet * 2);
-  const y = Math.max(0, Math.floor((areaH - size) / 2));
+  const y = top + Math.max(0, Math.floor((areaH - size) / 2));
   ctx.fillStyle = '#000';
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
@@ -110,9 +110,10 @@ function drawQr(ctx, text, x, areaH, maxSize = 190) {
 /**
  * Draw one sticker (default 2 × 1 inch label) as a black/white canvas 384 dots wide (the full head).
  * Content is placed inside [shift, shift + width] so it lands inside the label.
- * Right: QR (set info + IMEI). Left, every line centred:
- *   SHOP NAME / date + NEW|USED / model / RAM·storage·colour / IMEI / MRP / price code.
- * The selling price is never printed as a number — only its BLACKWHITE code.
+ * Right: QR (set info + IMEI) with the selling-price code under it (bottom-right corner).
+ * Top-left corner: purchase-price code. Middle, every line centred:
+ *   SHOP NAME / date + NEW|USED / model / RAM·storage·colour / IMEI / MRP.
+ * Purchase and selling price are never printed as numbers — only their BLACKWHITE codes.
  */
 export function renderSticker(s, { shopName, layout, date = new Date() }) {
   const L = normalizeLayout(layout);
@@ -127,18 +128,34 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
 
   const left = Math.round(L.shiftMm * DOTS_PER_MM);
   const right = Math.min(W, left + Math.round(L.widthMm * DOTS_PER_MM));
-  const vpad = 5; // keep clear of the label's top/bottom edge
+  const vpad = 10; // ~1.25 mm clear of the label's top/bottom edge
+  const inset = 12; // ~1.5 mm clear of the label's left/right edge for the corner codes
   const usable = H - vpad * 2;
 
-  // QR on the right — at most ~40% of the width so the text has room
+  const sellCode = priceCode(s.price);
+  const buyCode = priceCode(s.purchase_price);
+  const SELL_H = 18;
+
+  // QR on the right — at most ~40% of the width so the text has room;
+  // the selling-price code sits under it, so the QR uses the height above that.
   let qrSize = 0;
+  const qrAreaH = sellCode ? usable - SELL_H - 2 : usable;
   try {
-    const maxQr = Math.min(usable, Math.round((right - left) * 0.4));
+    const maxQr = Math.min(qrAreaH, Math.round((right - left) * 0.4));
     const probe = QRCode.create(qrValue(s), { errorCorrectionLevel: 'M' }).modules.size + 4;
     const size = Math.max(1, Math.floor(maxQr / probe)) * probe;
-    qrSize = drawQr(ctx, qrValue(s), right - size, H, maxQr);
+    qrSize = drawQr(ctx, qrValue(s), right - size, qrAreaH, maxQr, vpad);
   } catch {
     qrSize = 0; // text too long for a QR — print without it
+  }
+
+  // Bottom-right: selling price as code
+  if (sellCode) {
+    const size = fitFont(ctx, sellCode, 'bold', SELL_H, 10, Math.max(qrSize, 80) - inset);
+    ctx.font = `bold ${size}px ${FONT}`;
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'right';
+    ctx.fillText(sellCode, right - inset, H - vpad - size);
   }
 
   const colL = left;
@@ -155,8 +172,27 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
     rows.push({ h: size, draw: y => { ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillText(str, mid, y); } });
   };
 
-  // 1. shop name
-  text(String(shopName).toUpperCase(), 'bold', 16, 9);
+  // 1. shop name — shares its line with the purchase-price code in the top-left corner
+  const shop = String(shopName).toUpperCase();
+  ctx.font = `bold 14px ${FONT}`;
+  const buyW = buyCode ? ctx.measureText(buyCode).width + 6 : 0;
+  // with a code, the shop name is centred in the space to the right of it
+  const shopL = buyCode ? colL + inset + buyW : colL;
+  const shopMid = (shopL + colR) / 2;
+  const shopSize = fitFont(ctx, shop, 'bold', 16, 8, Math.max(40, colR - shopL));
+  rows.push({
+    h: Math.max(shopSize, buyCode ? 14 : 0),
+    draw: y => {
+      ctx.font = `bold ${shopSize}px ${FONT}`;
+      ctx.fillText(shop, shopMid, y);
+      if (buyCode) {
+        ctx.font = `bold 14px ${FONT}`;
+        ctx.textAlign = 'left';
+        ctx.fillText(buyCode, colL + inset, y);
+        ctx.textAlign = 'center';
+      }
+    },
+  });
 
   // 2. date + NEW/USED box
   const d = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(2)}`;
@@ -196,19 +232,21 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
   const mrpVal = parseFloat(s.mrp || 0);
   if (mrpVal > 0) text(`MRP: ₹${mrpVal.toLocaleString('en-IN')}`, 'bold', 15, 9);
 
-  // 7. selling price as code
-  const code = priceCode(s.price);
-  if (code) text(code, 'bold', 22, 12);
-
   // Drop the IMEI line if everything doesn't fit (it is inside the QR anyway).
   const total = () => rows.reduce((a, r) => a + r.h, 0);
   if (total() + rows.length * 2 > usable && s.imei) {
     const i = rows.findIndex(r => r.imei);
     if (i >= 0) rows.splice(i, 1);
   }
-  const gap = Math.max(2, Math.min(8, Math.floor((usable - total()) / Math.max(1, rows.length - 1))));
-  let y = vpad + Math.max(0, Math.floor((usable - total() - gap * (rows.length - 1)) / 2));
-  for (const r of rows) { r.draw(y); y += r.h + gap; }
+  // The first row (shop name + purchase code) is pinned to the top corner;
+  // the rest are spread evenly below it and centred in the remaining height.
+  const [first, ...rest] = rows;
+  first.draw(vpad);
+  const restH = usable - first.h - 4;
+  const restTotal = rest.reduce((a, r) => a + r.h, 0);
+  const gap = Math.max(2, Math.min(8, Math.floor((restH - restTotal) / Math.max(1, rest.length))));
+  let y = vpad + first.h + gap + Math.max(0, Math.floor((restH - restTotal - gap * rest.length) / 2));
+  for (const r of rest) { r.draw(y); y += r.h + gap; }
 
   ctx.textAlign = 'left';
   return c;

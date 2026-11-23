@@ -101,7 +101,7 @@ export default function StickerPrint() {
                 <input type="number" min="1" max="10" className="form-control form-control-sm" style={{ width: 70 }} value={settings.copies}
                   onChange={e => setSettings(s => ({ ...s, copies: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))} />
               </label>
-              <span className="small text-muted">{canvases.length} sticker{canvases.length === 1 ? '' : 's'} · selling price printed as code</span>
+              <span className="small text-muted">{canvases.length} sticker{canvases.length === 1 ? '' : 's'} · purchase &amp; selling price printed as code</span>
             </div>
             <div className="card-body py-2 border-top">
               <div className="small fw-semibold mb-2">Label setup (mm) — saved on this device</div>

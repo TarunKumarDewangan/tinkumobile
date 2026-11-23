@@ -35,6 +35,7 @@ export default function StickerPrices() {
               storage: p.attributes?.storage || '',
               color: p.attributes?.color || '',
               selling_price: p.selling_price,
+              purchase_price: p.purchase_price,
               mrp: suggestedMrp || '',
               price: '',
             });
