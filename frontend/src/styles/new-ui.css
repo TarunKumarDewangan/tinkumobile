@@ -407,6 +407,58 @@ html[data-ui="new"] .card-header.bg-dark .text-white,
 html[data-ui="new"] .card-header.bg-dark h5,
 html[data-ui="new"] .card-header.bg-dark h6 { color: var(--ui-ink) !important; }
 
+
+/* ── RESPONSIVE (new design only) ─────────────────────────────────────
+   The page must never scroll sideways on a phone. Wide tables scroll inside
+   their own box instead. Nothing is hidden and no control is removed. */
+html[data-ui="new"] .main-content { min-width: 0; }          /* flex item must not grow to its widest table */
+html[data-ui="new"] .page-body { min-width: 0; max-width: 100%; }
+/* any box that directly holds a table scrolls sideways itself */
+html[data-ui="new"] .page-body :is(div, section):has(> table) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+html[data-ui="new"] .table-card,
+html[data-ui="new"] .pm-table-wrap { overflow-x: auto !important; }  /* was overflow:hidden → right-hand columns were cut off on phones */
+
+@media (max-width: 991px) {
+  /* rows of buttons / filters wrap onto the next line instead of running off-screen
+     (no effect when the row already fits) */
+  html[data-ui="new"] .page-body .d-flex:not(.flex-nowrap):not(.flex-column),
+  html[data-ui="new"] .page-header > div,
+  html[data-ui="new"] .pm-hero,
+  html[data-ui="new"] .pf-hero,
+  html[data-ui="new"] .pm-hero > div,
+  html[data-ui="new"] .pf-hero > div,
+  html[data-ui="new"] .pm-tab-bar,
+  html[data-ui="new"] [class$="-tabs"],
+  html[data-ui="new"] [class*="-tabs "] { flex-wrap: wrap; }
+  html[data-ui="new"] .page-body .flex-column.align-items-end { align-items: stretch !important; max-width: 100%; }
+  html[data-ui="new"] .pm-hero,
+  html[data-ui="new"] .pf-hero { gap: 12px; padding: 14px 16px !important; }
+  html[data-ui="new"] .page-body .d-flex > * { min-width: 0; }
+  /* fixed-width controls written into pages (e.g. the 500px item search on Sale Form) shrink to the screen */
+  html[data-ui="new"] .page-body :is(.input-group, .form-control, .form-select, .btn-group, .card, table + div) { max-width: 100%; }
+  /* grow sideways in a row (never in a column, where the basis would become a height) */
+  html[data-ui="new"] .page-body .d-flex:not(.flex-column) > .form-control,
+  html[data-ui="new"] .page-body .d-flex:not(.flex-column) > .input-group { flex: 1 1 160px; }
+}
+
+
+/* Topbar fits at every width: parts shrink, long email is shortened with "…" */
+html[data-ui="new"] .topbar > div:first-child,
+html[data-ui="new"] .topbar .global-search-wrap { min-width: 0; }
+html[data-ui="new"] .topbar .global-search-input { min-width: 0; width: 100%; }
+html[data-ui="new"] .topbar-right { min-width: 0; }
+html[data-ui="new"] .topbar-right > span.text-muted {
+  display: inline-block; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+}
+@media (max-width: 1199px) {
+  html[data-ui="new"] .topbar-right > span.text-muted { max-width: 120px; }
+  html[data-ui="new"] .topbar .global-search-wrap { margin: 0 8px; }
+}
+
 } /* @media screen */
 
 /* ── Menu icons: emoji in the old design, line icons in the new one ──
