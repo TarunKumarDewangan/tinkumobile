@@ -459,6 +459,69 @@ html[data-ui="new"] .topbar-right > span.text-muted {
   html[data-ui="new"] .topbar .global-search-wrap { margin: 0 8px; }
 }
 
+
+/* ── Polish: quieter text, soft badges, on-palette info colour ───────── */
+/* placeholders in normal case and lighter (typed values stay uppercase, as before) */
+html[data-ui="new"] input::placeholder,
+html[data-ui="new"] textarea::placeholder {
+  text-transform: none;
+  letter-spacing: 0;
+  color: #9a98a6;
+  opacity: 1;
+}
+/* buttons and page titles in sentence case instead of all caps (only where a class forced caps) */
+html[data-ui="new"] .btn.text-uppercase,
+html[data-ui="new"] .page-header .text-uppercase,
+html[data-ui="new"] .page-header h2,
+html[data-ui="new"] .pm-hero p,
+html[data-ui="new"] .pf-hero p { text-transform: none !important; letter-spacing: normal !important; }
+
+/* "info" (cyan) buttons follow the accent instead */
+html[data-ui="new"] .btn-info {
+  --bs-btn-bg: var(--ui-accent-soft);
+  --bs-btn-color: var(--ui-accent-dark);
+  --bs-btn-border-color: #d9d2f6;
+  --bs-btn-hover-bg: #e6e0fa;
+  --bs-btn-hover-color: var(--ui-accent-dark);
+  --bs-btn-hover-border-color: #c9bff3;
+  --bs-btn-active-bg: #e6e0fa;
+  --bs-btn-active-color: var(--ui-accent-dark);
+}
+html[data-ui="new"] .btn-info.text-white { color: var(--ui-accent-dark) !important; }
+html[data-ui="new"] .btn-outline-info {
+  --bs-btn-color: var(--ui-accent);
+  --bs-btn-border-color: #cfc7f3;
+  --bs-btn-hover-bg: var(--ui-accent-soft);
+  --bs-btn-hover-color: var(--ui-accent-dark);
+  --bs-btn-hover-border-color: #b9aeee;
+  --bs-btn-active-bg: var(--ui-accent-soft);
+  --bs-btn-active-color: var(--ui-accent-dark);
+}
+
+/* soft badges: light tint + dark text of the same meaning */
+html[data-ui="new"] .badge { font-weight: 600; border-radius: 6px; letter-spacing: 0.01em; }
+html[data-ui="new"] .badge:is(.bg-secondary, .bg-dark, .text-bg-secondary, .text-bg-dark) { background: #eceaf1 !important; color: var(--ui-ink-2) !important; }
+html[data-ui="new"] .badge:is(.bg-success, .text-bg-success) { background: #e3f3ea !important; color: #137347 !important; }
+html[data-ui="new"] .badge:is(.bg-danger, .text-bg-danger)   { background: #fbe9e7 !important; color: #b42318 !important; }
+html[data-ui="new"] .badge:is(.bg-warning, .text-bg-warning) { background: #fdf1d8 !important; color: #8a5a00 !important; }
+html[data-ui="new"] .badge:is(.bg-info, .text-bg-info)       { background: #e4effa !important; color: #1f5f99 !important; }
+html[data-ui="new"] .badge:is(.bg-primary, .text-bg-primary) { background: var(--ui-accent-soft) !important; color: var(--ui-accent-dark) !important; }
+html[data-ui="new"] .badge:is(.bg-light, .text-bg-light)     { background: var(--ui-subtle) !important; color: var(--ui-ink-2) !important; border: 1px solid var(--ui-line); }
+
+/* small finishing touches */
+html[data-ui="new"] ::selection { background: #ddd5fa; color: var(--ui-ink); }
+html[data-ui="new"] * { scrollbar-width: thin; scrollbar-color: #cfcdd8 transparent; }
+html[data-ui="new"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+html[data-ui="new"] ::-webkit-scrollbar-thumb { background: #cfcdd8; border-radius: 8px; }
+html[data-ui="new"] ::-webkit-scrollbar-track { background: transparent; }
+html[data-ui="new"] .Toastify__toast {
+  border-radius: 10px;
+  font-family: inherit;
+  box-shadow: 0 8px 24px rgba(29, 27, 36, 0.12);
+}
+html[data-ui="new"] a:focus-visible,
+html[data-ui="new"] button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+
 } /* @media screen */
 
 /* ── Menu icons: emoji in the old design, line icons in the new one ──
