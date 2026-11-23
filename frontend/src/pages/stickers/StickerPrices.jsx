@@ -18,14 +18,32 @@ export default function StickerPrices() {
       return;
     }
 
-    Promise.all(items.map(it => api.get(`/products/${it.product_id}`).then(r => ({ ...r.data, qty: it.qty }))))
-      .then(products => {
+    // Each product is fetched once, however many of its phones were picked.
+    const ids = [...new Set(items.map(it => it.product_id))];
+    Promise.all(ids.map(id => api.get(`/products/${id}`).then(r => r.data)))
+      .then(list => {
+        const byId = Object.fromEntries(list.map(p => [p.id, p]));
+        // A picked in-stock phone ("unit") brings its own IMEI, config and prices from its purchase line.
+        const products = items.map(it => {
+          const base = byId[it.product_id];
+          if (!it.unit) return { ...base, qty: it.qty };
+          const u = it.unit;
+          return {
+            ...base,
+            qty: 1,
+            imei: u.imei,
+            attributes: { ...(base.attributes || {}), ram: u.ram, storage: u.storage, color: u.color },
+            purchase_price: u.purchase_price ?? base.purchase_price,
+            selling_price: u.selling_price ?? base.selling_price,
+            max_selling_price: u.max_selling_price ?? base.max_selling_price,
+          };
+        });
         const expanded = [];
-        products.forEach(p => {
+        products.forEach((p, n) => {
           const suggestedMrp = parseFloat(p.max_selling_price || 0) > 0 ? p.max_selling_price : p.selling_price;
           for (let i = 0; i < p.qty; i++) {
             expanded.push({
-              key: `${p.id}-${i}`,
+              key: `${p.id}-${n}-${i}`,
               product_id: p.id,
               name: (p.brand ? `${p.brand.name.toUpperCase()} ` : '') + p.name,
               condition: p.condition,

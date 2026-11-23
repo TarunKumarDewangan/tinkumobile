@@ -43,7 +43,7 @@ export default function GenerateStickers() {
   };
 
   const setQty = (p, qty) => {
-    const max = p.is_group ? p.count : 999;
+    const max = p.is_group ? p.count : p.is_unit ? 1 : 999;
     const q = Math.min(max, Math.max(1, parseInt(qty) || 1));
     setSelected(prev => prev[p.id] !== undefined ? { ...prev, [p.id]: q } : prev);
   };
@@ -56,17 +56,35 @@ export default function GenerateStickers() {
       toast.error('Select at least one product first');
       return;
     }
-    // Every group expands into its own real product_ids (each carrying its
+    // Every group expands into its own real units (each carrying its
     // own distinct IMEI) — one sticker per physical unit — instead of
     // reusing a single product_id with qty > 1, which would print the same
-    // IMEI on every copy.
+    // IMEI on every copy. New mobiles come as in-stock phones ("units") whose
+    // IMEI / config / prices live on their purchase line, so those travel along.
+    const unitItem = u => ({
+      product_id: u.product_id,
+      qty: 1,
+      unit: {
+        imei: u.imei,
+        ram: u.attributes?.ram || '',
+        storage: u.attributes?.storage || '',
+        color: u.attributes?.color || '',
+        purchase_price: u.purchase_price,
+        selling_price: u.selling_price,
+        max_selling_price: u.max_selling_price,
+      },
+    });
     const items = [];
     selectedIds.forEach(id => {
       const p = products.find(pr => String(pr.id) === String(id));
       if (!p) return;
       const qty = selected[id];
-      if (p.is_group) {
+      if (p.is_group && p.units) {
+        p.units.slice(0, qty).forEach(u => items.push(unitItem(u)));
+      } else if (p.is_group) {
         p.product_ids.slice(0, qty).forEach(pid => items.push({ product_id: pid, qty: 1 }));
+      } else if (p.is_unit) {
+        items.push(unitItem(p));
       } else {
         items.push({ product_id: p.id, qty });
       }
@@ -151,8 +169,8 @@ export default function GenerateStickers() {
                     </td>
                     <td>₹{parseFloat(p.selling_price || 0).toLocaleString('en-IN')}</td>
                     <td>
-                      <input type="number" min="1" max={p.is_group ? p.count : undefined} className="form-control form-control-sm"
-                        disabled={!isSelected} value={selected[p.id] ?? (p.is_group ? p.count : 1)}
+                      <input type="number" min="1" max={p.is_group ? p.count : p.is_unit ? 1 : undefined} className="form-control form-control-sm"
+                        disabled={!isSelected || p.is_unit} value={selected[p.id] ?? (p.is_group ? p.count : 1)}
                         title={p.is_group ? `Up to ${p.count} available` : undefined}
                         onChange={e => setQty(p, e.target.value)} />
                     </td>

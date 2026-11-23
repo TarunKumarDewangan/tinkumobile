@@ -26,17 +26,22 @@ class ProductController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $shopId = $user->hasFullAccess() ? null : $user->shop_id;
+        $search = $request->search;
+
         $query = Product::with(['category:id,name', 'brand:id,name'])
-            ->select('id', 'category_id', 'brand_id', 'name', 'sku', 'imei', 'condition', 'selling_price', 'max_selling_price', 'attributes')
+            ->select('id', 'category_id', 'brand_id', 'name', 'sku', 'imei', 'condition', 'purchase_price', 'selling_price', 'max_selling_price', 'attributes')
             ->orderBy('name');
 
-        if ($request->search) {
-            $s = $request->search;
+        if ($search) {
+            $s = $search;
             $query->where(function ($q) use ($s) {
                 $q->where('name', 'like', "%{$s}%")
                   ->orWhere('sku', 'like', "%{$s}%")
                   ->orWhere('imei', 'like', "%{$s}%")
-                  ->orWhere('attributes->brand', 'like', "%{$s}%");
+                  ->orWhere('attributes->brand', 'like', "%{$s}%")
+                  // new mobiles keep each phone's IMEI on its purchase line
+                  ->orWhereHas('purchaseItems', fn($pq) => $pq->where('imei', 'like', "%{$s}%"));
             });
         }
 
@@ -56,10 +61,30 @@ class ProductController extends Controller
             // page) to count correctly — capped defensively so an overly
             // broad search can't pull the whole catalogue into memory.
             $all = $query->limit(500)->get();
+            $unitsByProduct = $this->stickerStockUnits($all, $shopId, $search);
             $groups = [];
             $ungrouped = [];
 
             foreach ($all as $p) {
+                // New mobiles: one group per config of the phones in stock, each phone with its own IMEI
+                if (!empty($unitsByProduct[$p->id])) {
+                    foreach ($unitsByProduct[$p->id] as $u) {
+                        $key = 'u|' . $this->generateGroupKey($p, $u['attributes']['ram'], $u['attributes']['storage'], $u['attributes']['color']);
+                        if (!isset($groups[$key])) {
+                            $groups[$key] = array_merge($u, [
+                                'id' => 'grp_' . md5($key),
+                                'is_group' => true,
+                                'is_unit' => false,
+                                'imei' => null,
+                                'units' => [],
+                                'count' => 0,
+                            ]);
+                        }
+                        $groups[$key]['units'][] = $u;
+                        $groups[$key]['count']++;
+                    }
+                    continue;
+                }
                 if (empty($p->imei)) {
                     $ungrouped[] = $p;
                     continue;
@@ -85,11 +110,89 @@ class ProductController extends Controller
                 $groups[$key]['count']++;
             }
 
+            // a "group" of one phone is just that phone
+            $groups = array_map(fn($g) => !empty($g['units']) && $g['count'] === 1 ? $g['units'][0] : $g, $groups);
             $rows = array_merge(array_values($groups), $ungrouped);
             return response()->json(['data' => $rows, 'current_page' => 1, 'last_page' => 1]);
         }
 
-        return response()->json($query->paginate($request->per_page ?? 20));
+        $page = $query->paginate($request->per_page ?? 20);
+        $unitsByProduct = $this->stickerStockUnits($page->getCollection(), $shopId, $search);
+        $page->setCollection($page->getCollection()->flatMap(
+            fn($p) => !empty($unitsByProduct[$p->id]) ? $unitsByProduct[$p->id] : [$p]
+        )->values());
+        return response()->json($page);
+    }
+
+    /**
+     * Phones currently in stock (received, not sold) for the given products, one entry per IMEI,
+     * shaped like a sticker-list row. New mobiles keep their IMEIs on purchase lines (comma-joined),
+     * not on the product, and each line carries its own purchase/selling price.
+     * A sale uses up one purchase of its IMEI, so a sold-then-bought-back phone counts as in stock.
+     * When the search text matches some of a product's IMEIs, only those phones are returned.
+     */
+    private function stickerStockUnits($products, $shopId, ?string $search): array
+    {
+        $byId = collect($products)->keyBy('id');
+        if ($byId->isEmpty()) return [];
+
+        $items = \App\Models\PurchaseItem::whereIn('product_id', $byId->keys())
+            ->whereNotNull('imei')->where('imei', '!=', '')
+            ->whereHas('invoice', fn($q) => $q->where('status', 'received'))
+            ->when($shopId, fn($q) => $q->where('current_shop_id', $shopId))
+            ->orderBy('id')
+            ->get();
+        if ($items->isEmpty()) return [];
+
+        $sold = [];
+        \App\Models\SaleItem::whereIn('product_id', $items->pluck('product_id')->unique())
+            ->whereNotNull('imei')->where('imei', '!=', '')
+            ->whereHas('invoice', fn($q) => $q->where('is_cancelled', false))
+            ->get(['product_id', 'imei'])
+            ->each(function ($si) use (&$sold) {
+                foreach (explode(',', $si->imei) as $i) {
+                    $sold[$si->product_id][trim($i)] = ($sold[$si->product_id][trim($i)] ?? 0) + 1;
+                }
+            });
+
+        $units = [];
+        foreach ($items as $item) {
+            $p = $byId[$item->product_id];
+            foreach (array_map('trim', explode(',', $item->imei)) as $idx => $imei) {
+                if ($imei === '') continue;
+                // each sale uses up one purchase of that IMEI (oldest first), so a phone
+                // that was sold and later bought back still shows as in stock
+                if (($sold[$item->product_id][$imei] ?? 0) > 0) { $sold[$item->product_id][$imei]--; continue; }
+                $units[$item->product_id][] = [
+                    'id' => "unit_{$item->id}_{$idx}",
+                    'is_unit' => true,
+                    'product_id' => $p->id,
+                    'category_id' => $p->category_id,
+                    'name' => $p->name,
+                    'brand' => $p->brand,
+                    'category' => $p->category,
+                    'sku' => $p->sku,
+                    'imei' => $imei,
+                    'condition' => $p->condition,
+                    'purchase_price' => $item->unit_price ?? $p->purchase_price,
+                    'selling_price' => $item->selling_price ?? $p->selling_price,
+                    'max_selling_price' => $item->max_selling_price ?? $p->max_selling_price,
+                    'attributes' => [
+                        'ram' => $item->ram ?? ($p->attributes['ram'] ?? null),
+                        'storage' => $item->storage ?? ($p->attributes['storage'] ?? null),
+                        'color' => $item->color ?? ($p->attributes['color'] ?? null),
+                    ],
+                ];
+            }
+        }
+
+        if ($search) {
+            foreach ($units as $pid => $list) {
+                $hits = array_values(array_filter($list, fn($u) => stripos($u['imei'], $search) !== false));
+                if ($hits) $units[$pid] = $hits;
+            }
+        }
+        return $units;
     }
 
     public function index(Request $request)
