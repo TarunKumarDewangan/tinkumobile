@@ -110,9 +110,11 @@ function drawQr(ctx, text, x, areaH, maxSize = 190) {
 /**
  * Draw one sticker (default 2 × 1 inch label) as a black/white canvas 384 dots wide (the full head).
  * Content is placed inside [shift, shift + width] so it lands inside the label.
- * Left: QR (set info + IMEI). Right: shop, NEW/USED, model, RAM/storage, IMEI, MRP, price code.
+ * Right: QR (set info + IMEI). Left, every line centred:
+ *   SHOP NAME / date + NEW|USED / model / RAM·storage·colour / IMEI / MRP / price code.
+ * The selling price is never printed as a number — only its BLACKWHITE code.
  */
-export function renderSticker(s, { shopName, layout }) {
+export function renderSticker(s, { shopName, layout, date = new Date() }) {
   const L = normalizeLayout(layout);
   const H = Math.round(L.heightMm * DOTS_PER_MM);
   const c = document.createElement('canvas');
@@ -125,71 +127,90 @@ export function renderSticker(s, { shopName, layout }) {
 
   const left = Math.round(L.shiftMm * DOTS_PER_MM);
   const right = Math.min(W, left + Math.round(L.widthMm * DOTS_PER_MM));
-  const vpad = 6; // keep clear of the label's top/bottom edge
+  const vpad = 5; // keep clear of the label's top/bottom edge
   const usable = H - vpad * 2;
 
-  // QR on the left — at most ~42% of the width so text has room
+  // QR on the right — at most ~40% of the width so the text has room
   let qrSize = 0;
   try {
-    qrSize = drawQr(ctx, qrValue(s), left, H, Math.min(usable, Math.round((right - left) * 0.42)));
+    const maxQr = Math.min(usable, Math.round((right - left) * 0.4));
+    const probe = QRCode.create(qrValue(s), { errorCorrectionLevel: 'M' }).modules.size + 4;
+    const size = Math.max(1, Math.floor(maxQr / probe)) * probe;
+    qrSize = drawQr(ctx, qrValue(s), right - size, H, maxQr);
   } catch {
     qrSize = 0; // text too long for a QR — print without it
   }
 
-  const x0 = left + qrSize + 2;
-  const colW = right - x0;
+  const colL = left;
+  const colR = right - qrSize - (qrSize ? 4 : 0);
+  const colW = colR - colL;
+  const mid = (colL + colR) / 2;
   ctx.fillStyle = '#000';
-  ctx.textAlign = 'left';
-  let y = vpad;
+  ctx.textAlign = 'center';
 
-  // Shop name + NEW/USED box
+  // Build the rows first (height + how to draw), then spread them over the label height.
+  const rows = [];
+  const text = (str, weight, max, min) => {
+    const size = fitFont(ctx, str, weight, max, min, colW);
+    rows.push({ h: size, draw: y => { ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillText(str, mid, y); } });
+  };
+
+  // 1. shop name
+  text(String(shopName).toUpperCase(), 'bold', 16, 9);
+
+  // 2. date + NEW/USED box
+  const d = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(2)}`;
   const cond = s.condition === 'new' ? 'NEW' : 'USED';
-  ctx.font = `bold 14px ${FONT}`;
-  const condW = ctx.measureText(cond).width + 6;
-  const shop = String(shopName).toUpperCase();
-  const shopSize = fitFont(ctx, shop, 'bold', 15, 9, colW - condW - 3);
-  ctx.fillText(shop, x0, y + 1);
-  ctx.fillRect(right - condW, y, condW, 17);
-  ctx.fillStyle = '#fff';
-  ctx.font = `bold 14px ${FONT}`;
-  ctx.fillText(cond, right - condW + 3, y + 2);
-  ctx.fillStyle = '#000';
-  y += Math.max(shopSize, 17) + 3;
+  rows.push({
+    h: 16,
+    draw: y => {
+      ctx.font = `bold 13px ${FONT}`;
+      const dw = ctx.measureText(d).width;
+      const cw = ctx.measureText(cond).width + 8;
+      const gap = 8;
+      const x = mid - (dw + gap + cw) / 2;
+      ctx.textAlign = 'left';
+      ctx.fillText(d, x, y + 2);
+      ctx.fillRect(x + dw + gap, y, cw, 16);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(cond, x + dw + gap + 4, y + 2);
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'center';
+    },
+  });
 
-  // Model (up to 2 lines)
-  ctx.font = `bold 17px ${FONT}`;
+  // 3. model (up to 2 lines)
+  ctx.font = `bold 16px ${FONT}`;
   for (const line of wrapLines(ctx, s.name, colW, 2)) {
-    ctx.fillText(line, x0, y);
-    y += 19;
+    rows.push({ h: 17, draw: y => { ctx.font = `bold 16px ${FONT}`; ctx.fillText(line, mid, y); } });
   }
 
-  // RAM / storage / colour
-  const specs = ([s.ram, s.storage].filter(Boolean).join(' / ') + (s.color ? `  ${s.color}` : '')).trim();
-  if (specs) {
-    fitFont(ctx, specs, 'normal', 14, 9, colW);
-    ctx.fillText(specs, x0, y);
-    y += 16;
-  }
+  // 4. RAM / storage / colour
+  const specs = ([s.ram, s.storage].filter(Boolean).join(' / ') + (s.color ? `  ${String(s.color).toUpperCase()}` : '')).trim();
+  if (specs) text(specs, 'normal', 14, 9);
 
-  if (s.imei) {
-    fitFont(ctx, `IMEI ${s.imei}`, 'normal', 14, 9, colW);
-    ctx.fillText(`IMEI ${s.imei}`, x0, y);
-  }
+  // 5. IMEI
+  if (s.imei) { text(`IMEI ${s.imei}`, 'normal', 12, 8); rows[rows.length - 1].imei = true; }
 
-  // Bottom line: MRP left, price code right (bold, large)
-  const code = priceCode(s.price);
-  const codeSize = 22;
-  const by = H - vpad - codeSize;
-  ctx.font = `bold ${codeSize}px ${FONT}`;
-  const codeW = code ? ctx.measureText(code).width : 0;
-  if (code) ctx.fillText(code, right - codeW, by);
+  // 6. MRP
   const mrpVal = parseFloat(s.mrp || 0);
-  if (mrpVal > 0) {
-    const mrp = `MRP ₹${mrpVal.toLocaleString('en-IN')}`;
-    const ms = fitFont(ctx, mrp, 'bold', 16, 9, colW - codeW - 4);
-    ctx.fillText(mrp, x0, by + (codeSize - ms));
-  }
+  if (mrpVal > 0) text(`MRP: ₹${mrpVal.toLocaleString('en-IN')}`, 'bold', 15, 9);
 
+  // 7. selling price as code
+  const code = priceCode(s.price);
+  if (code) text(code, 'bold', 22, 12);
+
+  // Drop the IMEI line if everything doesn't fit (it is inside the QR anyway).
+  const total = () => rows.reduce((a, r) => a + r.h, 0);
+  if (total() + rows.length * 2 > usable && s.imei) {
+    const i = rows.findIndex(r => r.imei);
+    if (i >= 0) rows.splice(i, 1);
+  }
+  const gap = Math.max(2, Math.min(8, Math.floor((usable - total()) / Math.max(1, rows.length - 1))));
+  let y = vpad + Math.max(0, Math.floor((usable - total() - gap * (rows.length - 1)) / 2));
+  for (const r of rows) { r.draw(y); y += r.h + gap; }
+
+  ctx.textAlign = 'left';
   return c;
 }
 
