@@ -60,6 +60,25 @@ function wrapLines(ctx, text, maxWidth, maxLines) {
   return lines;
 }
 
+// Lighten a box on a 1-bit printer: snap it to black/white, then clear 1 dot in every 2×2 block
+// so the price codes print a bit lighter (greyish) than other text.
+function fadeBox(ctx, x, y, w, h) {
+  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+  w = Math.min(ctx.canvas.width - x, Math.ceil(w)); h = Math.min(ctx.canvas.height - y, Math.ceil(h));
+  if (w <= 0 || h <= 0) return;
+  const img = ctx.getImageData(x, y, w, h);
+  const d = img.data;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      const i = (r * w + c) * 4;
+      const dark = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 140 && !((x + c) % 2 === 0 && (y + r) % 2 === 0);
+      d[i] = d[i + 1] = d[i + 2] = dark ? 0 : 255;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, x, y);
+}
+
 // Selling price is printed as a shop code: B L A C K W H I T E = 1 2 3 4 5 6 7 8 9 0
 const CODE_LETTERS = ['E', 'B', 'L', 'A', 'C', 'K', 'W', 'H', 'I', 'T'];
 export function priceCode(price) {
@@ -156,6 +175,8 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
     ctx.fillStyle = '#000';
     ctx.textAlign = 'right';
     ctx.fillText(sellCode, right - inset, H - vpad - size);
+    const w = ctx.measureText(sellCode).width;
+    fadeBox(ctx, right - inset - w - 1, H - vpad - size - 1, w + 2, size + 4);
   }
 
   const colL = left;
@@ -174,21 +195,22 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
 
   // 1. shop name — shares its line with the purchase-price code in the top-left corner
   const shop = String(shopName).toUpperCase();
-  ctx.font = `bold 14px ${FONT}`;
+  ctx.font = `bold 15px ${FONT}`;
   const buyW = buyCode ? ctx.measureText(buyCode).width + 6 : 0;
   // with a code, the shop name is centred in the space to the right of it
   const shopL = buyCode ? colL + inset + buyW : colL;
   const shopMid = (shopL + colR) / 2;
   const shopSize = fitFont(ctx, shop, 'bold', 16, 8, Math.max(40, colR - shopL));
   rows.push({
-    h: Math.max(shopSize, buyCode ? 14 : 0),
+    h: Math.max(shopSize, buyCode ? 15 : 0),
     draw: y => {
       ctx.font = `bold ${shopSize}px ${FONT}`;
       ctx.fillText(shop, shopMid, y);
       if (buyCode) {
-        ctx.font = `bold 14px ${FONT}`;
+        ctx.font = `bold 15px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.fillText(buyCode, colL + inset, y);
+        fadeBox(ctx, colL + inset - 1, y - 1, buyW - 4, 18);
         ctx.textAlign = 'center';
       }
     },
