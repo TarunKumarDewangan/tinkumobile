@@ -60,6 +60,25 @@ function wrapLines(ctx, text, maxWidth, maxLines) {
   return lines;
 }
 
+// ~50% grey on a 1-bit printer: snap a box to black/white, then keep only every other
+// dot in a checkerboard so the text prints at about half darkness.
+function halfTone(ctx, x, y, w, h) {
+  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+  w = Math.min(ctx.canvas.width - x, Math.ceil(w)); h = Math.min(ctx.canvas.height - y, Math.ceil(h));
+  if (w <= 0 || h <= 0) return;
+  const img = ctx.getImageData(x, y, w, h);
+  const d = img.data;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      const i = (r * w + c) * 4;
+      const dark = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 160 && (x + c + y + r) % 2 === 0;
+      d[i] = d[i + 1] = d[i + 2] = dark ? 0 : 255;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, x, y);
+}
+
 // Selling price is printed as a shop code: B L A C K W H I T E = 1 2 3 4 5 6 7 8 9 0
 const CODE_LETTERS = ['E', 'B', 'L', 'A', 'C', 'K', 'W', 'H', 'I', 'T'];
 export function priceCode(price) {
@@ -149,13 +168,20 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
   const shopSize = fitFont(ctx, shop, 'bold', TOP, 9, inR - inL - dateW - 10);
   write(shop, inR, pad + (TOP - shopSize), shopSize, 'bold', 'right');
 
-  // ── bottom line: purchase code (left), selling code (right)
+  // ── bottom line: purchase code (left), selling code (right) — plain weight at ~50% grey
   const BOT = 18;
   const botY = H - pad - BOT;
   const buy = priceCode(s.purchase_price);
   const sell = priceCode(s.price);
-  if (buy) write(buy, inL, botY, BOT, 'bold', 'left');
-  if (sell) write(sell, inR, botY, BOT, 'bold', 'right');
+  if (buy) {
+    write(buy, inL, botY, BOT, 'normal', 'left');
+    halfTone(ctx, inL - 1, botY - 1, ctx.measureText(buy).width + 2, BOT + 4);
+  }
+  if (sell) {
+    write(sell, inR, botY, BOT, 'normal', 'right');
+    const w = ctx.measureText(sell).width;
+    halfTone(ctx, inR - w - 1, botY - 1, w + 2, BOT + 4);
+  }
 
   // ── middle band between the two lines
   const midTop = pad + TOP + 6;
