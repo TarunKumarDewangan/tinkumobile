@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { downloadLabelTemplates } from '../../utils/labelTemplate';
-import { renderSticker, escposForCanvases, sendToRawBT, printCanvasesInBrowser, DEFAULT_LAYOUT, normalizeLayout, PRINT_WIDTH_MM } from '../../utils/thermalSticker';
+import { toast } from 'react-toastify';
+import { canPrintDirect, printDirect, downloadStickerImages, renderSticker, escposForCanvases, sendToRawBT, printCanvasesInBrowser, DEFAULT_LAYOUT, normalizeLayout, PRINT_WIDTH_MM } from '../../utils/thermalSticker';
 
 const SETTINGS_KEY = 'stickerPrintSettings';
 const RAWBT_BATCH = 12; // stickers per send — keeps the Android hand-off small and reliable
@@ -62,11 +63,43 @@ export default function StickerPrint() {
     return out;
   }, [canvases]);
 
+  const direct = canPrintDirect && !isAndroid;
+  const [sending, setSending] = useState(false);
   const printPc = (items = canvases) => printCanvasesInBrowser(items, layout);
   const printMobile = (items) => sendToRawBT(escposForCanvases(items, layout.gapMm));
-  const testPrint = () => (isAndroid ? printMobile(canvases.slice(0, 1)) : printPc(canvases.slice(0, 1)));
+  // PC direct: raw printer data straight to the printer's COM/USB port — sharp, no print dialog
+  const printPcDirect = async (items = canvases, choosePort = false) => {
+    setSending(true);
+    try {
+      await printDirect(escposForCanvases(items, layout.gapMm), { choosePort });
+      toast.success(`Sent ${items.length} sticker${items.length === 1 ? '' : 's'} to the printer`);
+    } catch (e) {
+      if (e?.name === 'NotFoundError') return; // port picker closed
+      toast.error(`Printer port could not be used: ${e?.message || e}. Close other apps using the printer (label software, RawBT) and try again, or choose the port again.`);
+    } finally {
+      setSending(false);
+    }
+  };
+  const testPrint = () => (isAndroid ? printMobile(canvases.slice(0, 1)) : direct ? printPcDirect(canvases.slice(0, 1)) : printPc(canvases.slice(0, 1)));
+  const saveImages = () => downloadStickerImages(rendered.map((r, i) => {
+    const s = stickers[i];
+    return { canvas: r.canvas, name: `${s.name || 'Sticker'}${s.imei ? `_${String(s.imei).slice(-4)}` : ''}` };
+  }));
 
-  const pcBtn = (
+  const pcBtn = direct ? (
+    <>
+      <button className="btn btn-sm fw-bold btn-primary" disabled={sending} onClick={() => printPcDirect()}
+        title="Prints straight to the label printer's port (best quality). First time: pick the printer's port (e.g. the Bluetooth COM port marked Outgoing).">
+        {sending ? 'Printing…' : '🖨️ Print (PC direct)'}
+      </button>
+      <button className="btn btn-sm btn-outline-secondary" disabled={sending} onClick={() => printPcDirect(canvases, true)} title="Pick a different printer port">
+        🔌 Change port
+      </button>
+      <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => printPc()} title="Old way: through the Windows print window and printer driver">
+        Print window
+      </button>
+    </>
+  ) : (
     <button className={`btn btn-sm fw-bold ${isAndroid ? 'btn-outline-secondary' : 'btn-primary'}`} onClick={() => printPc()}>
       🖨️ Print (PC)
     </button>
@@ -92,6 +125,11 @@ export default function StickerPrint() {
             <button className="btn btn-sm btn-outline-secondary fw-bold" title="One file per sticker, for the label printer's own software (48 × 30 mm). QR not included yet."
               onClick={() => downloadLabelTemplates(stickers, { shopName })}>
               💾 Save label file
+            </button>
+          )}
+          {stickers.length > 0 && (
+            <button className="btn btn-sm btn-outline-secondary fw-bold" title="One PNG per sticker at the real label size (48 mm wide, 203 dpi)" onClick={saveImages}>
+              🖼️ Save image
             </button>
           )}
         </div>
@@ -135,7 +173,7 @@ export default function StickerPrint() {
           <details className="mb-3 small">
             <summary className="fw-semibold">Printer setup help (Posiflow 58 mm)</summary>
             <div className="mt-2">
-              <div><b>PC:</b> connect by USB, install the Posiflow 58 driver. In the print window choose the Posiflow printer, Margins <b>None</b>, Scale <b>100</b>, untick <b>Headers and footers</b>.</div>
+              <div><b>PC (Chrome / Edge):</b> use <b>Print (PC direct)</b>. The first time, pick the printer's port — for Bluetooth it is the COM port marked <b>Outgoing</b> for the printer in Windows → Bluetooth → More Bluetooth settings → COM Ports. Close the label software and RawBT while printing. <b>Print window</b> is the old way through the driver (Margins <b>None</b>, Scale <b>Default</b>).</div>
               <div className="mt-1"><b>Android:</b> install <b>RawBT</b> from the Play Store, pair the printer by Bluetooth inside RawBT once, then use <b>Print on Mobile</b>.</div>
             </div>
           </details>

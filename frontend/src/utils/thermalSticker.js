@@ -219,20 +219,24 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
   // 2. date + NEW/USED box
   const d = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(2)}`;
   const cond = s.condition === 'new' ? 'NEW' : 'USED';
+  // NEW/USED in an outlined box with black text (white text inside a black box lost
+  // its thin strokes on thermal paper and read as "N W").
   rows.push({
-    h: 16,
+    h: 18,
     draw: y => {
-      ctx.font = `bold 13px ${FONT}`;
+      ctx.font = `bold 14px ${FONT}`;
       const dw = ctx.measureText(d).width;
-      const cw = ctx.measureText(cond).width + 8;
+      const cw = ctx.measureText(cond).width + 10;
       const gap = 8;
-      const x = mid - (dw + gap + cw) / 2;
+      const x = Math.round(mid - (dw + gap + cw) / 2);
       ctx.textAlign = 'left';
       ctx.fillText(d, x, y + 2);
-      ctx.fillRect(x + dw + gap, y, cw, 16);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(cond, x + dw + gap + 4, y + 2);
-      ctx.fillStyle = '#000';
+      const bx = Math.round(x + dw + gap);
+      ctx.fillRect(bx, y, cw, 2);
+      ctx.fillRect(bx, y + 16, cw, 2);
+      ctx.fillRect(bx, y, 2, 18);
+      ctx.fillRect(bx + cw - 2, y, 2, 18);
+      ctx.fillText(cond, bx + 5, y + 2);
       ctx.textAlign = 'center';
     },
   });
@@ -271,7 +275,115 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
   for (const r of rest) { r.draw(y); y += r.h + gap; }
 
   ctx.textAlign = 'left';
+  toBlackAndWhite(ctx, W, H);
   return c;
+}
+
+// Snap every pixel to black or white with the same cut-off as the printer, so grey
+// anti-aliasing never reaches a driver (which smears it) and previews match the print.
+function toBlackAndWhite(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 140 ? 0 : 255;
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ---------- PC direct print (Chrome/Edge Web Serial → the printer's COM port) ----------
+
+export const canPrintDirect = typeof navigator !== 'undefined' && 'serial' in navigator;
+
+/**
+ * Send ESC/POS bytes straight to the printer's serial port (USB or Bluetooth COM port),
+ * the same raw data RawBT sends on Android — no print dialog, no driver scaling.
+ * First use (or `choosePort`) asks the user to pick the port; later prints reuse it.
+ */
+export async function printDirect(bytes, { choosePort = false } = {}) {
+  let port = null;
+  if (!choosePort) {
+    const ports = await navigator.serial.getPorts();
+    if (ports.length === 1) port = ports[0];
+    else if (ports.length > 1) {
+      const last = Number(localStorage.getItem('stickerSerialPortIndex'));
+      port = ports[Number.isInteger(last) && last < ports.length ? last : ports.length - 1];
+    }
+  }
+  if (!port) port = await navigator.serial.requestPort();
+  try {
+    const all = await navigator.serial.getPorts();
+    localStorage.setItem('stickerSerialPortIndex', String(all.indexOf(port)));
+  } catch { /* ignore */ }
+
+  await port.open({ baudRate: 9600 });
+  try {
+    const writer = port.writable.getWriter();
+    try {
+      const CHUNK = 1024;
+      for (let i = 0; i < bytes.length; i += CHUNK) await writer.write(bytes.subarray(i, i + CHUNK));
+      await writer.close();
+    } finally {
+      writer.releaseLock();
+    }
+  } finally {
+    await port.close();
+  }
+}
+
+// ---------- sticker image download (PNG at 203 dpi, so it opens at the real label size) ----------
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// PNG with a pHYs chunk saying 8 dots per mm (203 dpi), inserted right after IHDR.
+async function stickerPng(canvas) {
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+  const png = new Uint8Array(await blob.arrayBuffer());
+  const ppm = DOTS_PER_MM * 1000;
+  const chunk = new Uint8Array(21);
+  const dv = new DataView(chunk.buffer);
+  dv.setUint32(0, 9);
+  chunk.set([0x70, 0x48, 0x59, 0x73], 4); // "pHYs"
+  dv.setUint32(8, ppm);
+  dv.setUint32(12, ppm);
+  chunk[16] = 1; // unit: metre
+  dv.setUint32(17, crc32(chunk.subarray(4, 17)));
+  const ihdrEnd = 8 + 25;
+  const out = new Uint8Array(png.length + chunk.length);
+  out.set(png.subarray(0, ihdrEnd), 0);
+  out.set(chunk, ihdrEnd);
+  out.set(png.subarray(ihdrEnd), ihdrEnd + chunk.length);
+  return new Blob([out], { type: 'image/png' });
+}
+
+/** Download each sticker as a PNG image of the label's real size (48 mm wide, 203 dpi). */
+export async function downloadStickerImages(items) {
+  for (let i = 0; i < items.length; i++) {
+    const { canvas, name } = items[i];
+    const blob = await stickerPng(canvas);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${String(name || 'Sticker').replace(/[^\w-]+/g, '_')}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    if (i < items.length - 1) await new Promise(r => setTimeout(r, 400));
+  }
 }
 
 /**
