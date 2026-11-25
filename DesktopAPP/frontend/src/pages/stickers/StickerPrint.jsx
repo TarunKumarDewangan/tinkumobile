@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { downloadLabelTemplates } from '../../utils/labelTemplate';
 import { renderSticker, escposForCanvases, sendToRawBT, printCanvasesInBrowser, DEFAULT_LAYOUT, normalizeLayout, PRINT_WIDTH_MM } from '../../utils/thermalSticker';
 
 const SETTINGS_KEY = 'stickerPrintSettings';
@@ -87,6 +88,12 @@ export default function StickerPrint() {
         <div className="d-flex gap-2 flex-wrap">
           <Link to="/stickers/prices" className="btn btn-outline-secondary btn-sm">← Back to Prices</Link>
           {stickers.length > 0 && (isAndroid ? <>{mobileBtns}{pcBtn}</> : <>{pcBtn}{mobileBtns}</>)}
+          {stickers.length > 0 && (
+            <button className="btn btn-sm btn-outline-secondary fw-bold" title="One file per sticker, for the label printer's own software (48 × 30 mm). QR not included yet."
+              onClick={() => downloadLabelTemplates(stickers, { shopName })}>
+              💾 Save label file
+            </button>
+          )}
         </div>
       </div>
 
