@@ -60,25 +60,6 @@ function wrapLines(ctx, text, maxWidth, maxLines) {
   return lines;
 }
 
-// Lighten a box on a 1-bit printer: snap it to black/white, then clear 1 dot in every 2×2 block
-// so the price codes print a bit lighter (greyish) than other text.
-function fadeBox(ctx, x, y, w, h) {
-  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
-  w = Math.min(ctx.canvas.width - x, Math.ceil(w)); h = Math.min(ctx.canvas.height - y, Math.ceil(h));
-  if (w <= 0 || h <= 0) return;
-  const img = ctx.getImageData(x, y, w, h);
-  const d = img.data;
-  for (let r = 0; r < h; r++) {
-    for (let c = 0; c < w; c++) {
-      const i = (r * w + c) * 4;
-      const dark = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 140 && !((x + c) % 2 === 0 && (y + r) % 2 === 0);
-      d[i] = d[i + 1] = d[i + 2] = dark ? 0 : 255;
-      d[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, x, y);
-}
-
 // Selling price is printed as a shop code: B L A C K W H I T E = 1 2 3 4 5 6 7 8 9 0
 const CODE_LETTERS = ['E', 'B', 'L', 'A', 'C', 'K', 'W', 'H', 'I', 'T'];
 export function priceCode(price) {
@@ -127,11 +108,11 @@ function drawQr(ctx, text, x, areaH, maxSize = 190, top = 0) {
 }
 
 /**
- * Draw one sticker (default 2 × 1 inch label) as a black/white canvas 384 dots wide (the full head).
- * Content is placed inside [shift, shift + width] so it lands inside the label.
- * Right: QR (set info + IMEI) with the selling-price code under it (bottom-right corner).
- * Top-left corner: purchase-price code. Middle, every line centred:
- *   SHOP NAME / date + NEW|USED / model / RAM·storage·colour / IMEI / MRP.
+ * Draw one sticker as a black/white canvas 384 dots wide (the full head); content sits inside
+ * [shift, shift + width] so it lands on the label. Layout (owner's design):
+ *   top:    date + NEW|USED (left)                       SHOP NAME (right)
+ *   middle: model / RAM·storage·colour / IMEI / MRP (centred)   QR (right)
+ *   bottom: purchase-price code (left)                   selling-price code (right)
  * Purchase and selling price are never printed as numbers — only their BLACKWHITE codes.
  */
 export function renderSticker(s, { shopName, layout, date = new Date() }) {
@@ -143,136 +124,90 @@ export function renderSticker(s, { shopName, layout, date = new Date() }) {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
   ctx.textBaseline = 'top';
 
   const left = Math.round(L.shiftMm * DOTS_PER_MM);
   const right = Math.min(W, left + Math.round(L.widthMm * DOTS_PER_MM));
-  const vpad = 10; // ~1.25 mm clear of the label's top/bottom edge
-  const inset = 12; // ~1.5 mm clear of the label's left/right edge for the corner codes
-  const usable = H - vpad * 2;
+  const pad = 8; // ~1 mm in from the label edges
+  const inL = left + pad;
+  const inR = right - pad;
+  const write = (text, x, y, size, weight, align) => {
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    ctx.textAlign = align;
+    ctx.fillText(text, x, y);
+  };
 
-  const sellCode = priceCode(s.price);
-  const buyCode = priceCode(s.purchase_price);
-  const SELL_H = 18;
+  // ── top line: date + NEW/USED on the left, shop name on the right
+  const TOP = 16;
+  const d = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(2)}`;
+  const dateText = `${d}  ${s.condition === 'new' ? 'NEW' : 'USED'}`;
+  ctx.font = `bold ${TOP}px ${FONT}`;
+  const dateW = ctx.measureText(dateText).width;
+  write(dateText, inL, pad, TOP, 'bold', 'left');
+  const shop = String(shopName || '').toUpperCase();
+  const shopSize = fitFont(ctx, shop, 'bold', TOP, 9, inR - inL - dateW - 10);
+  write(shop, inR, pad + (TOP - shopSize), shopSize, 'bold', 'right');
 
-  // QR on the right — at most ~40% of the width so the text has room;
-  // the selling-price code sits under it, so the QR uses the height above that.
+  // ── bottom line: purchase code (left), selling code (right)
+  const BOT = 18;
+  const botY = H - pad - BOT;
+  const buy = priceCode(s.purchase_price);
+  const sell = priceCode(s.price);
+  if (buy) write(buy, inL, botY, BOT, 'bold', 'left');
+  if (sell) write(sell, inR, botY, BOT, 'bold', 'right');
+
+  // ── middle band between the two lines
+  const midTop = pad + TOP + 6;
+  const midBot = (buy || sell) ? botY - 6 : H - pad;
+  const midH = midBot - midTop;
+
+  // QR on the right, as big as the band allows (max ~40% of the width)
   let qrSize = 0;
-  const qrAreaH = sellCode ? usable - SELL_H - 2 : usable;
   try {
-    const maxQr = Math.min(qrAreaH, Math.round((right - left) * 0.4));
+    const maxQr = Math.min(midH, Math.round((right - left) * 0.4));
     const probe = QRCode.create(qrValue(s), { errorCorrectionLevel: 'M' }).modules.size + 4;
     const size = Math.max(1, Math.floor(maxQr / probe)) * probe;
-    qrSize = drawQr(ctx, qrValue(s), right - size, qrAreaH, maxQr, vpad);
+    qrSize = drawQr(ctx, qrValue(s), inR - size + 4, midH, maxQr, midTop); // +4: QR has its own white border
   } catch {
     qrSize = 0; // text too long for a QR — print without it
   }
 
-  // Bottom-right: selling price as code
-  if (sellCode) {
-    const size = fitFont(ctx, sellCode, 'bold', SELL_H, 10, Math.max(qrSize, 80) - inset);
-    ctx.font = `bold ${size}px ${FONT}`;
-    ctx.fillStyle = '#000';
-    ctx.textAlign = 'right';
-    ctx.fillText(sellCode, right - inset, H - vpad - size);
-    const w = ctx.measureText(sellCode).width;
-    fadeBox(ctx, right - inset - w - 1, H - vpad - size - 1, w + 2, size + 4);
-  }
-
-  const colL = left;
-  const colR = right - qrSize - (qrSize ? 4 : 0);
+  // text column left of the QR, every line centred
+  const colL = inL;
+  const colR = qrSize ? inR - qrSize : inR;
   const colW = colR - colL;
   const mid = (colL + colR) / 2;
-  ctx.fillStyle = '#000';
-  ctx.textAlign = 'center';
-
-  // Build the rows first (height + how to draw), then spread them over the label height.
   const rows = [];
-  const text = (str, weight, max, min) => {
-    const size = fitFont(ctx, str, weight, max, min, colW);
-    rows.push({ h: size, draw: y => { ctx.font = `${weight} ${size}px ${FONT}`; ctx.fillText(str, mid, y); } });
+  const line = (text, max, min, weight) => {
+    const size = fitFont(ctx, text, weight, max, min, colW);
+    rows.push({ h: size, imei: false, draw: y => write(text, mid, y, size, weight, 'center') });
   };
 
-  // 1. shop name — shares its line with the purchase-price code in the top-left corner
-  const shop = String(shopName).toUpperCase();
-  ctx.font = `bold 15px ${FONT}`;
-  const buyW = buyCode ? ctx.measureText(buyCode).width + 6 : 0;
-  // with a code, the shop name is centred in the space to the right of it
-  const shopL = buyCode ? colL + inset + buyW : colL;
-  const shopMid = (shopL + colR) / 2;
-  const shopSize = fitFont(ctx, shop, 'bold', 16, 8, Math.max(40, colR - shopL));
-  rows.push({
-    h: Math.max(shopSize, buyCode ? 15 : 0),
-    draw: y => {
-      ctx.font = `bold ${shopSize}px ${FONT}`;
-      ctx.fillText(shop, shopMid, y);
-      if (buyCode) {
-        ctx.font = `bold 15px ${FONT}`;
-        ctx.textAlign = 'left';
-        ctx.fillText(buyCode, colL + inset, y);
-        fadeBox(ctx, colL + inset - 1, y - 1, buyW - 4, 18);
-        ctx.textAlign = 'center';
-      }
-    },
-  });
-
-  // 2. date + NEW/USED box
-  const d = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(2)}`;
-  const cond = s.condition === 'new' ? 'NEW' : 'USED';
-  // NEW/USED in an outlined box with black text (white text inside a black box lost
-  // its thin strokes on thermal paper and read as "N W").
-  rows.push({
-    h: 18,
-    draw: y => {
-      ctx.font = `bold 14px ${FONT}`;
-      const dw = ctx.measureText(d).width;
-      const cw = ctx.measureText(cond).width + 10;
-      const gap = 8;
-      const x = Math.round(mid - (dw + gap + cw) / 2);
-      ctx.textAlign = 'left';
-      ctx.fillText(d, x, y + 2);
-      const bx = Math.round(x + dw + gap);
-      ctx.fillRect(bx, y, cw, 2);
-      ctx.fillRect(bx, y + 16, cw, 2);
-      ctx.fillRect(bx, y, 2, 18);
-      ctx.fillRect(bx + cw - 2, y, 2, 18);
-      ctx.fillText(cond, bx + 5, y + 2);
-      ctx.textAlign = 'center';
-    },
-  });
-
-  // 3. model (up to 2 lines)
-  ctx.font = `bold 16px ${FONT}`;
-  for (const line of wrapLines(ctx, s.name, colW, 2)) {
-    rows.push({ h: 17, draw: y => { ctx.font = `bold 16px ${FONT}`; ctx.fillText(line, mid, y); } });
+  // model: big; wraps to 2 lines only if it can't fit on one at a readable size
+  const name = String(s.name || '');
+  ctx.font = `bold 22px ${FONT}`;
+  if (ctx.measureText(name).width > colW && fitFont(ctx, name, 'bold', 22, 8, colW) < 16) {
+    ctx.font = `bold 17px ${FONT}`;
+    for (const ln of wrapLines(ctx, name, colW, 2)) line(ln, 17, 10, 'bold');
+  } else {
+    line(name, 22, 12, 'bold');
   }
-
-  // 4. RAM / storage / colour
   const specs = ([s.ram, s.storage].filter(Boolean).join(' / ') + (s.color ? `  ${String(s.color).toUpperCase()}` : '')).trim();
-  if (specs) text(specs, 'normal', 14, 9);
-
-  // 5. IMEI
-  if (s.imei) { text(`IMEI ${s.imei}`, 'normal', 12, 8); rows[rows.length - 1].imei = true; }
-
-  // 6. MRP
+  if (specs) line(specs, 18, 10, 'normal');
+  if (s.imei) { line(`IMEI ${s.imei}`, 15, 9, 'normal'); rows[rows.length - 1].imei = true; }
   const mrpVal = parseFloat(s.mrp || 0);
-  if (mrpVal > 0) text(`MRP: ₹${mrpVal.toLocaleString('en-IN')}`, 'bold', 15, 9);
+  if (mrpVal > 0) line(`MRP: ₹${mrpVal.toLocaleString('en-IN')}`, 19, 10, 'bold');
 
-  // Drop the IMEI line if everything doesn't fit (it is inside the QR anyway).
+  // drop the IMEI line if everything doesn't fit (it is inside the QR anyway)
   const total = () => rows.reduce((a, r) => a + r.h, 0);
-  if (total() + rows.length * 2 > usable && s.imei) {
+  if (total() + (rows.length - 1) * 2 > midH) {
     const i = rows.findIndex(r => r.imei);
     if (i >= 0) rows.splice(i, 1);
   }
-  // The first row (shop name + purchase code) is pinned to the top corner;
-  // the rest are spread evenly below it and centred in the remaining height.
-  const [first, ...rest] = rows;
-  first.draw(vpad);
-  const restH = usable - first.h - 4;
-  const restTotal = rest.reduce((a, r) => a + r.h, 0);
-  const gap = Math.max(2, Math.min(8, Math.floor((restH - restTotal) / Math.max(1, rest.length))));
-  let y = vpad + first.h + gap + Math.max(0, Math.floor((restH - restTotal - gap * rest.length) / 2));
-  for (const r of rest) { r.draw(y); y += r.h + gap; }
+  const gap = Math.max(2, Math.min(10, Math.floor((midH - total()) / Math.max(1, rows.length + 1))));
+  let y = midTop + Math.max(0, Math.floor((midH - total() - gap * (rows.length - 1)) / 2));
+  for (const r of rows) { r.draw(y); y += r.h + gap; }
 
   ctx.textAlign = 'left';
   toBlackAndWhite(ctx, W, H);
