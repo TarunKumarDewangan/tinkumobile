@@ -329,10 +329,14 @@ export function printCanvasesInBrowser(canvases, layout) {
   const heightMm = L.heightMm;
   const pageMm = L.heightMm + L.gapMm;
   const imgs = canvases.map(c => `<div class="p"><img src="${c.toDataURL('image/png')}"></div>`).join('');
+  // No @page size on purpose: a page wider than tall makes Chrome switch the job to
+  // Landscape and label-printer drivers then print the sticker turned 90°. The paper
+  // size comes from the printer driver instead (48 mm wide × label + gap), and each
+  // sticker page is exactly the head width so it lines up with the driver's page.
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Stickers</title><style>
-    @page { size: ${PAPER_WIDTH_MM}mm ${pageMm}mm; margin: 0; }
+    @page { margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
-    .p { width: ${PAPER_WIDTH_MM}mm; height: ${pageMm}mm; display: flex; justify-content: center; align-items: flex-start; overflow: hidden; page-break-after: always; break-after: page; }
+    .p { width: ${PRINT_WIDTH_MM}mm; height: ${pageMm}mm; display: flex; justify-content: center; align-items: flex-start; overflow: hidden; page-break-after: always; break-after: page; }
     .p:last-child { page-break-after: auto; break-after: auto; }
     img { width: ${PRINT_WIDTH_MM}mm; height: ${heightMm}mm; image-rendering: pixelated; }
   </style></head><body>${imgs}</body></html>`;

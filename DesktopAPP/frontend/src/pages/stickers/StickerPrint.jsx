@@ -128,7 +128,7 @@ export default function StickerPrint() {
           <details className="mb-3 small">
             <summary className="fw-semibold">Printer setup help (Posiflow 58 mm)</summary>
             <div className="mt-2">
-              <div><b>PC:</b> connect by USB, install the Posiflow 58 driver. In the print window choose the Posiflow printer, Margins <b>None</b>, Scale <b>100</b>, untick <b>Headers and footers</b>.</div>
+              <div><b>PC:</b> connect by USB and install the printer driver. In the driver's Printing preferences add a paper size of <b>48 mm × (label height + gap) mm</b> (e.g. 48 × 27), choose it, and set Orientation <b>Portrait</b>. In the print window pick that Paper size, Layout <b>Portrait</b>, Margins <b>None</b>, Scale <b>Default</b>, untick <b>Headers and footers</b>.</div>
               <div className="mt-1"><b>Android:</b> install <b>RawBT</b> from the Play Store, pair the printer by Bluetooth inside RawBT once, then use <b>Print on Mobile</b>.</div>
             </div>
           </details>
