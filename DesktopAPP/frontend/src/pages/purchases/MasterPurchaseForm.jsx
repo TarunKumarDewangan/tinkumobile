@@ -208,6 +208,7 @@ export default function MasterPurchaseForm() {
             trade_disc_pct: tDisc,
             cash_disc_pct: cDisc,
             selling_price: i.selling_price || '',
+            sp_manual: derivedItemType === 'other' && parseFloat(i.selling_price) > 0,
             wholeseller_price: i.wholeseller_price || '',
             min_selling_price: i.min_selling_price || '',
             max_selling_price: i.max_selling_price || '',
@@ -386,12 +387,20 @@ export default function MasterPurchaseForm() {
     const a = [...items];
     a[i][field] = val;
 
+    // OTHER (accessory) rows: the Selling Price box is the owner's own number. It never
+    // drives the purchase rate, and rate changes only fill it while it is still empty.
+    const isOther = a[i].item_type === 'other';
+    if (isOther && field === 'selling_price') a[i].sp_manual = parseFloat(val) > 0;
+    const keptSp = isOther && a[i].sp_manual && field !== 'selling_price' ? a[i].selling_price : null;
+
     if (['dp_inc_gst', 'rate_ex_gst', 'calc_gst_rate', 'trade_disc_pct', 'cash_disc_pct', 'unit_price', 'selling_price'].includes(field)) {
       const gst = parseFloat(a[i].calc_gst_rate ?? 18) || 0;
       const tDisc = parseFloat(a[i].trade_disc_pct ?? 3.85) || 0;
       const cDisc = parseFloat(a[i].cash_disc_pct ?? 2) || 0;
 
-      if (field === 'selling_price') {
+      if (field === 'selling_price' && isOther) {
+        // only the selling price changes
+      } else if (field === 'selling_price') {
         const sp = parseFloat(val) || 0;
         if (!a[i].apply_gst) {
           a[i].dp_inc_gst = sp;
@@ -455,6 +464,7 @@ export default function MasterPurchaseForm() {
         }
       }
     }
+    if (keptSp !== null) a[i].selling_price = keptSp;
     
     if (field === 'product_id') {
       const p = products.find(x => x.id == val);
@@ -476,6 +486,7 @@ export default function MasterPurchaseForm() {
         }
         
         a[i].selling_price = (p.selling_price && parseFloat(p.selling_price) > 0) ? p.selling_price : (a[i].dp_inc_gst || '');
+        if (a[i].item_type === 'other') a[i].sp_manual = parseFloat(p.selling_price) > 0;
         a[i].wholeseller_price = p.wholeseller_price || '';
         a[i].min_selling_price = p.min_selling_price || '';
         a[i].max_selling_price = p.max_selling_price || '';
@@ -1017,10 +1028,9 @@ export default function MasterPurchaseForm() {
                 } else {
                   updateItem(i, 'gst_rate', '');
                   updateItem(i, 'calc_gst_rate', 0);
-                  const mop = parseFloat(item.selling_price) || 0;
-                  updateItem(i, 'dp_inc_gst', mop);
-                  updateItem(i, 'rate_ex_gst', mop);
-                  updateItem(i, 'unit_price', mop);
+                  // without GST the purchase rate stays what it was (incl. = ex. GST)
+                  const dp = parseFloat(item.dp_inc_gst) || 0;
+                  if (dp > 0) updateItem(i, 'dp_inc_gst', dp);
                 }
               }}
             />
@@ -1046,7 +1056,23 @@ export default function MasterPurchaseForm() {
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '6px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+          <div>
+            <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase', display: 'block', marginBottom: '3px' }}>Selling Price ₹</span>
+            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+              <span style={{ display: 'flex', alignItems: 'center', padding: '0 6px', fontSize: '0.75rem', fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #86efac', borderRight: 0, borderRadius: '6px 0 0 6px' }}>₹</span>
+              <input
+                type="number"
+                className="pf-inp"
+                min="0"
+                placeholder="0"
+                style={{ padding: '4px 6px', fontSize: '0.75rem', fontWeight: 700, textAlign: 'right', borderColor: '#86efac', borderRadius: '0 6px 6px 0' }}
+                tabIndex={baseTabIndex + 15}
+                value={item.selling_price || ''}
+                onChange={e => updateItem(i, 'selling_price', e.target.value === '' ? '' : parseFloat(e.target.value))}
+              />
+            </div>
+          </div>
           <div>
             <span style={{ fontSize: '0.62rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '3px' }}>Rack Location</span>
             <input
@@ -1085,11 +1111,7 @@ export default function MasterPurchaseForm() {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', background: '#f0fdf4', padding: '6px', borderRadius: '8px', border: '1px solid #b7e4c7' }}>
-          <div>
-            <span style={{ fontSize: '0.58rem', color: '#16a34a', display: 'block', fontWeight: 800, textAlign: 'center' }}>MOP</span>
-            <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, borderColor: '#86efac', background: '#fff' }} tabIndex={baseTabIndex + 15} value={item.selling_price} onChange={e=>updateItem(i,'selling_price',parseFloat(e.target.value))} />
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', background: '#f0fdf4', padding: '6px', borderRadius: '8px', border: '1px solid #b7e4c7' }}>
           <div>
             <span style={{ fontSize: '0.58rem', color: '#4f46e5', display: 'block', fontWeight: 800, textAlign: 'center' }}>WHOLE.</span>
             <input type="number" className="pf-inp" style={{ padding: '3px 2px', fontSize: '0.72rem', borderRadius: '4px', textAlign: 'right', borderColor: '#cbd5e1', background: '#fff' }} tabIndex={baseTabIndex + 16} value={item.wholeseller_price} onChange={e=>updateItem(i,'wholeseller_price',parseFloat(e.target.value))} />
