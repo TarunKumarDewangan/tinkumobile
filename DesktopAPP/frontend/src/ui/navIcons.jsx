@@ -14,6 +14,7 @@ const BY_PATH = {
   '/': LayoutDashboard,
   '/attendance': Clock,
   '/pending-balance': Wallet,
+  '/pending-payables': CreditCard,
   '/accounts/promise-to-pay': HandCoins,
   '/accounts/bank-balances': Landmark,
   '/accounts/entity-manager': Building2,

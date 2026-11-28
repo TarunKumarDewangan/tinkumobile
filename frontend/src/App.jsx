@@ -15,6 +15,7 @@ const AttendanceReport = lazy(() => import('./pages/admin/AttendanceReport'));
 const ImeiAudit = lazy(() => import('./pages/admin/ImeiAudit'));
 const DuplicateFinder = lazy(() => import('./pages/admin/DuplicateFinder'));
 const PendingBalance = lazy(() => import('./pages/PendingBalance'));
+const PendingPayables = lazy(() => import('./pages/PendingPayables'));
 const Products = lazy(() => import('./pages/products/Products'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
 const GenerateStickers = lazy(() => import('./pages/stickers/GenerateStickers'));
@@ -148,6 +149,7 @@ function AppRoutes() {
           <Route path="admin/imei-audit" element={<ImeiAudit />} />
           <Route path="admin/duplicate-finder" element={<DuplicateFinder />} />
           <Route path="pending-balance" element={<PendingBalance />} />
+          <Route path="pending-payables" element={<PendingPayables />} />
           <Route path="products" element={<Products />} />
           <Route path="products/new" element={<ProductForm />} />
           <Route path="products/:id/edit" element={<ProductForm />} />

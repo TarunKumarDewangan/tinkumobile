@@ -17,6 +17,7 @@ const NAV = [
     dropdown: true,
     children: [
         { to: '/pending-balance', icon: '💰', label: 'Pending Balance', perm: 'view_pending_balance' },
+        { to: '/pending-payables', icon: '🧾', label: 'Pending Payables', perm: 'view_pending_balance' },
         { to: '/accounts/promise-to-pay', icon: '📝', label: 'Promise to Pay', perm: 'view_pending_balance' },
         { to: '/accounts/bank-balances', icon: '🏦', label: 'Bank Balances', perm: 'view_finance_tracker' },
         { to: '/accounts/entity-manager', icon: '🏛️', label: 'Entity Manager', perm: 'view_reports' },
